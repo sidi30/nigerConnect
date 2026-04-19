@@ -32,6 +32,7 @@
     "@nestjs/platform-socket.io": "^10.4.15",
     "@nestjs/throttler": "^6.2.1",
     "@nestjs/websockets": "^10.4.15",
+    "socket.io": "^4.8.1",
     "@nigerconnect/shared-types": "workspace:*",
     "@prisma/client": "^6.0.1",
     "@aws-sdk/client-s3": "^3.709.0",

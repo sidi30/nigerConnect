@@ -105,6 +105,9 @@ model User {
   posts               Post[]
   likes               Like[]
   comments            Comment[]
+  conversationMemberships ConversationMember[]
+  conversationsCreated    Conversation[]       @relation("ConversationCreator")
+  messages                Message[]
 
   @@index([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
@@ -126,6 +129,23 @@ enum PostVisibility {
 enum MediaType {
   image
   video
+}
+
+enum ConversationType {
+  direct
+  group
+}
+
+enum MessageType {
+  text
+  image
+  file
+  system
+}
+
+enum ConversationRole {
+  admin
+  member
 }
 
 model Friendship {
@@ -245,6 +265,60 @@ model UserPhoto {
 
   @@index([userId, sortOrder])
   @@map("user_photos")
+}
+
+model Conversation {
+  id                  String               @id @default(uuid()) @db.Uuid
+  type                ConversationType     @default(direct)
+  name                String?              @db.VarChar(100)
+  avatarUrl           String?              @map("avatar_url") @db.VarChar(500)
+  createdById         String?              @map("created_by") @db.Uuid
+  createdBy           User?                @relation("ConversationCreator", fields: [createdById], references: [id])
+  lastMessageAt       DateTime?            @map("last_message_at") @db.Timestamptz
+  lastMessagePreview  String?              @map("last_message_preview") @db.Text
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@index([lastMessageAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId String           @map("conversation_id") @db.Uuid
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String           @map("user_id") @db.Uuid
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           ConversationRole @default(member)
+  lastReadAt     DateTime?        @map("last_read_at") @db.Timestamptz
+  unreadCount    Int              @default(0) @map("unread_count")
+  muted          Boolean          @default(false)
+  joinedAt       DateTime         @default(now()) @map("joined_at") @db.Timestamptz
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id             String      @id @default(uuid()) @db.Uuid
+  conversationId String      @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String      @map("sender_id") @db.Uuid
+  sender         User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String?     @db.Text
+  messageType    MessageType @default(text) @map("message_type")
+  mediaUrl       String?     @map("media_url") @db.VarChar(500)
+  replyToId      String?     @map("reply_to_id") @db.Uuid
+  replyTo        Message?    @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        Message[]   @relation("MessageReplies")
+  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderId])
+  @@map("messages")
 }
 
 model IdentityDocument {

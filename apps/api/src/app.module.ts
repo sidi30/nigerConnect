@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
 import { SocialModule } from './social/social.module';
 import { FeedModule } from './feed/feed.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { FeedModule } from './feed/feed.module';
     ProfileModule,
     SocialModule,
     FeedModule,
+    ChatModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

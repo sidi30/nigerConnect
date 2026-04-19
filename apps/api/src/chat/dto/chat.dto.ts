@@ -1,0 +1,18 @@
+import { z } from 'zod';
+
+export const createConversationSchema = z.object({
+  participantIds: z.array(z.string().uuid()).min(1).max(50),
+  name: z.string().max(100).optional(),
+});
+export type CreateConversationDto = z.infer<typeof createConversationSchema>;
+
+export const sendMessageSchema = z.object({
+  content: z.string().max(5000).optional(),
+  messageType: z.enum(['text', 'image', 'file']).default('text'),
+  mediaUrl: z.string().url().max(500).optional(),
+  replyToId: z.string().uuid().optional(),
+}).refine(
+  (d) => d.content || d.mediaUrl,
+  { message: 'content or mediaUrl is required' },
+);
+export type SendMessageDto = z.infer<typeof sendMessageSchema>;
