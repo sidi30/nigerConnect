@@ -77,18 +77,46 @@ nigerconnect/
 
 Voir `NigerConnect-Architecture-v2.md` pour le détail complet.
 
-| Phase | Contenu |
-|---|---|
-| 1 | Setup monorepo + Docker ✓ |
-| 2 | Auth complet (OAuth, JWT, identité) |
-| 3 | Profil + Photos |
-| 4 | Social (amis, blocage) |
-| 5 | Feed (posts, stories, likes, comments) |
-| 6 | Chat temps réel Socket.io |
-| 7 | App Mobile complète |
-| 8 | Carte Snap Map |
-| 9 | Marketplace + Associations |
-| 10 | Notifications + Modération |
+| Phase | Contenu | Statut |
+|---|---|---|
+| 1 | Setup monorepo + Docker | ✓ v0.1.0 |
+| 2 | Auth complet (OAuth, JWT, identité) | ✓ v0.2.0 |
+| 3 | Profil + Photos | ✓ v0.3.0 |
+| 4 | Social (amis, blocage) | ✓ v0.4.0 |
+| 5 | Feed (posts, stories, likes, comments) | ✓ v0.5.0 |
+| 6 | Chat temps réel Socket.io | ✓ v0.6.0 |
+| 7 | App Mobile complète | ✓ v0.7.0 |
+| 8 | Carte Snap Map (backend) | ✓ v0.8.0 |
+| 9 | Marketplace + Associations | ✓ v0.9.0 |
+| 10 | Notifications + Modération | ✓ v1.0.0 |
+
+## Endpoints API principaux
+
+- `POST /api/auth/register|login|refresh|logout` · `GET /api/auth/me`
+- `POST /api/auth/identity/submit|status` · `PATCH /api/auth/identity/review`
+- `GET/PATCH /api/profile/me` · `GET /api/profile/:id` · `GET /api/profile/search`
+- `POST /api/profile/me/photos/presign|photos` · `DELETE /api/profile/me/photos/:id`
+- `POST /api/friends/request/:userId|accept/:id|decline/:id` · `DELETE /api/friends/:id`
+- `GET /api/friends` · `/requests` · `/requests/sent` · `/mutual/:id` · `/suggestions`
+- `POST/DELETE/GET /api/blocks`
+- `POST /api/posts` · `GET /api/feed` · `POST /api/posts/:id/like|comments|share`
+- `POST /api/stories` · `GET /api/stories/feed`
+- `GET/POST /api/conversations` · `GET /api/conversations/:id/messages`
+- Socket.io `/chat` : `message:send|read`, `typing:start|stop`, `user:online|offline`
+- `GET /api/geo/members|stats|nearby`
+- `POST/GET /api/services` · `POST /api/services/:id/respond|rate`
+- `POST/GET /api/associations` · `/:id/join|leave|members|events`
+- `GET/PATCH /api/notifications` · `POST /api/notifications/register-device`
+- `POST /api/reports` · `GET/PATCH /api/reports` (modérateur)
+
+## Seed de développement
+
+```bash
+pnpm --filter @nigerconnect/api prisma:seed
+# Crée 20 utilisateurs, 4 amitiés, 20 posts, 5 associations vérifiées
+# Password pour tous les comptes seed: Seed!Password99
+# Comptes: seed.user0@nigerconnect.local → seed.user19@nigerconnect.local
+```
 
 ## Palette
 

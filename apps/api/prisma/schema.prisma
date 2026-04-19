@@ -112,6 +112,10 @@ model User {
   serviceResponses        ServiceResponse[]
   associationsCreated     Association[]        @relation("AssociationCreator")
   associationMemberships  AssociationMember[]
+  notifications           Notification[]       @relation("NotificationRecipient")
+  notificationsActedOn    Notification[]       @relation("NotificationActor")
+  reportsMade             Report[]             @relation("ReportReporter")
+  reportsReviewed         Report[]             @relation("ReportReviewer")
 
   @@index([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
@@ -195,6 +199,51 @@ enum AssociationRole {
 enum MembershipStatus {
   pending
   approved
+}
+
+enum NotificationType {
+  friend_request
+  friend_accepted
+  like
+  comment
+  message
+  service_response
+  association_invite
+  identity_approved
+  identity_rejected
+  system
+}
+
+enum ReportTargetType {
+  user
+  post
+  message
+  association
+  comment
+}
+
+enum ReportReason {
+  spam
+  harassment
+  inappropriate
+  fake_identity
+  scam
+  other
+}
+
+enum ReportStatus {
+  pending
+  reviewed
+  resolved
+  dismissed
+}
+
+enum ReportAction {
+  warning
+  content_removed
+  suspended
+  banned
+  none
 }
 
 model Friendship {
@@ -300,6 +349,45 @@ model Comment {
   @@index([postId, createdAt])
   @@index([parentId])
   @@map("comments")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String           @db.VarChar(200)
+  body      String?          @db.Text
+  data      Json?
+  actorId   String?          @map("actor_id") @db.Uuid
+  actor     User?            @relation("NotificationActor", fields: [actorId], references: [id])
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+model Report {
+  id           String           @id @default(uuid()) @db.Uuid
+  reporterId   String?          @map("reporter_id") @db.Uuid
+  reporter     User?            @relation("ReportReporter", fields: [reporterId], references: [id])
+  targetType   ReportTargetType @map("target_type")
+  targetId     String           @map("target_id") @db.Uuid
+  reason       ReportReason
+  description  String?          @db.Text
+  status       ReportStatus     @default(pending)
+  reviewedById String?          @map("reviewed_by") @db.Uuid
+  reviewedBy   User?            @relation("ReportReviewer", fields: [reviewedById], references: [id])
+  actionTaken  ReportAction?    @map("action_taken")
+  note         String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  resolvedAt   DateTime?        @map("resolved_at") @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+  @@map("reports")
 }
 
 model UserPhoto {

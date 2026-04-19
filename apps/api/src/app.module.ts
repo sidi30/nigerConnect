@@ -15,6 +15,8 @@ import { ChatModule } from './chat/chat.module';
 import { GeoModule } from './geo/geo.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { AssociationModule } from './association/association.module';
+import { NotificationModule } from './notification/notification.module';
+import { ModerationModule } from './moderation/moderation.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { AssociationModule } from './association/association.module';
     GeoModule,
     MarketplaceModule,
     AssociationModule,
+    NotificationModule,
+    ModerationModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
