@@ -102,6 +102,9 @@ model User {
   friendshipsReceived Friendship[] @relation("FriendshipAddressee")
   blocksMade          Block[]      @relation("BlockBlocker")
   blocksReceived      Block[]      @relation("BlockBlocked")
+  posts               Post[]
+  likes               Like[]
+  comments            Comment[]
 
   @@index([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
@@ -112,6 +115,17 @@ enum FriendshipStatus {
   pending
   accepted
   declined
+}
+
+enum PostVisibility {
+  public
+  friends
+  association
+}
+
+enum MediaType {
+  image
+  video
 }
 
 model Friendship {
@@ -140,6 +154,83 @@ model Block {
   @@id([blockerId, blockedId])
   @@index([blockedId])
   @@map("blocks")
+}
+
+model Post {
+  id              String         @id @default(uuid()) @db.Uuid
+  authorId        String         @map("author_id") @db.Uuid
+  author          User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content         String?        @db.Text
+  visibility      PostVisibility @default(friends)
+  associationId  String?        @map("association_id") @db.Uuid
+  isStory         Boolean        @default(false) @map("is_story")
+  storyExpiresAt  DateTime?      @map("story_expires_at") @db.Timestamptz
+  sharedPostId    String?        @map("shared_post_id") @db.Uuid
+  sharedPost      Post?          @relation("PostShares", fields: [sharedPostId], references: [id])
+  shares          Post[]         @relation("PostShares")
+  likeCount       Int            @default(0) @map("like_count")
+  commentCount    Int            @default(0) @map("comment_count")
+  shareCount      Int            @default(0) @map("share_count")
+  deletedAt       DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  media     PostMedia[]
+  likes     Like[]
+  comments  Comment[]
+
+  @@index([authorId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([associationId, createdAt(sort: Desc)])
+  @@index([isStory, storyExpiresAt])
+  @@map("posts")
+}
+
+model PostMedia {
+  id           String    @id @default(uuid()) @db.Uuid
+  postId       String    @map("post_id") @db.Uuid
+  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mediaUrl     String    @map("media_url") @db.VarChar(500)
+  thumbnailUrl String?   @map("thumbnail_url") @db.VarChar(500)
+  mediaType    MediaType @map("media_type")
+  width        Int?
+  height       Int?
+  blurhash     String?   @db.VarChar(100)
+  sortOrder    Int       @default(0) @map("sort_order")
+
+  @@index([postId])
+  @@map("post_media")
+}
+
+model Like {
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String   @map("post_id") @db.Uuid
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([userId, postId])
+  @@index([postId])
+  @@map("likes")
+}
+
+model Comment {
+  id         String    @id @default(uuid()) @db.Uuid
+  postId     String    @map("post_id") @db.Uuid
+  post       Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId   String    @map("author_id") @db.Uuid
+  author     User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId   String?   @map("parent_id") @db.Uuid
+  parent     Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies    Comment[] @relation("CommentReplies")
+  content    String    @db.Text
+  likeCount  Int       @default(0) @map("like_count")
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([postId, createdAt])
+  @@index([parentId])
+  @@map("comments")
 }
 
 model UserPhoto {

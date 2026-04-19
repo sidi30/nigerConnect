@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
 import { SocialModule } from './social/social.module';
+import { FeedModule } from './feed/feed.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SocialModule } from './social/social.module';
     AuthModule,
     ProfileModule,
     SocialModule,
+    FeedModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
