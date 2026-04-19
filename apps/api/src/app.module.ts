@@ -12,6 +12,7 @@ import { ProfileModule } from './profile/profile.module';
 import { SocialModule } from './social/social.module';
 import { FeedModule } from './feed/feed.module';
 import { ChatModule } from './chat/chat.module';
+import { GeoModule } from './geo/geo.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ChatModule } from './chat/chat.module';
     SocialModule,
     FeedModule,
     ChatModule,
+    GeoModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
