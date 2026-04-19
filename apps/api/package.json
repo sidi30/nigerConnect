@@ -34,6 +34,8 @@
     "@nestjs/websockets": "^10.4.15",
     "@nigerconnect/shared-types": "workspace:*",
     "@prisma/client": "^6.0.1",
+    "@aws-sdk/client-s3": "^3.709.0",
+    "@aws-sdk/s3-request-presigner": "^3.709.0",
     "argon2": "^0.41.1",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",

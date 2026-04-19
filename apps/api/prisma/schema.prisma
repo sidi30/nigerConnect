@@ -97,9 +97,25 @@ model User {
   reviewedDocuments IdentityDocument[] @relation("DocumentReviewer")
   refreshTokens     RefreshToken[]
   pushTokens        PushToken[]
+  photos            UserPhoto[]
 
   @@index([oauthProvider, oauthProviderId])
+  @@index([countryCode, city])
   @@map("users")
+}
+
+model UserPhoto {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url          String   @db.VarChar(500)
+  thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
+  caption      String?  @db.Text
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, sortOrder])
+  @@map("user_photos")
 }
 
 model IdentityDocument {
