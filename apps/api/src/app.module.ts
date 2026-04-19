@@ -13,6 +13,8 @@ import { SocialModule } from './social/social.module';
 import { FeedModule } from './feed/feed.module';
 import { ChatModule } from './chat/chat.module';
 import { GeoModule } from './geo/geo.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
+import { AssociationModule } from './association/association.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { GeoModule } from './geo/geo.module';
     FeedModule,
     ChatModule,
     GeoModule,
+    MarketplaceModule,
+    AssociationModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

@@ -108,6 +108,10 @@ model User {
   conversationMemberships ConversationMember[]
   conversationsCreated    Conversation[]       @relation("ConversationCreator")
   messages                Message[]
+  serviceRequests         ServiceRequest[]
+  serviceResponses        ServiceResponse[]
+  associationsCreated     Association[]        @relation("AssociationCreator")
+  associationMemberships  AssociationMember[]
 
   @@index([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
@@ -146,6 +150,51 @@ enum MessageType {
 enum ConversationRole {
   admin
   member
+}
+
+enum ServiceCategory {
+  logement
+  transport
+  admin_category
+  sante
+  emploi
+  business
+  education
+  autre
+}
+
+enum ServiceUrgency {
+  urgent
+  normal
+}
+
+enum ServiceStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum AssociationCategory {
+  generaliste
+  etudiants
+  femmes
+  jeunesse
+  culture
+  business
+  sport
+  religieux
+}
+
+enum AssociationRole {
+  admin
+  moderator
+  member
+}
+
+enum MembershipStatus {
+  pending
+  approved
 }
 
 model Friendship {
@@ -299,6 +348,112 @@ model ConversationMember {
   @@id([conversationId, userId])
   @@index([userId])
   @@map("conversation_members")
+}
+
+model ServiceRequest {
+  id            String           @id @default(uuid()) @db.Uuid
+  authorId      String           @map("author_id") @db.Uuid
+  author        User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title         String           @db.VarChar(200)
+  description   String?          @db.Text
+  category      ServiceCategory
+  urgency       ServiceUrgency   @default(normal)
+  budget        String?          @db.VarChar(50)
+  city          String?          @db.VarChar(100)
+  countryCode   String?          @map("country_code") @db.Char(2)
+  status        ServiceStatus    @default(open)
+  responseCount Int              @default(0) @map("response_count")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  responses ServiceResponse[]
+  ratings   ServiceRating[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([category, status])
+  @@index([countryCode, status])
+  @@map("service_requests")
+}
+
+model ServiceResponse {
+  id           String         @id @default(uuid()) @db.Uuid
+  requestId    String         @map("request_id") @db.Uuid
+  request      ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  responderId  String         @map("responder_id") @db.Uuid
+  responder    User           @relation(fields: [responderId], references: [id], onDelete: Cascade)
+  message      String         @db.Text
+  accepted     Boolean        @default(false)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([requestId])
+  @@map("service_responses")
+}
+
+model ServiceRating {
+  id          String         @id @default(uuid()) @db.Uuid
+  requestId   String         @map("request_id") @db.Uuid
+  request     ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  ratedUserId String         @map("rated_user_id") @db.Uuid
+  rating      Int
+  comment     String?        @db.Text
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([ratedUserId])
+  @@map("service_ratings")
+}
+
+model Association {
+  id           String              @id @default(uuid()) @db.Uuid
+  name         String              @db.VarChar(200)
+  description  String?             @db.Text
+  logoUrl      String?             @map("logo_url") @db.VarChar(500)
+  coverUrl     String?             @map("cover_url") @db.VarChar(500)
+  category     AssociationCategory
+  countryCode  String?             @map("country_code") @db.Char(2)
+  city         String?             @db.VarChar(100)
+  website      String?             @db.VarChar(300)
+  contactEmail String?             @map("contact_email") @db.VarChar(255)
+  isVerified   Boolean             @default(false) @map("is_verified")
+  memberCount  Int                 @default(0) @map("member_count")
+  createdById  String?             @map("created_by") @db.Uuid
+  createdBy    User?               @relation("AssociationCreator", fields: [createdById], references: [id])
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  members AssociationMember[]
+  events  AssociationEvent[]
+
+  @@index([category, countryCode])
+  @@map("associations")
+}
+
+model AssociationMember {
+  associationId String              @map("association_id") @db.Uuid
+  association   Association         @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId        String              @map("user_id") @db.Uuid
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          AssociationRole     @default(member)
+  status        MembershipStatus    @default(approved)
+  joinedAt      DateTime            @default(now()) @map("joined_at") @db.Timestamptz
+
+  @@id([associationId, userId])
+  @@index([userId])
+  @@map("association_members")
+}
+
+model AssociationEvent {
+  id            String      @id @default(uuid()) @db.Uuid
+  associationId String      @map("association_id") @db.Uuid
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String      @db.VarChar(200)
+  description   String?     @db.Text
+  eventDate     DateTime    @map("event_date") @db.Timestamptz
+  location      String?     @db.VarChar(200)
+  coverUrl      String?     @map("cover_url") @db.VarChar(500)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([associationId, eventDate])
+  @@map("association_events")
 }
 
 model Message {
