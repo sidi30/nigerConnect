@@ -26,6 +26,7 @@ Thumbs.db
 *.swo
 .vscode/
 .idea/
+.claude/
 
 *.tsbuildinfo
 .eslintcache
