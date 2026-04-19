@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -17,7 +17,6 @@ async function bootstrap(): Promise<void> {
     origin: config.get('CORS_ORIGINS', { infer: true }),
     credentials: true,
   });
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
   const port = config.get('PORT', { infer: true });

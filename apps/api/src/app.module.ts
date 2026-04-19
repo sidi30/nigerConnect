@@ -4,10 +4,12 @@ import { AppConfigModule } from './common/config/config.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
 import { HealthModule } from './health/health.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
-  imports: [AppConfigModule, PrismaModule, HealthModule],
+  imports: [AppConfigModule, PrismaModule, RedisModule, HealthModule, AuthModule],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },

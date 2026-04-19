@@ -37,3 +37,6 @@ uploads/
 minio-data/
 postgres-data/
 redis-data/
+
+keys/
+*.pem
