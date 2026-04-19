@@ -32,6 +32,10 @@ Thumbs.db
 
 prisma/*.db
 prisma/*.db-journal
+prisma/seed.js
+prisma/seed.d.ts
+prisma/seed.js.map
+prisma/seed.d.ts.map
 
 uploads/
 minio-data/
