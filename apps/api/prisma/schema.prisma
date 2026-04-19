@@ -98,10 +98,48 @@ model User {
   refreshTokens     RefreshToken[]
   pushTokens        PushToken[]
   photos            UserPhoto[]
+  friendshipsSent     Friendship[] @relation("FriendshipRequester")
+  friendshipsReceived Friendship[] @relation("FriendshipAddressee")
+  blocksMade          Block[]      @relation("BlockBlocker")
+  blocksReceived      Block[]      @relation("BlockBlocked")
 
   @@index([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
   @@map("users")
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+  declined
+}
+
+model Friendship {
+  id           String           @id @default(uuid()) @db.Uuid
+  requesterId  String           @map("requester_id") @db.Uuid
+  requester    User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId  String           @map("addressee_id") @db.Uuid
+  addressee    User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status       FriendshipStatus @default(pending)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([requesterId, addresseeId])
+  @@index([requesterId, status])
+  @@index([addresseeId, status])
+  @@map("friendships")
+}
+
+model Block {
+  blockerId String   @map("blocker_id") @db.Uuid
+  blocker   User     @relation("BlockBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String   @map("blocked_id") @db.Uuid
+  blocked   User     @relation("BlockBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("blocks")
 }
 
 model UserPhoto {

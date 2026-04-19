@@ -3,6 +3,7 @@ import type { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
+import { BlockService } from '../social/block.service';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
 import type { CreatePhotoDto, SearchDto } from './dto/photo.dto';
 
@@ -14,6 +15,7 @@ export class ProfileService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly s3: S3Service,
+    private readonly blocks: BlockService,
   ) {}
 
   async getMe(userId: string): Promise<User> {
@@ -64,6 +66,7 @@ export class ProfileService {
    */
   async getById(viewerId: string, targetId: string): Promise<User> {
     if (viewerId === targetId) return this.getMe(targetId);
+    if (await this.blocks.isBlocked(viewerId, targetId)) throw new NotFoundException('User not found');
 
     const cached = await this.redis.client.get(this.cacheKey(targetId));
     let target: User | null = null;
@@ -163,6 +166,22 @@ export class ProfileService {
       where.AND = [
         ...(where.AND as Prisma.UserWhereInput[]),
         { city: { equals: dto.city, mode: 'insensitive' } },
+      ];
+    }
+
+    // Exclude users blocked by viewer (either direction)
+    const blockedRows = await this.prisma.block.findMany({
+      where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = new Set<string>();
+    for (const b of blockedRows) {
+      blockedIds.add(b.blockerId === viewerId ? b.blockedId : b.blockerId);
+    }
+    if (blockedIds.size > 0) {
+      where.AND = [
+        ...(where.AND as Prisma.UserWhereInput[]),
+        { id: { notIn: Array.from(blockedIds) } },
       ];
     }
 

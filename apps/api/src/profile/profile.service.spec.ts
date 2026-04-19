@@ -1,6 +1,10 @@
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ProfileService } from './profile.service';
 
+function makeBlocks(blocked = false) {
+  return { isBlocked: jest.fn(async () => blocked) };
+}
+
 function makeRedis() {
   const store = new Map<string, string>();
   const client = {
@@ -33,7 +37,7 @@ describe('ProfileService', () => {
     const prisma = {
       user: { findUnique: jest.fn(async () => null), update: jest.fn() },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
     await expect(svc.getMe('u1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -45,7 +49,7 @@ describe('ProfileService', () => {
         update: jest.fn(async () => ({ id: 'u1', bio: 'hello', privacyLevel: 'friends' })),
       },
     };
-    const svc = new ProfileService(prisma as never, redis as never, makeS3() as never);
+    const svc = new ProfileService(prisma as never, redis as never, makeS3() as never, makeBlocks() as never);
     const result = await svc.updateMe('u1', { bio: 'hello' });
     expect(result.bio).toBe('hello');
     expect(redis.client.del).toHaveBeenCalledWith('profile:u1');
@@ -61,7 +65,7 @@ describe('ProfileService', () => {
         })),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
     await expect(svc.getById('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -75,7 +79,7 @@ describe('ProfileService', () => {
         })),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
   });
@@ -91,7 +95,7 @@ describe('ProfileService', () => {
       },
       $queryRaw: jest.fn(async () => [{ count: 0n }]),
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
     await expect(svc.getById('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -102,7 +106,7 @@ describe('ProfileService', () => {
         delete: jest.fn(),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
     await expect(svc.deletePhoto('me', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

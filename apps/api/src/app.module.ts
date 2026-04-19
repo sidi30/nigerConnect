@@ -9,6 +9,7 @@ import { StorageModule } from './common/storage/storage.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
+import { SocialModule } from './social/social.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ProfileModule } from './profile/profile.module';
     HealthModule,
     AuthModule,
     ProfileModule,
+    SocialModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
