@@ -1,61 +1,123 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
+import { Colors, Radii, Typography } from '@/constants/theme';
+import { chatApi } from '@/services/chatApi';
 
-function TabIcon({ emoji, color }: { emoji: string; color: string }) {
-  return <Text style={{ fontSize: 22, color }}>{emoji}</Text>;
+function TabIcon({
+  emoji,
+  focused,
+  badge,
+}: {
+  emoji: string;
+  focused: boolean;
+  badge?: number;
+}) {
+  return (
+    <View style={styles.iconWrap}>
+      <Text style={[styles.emoji, !focused && { opacity: 0.45 }]}>{emoji}</Text>
+      {badge && badge > 0 ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
+const TAB_BAR_CONTENT_HEIGHT = 60;
+
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const { data: convos } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: () => chatApi.listConversations(),
+    refetchInterval: 30_000,
+  });
+  const unreadTotal = convos?.items.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0) ?? 0;
+
+  // Bottom padding sits above the device's reserved area (home indicator on
+  // iPhone, gesture nav bar on Android). Fall back to 8px so older devices
+  // without insets still get visual breathing room.
+  const bottomInset = Math.max(insets.bottom, 8);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: Colors.orange,
-        tabBarInactiveTintColor: Colors.gray400,
+        tabBarInactiveTintColor: Colors.tan500,
         tabBarStyle: {
-          backgroundColor: Colors.white,
-          borderTopColor: Colors.gray100,
-          height: 64,
+          backgroundColor: 'rgba(255,255,255,0.97)',
+          borderTopColor: Colors.tan200,
+          borderTopWidth: 1,
+          height: TAB_BAR_CONTENT_HEIGHT + bottomInset,
+          paddingTop: 8,
+          paddingBottom: bottomInset,
         },
-        tabBarLabelStyle: { fontSize: 11 },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
         name="map"
         options={{
           title: 'Carte',
-          tabBarIcon: ({ color }) => <TabIcon emoji="🗺️" color={color} />,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🌍" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="index"
         options={{
           title: 'Fil',
-          tabBarIcon: ({ color }) => <TabIcon emoji="📰" color={color} />,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📰" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="services"
         options={{
           title: 'Services',
-          tabBarIcon: ({ color }) => <TabIcon emoji="🤝" color={color} />,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🤝" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
           title: 'Messages',
-          tabBarIcon: ({ color }) => <TabIcon emoji="💬" color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="💬" focused={focused} badge={unreadTotal} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profil',
-          tabBarIcon: ({ color }) => <TabIcon emoji="👤" color={color} />,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} />,
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: { position: 'relative' },
+  emoji: { fontSize: 22 },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: Colors.white,
+    fontSize: Typography.sizes.xxs - 1,
+    fontWeight: '800',
+  },
+});

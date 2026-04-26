@@ -1,0 +1,44 @@
+name: Mobile CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared-types/**'
+      - 'packages/config/**'
+      - '.github/workflows/mobile.yml'
+      - 'pnpm-lock.yaml'
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared-types/**'
+      - 'packages/config/**'
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (mobile + shared-types)
+        run: |
+          pnpm --filter @nigerconnect/shared-types typecheck
+          pnpm --filter @nigerconnect/mobile typecheck

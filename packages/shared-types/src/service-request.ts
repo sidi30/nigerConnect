@@ -3,7 +3,7 @@ import type { PublicUser } from './user';
 export type ServiceCategory =
   | 'logement'
   | 'transport'
-  | 'admin'
+  | 'admin_category'
   | 'sante'
   | 'emploi'
   | 'business'

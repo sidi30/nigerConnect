@@ -4,25 +4,80 @@
     "slug": "nigerconnect",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "scheme": "nigerconnect",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#FDFBF7"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nigerconnect.app"
+      "bundleIdentifier": "com.nigerconnect.app",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:nigerconnect.sahabiguide.com"
+      ],
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "NigerConnect utilise ton appareil photo pour prendre tes photos de profil, tes publications et tes stories.",
+        "NSPhotoLibraryUsageDescription": "NigerConnect accède à tes photos pour choisir ton avatar, tes publications et tes stories.",
+        "NSPhotoLibraryAddUsageDescription": "NigerConnect peut enregistrer des photos partagées dans ton téléphone, uniquement lorsque tu le demandes.",
+        "NSMicrophoneUsageDescription": "NigerConnect n'enregistre pas d'audio, mais la caméra a besoin de cette autorisation pour les photos avec son désactivé.",
+        "NSLocationWhenInUseUsageDescription": "NigerConnect utilise ta position uniquement quand tu l'actives, pour t'afficher sur la carte de la diaspora et trouver des membres proches.",
+        "NSUserTrackingUsageDescription": "Nous n'utilisons aucun traqueur publicitaire. Cette autorisation est uniquement demandée par Expo par défaut.",
+        "NSContactsUsageDescription": "NigerConnect n'accède pas à tes contacts. Ce champ est requis par le système."
+      }
     },
     "android": {
       "package": "com.nigerconnect.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#E05206"
-      }
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_CONTACTS",
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "nigerconnect.sahabiguide.com"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -30,10 +85,55 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "expo-secure-store",
+      "expo-apple-authentication",
+      "@sentry/react-native/expo",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NigerConnect accède à tes photos pour ton avatar, tes publications et tes stories.",
+          "cameraPermission": "NigerConnect utilise ta caméra pour prendre des photos de profil, des publications et des stories.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#E05206",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NigerConnect utilise ta position uniquement quand tu l'actives, pour t'afficher sur la carte de la diaspora."
+        }
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "googleClientIdWeb": "682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com",
+      "googleClientIdAndroid": "",
+      "googleClientIdIos": "",
+      "sentryDsn": "",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "a3dec8bd-23a8-4f19-89d7-4bf44cd15e5e"
+      }
+    },
+    "owner": "sidi300",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a3dec8bd-23a8-4f19-89d7-4bf44cd15e5e"
     }
   }
 }

@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.expo
+**/coverage
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+**/keys
+**/*.pem
+**/test
+**/tsconfig.build.tsbuildinfo
+.git
+.github
+docs
+apps/mobile

@@ -1,63 +1,208 @@
-import { useCallback } from 'react';
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Post } from '@nigerconnect/shared-types';
+import { Avatar } from '@/components/ui/Avatar';
+import { StoriesRow } from '@/components/feed/StoriesRow';
+import { FriendRequestsBanner } from '@/components/feed/FriendRequestsBanner';
+import { PostCard } from '@/components/feed/PostCard';
+import { ReportSheet } from '@/components/ReportSheet';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { feedApi } from '@/services/feedApi';
-import { PostCard } from '@/components/PostCard';
-import { Colors, Spacing, Typography } from '@/constants/theme';
+import { friendsApi } from '@/services/friendsApi';
+import { useAuthStore } from '@/stores/authStore';
 
 export default function FeedTab() {
   const router = useRouter();
   const qc = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const [reportingId, setReportingId] = useState<string | null>(null);
 
-  const query = useInfiniteQuery({
+  const feedQuery = useInfiniteQuery({
     queryKey: ['feed'],
     queryFn: ({ pageParam }) => feedApi.getFeed({ cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 
-  const posts = query.data?.pages.flatMap((p) => p.items) ?? [];
+  const storiesQuery = useQuery({
+    queryKey: ['stories'],
+    queryFn: () => feedApi.stories(),
+  });
+
+  const requestsQuery = useQuery({
+    queryKey: ['friends', 'incoming'],
+    queryFn: () => friendsApi.incoming(),
+  });
+
+  const shareMut = useMutation({
+    mutationFn: (postId: string) => feedApi.share(postId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feed'] }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (postId: string) => feedApi.deletePost(postId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feed'] }),
+  });
+
+  const likeMut = useMutation({
+    mutationFn: (postId: string) => feedApi.toggleLike(postId),
+    // Optimistic: flip the like on the cached feed pages immediately
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: ['feed'] });
+      const prev = qc.getQueryData(['feed']);
+      qc.setQueryData(['feed'], (old: unknown) => {
+        const typed = old as { pages: Array<{ items: Post[] }> } | undefined;
+        if (!typed) return old;
+        return {
+          ...typed,
+          pages: typed.pages.map((page) => ({
+            ...page,
+            items: page.items.map((p) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    isLikedByMe: !p.isLikedByMe,
+                    likeCount: p.likeCount + (p.isLikedByMe ? -1 : 1),
+                  }
+                : p,
+            ),
+          })),
+        };
+      });
+      return { prev };
+    },
+    onError: (_e, _postId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['feed'], ctx.prev);
+    },
+    // Re-sync with the server so the cached counter matches DB truth.
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['feed'] });
+    },
+  });
+
+  const acceptMut = useMutation({
+    mutationFn: (friendshipId: string) => friendsApi.accept(friendshipId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+  });
+  const declineMut = useMutation({
+    mutationFn: (friendshipId: string) => friendsApi.decline(friendshipId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+  });
+
+  const posts: Post[] = feedQuery.data?.pages.flatMap((p) => p.items) ?? [];
 
   const handleLike = useCallback(
-    async (postId: string) => {
-      await feedApi.toggleLike(postId).catch(() => null);
-      await qc.invalidateQueries({ queryKey: ['feed'] });
+    (id: string) => {
+      likeMut.mutate(id);
     },
-    [qc],
+    [likeMut],
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>NigerConnect</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.flag}>🇳🇪</Text>
+          <Text style={styles.brand}>
+            Niger<Text style={styles.brandAccent}>Connect</Text>
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.iconBtn} hitSlop={8}>
+            <Text style={styles.iconText}>🔔</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/(tabs)/profile')} hitSlop={6}>
+            <Avatar
+              uri={user?.avatarUrl}
+              name={user?.displayName ?? user?.firstName ?? 'N'}
+              size={34}
+              borderColor={Colors.orange}
+            />
+          </Pressable>
+        </View>
       </View>
+
+      <Pressable style={styles.fab} onPress={() => router.push('/post/new')}>
+        <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+        <Text style={styles.fabIcon}>✍️</Text>
+      </Pressable>
+
       <FlatList
         data={posts}
         keyExtractor={(p) => p.id}
         renderItem={({ item }) => (
           <PostCard
             post={item}
+            currentUserId={user?.id}
             onLike={handleLike}
-            onOpenComments={(id) => router.push(`/post/${id}`)}
+            onComment={(id) => router.push(`/post/${id}`)}
+            onShare={(id) => shareMut.mutate(id)}
+            onEdit={(id) => router.push(`/post/edit/${id}` as never)}
+            onDelete={(id) => deleteMut.mutate(id)}
+            onReport={(id) => setReportingId(id)}
           />
         )}
-        onEndReached={() => query.hasNextPage && query.fetchNextPage()}
-        onEndReachedThreshold={0.5}
-        refreshControl={
-          <RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />
+        ListHeaderComponent={
+          <View>
+            <StoriesRow
+              storyGroups={storiesQuery.data ?? []}
+              onCreate={() => router.push('/stories/new' as never)}
+              onOpen={(authorId) => router.push(`/stories/${authorId}` as never)}
+            />
+            <FriendRequestsBanner
+              requests={requestsQuery.data ?? []}
+              onAccept={(id) => acceptMut.mutate(id)}
+              onDecline={(id) => declineMut.mutate(id)}
+            />
+          </View>
         }
-        contentContainerStyle={posts.length === 0 && styles.emptyContainer}
         ListEmptyComponent={
-          query.isLoading ? null : (
+          feedQuery.isLoading ? (
+            <View style={styles.loader}>
+              <ActivityIndicator color={Colors.orange} />
+            </View>
+          ) : (
             <View style={styles.empty}>
+              <Text style={styles.emptyEmoji}>📰</Text>
+              <Text style={styles.emptyTitle}>Fil vide</Text>
               <Text style={styles.emptyText}>
-                Aucune publication encore. Commence par ajouter un ami !
+                Ajoute des amis pour voir leurs publications ici.
               </Text>
             </View>
           )
         }
+        onEndReached={() => feedQuery.hasNextPage && feedQuery.fetchNextPage()}
+        onEndReachedThreshold={0.5}
+        refreshControl={
+          <RefreshControl
+            refreshing={feedQuery.isRefetching}
+            onRefresh={() => {
+              void feedQuery.refetch();
+              void storiesQuery.refetch();
+              void requestsQuery.refetch();
+            }}
+            tintColor={Colors.orange}
+          />
+        }
+        contentContainerStyle={{ paddingBottom: Spacing.xl }}
+      />
+      <ReportSheet
+        visible={reportingId !== null}
+        targetType="post"
+        targetId={reportingId ?? ''}
+        onClose={() => setReportingId(null)}
       />
     </SafeAreaView>
   );
@@ -66,14 +211,58 @@ export default function FeedTab() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-    backgroundColor: Colors.white,
+    borderBottomColor: Colors.tan200,
+    backgroundColor: 'rgba(253,251,247,0.96)',
   },
-  title: { fontSize: Typography.sizes.xl, fontWeight: '700', color: Colors.orange },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  flag: { fontSize: 22 },
+  brand: {
+    fontSize: Typography.sizes.xl,
+    fontFamily: Typography.fontFamily.serifBold,
+    color: Colors.brown,
+  },
+  brandAccent: { color: Colors.orange },
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.tan100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconText: { fontSize: 16 },
+  loader: { padding: Spacing.xxl, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
-  emptyText: { color: Colors.gray500, fontSize: Typography.sizes.md, textAlign: 'center' },
-  emptyContainer: { flexGrow: 1, justifyContent: 'center' },
+  emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
+  emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
+  emptyText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.tan500,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: Spacing.xl,
+    right: Spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    shadowColor: Colors.orange,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  fabIcon: { fontSize: 22 },
 });

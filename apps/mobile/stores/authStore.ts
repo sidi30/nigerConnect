@@ -1,8 +1,18 @@
 import { create } from 'zustand';
 import type { User } from '@nigerconnect/shared-types';
 import { authApi } from '@/services/authApi';
+import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
 import { registerLogoutHandler } from '@/services/api';
+import { registerForPushNotifications } from '@/services/pushService';
+import { setSentryUser } from '@/services/sentry';
+
+// Best-effort background push registration — never blocks auth flow.
+const kickOffPushRegistration = (): void => {
+  void registerForPushNotifications().catch(() => {
+    // ignore: permissions denied, simulator, or network glitch
+  });
+};
 
 interface AuthState {
   user: User | null;
@@ -15,8 +25,14 @@ interface AuthState {
     password: string;
     firstName: string;
     lastName: string;
+    phone?: string;
+    city?: string;
+    countryCode?: string;
+    bio?: string;
+    avatarUrl?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   setUser: (user: User | null) => void;
 }
 
@@ -34,6 +50,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { user } = await authApi.me();
       set({ user, isAuthenticated: true, isHydrated: true });
+      setSentryUser({ id: user.id, email: user.email });
+      kickOffPushRegistration();
     } catch {
       await tokenStore.clear();
       set({ isHydrated: true });
@@ -44,12 +62,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user, tokens } = await authApi.login({ email, password });
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
+    setSentryUser({ id: user.id, email: user.email });
+    kickOffPushRegistration();
   },
 
   async register(input) {
     const { user, tokens } = await authApi.register(input);
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
+    setSentryUser({ id: user.id, email: user.email });
+    kickOffPushRegistration();
   },
 
   async logout() {
@@ -63,6 +85,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     await tokenStore.clear();
     set({ user: null, isAuthenticated: false });
+    setSentryUser(null);
+  },
+
+  async deleteAccount() {
+    await profileApi.deleteAccount();
+    await tokenStore.clear();
+    set({ user: null, isAuthenticated: false });
+    setSentryUser(null);
   },
 
   setUser(user) {

@@ -4,10 +4,15 @@ import Constants from 'expo-constants';
 import { tokenStore } from '@/services/secureStore';
 import { useAuthStore } from '@/stores/authStore';
 
-const SOCKET_URL =
+const resolvedSocket =
   (Constants.expoConfig?.extra?.socketUrl as string | undefined) ??
-  process.env.EXPO_PUBLIC_SOCKET_URL ??
-  'http://localhost:3000';
+  process.env.EXPO_PUBLIC_SOCKET_URL;
+const SOCKET_URL = resolvedSocket ?? (__DEV__ ? 'http://localhost:3000' : undefined);
+if (!SOCKET_URL) {
+  throw new Error(
+    'EXPO_PUBLIC_SOCKET_URL / extra.socketUrl is required in production builds. Configure it in eas.json (production profile) or app.json > extra.socketUrl.',
+  );
+}
 
 let socket: Socket | null = null;
 

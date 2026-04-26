@@ -1,0 +1,91 @@
+name: API CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/api/**'
+      - 'packages/shared-types/**'
+      - 'packages/config/**'
+      - '.github/workflows/api.yml'
+      - 'pnpm-lock.yaml'
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'packages/shared-types/**'
+      - 'packages/config/**'
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_DB: nigerconnect_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports: [5432:5432]
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports: [6379:6379]
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@localhost:5432/nigerconnect_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_PRIVATE_KEY_PATH: ./apps/api/keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: ./apps/api/keys/jwt-public.pem
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate JWT keys
+        run: node apps/api/scripts/generate-keys.js
+
+      - name: Prisma generate + migrate
+        run: |
+          pnpm --filter @nigerconnect/api exec prisma generate
+          pnpm --filter @nigerconnect/api exec prisma migrate deploy
+
+      - name: Typecheck (API + shared-types)
+        run: |
+          pnpm --filter @nigerconnect/shared-types typecheck
+          pnpm --filter @nigerconnect/api typecheck
+
+      - name: Unit tests
+        run: pnpm --filter @nigerconnect/api test
+
+      - name: E2E tests
+        run: pnpm --filter @nigerconnect/api exec jest --config test/jest-e2e.json
+
+      - name: Build
+        run: pnpm --filter @nigerconnect/api build

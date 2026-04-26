@@ -1,4 +1,4 @@
-import type { User, CursorPage } from '@nigerconnect/shared-types';
+import type { User, CursorPage, Post, PublicUser } from '@nigerconnect/shared-types';
 import { api } from './api';
 
 export const profileApi = {
@@ -26,5 +26,24 @@ export const profileApi = {
   async getById(id: string): Promise<User> {
     const { data } = await api.get<{ user: User }>(`/profile/${id}`);
     return data.user;
+  },
+
+  async getFriendsOf(id: string, cursor?: string): Promise<CursorPage<PublicUser>> {
+    const { data } = await api.get<CursorPage<PublicUser>>(`/profile/${id}/friends`, {
+      params: { cursor },
+    });
+    return data;
+  },
+
+  async getUserPosts(id: string, cursor?: string): Promise<CursorPage<Post>> {
+    const { data } = await api.get<CursorPage<Post>>(`/users/${id}/posts`, {
+      params: { cursor },
+    });
+    return data;
+  },
+
+  /** RGPD — hard-delete the account. Server cascades posts, comments, messages, etc. */
+  async deleteAccount(): Promise<void> {
+    await api.delete('/profile/me');
   },
 };

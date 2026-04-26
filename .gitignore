@@ -5,6 +5,7 @@ build/
 .next/
 .expo/
 .turbo/
+.vercel/
 
 *.log
 npm-debug.log*

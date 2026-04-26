@@ -2,6 +2,45 @@
 
 Réseau social pour la diaspora nigérienne — Monolithe modulaire NestJS + App mobile Expo.
 
+## Contexte
+
+**NigerConnect**, c'est une application mobile pensée pour les **Nigériens vivant à l'étranger** (plus de 62 000 personnes réparties dans 15+ pays).
+
+### Le problème
+La diaspora nigérienne est dispersée. Les gens ont du mal à :
+- retrouver des compatriotes près de chez eux,
+- s'entraider au quotidien (logement, démarches, services, conseils),
+- rester en lien avec leur communauté et leur culture.
+
+Les réseaux sociaux classiques (Facebook, WhatsApp, Instagram) ne sont pas pensés pour ça : ils mélangent tout le monde et ne mettent pas la communauté nigérienne en valeur.
+
+### La solution
+Une seule app, **simple et mobile-first**, qui réunit tout ce dont la diaspora a besoin :
+
+- 👤 **Profil & identité** — créer un compte vérifié (OAuth Google/Facebook/Apple, vérification d'identité optionnelle).
+- 👥 **Social** — retrouver des amis, suggestions, blocage.
+- 📰 **Feed** — publier des posts, stories 24h, likes et commentaires.
+- 💬 **Chat temps réel** — discussions privées et de groupe (Socket.io).
+- 🗺️ **Carte communautaire** — voir les Nigériens autour de soi (style Snap Map, avec clustering).
+- 🤝 **Marketplace d'entraide** — proposer / demander des services entre membres.
+- 🏛️ **Associations** — rejoindre des assos de la diaspora, voir leurs événements.
+- 🔔 **Notifications** push, email, SMS — groupées intelligemment.
+- 🛡️ **Modération** — signalements et outils pour garder la communauté saine.
+
+### À qui ça s'adresse
+- Aux **Nigériens à l'étranger** qui veulent se reconnecter à leur communauté.
+- Aux **associations de la diaspora** qui veulent fédérer leurs membres.
+- Aux **nouveaux arrivants** qui cherchent de l'aide sur place.
+
+### Choix techniques (en deux mots)
+- **Mobile d'abord** : React Native + Expo, pas de site lourd au lancement.
+- **Un seul backend simple** : NestJS modulaire, une seule base Postgres, pas de microservices.
+- **Sécurité sérieuse** : JWT RS256 + refresh rotatif, argon2id, rate limiting, chiffrement des documents d'identité.
+- **Open & évolutif** : on peut extraire un module en service séparé plus tard si besoin.
+
+### État du projet
+Le plan se découpe en **10 phases** (voir tableau plus bas). Toutes sont livrées (`v1.0.0`) : auth, profil, social, feed, chat, mobile, carte, marketplace, associations, notifications & modération.
+
 ## Stack
 
 - **API** : NestJS 10 + TypeScript + Prisma + PostgreSQL 16 + Redis 7 + Socket.io
@@ -64,7 +103,8 @@ curl http://localhost:3000/health
 nigerconnect/
 ├── apps/
 │   ├── api/        NestJS monolithe (modules : auth, profile, social, feed, chat, …)
-│   └── mobile/     Expo Router
+│   ├── mobile/     Expo Router
+│   └── web/        Site vitrine Next.js 15 (landing / téléchargement app)
 ├── packages/
 │   ├── shared-types/   Types TS partagés API ↔ Mobile
 │   └── config/         tsconfig partagés
@@ -72,6 +112,17 @@ nigerconnect/
 ├── turbo.json
 └── pnpm-workspace.yaml
 ```
+
+## Site web (brand / landing)
+
+```bash
+pnpm --filter @nigerconnect/web dev
+# → http://localhost:3001
+```
+
+Site vitrine Next.js 15 + Tailwind. Palette et typographies alignées avec l'app mobile
+(DM Sans + Playfair Display). Sections : Hero, Problème, Fonctionnalités, Comment ça
+marche, Communauté, Sécurité, FAQ, Download, Footer. SEO / Open Graph / sitemap prêts.
 
 ## Plan en 10 phases
 

@@ -1,7 +1,17 @@
-import type { Post, Comment, CursorPage } from '@nigerconnect/shared-types';
+import type { Post, Comment, CursorPage, PublicUser } from '@nigerconnect/shared-types';
 import { api } from './api';
 
+export interface StoryGroup {
+  author: PublicUser;
+  stories: Post[];
+}
+
 export const feedApi = {
+  async stories(): Promise<StoryGroup[]> {
+    const { data } = await api.get<StoryGroup[]>('/stories/feed');
+    return data;
+  },
+
   async getFeed(params: { cursor?: string; limit?: number }): Promise<CursorPage<Post>> {
     const { data } = await api.get<CursorPage<Post>>('/feed', { params });
     return data;
@@ -36,5 +46,35 @@ export const feedApi = {
       params: { cursor },
     });
     return data;
+  },
+
+  async share(postId: string, content?: string): Promise<Post> {
+    const { data } = await api.post<Post>(`/posts/${postId}/share`, { content });
+    return data;
+  },
+
+  async updatePost(
+    postId: string,
+    input: { content?: string; visibility?: 'public' | 'friends' | 'association' },
+  ): Promise<Post> {
+    const { data } = await api.patch<Post>(`/posts/${postId}`, input);
+    return data;
+  },
+
+  async deletePost(postId: string): Promise<void> {
+    await api.delete(`/posts/${postId}`);
+  },
+
+  async deleteComment(commentId: string): Promise<void> {
+    await api.delete(`/comments/${commentId}`);
+  },
+
+  async editComment(commentId: string, content: string): Promise<Comment> {
+    const { data } = await api.patch<Comment>(`/comments/${commentId}`, { content });
+    return data;
+  },
+
+  async deleteStory(storyId: string): Promise<void> {
+    await api.delete(`/stories/${storyId}`);
   },
 };

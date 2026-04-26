@@ -13,6 +13,10 @@ export const authApi = {
     firstName: string;
     lastName: string;
     phone?: string;
+    city?: string;
+    countryCode?: string;
+    bio?: string;
+    avatarUrl?: string;
   }): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/register', input);
     return data;
@@ -23,6 +27,11 @@ export const authApi = {
     return data;
   },
 
+  async loginWithGoogle(idToken: string, deviceName?: string): Promise<AuthResponse> {
+    const { data } = await api.post<AuthResponse>('/auth/google', { idToken, deviceName });
+    return data;
+  },
+
   async logout(refreshToken: string): Promise<void> {
     await api.post('/auth/logout', { refreshToken });
   },
@@ -30,5 +39,17 @@ export const authApi = {
   async me(): Promise<{ user: User }> {
     const { data } = await api.get<{ user: User }>('/auth/me');
     return data;
+  },
+
+  async forgotPassword(email: string): Promise<void> {
+    await api.post('/auth/forgot-password', { email });
+  },
+
+  async resetPassword(token: string, password: string): Promise<void> {
+    await api.post('/auth/reset-password', { token, password });
+  },
+
+  async resendVerification(): Promise<void> {
+    await api.post('/auth/verify-email/send');
   },
 };

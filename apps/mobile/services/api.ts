@@ -2,10 +2,19 @@ import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
 import Constants from 'expo-constants';
 import { tokenStore } from './secureStore';
 
-const BASE_URL =
+const resolvedUrl =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
-  process.env.EXPO_PUBLIC_API_URL ??
-  'http://localhost:3000';
+  process.env.EXPO_PUBLIC_API_URL;
+
+// In dev builds we transparently fall back to localhost so the app still boots;
+// in production (any build that is not __DEV__), a missing URL is a hard failure
+// — shipping without it would silently hit the wrong server.
+const BASE_URL = resolvedUrl ?? (__DEV__ ? 'http://localhost:3000' : undefined);
+if (!BASE_URL) {
+  throw new Error(
+    'EXPO_PUBLIC_API_URL / extra.apiUrl is required in production builds. Configure it in eas.json (production profile) or app.json > extra.apiUrl.',
+  );
+}
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,

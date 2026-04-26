@@ -1,15 +1,24 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Colors, Radii } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 
 interface Props {
   uri?: string | null;
   name?: string | null;
   size?: number;
   online?: boolean;
+  border?: boolean;
+  borderColor?: string;
 }
 
-export function Avatar({ uri, name, size = 48, online }: Props) {
+export function Avatar({
+  uri,
+  name,
+  size = 48,
+  online,
+  border = true,
+  borderColor = Colors.orange,
+}: Props) {
   const initials = (name ?? '')
     .split(' ')
     .map((p) => p[0])
@@ -18,20 +27,48 @@ export function Avatar({ uri, name, size = 48, online }: Props) {
     .join('')
     .toUpperCase();
 
+  const radius = Math.round(size * 0.35);
+
   return (
-    <View style={[styles.wrapper, { width: size, height: size, borderRadius: size / 2 }]}>
+    <View style={[styles.wrapper, { width: size, height: size }]}>
       {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+        <Image
+          source={{ uri }}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: radius,
+            borderWidth: border ? 2.5 : 0,
+            borderColor,
+            backgroundColor: Colors.tan100,
+          }}
+          contentFit="cover"
+        />
       ) : (
-        <View style={[styles.placeholder, { width: size, height: size, borderRadius: size / 2 }]}>
-          <Text style={[styles.initials, { fontSize: size / 2.6 }]}>{initials || '?'}</Text>
+        <View
+          style={[
+            styles.placeholder,
+            {
+              width: size,
+              height: size,
+              borderRadius: radius,
+              borderWidth: border ? 2.5 : 0,
+              borderColor,
+            },
+          ]}
+        >
+          <Text style={[styles.initials, { fontSize: size / 2.8 }]}>{initials || '?'}</Text>
         </View>
       )}
       {online && (
         <View
           style={[
             styles.onlineDot,
-            { width: size / 4, height: size / 4, borderRadius: size / 8 },
+            {
+              width: size * 0.28,
+              height: size * 0.28,
+              borderRadius: (size * 0.28) / 2,
+            },
           ]}
         />
       )}
