@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { BlockService } from '../social/block.service';
+import { NotificationService } from '../notification/notification.service';
+import { PostsService } from './posts.service';
 
 @Injectable()
 export class LikesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
+    private readonly notifications: NotificationService,
+    private readonly posts: PostsService,
   ) {}
 
   async toggleLike(userId: string, postId: string): Promise<{ liked: boolean; count: number }> {
@@ -31,6 +35,7 @@ export class LikesService {
           data: { likeCount: { decrement: 1 } },
         }),
       ]);
+      await this.invalidateCaches(userId, post.authorId);
       return { liked: false, count: post.likeCount - 1 };
     }
 
@@ -41,7 +46,33 @@ export class LikesService {
         data: { likeCount: { increment: 1 } },
       }),
     ]);
+
+    // Notify post author (skip if liking own post)
+    if (post.authorId !== userId) {
+      const liker = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, firstName: true },
+      });
+      const likerName = liker?.displayName || liker?.firstName || 'Un membre';
+      await this.notifications.create({
+        userId: post.authorId,
+        actorId: userId,
+        type: 'like',
+        title: `${likerName} a aimé votre publication`,
+        data: { postId },
+      });
+    }
+
+    await this.invalidateCaches(userId, post.authorId);
     return { liked: true, count: post.likeCount + 1 };
+  }
+
+  private async invalidateCaches(likerId: string, authorId: string): Promise<void> {
+    // Author's friends feed (counter change) + liker's feed (isLikedByMe flip).
+    await this.posts.invalidateFeedCache(authorId);
+    if (likerId !== authorId) {
+      await this.posts.invalidateFeedForUsers([likerId]);
+    }
   }
 
   async listLikers(postId: string, cursor?: string, limit = 30) {

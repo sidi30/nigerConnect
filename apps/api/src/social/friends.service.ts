@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import { BlockService } from './block.service';
 
 const PUBLIC_USER_FIELDS = {
@@ -25,7 +26,20 @@ export class FriendsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
+    private readonly notifications: NotificationService,
   ) {}
+
+  private async userDisplayName(userId: string): Promise<string> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true, firstName: true, lastName: true },
+    });
+    return (
+      u?.displayName ||
+      `${u?.firstName ?? ''} ${u?.lastName ?? ''}`.trim() ||
+      'Un membre'
+    );
+  }
 
   async sendRequest(requesterId: string, addresseeId: string) {
     if (requesterId === addresseeId) {
@@ -61,9 +75,18 @@ export class FriendsService {
       }
     }
 
-    return this.prisma.friendship.create({
+    const friendship = await this.prisma.friendship.create({
       data: { requesterId, addresseeId, status: 'pending' },
     });
+    const requesterName = await this.userDisplayName(requesterId);
+    await this.notifications.create({
+      userId: addresseeId,
+      actorId: requesterId,
+      type: 'friend_request',
+      title: `${requesterName} veut être votre ami`,
+      data: { friendshipId: friendship.id },
+    });
+    return friendship;
   }
 
   async accept(userId: string, friendshipId: string) {
@@ -71,10 +94,19 @@ export class FriendsService {
     if (!f) throw new NotFoundException('Friendship not found');
     if (f.addresseeId !== userId) throw new ForbiddenException('Not the addressee');
     if (f.status !== 'pending') throw new BadRequestException('Friendship is not pending');
-    return this.prisma.friendship.update({
+    const updated = await this.prisma.friendship.update({
       where: { id: friendshipId },
       data: { status: 'accepted' },
     });
+    const accepterName = await this.userDisplayName(userId);
+    await this.notifications.create({
+      userId: f.requesterId,
+      actorId: userId,
+      type: 'friend_accepted',
+      title: `${accepterName} a accepté votre demande`,
+      data: { friendshipId: f.id },
+    });
+    return updated;
   }
 
   async decline(userId: string, friendshipId: string) {
@@ -140,6 +172,45 @@ export class FriendsService {
       orderBy: { createdAt: 'desc' },
       include: { addressee: { select: PUBLIC_USER_FIELDS } },
     });
+  }
+
+  /**
+   * Relationship status between the viewer and a target user:
+   *   - 'self'    : same user
+   *   - 'friends' : accepted friendship
+   *   - 'outgoing': viewer has sent a pending request
+   *   - 'incoming': target has sent a pending request to viewer
+   *   - 'blocked' : at least one side blocked the other
+   *   - 'none'    : no relationship
+   */
+  async relationship(
+    viewerId: string,
+    targetId: string,
+  ): Promise<{
+    status: 'self' | 'friends' | 'outgoing' | 'incoming' | 'blocked' | 'none';
+    friendshipId: string | null;
+  }> {
+    if (viewerId === targetId) return { status: 'self', friendshipId: null };
+    if (await this.blocks.isBlocked(viewerId, targetId)) {
+      return { status: 'blocked', friendshipId: null };
+    }
+    const f = await this.prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId: viewerId, addresseeId: targetId },
+          { requesterId: targetId, addresseeId: viewerId },
+        ],
+      },
+    });
+    if (!f) return { status: 'none', friendshipId: null };
+    if (f.status === 'accepted') return { status: 'friends', friendshipId: f.id };
+    if (f.status === 'pending') {
+      return {
+        status: f.requesterId === viewerId ? 'outgoing' : 'incoming',
+        friendshipId: f.id,
+      };
+    }
+    return { status: 'none', friendshipId: f.id };
   }
 
   async mutualFriends(userId: string, targetId: string) {

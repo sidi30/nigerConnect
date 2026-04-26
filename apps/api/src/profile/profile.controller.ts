@@ -69,6 +69,12 @@ export class ProfileController {
     return { user: serializeUser(updated) };
   }
 
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMe(@CurrentUser() user: JwtUserPayload): Promise<void> {
+    await this.profile.deleteAccount(user.sub);
+  }
+
   @Get('search')
   async search(
     @CurrentUser() user: JwtUserPayload,
@@ -119,5 +125,16 @@ export class ProfileController {
   ) {
     const lim = limit ? Math.min(50, Math.max(1, Number(limit))) : 20;
     return this.profile.getPhotos(id, cursor, lim);
+  }
+
+  @Get(':id/friends')
+  async getFriends(
+    @CurrentUser() viewer: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const lim = limit ? Math.min(100, Math.max(1, Number(limit))) : 30;
+    return this.profile.listFriendsOf(viewer.sub, id, cursor, lim);
   }
 }

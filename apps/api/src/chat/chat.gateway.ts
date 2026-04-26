@@ -14,19 +14,44 @@ import { JwtService } from '@nestjs/jwt';
 import type { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { PresenceService } from './presence.service';
+import { RedisService } from '../common/redis/redis.service';
 import type { Env } from '../common/config/env.validation';
 import type { JwtUserPayload } from '../common/decorators/current-user.decorator';
+
+/**
+ * Per-user ceiling on `message:send`. 30 messages per 60 s is ~well above
+ * a normal human's typing rate but low enough to make bot-driven flooding
+ * visible in logs and painful in wall-clock time. Window is a sliding
+ * 60 s Redis counter keyed by user (not socket) so attackers can't sidestep
+ * it by reconnecting.
+ */
+const MESSAGE_RATE_LIMIT = 30;
+const MESSAGE_RATE_WINDOW_SECONDS = 60;
 
 interface AuthedSocket extends Socket {
   userId: string;
   userJti: string;
 }
 
+// Resolved at module load — CORS_ORIGINS env is already validated at startup (env.validation.ts).
+const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 @Injectable()
-@WebSocketGateway({ namespace: '/chat', cors: { origin: true, credentials: true } })
+@WebSocketGateway({
+  namespace: '/chat',
+  cors: {
+    origin: corsOrigins.length ? corsOrigins : false,
+    credentials: true,
+  },
+})
 export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(ChatGateway.name);
-  private readonly publicKey: string;
+  private readonly publicKeys: string[];
+  private readonly issuer: string;
+  private readonly audience: string;
 
   @WebSocketServer() server!: Server;
 
@@ -35,10 +60,15 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     private readonly jwt: JwtService,
     private readonly chat: ChatService,
     private readonly presence: PresenceService,
+    private readonly redis: RedisService,
   ) {
     const pubPath = config.get('JWT_PUBLIC_KEY_PATH', { infer: true });
     if (!pubPath) throw new Error('JWT_PUBLIC_KEY_PATH required');
-    this.publicKey = readFileSync(pubPath, 'utf8');
+    this.publicKeys = [readFileSync(pubPath, 'utf8')];
+    const prevPath = config.get('JWT_PREVIOUS_PUBLIC_KEY_PATH', { infer: true });
+    if (prevPath) this.publicKeys.push(readFileSync(prevPath, 'utf8'));
+    this.issuer = config.get('JWT_ISSUER', { infer: true });
+    this.audience = config.get('JWT_AUDIENCE', { infer: true });
   }
 
   onModuleInit(): void {
@@ -49,10 +79,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     try {
       const token = this.extractToken(client);
       if (!token) throw new Error('No token');
-      const payload = (await this.jwt.verifyAsync<JwtUserPayload>(token, {
-        publicKey: this.publicKey,
-        algorithms: ['RS256'],
-      })) as JwtUserPayload;
+      const payload = await this.verifyToken(token);
       const authed = client as AuthedSocket;
       authed.userId = payload.sub;
       authed.userJti = payload.jti;
@@ -102,12 +129,25 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
     const authed = client as AuthedSocket;
     if (!authed.userId) return { ok: false, error: 'unauthorized' };
+    // Per-user rate limit, enforced in Redis so it holds across sockets.
+    const count = await this.redis.incrementCounter(
+      `ratelimit:chat:send:${authed.userId}`,
+      MESSAGE_RATE_WINDOW_SECONDS,
+    );
+    if (count > MESSAGE_RATE_LIMIT) {
+      this.logger.warn(`Chat rate-limit hit for user ${authed.userId} (count=${count})`);
+      return { ok: false, error: 'rate_limited' };
+    }
     try {
       const { message, memberIds } = await this.chat.sendMessage(authed.userId, payload.conversationId, payload);
       this.broadcastNewMessage(payload.conversationId, message, memberIds);
       return { ok: true, messageId: message.id };
     } catch (error) {
-      return { ok: false, error: String(error) };
+      // Don't leak internal details to the peer — log server-side, emit a
+      // stable code.
+      const isClient = error instanceof Error && /Forbidden|BadRequest|NotFound/i.test(error.constructor.name);
+      this.logger.warn(`message:send rejected for ${authed.userId}: ${String(error)}`);
+      return { ok: false, error: isClient ? error.message : 'internal_error' };
     }
   }
 
@@ -166,5 +206,26 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     const queryToken = client.handshake.query.token;
     if (typeof queryToken === 'string') return queryToken;
     return null;
+  }
+
+  /**
+   * Verify against each configured public key (current + optional previous during
+   * rotation). Also enforces `iss` and `aud` claims, matching JwtStrategy.
+   */
+  private async verifyToken(token: string): Promise<JwtUserPayload> {
+    let lastErr: unknown;
+    for (const publicKey of this.publicKeys) {
+      try {
+        return (await this.jwt.verifyAsync<JwtUserPayload>(token, {
+          publicKey,
+          algorithms: ['RS256'],
+          issuer: this.issuer,
+          audience: this.audience,
+        })) as JwtUserPayload;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr ?? new Error('Invalid token');
   }
 }

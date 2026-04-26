@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { geocode } from '../common/geo/city-coords';
 import type { BoundsDto, NearbyDto } from './dto/geo.dto';
 
 const CLUSTER_TTL = 300;
@@ -30,7 +32,19 @@ export interface IndividualMarker {
   lat: number;
   lon: number;
 }
-export type MapMarker = CountryCluster | CityCluster | IndividualMarker;
+export interface AssociationMarker {
+  kind: 'association';
+  associationId: string;
+  name: string;
+  logoUrl: string | null;
+  city: string | null;
+  countryCode: string | null;
+  memberCount: number;
+  isVerified: boolean;
+  lat: number;
+  lon: number;
+}
+export type MapMarker = CountryCluster | CityCluster | IndividualMarker | AssociationMarker;
 
 @Injectable()
 export class GeoService {
@@ -45,17 +59,67 @@ export class GeoService {
     if (cached) return JSON.parse(cached) as MapMarker[];
 
     const blockedIds = await this.blockedIds(viewerId);
+    const markers: MapMarker[] = [];
 
-    let markers: MapMarker[];
-    if (dto.zoom < 4) {
-      markers = await this.countryClusters(dto, blockedIds);
-    } else if (dto.zoom < 9) {
-      markers = await this.cityClusters(dto, blockedIds);
-    } else {
-      markers = await this.individuals(dto, blockedIds);
+    const includePeople = dto.type === 'all' || dto.type === 'people';
+    const includeAssocs = dto.type === 'all' || dto.type === 'associations';
+
+    if (includePeople) {
+      if (dto.zoom < 4) {
+        markers.push(...(await this.countryClusters(dto, blockedIds)));
+      } else if (dto.zoom < 9) {
+        markers.push(...(await this.cityClusters(dto, blockedIds)));
+      } else {
+        markers.push(...(await this.individuals(dto, blockedIds)));
+      }
+    }
+
+    if (includeAssocs) {
+      markers.push(...(await this.associations(dto)));
     }
 
     await this.redis.client.set(cacheKey, JSON.stringify(markers), 'EX', CLUSTER_TTL);
+    return markers;
+  }
+
+  private async associations(dto: BoundsDto): Promise<AssociationMarker[]> {
+    const assocs = await this.prisma.association.findMany({
+      where: { countryCode: { not: null } },
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        city: true,
+        countryCode: true,
+        memberCount: true,
+        isVerified: true,
+      },
+      take: 200,
+    });
+    const markers: AssociationMarker[] = [];
+    for (const a of assocs) {
+      const coords = geocode(a.city, a.countryCode);
+      if (!coords) continue;
+      if (
+        coords.lat < dto.south ||
+        coords.lat > dto.north ||
+        coords.lon < dto.west ||
+        coords.lon > dto.east
+      )
+        continue;
+      markers.push({
+        kind: 'association',
+        associationId: a.id,
+        name: a.name,
+        logoUrl: a.logoUrl,
+        city: a.city,
+        countryCode: a.countryCode,
+        memberCount: a.memberCount,
+        isVerified: a.isVerified,
+        lat: coords.lat,
+        lon: coords.lon,
+      });
+    }
     return markers;
   }
 
@@ -79,10 +143,10 @@ export class GeoService {
   async getNearby(viewerId: string, dto: NearbyDto) {
     const blockedIds = await this.blockedIds(viewerId);
     const blockedClause = blockedIds.length
-      ? `AND id NOT IN (${blockedIds.map((id) => `'${id}'`).join(',')})`
-      : '';
+      ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
+      : Prisma.empty;
 
-    return this.prisma.$queryRawUnsafe<
+    return this.prisma.$queryRaw<
       Array<{
         id: string;
         display_name: string | null;
@@ -93,30 +157,24 @@ export class GeoService {
         longitude: number;
         distance: number;
       }>
-    >(
-      `
-        SELECT id, display_name, avatar_url, city, country_code,
-               latitude::float, longitude::float,
-               (6371 * acos(
-                 cos(radians($1)) * cos(radians(latitude)) *
-                 cos(radians(longitude) - radians($2)) +
-                 sin(radians($1)) * sin(radians(latitude))
-               )) AS distance
-        FROM users
-        WHERE show_on_map = TRUE
-          AND status = 'active'
-          AND latitude IS NOT NULL
-          AND longitude IS NOT NULL
-          AND id <> $3
-          ${blockedClause}
-        ORDER BY distance
-        LIMIT $4
-      `,
-      dto.lat,
-      dto.lon,
-      viewerId,
-      dto.limit,
-    );
+    >(Prisma.sql`
+      SELECT id, display_name, avatar_url, city, country_code,
+             latitude::float, longitude::float,
+             (6371 * acos(
+               cos(radians(${dto.lat})) * cos(radians(latitude)) *
+               cos(radians(longitude) - radians(${dto.lon})) +
+               sin(radians(${dto.lat})) * sin(radians(latitude))
+             )) AS distance
+      FROM users
+      WHERE show_on_map = TRUE
+        AND status = 'active'
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND id <> ${viewerId}
+        ${blockedClause}
+      ORDER BY distance
+      LIMIT ${dto.limit}
+    `);
   }
 
   // ── internal ────────────────────────────────────────────────
@@ -131,33 +189,31 @@ export class GeoService {
     );
   }
 
-  private async countryClusters(dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
+  private async countryClusters(_dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
     const blockedClause = blockedIds.length
-      ? `AND id NOT IN (${blockedIds.map((id) => `'${id}'`).join(',')})`
-      : '';
-    const rows = await this.prisma.$queryRawUnsafe<
+      ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<
       Array<{
         country_code: string;
         count: bigint;
         avg_lat: number;
         avg_lon: number;
       }>
-    >(
-      `
-        SELECT country_code,
-               COUNT(*)::bigint AS count,
-               AVG(latitude)::float AS avg_lat,
-               AVG(longitude)::float AS avg_lon
-        FROM users
-        WHERE show_on_map = TRUE
-          AND status = 'active'
-          AND country_code IS NOT NULL
-          AND latitude IS NOT NULL
-          AND longitude IS NOT NULL
-          ${blockedClause}
-        GROUP BY country_code
-      `,
-    );
+    >(Prisma.sql`
+      SELECT country_code,
+             COUNT(*)::bigint AS count,
+             AVG(latitude)::float AS avg_lat,
+             AVG(longitude)::float AS avg_lon
+      FROM users
+      WHERE show_on_map = TRUE
+        AND status = 'active'
+        AND country_code IS NOT NULL
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        ${blockedClause}
+      GROUP BY country_code
+    `);
     return rows.map((r) => ({
       kind: 'country' as const,
       countryCode: r.country_code,
@@ -169,9 +225,9 @@ export class GeoService {
 
   private async cityClusters(dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
     const blockedClause = blockedIds.length
-      ? `AND id NOT IN (${blockedIds.map((id) => `'${id}'`).join(',')})`
-      : '';
-    const rows = await this.prisma.$queryRawUnsafe<
+      ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<
       Array<{
         city: string;
         country_code: string;
@@ -179,27 +235,21 @@ export class GeoService {
         avg_lat: number;
         avg_lon: number;
       }>
-    >(
-      `
-        SELECT city, country_code,
-               COUNT(*)::bigint AS count,
-               AVG(latitude)::float AS avg_lat,
-               AVG(longitude)::float AS avg_lon
-        FROM users
-        WHERE show_on_map = TRUE
-          AND status = 'active'
-          AND city IS NOT NULL
-          AND country_code IS NOT NULL
-          AND latitude BETWEEN $1 AND $2
-          AND longitude BETWEEN $3 AND $4
-          ${blockedClause}
-        GROUP BY city, country_code
-      `,
-      dto.south,
-      dto.north,
-      dto.west,
-      dto.east,
-    );
+    >(Prisma.sql`
+      SELECT city, country_code,
+             COUNT(*)::bigint AS count,
+             AVG(latitude)::float AS avg_lat,
+             AVG(longitude)::float AS avg_lon
+      FROM users
+      WHERE show_on_map = TRUE
+        AND status = 'active'
+        AND city IS NOT NULL
+        AND country_code IS NOT NULL
+        AND latitude BETWEEN ${dto.south} AND ${dto.north}
+        AND longitude BETWEEN ${dto.west} AND ${dto.east}
+        ${blockedClause}
+      GROUP BY city, country_code
+    `);
     return rows.map((r) => ({
       kind: 'city' as const,
       city: r.city,

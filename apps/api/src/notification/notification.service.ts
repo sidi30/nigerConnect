@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { PushService } from './push.service';
 
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly push: PushService,
+  ) {}
 
   async create(params: {
     userId: string;
@@ -17,7 +21,7 @@ export class NotificationService {
     actorId?: string;
   }) {
     if (params.actorId === params.userId) return null;
-    return this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
         userId: params.userId,
         type: params.type,
@@ -27,6 +31,16 @@ export class NotificationService {
         actorId: params.actorId ?? null,
       },
     });
+
+    // Fire & forget push — real-time delivery
+    void this.push
+      .sendToUser(params.userId, params.title, params.body ?? null, {
+        notificationId: notification.id,
+        type: params.type,
+      })
+      .catch((e) => this.logger.warn(`Push send failed: ${String(e)}`));
+
+    return notification;
   }
 
   async list(userId: string, cursor?: string, limit = 30) {

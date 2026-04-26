@@ -82,6 +82,14 @@ export class SocialController {
     return this.friends.mutualFriends(me.sub, userId);
   }
 
+  @Get('friends/relationship/:userId')
+  relationship(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+  ) {
+    return this.friends.relationship(me.sub, userId);
+  }
+
   @Get('friends/suggestions')
   suggestions(@CurrentUser() me: JwtUserPayload, @Query('limit') limit?: string) {
     const lim = limit ? Math.min(50, Math.max(1, Number(limit))) : 20;

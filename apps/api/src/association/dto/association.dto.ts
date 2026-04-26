@@ -21,6 +21,7 @@ export const createAssociationSchema = z.object({
   city: z.string().max(100).optional(),
   website: z.string().url().max(300).optional(),
   contactEmail: z.string().email().max(255).optional(),
+  requiresApproval: z.boolean().optional(),
 });
 export type CreateAssociationDto = z.infer<typeof createAssociationSchema>;
 

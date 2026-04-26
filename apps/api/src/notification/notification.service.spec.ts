@@ -1,11 +1,13 @@
 import { NotificationService } from './notification.service';
 
+const makePush = () => ({ sendToUser: jest.fn(async () => undefined) });
+
 describe('NotificationService', () => {
   it('does not self-notify (actorId === userId)', async () => {
     const prisma = {
       notification: { create: jest.fn() },
     };
-    const svc = new NotificationService(prisma as never);
+    const svc = new NotificationService(prisma as never, makePush() as never);
     const result = await svc.create({
       userId: 'u1',
       type: 'like',
@@ -20,7 +22,7 @@ describe('NotificationService', () => {
     const prisma = {
       notification: { create: jest.fn(async () => ({ id: 'n1' })) },
     };
-    const svc = new NotificationService(prisma as never);
+    const svc = new NotificationService(prisma as never, makePush() as never);
     const result = await svc.create({
       userId: 'u1',
       type: 'like',
@@ -34,7 +36,7 @@ describe('NotificationService', () => {
     const prisma = {
       pushToken: { upsert: jest.fn(async () => ({ id: 'p1' })) },
     };
-    const svc = new NotificationService(prisma as never);
+    const svc = new NotificationService(prisma as never, makePush() as never);
     await svc.registerPushToken('u1', 'token', 'ios');
     expect(prisma.pushToken.upsert).toHaveBeenCalled();
   });

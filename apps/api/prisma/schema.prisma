@@ -97,6 +97,7 @@ model User {
   reviewedDocuments IdentityDocument[] @relation("DocumentReviewer")
   refreshTokens     RefreshToken[]
   pushTokens        PushToken[]
+  emailTokens       EmailToken[]
   photos            UserPhoto[]
   friendshipsSent     Friendship[] @relation("FriendshipRequester")
   friendshipsReceived Friendship[] @relation("FriendshipAddressee")
@@ -119,6 +120,8 @@ model User {
 
   @@index([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
+  @@index([latitude, longitude])
+  @@index([showOnMap, status])
   @@map("users")
 }
 
@@ -199,6 +202,7 @@ enum AssociationRole {
 enum MembershipStatus {
   pending
   approved
+  rejected
 }
 
 enum NotificationType {
@@ -209,6 +213,9 @@ enum NotificationType {
   message
   service_response
   association_invite
+  association_join_request
+  association_join_approved
+  association_join_rejected
   identity_approved
   identity_rejected
   system
@@ -272,6 +279,25 @@ model Block {
   @@id([blockerId, blockedId])
   @@index([blockedId])
   @@map("blocks")
+}
+
+enum EmailTokenType {
+  reset_password
+  verify_email
+}
+
+model EmailToken {
+  id        String         @id @default(uuid()) @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      EmailTokenType
+  tokenHash String         @unique @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime       @map("expires_at") @db.Timestamptz
+  usedAt    DateTime?      @map("used_at") @db.Timestamptz
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, type])
+  @@map("email_tokens")
 }
 
 model Post {
@@ -502,6 +528,7 @@ model Association {
   website      String?             @db.VarChar(300)
   contactEmail String?             @map("contact_email") @db.VarChar(255)
   isVerified   Boolean             @default(false) @map("is_verified")
+  requiresApproval Boolean         @default(false) @map("requires_approval")
   memberCount  Int                 @default(0) @map("member_count")
   createdById  String?             @map("created_by") @db.Uuid
   createdBy    User?               @relation("AssociationCreator", fields: [createdById], references: [id])

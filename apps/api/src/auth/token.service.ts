@@ -20,11 +20,23 @@ export interface IssuedTokens {
   refreshExpiresAt: Date;
 }
 
+/**
+ * Derives a short, deterministic key identifier from a PEM public key.
+ * Used as the `kid` header so we can route verification to the right key
+ * during a rotation window.
+ */
+function deriveKid(publicKeyPem: string): string {
+  return createHash('sha256').update(publicKeyPem).digest('hex').slice(0, 16);
+}
+
 @Injectable()
 export class TokenService {
   private readonly logger = new Logger(TokenService.name);
   private readonly privateKey: string;
   private readonly publicKey: string;
+  private readonly kid: string;
+  private readonly issuer: string;
+  private readonly audience: string;
   private readonly accessExpires: string;
   private readonly refreshTtlMs: number;
 
@@ -40,12 +52,33 @@ export class TokenService {
     }
     this.privateKey = readFileSync(privPath, 'utf8');
     this.publicKey = readFileSync(pubPath, 'utf8');
+    this.kid = deriveKid(this.publicKey);
+    this.issuer = config.get('JWT_ISSUER', { infer: true });
+    this.audience = config.get('JWT_AUDIENCE', { infer: true });
     this.accessExpires = config.get('JWT_ACCESS_EXPIRES', { infer: true });
     this.refreshTtlMs = this.parseDuration(config.get('JWT_REFRESH_EXPIRES', { infer: true }));
+    this.logger.log(`JWT signing ready (kid=${this.kid}, iss=${this.issuer}, aud=${this.audience})`);
   }
 
+  /**
+   * Current public key — used by the Jwt strategy to verify access tokens.
+   * Exposed as a record keyed by `kid` so the strategy can rotate keys
+   * without a redeploy (see JwtStrategy for details).
+   */
   get jwtPublicKey(): string {
     return this.publicKey;
+  }
+
+  get jwtKid(): string {
+    return this.kid;
+  }
+
+  get jwtIssuer(): string {
+    return this.issuer;
+  }
+
+  get jwtAudience(): string {
+    return this.audience;
   }
 
   async issueTokens(
@@ -61,6 +94,9 @@ export class TokenService {
         algorithm: 'RS256',
         privateKey: this.privateKey,
         expiresIn: this.accessExpires,
+        issuer: this.issuer,
+        audience: this.audience,
+        keyid: this.kid,
       },
     );
     const refreshRaw = randomBytes(48).toString('base64url');
@@ -161,3 +197,5 @@ export class TokenService {
     return n * mul[unit];
   }
 }
+
+export { deriveKid };

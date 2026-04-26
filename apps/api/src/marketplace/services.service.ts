@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import type { CreateServiceDto, ListServicesDto, RespondDto, RateDto } from './dto/service.dto';
 
 const AUTHOR_SELECT = {
@@ -16,7 +17,10 @@ const AUTHOR_SELECT = {
 
 @Injectable()
 export class ServicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   create(authorId: string, dto: CreateServiceDto) {
     return this.prisma.serviceRequest.create({
@@ -95,6 +99,18 @@ export class ServicesService {
         data: { responseCount: { increment: 1 } },
       }),
     ]);
+
+    const responderName =
+      response.responder.displayName || response.responder.firstName || 'Un membre';
+    await this.notifications.create({
+      userId: request.authorId,
+      actorId: userId,
+      type: 'service_response',
+      title: `${responderName} a répondu à votre demande`,
+      body: dto.message.slice(0, 140),
+      data: { requestId, responseId: response.id },
+    });
+
     return response;
   }
 

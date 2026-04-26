@@ -34,6 +34,8 @@ describe('TokenService', () => {
         if (key === 'JWT_PUBLIC_KEY_PATH') return pub;
         if (key === 'JWT_ACCESS_EXPIRES') return '15m';
         if (key === 'JWT_REFRESH_EXPIRES') return '30d';
+        if (key === 'JWT_ISSUER') return 'nigerconnect-api';
+        if (key === 'JWT_AUDIENCE') return 'nigerconnect-app';
         return undefined;
       },
     } as unknown as ConfigService;

@@ -15,6 +15,14 @@ export const registerSchema = z.object({
     .string()
     .regex(/^\+[1-9]\d{6,19}$/, 'Phone must be in international format (e.g. +22790000000)')
     .optional(),
+  city: z.string().min(1).max(100).trim().optional(),
+  countryCode: z
+    .string()
+    .length(2, 'countryCode must be ISO-3166-1 alpha-2')
+    .toUpperCase()
+    .optional(),
+  bio: z.string().max(1000).optional(),
+  avatarUrl: z.string().url().max(500).optional(),
 });
 
 export type RegisterDto = z.infer<typeof registerSchema>;

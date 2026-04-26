@@ -79,6 +79,17 @@ export class FeedController {
     return this.posts.getFeed(me.sub, query.cursor, query.limit);
   }
 
+  @Get('users/:userId/posts')
+  getUserPosts(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const lim = limit ? Math.min(50, Math.max(1, Number(limit))) : 20;
+    return this.posts.getUserPosts(me.sub, userId, cursor, lim);
+  }
+
   @Post('posts/:id/like')
   like(
     @CurrentUser() me: JwtUserPayload,
@@ -116,6 +127,15 @@ export class FeedController {
     return this.comments.list(id, cursor, lim);
   }
 
+  @Patch('comments/:id')
+  editComment(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(createCommentSchema.pick({ content: true }))) dto: { content: string },
+  ) {
+    return this.comments.edit(me.sub, id, dto.content);
+  }
+
   @Delete('comments/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteComment(
@@ -146,5 +166,14 @@ export class FeedController {
   @Get('stories/feed')
   storiesFeed(@CurrentUser() me: JwtUserPayload) {
     return this.posts.getStoriesFeed(me.sub);
+  }
+
+  @Delete('stories/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteStory(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    await this.posts.deleteStory(me.sub, id);
   }
 }

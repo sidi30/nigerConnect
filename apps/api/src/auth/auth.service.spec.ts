@@ -56,7 +56,14 @@ describe('AuthService', () => {
     const prisma = makePrisma();
     const tokens = makeTokens();
     const redis = makeRedis();
-    const svc = new AuthService(prisma as never, password, tokens as never, redis as never);
+    const svc = new AuthService(
+      prisma as never,
+      password,
+      tokens as never,
+      redis as never,
+      { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never,
+      { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never
+    );
 
     const result = await svc.register(
       {
@@ -78,7 +85,7 @@ describe('AuthService', () => {
         create: jest.fn(),
       },
     });
-    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never);
+    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never, { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never, { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never);
     await expect(
       svc.register(
         { email: 'a@b.com', password: 'Str0ng!Password', firstName: 'A', lastName: 'O' },
@@ -104,7 +111,7 @@ describe('AuthService', () => {
         update: jest.fn(async () => ({})),
       },
     });
-    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never);
+    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never, { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never, { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never);
     const result = await svc.login({ email: 'a@b.com', password: 'Str0ng!Password' });
     expect(result.accessToken).toBeDefined();
     expect(prisma.user.update).toHaveBeenCalledWith(
@@ -132,7 +139,7 @@ describe('AuthService', () => {
         update,
       },
     });
-    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never);
+    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never, { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never, { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never);
     await expect(svc.login({ email: 'a@b.com', password: 'wrong' })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -161,7 +168,7 @@ describe('AuthService', () => {
         update,
       },
     });
-    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never);
+    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never, { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never, { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never);
     await expect(svc.login({ email: 'a@b.com', password: 'wrong' })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -184,7 +191,7 @@ describe('AuthService', () => {
         })),
       },
     });
-    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never);
+    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never, { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never, { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never);
     await expect(svc.login({ email: 'a@b.com', password: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -204,7 +211,7 @@ describe('AuthService', () => {
         })),
       },
     });
-    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never);
+    const svc = new AuthService(prisma as never, password, makeTokens() as never, makeRedis() as never, { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never, { create: jest.fn(), consume: jest.fn() } as never, { verifyIdToken: jest.fn() } as never, { verify: jest.fn(), isConfigured: false } as never);
     await expect(svc.login({ email: 'a@b.com', password: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );

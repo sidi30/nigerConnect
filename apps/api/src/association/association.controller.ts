@@ -44,6 +44,11 @@ export class AssociationController {
     return this.assoc.list(dto);
   }
 
+  @Get('associations/mine')
+  mine(@CurrentUser() me: JwtUserPayload) {
+    return this.assoc.listMine(me.sub);
+  }
+
   @Get('associations/:id')
   get(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.assoc.getById(id);
@@ -93,6 +98,36 @@ export class AssociationController {
   ) {
     const lim = limit ? Math.min(100, Math.max(1, Number(limit))) : 30;
     return this.assoc.listMembers(id, cursor, lim);
+  }
+
+  @Get('associations/:id/pending')
+  pendingRequests(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const lim = limit ? Math.min(100, Math.max(1, Number(limit))) : 30;
+    return this.assoc.listPendingRequests(me.sub, id, cursor, lim);
+  }
+
+  @Post('associations/:id/members/:userId/approve')
+  approveRequest(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+  ) {
+    return this.assoc.approveJoinRequest(me.sub, id, userId);
+  }
+
+  @Post('associations/:id/members/:userId/reject')
+  rejectRequest(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.assoc.rejectJoinRequest(me.sub, id, userId, reason);
   }
 
   @Post('associations/:id/events')

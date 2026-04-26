@@ -8,6 +8,38 @@ import type { Prisma, MessageType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { BlockService } from '../social/block.service';
 
+/**
+ * Hard cap on a single message. Matches our DTO validation but also guards
+ * the raw Gateway path that bypasses Zod pipes.
+ */
+const MAX_MESSAGE_LENGTH = 4000;
+
+// Precompiled sanitizers built from unicode ranges rather than inline
+// literals, so the source file stays ASCII-safe and Edit-friendly.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_RE = new RegExp(
+  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F]',
+  'g',
+);
+const INVISIBLE_CHARS_RE = new RegExp(
+  '[\\u200B-\\u200F\\u2028-\\u202E\\uFEFF]',
+  'g',
+);
+
+/**
+ * Strip characters that have no business being in a plain-text message and
+ * would enable homograph/invisible-char attacks or break rendering:
+ *   - C0/C1 control chars except \t, \n, \r
+ *   - Zero-width spaces, bidi-override chars, BOM
+ *
+ * We intentionally do NOT escape HTML here: content is rendered as text by
+ * the mobile client. Any future web client must escape at the RENDER layer,
+ * not at write time (otherwise `&lt;` leaks back to users).
+ */
+function sanitizeMessageText(raw: string): string {
+  return raw.replace(CONTROL_CHARS_RE, '').replace(INVISIBLE_CHARS_RE, '').trim();
+}
+
 const MEMBER_SELECT = {
   id: true,
   displayName: true,
@@ -132,13 +164,23 @@ export class ChatService {
   ) {
     await this.assertMember(userId, conversationId);
 
+    // Sanitize + length-cap the text content BEFORE touching the DB.
+    // Applies to both REST and Gateway paths.
+    const cleanContent = payload.content !== undefined
+      ? this.normalizeContent(payload.content)
+      : undefined;
+    const messageType: MessageType = payload.messageType ?? 'text';
+    if (messageType === 'text' && (!cleanContent || cleanContent.length === 0)) {
+      throw new BadRequestException('Message content is empty');
+    }
+
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
           conversationId,
           senderId: userId,
-          content: payload.content ?? null,
-          messageType: payload.messageType ?? 'text',
+          content: cleanContent ?? null,
+          messageType,
           mediaUrl: payload.mediaUrl ?? null,
           replyToId: payload.replyToId ?? null,
         },
@@ -148,7 +190,9 @@ export class ChatService {
         where: { id: conversationId },
         data: {
           lastMessageAt: new Date(),
-          lastMessagePreview: payload.content ?? '[media]',
+          // Preview is truncated to avoid hauling a 4kB blob into every
+          // conversation-list fetch.
+          lastMessagePreview: cleanContent ? cleanContent.slice(0, 140) : '[media]',
         },
       }),
       this.prisma.conversationMember.updateMany({
@@ -196,6 +240,14 @@ export class ChatService {
       select: { userId: true },
     });
     return members.map((m) => m.userId);
+  }
+
+  private normalizeContent(raw: string): string {
+    const clean = sanitizeMessageText(raw);
+    if (clean.length > MAX_MESSAGE_LENGTH) {
+      throw new BadRequestException(`Message too long (max ${MAX_MESSAGE_LENGTH} characters)`);
+    }
+    return clean;
   }
 
   private decorate(

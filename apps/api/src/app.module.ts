@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppConfigModule } from './common/config/config.module';
+import { CryptoModule } from './common/crypto/crypto.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
+import { MailModule } from './common/mail/mail.module';
+import { AppThrottleModule } from './common/throttle/throttle.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
@@ -21,9 +24,12 @@ import { ModerationModule } from './moderation/moderation.module';
 @Module({
   imports: [
     AppConfigModule,
+    CryptoModule,
     PrismaModule,
     RedisModule,
     StorageModule,
+    MailModule,
+    AppThrottleModule,
     HealthModule,
     AuthModule,
     ProfileModule,

@@ -11,6 +11,9 @@ import { BlockService } from '../social/block.service';
 import type { CreatePostDto, CreateStoryDto, UpdatePostDto } from './dto/post.dto';
 
 const FEED_CACHE_TTL = 120;
+// Only the default-limit start page is cached. Caching arbitrary limits would
+// require multi-key invalidation; non-default limits skip the cache instead.
+const FEED_CACHE_LIMIT = 20;
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const AUTHOR_SELECT = {
@@ -132,6 +135,22 @@ export class PostsService {
     await this.invalidateFeedCache(authorId);
   }
 
+  /**
+   * Soft-delete a story. Only the author can delete. Same rule as posts,
+   * but we treat stories as their own resource since the UX is distinct.
+   */
+  async deleteStory(authorId: string, storyId: string): Promise<void> {
+    const story = await this.prisma.post.findUnique({ where: { id: storyId } });
+    if (!story || story.deletedAt || !story.isStory) {
+      throw new NotFoundException('Story not found');
+    }
+    if (story.authorId !== authorId) throw new ForbiddenException('Not your story');
+    await this.prisma.post.update({
+      where: { id: storyId },
+      data: { deletedAt: new Date() },
+    });
+  }
+
   async share(sharerId: string, postId: string, content?: string) {
     const original = await this.prisma.post.findFirst({
       where: { id: postId, deletedAt: null },
@@ -162,8 +181,9 @@ export class PostsService {
 
   // ── Feed ──────────────────────────────────────────────────────
   async getFeed(userId: string, cursor?: string, limit = 20) {
-    const cacheKey = `feed:${userId}:${cursor ?? 'start'}:${limit}`;
-    if (!cursor) {
+    const cacheable = !cursor && limit === FEED_CACHE_LIMIT;
+    const cacheKey = `feed:${userId}:start`;
+    if (cacheable) {
       const cached = await this.redis.client.get(cacheKey);
       if (cached) return JSON.parse(cached);
     }
@@ -217,10 +237,85 @@ export class PostsService {
     const nextCursor = hasMore ? items[items.length - 1]!.createdAt.toISOString() : null;
     const result = { items, nextCursor };
 
-    if (!cursor) {
+    if (cacheable) {
       await this.redis.client.set(cacheKey, JSON.stringify(result), 'EX', FEED_CACHE_TTL);
     }
     return result;
+  }
+
+  /**
+   * Posts authored by a single user, filtered by the viewer's access rights.
+   * - Viewer sees a post if it's public, OR they are friends with the author, OR the viewer is the author.
+   * - Stories excluded.
+   * - Blocked in either direction → empty.
+   */
+  async getUserPosts(viewerId: string, authorId: string, cursor?: string, limit = 20) {
+    if (viewerId !== authorId && (await this.blocks.isBlocked(viewerId, authorId))) {
+      return { items: [], nextCursor: null };
+    }
+
+    const isOwn = viewerId === authorId;
+    const isFriend = isOwn
+      ? true
+      : (
+          await this.prisma.friendship.count({
+            where: {
+              status: 'accepted',
+              OR: [
+                { requesterId: viewerId, addresseeId: authorId },
+                { requesterId: authorId, addresseeId: viewerId },
+              ],
+            },
+          })
+        ) > 0;
+
+    // Association-scoped posts must additionally be gated on viewer membership
+    // of post.associationId — being a friend of the author is not enough.
+    const memberAssocIds = isOwn || !isFriend
+      ? []
+      : (
+          await this.prisma.associationMember.findMany({
+            where: { userId: viewerId, status: 'approved' },
+            select: { associationId: true },
+          })
+        ).map((m) => m.associationId);
+
+    const visibilityFilter: Prisma.PostWhereInput = isOwn
+      ? {}
+      : isFriend
+        ? {
+            OR: [
+              { visibility: { in: ['public', 'friends'] } },
+              ...(memberAssocIds.length > 0
+                ? [{ visibility: 'association' as const, associationId: { in: memberAssocIds } }]
+                : []),
+            ],
+          }
+        : { visibility: 'public' };
+
+    const cursorDate = cursor ? new Date(cursor) : null;
+    const posts = await this.prisma.post.findMany({
+      where: {
+        authorId,
+        deletedAt: null,
+        isStory: false,
+        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+        ...visibilityFilter,
+      },
+      include: {
+        media: { orderBy: { sortOrder: 'asc' } },
+        author: { select: AUTHOR_SELECT },
+        likes: { where: { userId: viewerId }, select: { userId: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+    });
+    const hasMore = posts.length > limit;
+    const items = (hasMore ? posts.slice(0, limit) : posts).map((p) => this.decoratePost(p, viewerId));
+    return {
+      items,
+      nextCursor: hasMore ? items[items.length - 1]!.createdAt.toISOString() : null,
+    };
   }
 
   async getStoriesFeed(userId: string) {
@@ -267,8 +362,15 @@ export class PostsService {
       select: { requesterId: true, addresseeId: true },
     });
     const keys = [authorId, ...friendRows.map((f) => (f.requesterId === authorId ? f.addresseeId : f.requesterId))];
+    await this.invalidateFeedForUsers(keys);
+  }
+
+  /** Invalidate the cached start-page of the feed for a specific set of users. */
+  async invalidateFeedForUsers(userIds: readonly string[]): Promise<void> {
+    const unique = Array.from(new Set(userIds.filter(Boolean)));
+    if (unique.length === 0) return;
     const pipeline = this.redis.client.pipeline();
-    for (const uid of keys) pipeline.del(`feed:${uid}:start:20`);
+    for (const uid of unique) pipeline.del(`feed:${uid}:start`);
     await pipeline.exec();
   }
 

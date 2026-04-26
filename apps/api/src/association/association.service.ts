@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { AssociationRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
 import type {
   ChangeRoleDto,
   CreateAssociationDto,
@@ -25,7 +26,10 @@ const MEMBER_SELECT = {
 
 @Injectable()
 export class AssociationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   async create(creatorId: string, dto: CreateAssociationDto) {
     const creator = await this.prisma.user.findUnique({
@@ -48,6 +52,7 @@ export class AssociationService {
           city: dto.city ?? null,
           website: dto.website ?? null,
           contactEmail: dto.contactEmail ?? null,
+          requiresApproval: dto.requiresApproval ?? false,
           createdById: creatorId,
           memberCount: 1,
         },
@@ -75,6 +80,35 @@ export class AssociationService {
     return { items: page, nextCursor: hasMore ? page[page.length - 1]!.id : null };
   }
 
+  async listMine(userId: string) {
+    const memberships = await this.prisma.associationMember.findMany({
+      where: { userId, status: 'approved' },
+      orderBy: { joinedAt: 'desc' },
+      include: {
+        association: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            logoUrl: true,
+            coverUrl: true,
+            category: true,
+            city: true,
+            countryCode: true,
+            memberCount: true,
+            isVerified: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+    return memberships.map((m) => ({
+      ...m.association,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    }));
+  }
+
   async getById(id: string) {
     const assoc = await this.prisma.association.findUnique({
       where: { id },
@@ -100,18 +134,156 @@ export class AssociationService {
     const existing = await this.prisma.associationMember.findUnique({
       where: { associationId_userId: { associationId: id, userId } },
     });
-    if (existing) throw new ConflictException('Already a member');
+    if (existing) {
+      if (existing.status === 'approved') throw new ConflictException('Already a member');
+      if (existing.status === 'pending') {
+        throw new ConflictException('Join request already pending');
+      }
+      // 'rejected' → allow re-requesting (flip back to pending or approved)
+    }
 
+    const assoc = await this.prisma.association.findUnique({
+      where: { id },
+      select: { id: true, name: true, requiresApproval: true },
+    });
+    if (!assoc) throw new NotFoundException('Association not found');
+
+    if (assoc.requiresApproval) {
+      // Pending membership — admins must approve.
+      const membership = existing
+        ? await this.prisma.associationMember.update({
+            where: { associationId_userId: { associationId: id, userId } },
+            data: { status: 'pending', role: 'member', joinedAt: new Date() },
+          })
+        : await this.prisma.associationMember.create({
+            data: { associationId: id, userId, role: 'member', status: 'pending' },
+          });
+
+      // Notify every admin of the association.
+      const requester = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, firstName: true },
+      });
+      const requesterName = requester?.displayName || requester?.firstName || 'Un membre';
+      const admins = await this.prisma.associationMember.findMany({
+        where: { associationId: id, role: 'admin', status: 'approved' },
+        select: { userId: true },
+      });
+      await Promise.all(
+        admins
+          .filter((a) => a.userId !== userId)
+          .map((a) =>
+            this.notifications.create({
+              userId: a.userId,
+              actorId: userId,
+              type: 'association_join_request',
+              title: `${requesterName} demande à rejoindre ${assoc.name}`,
+              data: { associationId: id, requesterId: userId },
+            }),
+          ),
+      );
+      return { ...membership, pending: true };
+    }
+
+    // Open association — auto-approve.
     const [membership] = await this.prisma.$transaction([
-      this.prisma.associationMember.create({
-        data: { associationId: id, userId, role: 'member', status: 'approved' },
+      existing
+        ? this.prisma.associationMember.update({
+            where: { associationId_userId: { associationId: id, userId } },
+            data: { status: 'approved', role: 'member', joinedAt: new Date() },
+          })
+        : this.prisma.associationMember.create({
+            data: { associationId: id, userId, role: 'member', status: 'approved' },
+          }),
+      this.prisma.association.update({
+        where: { id },
+        data: { memberCount: { increment: existing?.status === 'approved' ? 0 : 1 } },
+      }),
+    ]);
+    return { ...membership, pending: false };
+  }
+
+  async listPendingRequests(userId: string, id: string, cursor?: string, limit = 30) {
+    await this.assertRole(userId, id, ['admin', 'moderator']);
+    const items = await this.prisma.associationMember.findMany({
+      where: { associationId: id, status: 'pending' },
+      take: limit + 1,
+      ...(cursor
+        ? { cursor: { associationId_userId: { associationId: id, userId: cursor } }, skip: 1 }
+        : {}),
+      orderBy: { joinedAt: 'asc' },
+      include: { user: { select: MEMBER_SELECT } },
+    });
+    const hasMore = items.length > limit;
+    const page = hasMore ? items.slice(0, limit) : items;
+    return {
+      items: page,
+      nextCursor: hasMore ? page[page.length - 1]!.userId : null,
+    };
+  }
+
+  async approveJoinRequest(actorId: string, id: string, targetUserId: string) {
+    await this.assertRole(actorId, id, ['admin', 'moderator']);
+    const member = await this.prisma.associationMember.findUnique({
+      where: { associationId_userId: { associationId: id, userId: targetUserId } },
+    });
+    if (!member) throw new NotFoundException('Pending request not found');
+    if (member.status !== 'pending') {
+      throw new BadRequestException('Request is not pending');
+    }
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.associationMember.update({
+        where: { associationId_userId: { associationId: id, userId: targetUserId } },
+        data: { status: 'approved', joinedAt: new Date() },
       }),
       this.prisma.association.update({
         where: { id },
         data: { memberCount: { increment: 1 } },
       }),
     ]);
-    return membership;
+
+    const assoc = await this.prisma.association.findUnique({
+      where: { id },
+      select: { name: true },
+    });
+    await this.notifications.create({
+      userId: targetUserId,
+      actorId,
+      type: 'association_join_approved',
+      title: `Ta demande pour ${assoc?.name ?? "l'association"} a été acceptée ✓`,
+      data: { associationId: id },
+    });
+    return updated;
+  }
+
+  async rejectJoinRequest(actorId: string, id: string, targetUserId: string, reason?: string) {
+    await this.assertRole(actorId, id, ['admin', 'moderator']);
+    const member = await this.prisma.associationMember.findUnique({
+      where: { associationId_userId: { associationId: id, userId: targetUserId } },
+    });
+    if (!member) throw new NotFoundException('Pending request not found');
+    if (member.status !== 'pending') {
+      throw new BadRequestException('Request is not pending');
+    }
+
+    const updated = await this.prisma.associationMember.update({
+      where: { associationId_userId: { associationId: id, userId: targetUserId } },
+      data: { status: 'rejected' },
+    });
+    const assoc = await this.prisma.association.findUnique({
+      where: { id },
+      select: { name: true },
+    });
+    await this.notifications.create({
+      userId: targetUserId,
+      actorId,
+      type: 'association_join_rejected',
+      title: `Ta demande pour ${assoc?.name ?? "l'association"} n'a pas été acceptée`,
+      body: reason,
+      data: { associationId: id, reason: reason ?? null },
+    });
+    return updated;
   }
 
   async leave(userId: string, id: string): Promise<void> {

@@ -1,14 +1,39 @@
 import { randomUUID } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Env } from '../config/env.validation';
 
+/**
+ * Object visibility:
+ *   - public  : goes into the CDN bucket (S3_BUCKET). Anonymous download is allowed.
+ *               Safe for avatars, post media, stories, public covers.
+ *   - private : goes into S3_PRIVATE_BUCKET. Bucket policy forbids any anonymous
+ *               read. Reads require a short-lived presigned GET.
+ *
+ * Identity documents, private chat media, and any future "for-their-eyes-only"
+ * content MUST use 'private'.
+ */
+export type ObjectVisibility = 'public' | 'private';
+
 export interface PresignedUpload {
   uploadUrl: string;
+  /**
+   * For public objects: the CDN URL the client can embed directly.
+   * For private objects: an `s3://bucket/key` pointer — callers must ask the
+   * server to produce a short-lived presigned GET when the time comes to
+   * display it.
+   */
   publicUrl: string;
   key: string;
+  bucket: string;
+  visibility: ObjectVisibility;
   expiresIn: number;
 }
 
@@ -16,11 +41,13 @@ export interface PresignedUpload {
 export class S3Service {
   private readonly logger = new Logger(S3Service.name);
   private readonly client: S3Client;
-  private readonly bucket: string;
+  private readonly publicBucket: string;
+  private readonly privateBucket: string;
   private readonly cdnUrl?: string;
 
   constructor(config: ConfigService<Env, true>) {
-    this.bucket = config.get('S3_BUCKET', { infer: true });
+    this.publicBucket = config.get('S3_BUCKET', { infer: true });
+    this.privateBucket = config.get('S3_PRIVATE_BUCKET', { infer: true });
     this.cdnUrl = config.get('CDN_URL', { infer: true });
     const endpoint = config.get('S3_ENDPOINT', { infer: true });
     this.client = new S3Client({
@@ -39,37 +66,73 @@ export class S3Service {
     contentType: string;
     expiresIn?: number;
     extension?: string;
+    visibility?: ObjectVisibility;
   }): Promise<PresignedUpload> {
+    const visibility = params.visibility ?? 'public';
+    const bucket = visibility === 'private' ? this.privateBucket : this.publicBucket;
     const ext = params.extension ?? this.extensionFromContentType(params.contentType);
     const key = `${params.folder}/${randomUUID()}${ext}`;
     const expiresIn = params.expiresIn ?? 600;
 
     const command = new PutObjectCommand({
-      Bucket: this.bucket,
+      Bucket: bucket,
       Key: key,
       ContentType: params.contentType,
+      // Force server-side encryption for every presigned upload. The signed
+      // URL only validates headers the client sends, so this `x-amz-server-side-encryption`
+      // is bound into the signature: a client cannot opt out.
+      ServerSideEncryption: 'AES256',
     });
-    const uploadUrl = await getSignedUrl(this.client, command, { expiresIn });
+    const uploadUrl = await getSignedUrl(this.client, command, {
+      expiresIn,
+      // Force the client to echo back the exact headers we baked into the
+      // signature (content-type + SSE). Any tampering breaks the signature.
+      signableHeaders: new Set(['content-type', 'x-amz-server-side-encryption']),
+    });
 
     return {
       uploadUrl,
-      publicUrl: this.publicUrl(key),
+      publicUrl: visibility === 'public' ? this.publicUrl(key) : `s3://${bucket}/${key}`,
       key,
+      bucket,
+      visibility,
       expiresIn,
     };
   }
 
-  publicUrl(key: string): string {
-    if (this.cdnUrl) return `${this.cdnUrl.replace(/\/$/, '')}/${key}`;
-    return `s3://${this.bucket}/${key}`;
+  /**
+   * Generate a short-lived GET URL for a PRIVATE object. Meant for things like
+   * identity documents viewed by moderators, or chat media the peer is about
+   * to display. Max TTL is capped at 15 min to limit replay.
+   */
+  async createPresignedDownload(key: string, expiresIn = 300): Promise<string> {
+    const capped = Math.min(Math.max(expiresIn, 30), 900);
+    const command = new GetObjectCommand({
+      Bucket: this.privateBucket,
+      Key: key,
+    });
+    return getSignedUrl(this.client, command, { expiresIn: capped });
   }
 
-  async deleteObject(key: string): Promise<void> {
+  publicUrl(key: string): string {
+    if (this.cdnUrl) return `${this.cdnUrl.replace(/\/$/, '')}/${key}`;
+    return `s3://${this.publicBucket}/${key}`;
+  }
+
+  async deleteObject(key: string, bucket: string = this.publicBucket): Promise<void> {
     try {
-      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+      await this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     } catch (error) {
-      this.logger.warn(`Failed to delete ${key}: ${String(error)}`);
+      this.logger.warn(`Failed to delete ${bucket}/${key}: ${String(error)}`);
     }
+  }
+
+  /**
+   * Convenience wrapper: delete a private object by key.
+   * Used by the identity-document lifecycle and future GDPR purges.
+   */
+  async deletePrivateObject(key: string): Promise<void> {
+    await this.deleteObject(key, this.privateBucket);
   }
 
   extensionFromContentType(contentType: string): string {
