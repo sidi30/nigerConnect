@@ -58,6 +58,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(auth)" />
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="chat/[id]" options={{ presentation: 'card' }} />
+                <Stack.Screen name="chat/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="user/[id]" />
                 <Stack.Screen name="post/[id]" />
                 <Stack.Screen name="post/new" options={{ presentation: 'modal' }} />
@@ -66,6 +67,10 @@ export default function RootLayout() {
                 <Stack.Screen name="services/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="stories/[authorId]" options={{ presentation: 'fullScreenModal' }} />
                 <Stack.Screen name="stories/new" options={{ presentation: 'fullScreenModal' }} />
+                <Stack.Screen
+                  name="photos/viewer"
+                  options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+                />
                 <Stack.Screen name="associations/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="friends" />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />

@@ -205,6 +205,12 @@ export default function UserScreen() {
             post={item}
             onLike={(pid) => likeMut.mutate(pid)}
             onComment={(pid) => router.push(`/post/${pid}`)}
+            onPhotoPress={(photos, index) =>
+              router.push({
+                pathname: '/photos/viewer',
+                params: { photos: JSON.stringify(photos), index: String(index) },
+              } as never)
+            }
           />
         )}
         ListHeaderComponent={

@@ -125,7 +125,16 @@ export default function PostScreen() {
               <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
             ) : postQuery.data ? (
               <View>
-                <PostCard post={postQuery.data} onLike={() => likeMut.mutate()} />
+                <PostCard
+                  post={postQuery.data}
+                  onLike={() => likeMut.mutate()}
+                  onPhotoPress={(photos, index) =>
+                    router.push({
+                      pathname: '/photos/viewer',
+                      params: { photos: JSON.stringify(photos), index: String(index) },
+                    } as never)
+                  }
+                />
                 <View style={styles.commentsHeader}>
                   <Text style={styles.commentsTitle}>
                     Commentaires ({postQuery.data.commentCount})

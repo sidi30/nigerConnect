@@ -38,7 +38,11 @@ export default function MessagesTab() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>💬 Messages</Text>
-        <Pressable style={styles.composeBtn} hitSlop={8}>
+        <Pressable
+          style={styles.composeBtn}
+          hitSlop={8}
+          onPress={() => router.push('/chat/new')}
+        >
           <Text style={styles.composeIcon}>✏️</Text>
         </Pressable>
       </View>

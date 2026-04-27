@@ -14,7 +14,7 @@ interface Props {
   onLike?: (postId: string) => void;
   onComment?: (postId: string) => void;
   onShare?: (postId: string) => void;
-  onPhotoPress?: (url: string) => void;
+  onPhotoPress?: (photos: string[], index: number) => void;
   onEdit?: (postId: string) => void;
   onDelete?: (postId: string) => void;
   onReport?: (postId: string) => void;
@@ -154,10 +154,16 @@ export function PostCard({
   );
 }
 
-function PhotoGallery({ photos, onPress }: { photos: string[]; onPress?: (url: string) => void }) {
+function PhotoGallery({
+  photos,
+  onPress,
+}: {
+  photos: string[];
+  onPress?: (photos: string[], index: number) => void;
+}) {
   if (photos.length === 1) {
     return (
-      <Pressable onPress={() => onPress?.(photos[0]!)}>
+      <Pressable onPress={() => onPress?.(photos, 0)}>
         <Image source={{ uri: photos[0] }} style={styles.singlePhoto} contentFit="cover" />
       </Pressable>
     );
@@ -165,7 +171,7 @@ function PhotoGallery({ photos, onPress }: { photos: string[]; onPress?: (url: s
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
       {photos.map((ph, i) => (
-        <Pressable key={i} onPress={() => onPress?.(ph)}>
+        <Pressable key={i} onPress={() => onPress?.(photos, i)}>
           <Image source={{ uri: ph }} style={styles.galleryPhoto} contentFit="cover" />
         </Pressable>
       ))}

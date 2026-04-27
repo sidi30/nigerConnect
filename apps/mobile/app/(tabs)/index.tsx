@@ -152,6 +152,12 @@ export default function FeedTab() {
             onEdit={(id) => router.push(`/post/edit/${id}` as never)}
             onDelete={(id) => deleteMut.mutate(id)}
             onReport={(id) => setReportingId(id)}
+            onPhotoPress={(photos, index) =>
+              router.push({
+                pathname: '/photos/viewer',
+                params: { photos: JSON.stringify(photos), index: String(index) },
+              } as never)
+            }
           />
         )}
         ListHeaderComponent={
