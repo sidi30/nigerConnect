@@ -91,7 +91,17 @@ export default function NewStoryScreen() {
             </Pressable>
           </>
         ) : (
-          <Pressable onPress={() => pickPhoto()} disabled={uploading} style={styles.placeholder}>
+          <Pressable
+            onPress={() =>
+              Alert.alert('Ajouter une photo', undefined, [
+                { text: 'Prendre une photo', onPress: () => pickPhoto('camera') },
+                { text: 'Depuis la galerie', onPress: () => pickPhoto('library') },
+                { text: 'Annuler', style: 'cancel' },
+              ])
+            }
+            disabled={uploading}
+            style={styles.placeholder}
+          >
             <Text style={styles.placeholderEmoji}>📷</Text>
             <Text style={styles.placeholderText}>Touche pour choisir une image</Text>
             <Text style={styles.placeholderHint}>

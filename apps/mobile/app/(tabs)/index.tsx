@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -48,8 +49,27 @@ export default function FeedTab() {
 
   const shareMut = useMutation({
     mutationFn: (postId: string) => feedApi.share(postId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feed'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['feed'] });
+      Alert.alert('Repartagé', 'Le post a été partagé avec tes amis.');
+    },
+    onError: (e) => {
+      const msg = (e as { response?: { data?: { message?: string } }; message?: string })
+        ?.response?.data?.message ?? (e as Error).message ?? 'Impossible de partager';
+      Alert.alert('Échec du partage', msg);
+    },
   });
+
+  function confirmShare(postId: string): void {
+    Alert.alert(
+      'Repartager ce post ?',
+      'Tes amis le verront sur leur fil.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Repartager', onPress: () => shareMut.mutate(postId) },
+      ],
+    );
+  }
 
   const deleteMut = useMutation({
     mutationFn: (postId: string) => feedApi.deletePost(postId),
@@ -148,7 +168,7 @@ export default function FeedTab() {
             currentUserId={user?.id}
             onLike={handleLike}
             onComment={(id) => router.push(`/post/${id}`)}
-            onShare={(id) => shareMut.mutate(id)}
+            onShare={confirmShare}
             onEdit={(id) => router.push(`/post/edit/${id}` as never)}
             onDelete={(id) => deleteMut.mutate(id)}
             onReport={(id) => setReportingId(id)}
