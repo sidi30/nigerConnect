@@ -24,7 +24,6 @@ import {
 } from '@/constants/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { GoogleButton } from '@/components/ui/GoogleButton';
-import { AppleButton } from '@/components/ui/AppleButton';
 
 interface RegisterData {
   firstName: string;

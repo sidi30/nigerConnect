@@ -73,6 +73,7 @@ export default function RootLayout() {
                 <Stack.Screen name="associations/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="friends" />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
+                <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/terms" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />

@@ -16,7 +16,10 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.env.prod
+.env.prod.*
 !.env.example
+!.env.prod.example
 
 coverage/
 .nyc_output/

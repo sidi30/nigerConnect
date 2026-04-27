@@ -1,0 +1,31 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["__APPLE_TEAM_ID__.com.nigerconnect.app"],
+        "components": [
+          {
+            "/": "/app/*",
+            "comment": "Lie toutes les routes /app/* au mobile (deep linking)"
+          },
+          {
+            "/": "/invite/*",
+            "comment": "Liens d'invitation"
+          },
+          {
+            "/": "/post/*",
+            "comment": "Partage d'un post"
+          },
+          {
+            "/": "/profile/*",
+            "comment": "Partage d'un profil public"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["__APPLE_TEAM_ID__.com.nigerconnect.app"]
+  }
+}

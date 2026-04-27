@@ -14,10 +14,18 @@ interface Props {
  * Apple's Human Interface Guidelines *require* using their native button —
  * custom drawings of the Apple mark can get the app rejected. We use
  * `AppleAuthenticationButton` on iOS and render nothing on Android/web.
+ *
+ * Apple Sign-in désactivé tant qu'on n'a pas l'Apple Developer Program ($99/an).
+ * Pour réactiver : retirer le `return null` ci-dessous + remplir APPLE_* dans
+ * .env.prod + créer le Service ID + Key .p8 (cf docs/GO-LIVE.md).
+ * NOTE: obligatoire pour la review App Store si on garde le login Google.
  */
 export function AppleButton({ mode = 'signIn', label }: Props) {
   const { signIn, isLoading, error, isAvailable } = useAppleAuth();
 
+  // Désactivation temporaire — voir commentaire ci-dessus.
+  return null;
+  // eslint-disable-next-line no-unreachable
   if (Platform.OS !== 'ios' || !isAvailable) return null;
 
   const buttonType =

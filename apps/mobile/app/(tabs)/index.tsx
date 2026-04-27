@@ -156,6 +156,21 @@ export default function FeedTab() {
         )}
         ListHeaderComponent={
           <View>
+            {user && !user.emailVerified ? (
+              <Pressable
+                onPress={() => router.push('/verify-email' as never)}
+                style={styles.verifyBanner}
+              >
+                <Text style={styles.verifyIcon}>📧</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.verifyTitle}>Vérifie ton email</Text>
+                  <Text style={styles.verifyText} numberOfLines={2}>
+                    Confirme {user.email} pour profiter de toutes les fonctionnalités.
+                  </Text>
+                </View>
+                <Text style={styles.verifyChevron}>›</Text>
+              </Pressable>
+            ) : null}
             <StoriesRow
               storyGroups={storiesQuery.data ?? []}
               onCreate={() => router.push('/stories/new' as never)}
@@ -265,4 +280,33 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   fabIcon: { fontSize: 22 },
+  verifyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: Radii.lg,
+    backgroundColor: '#FFF4E0',
+    borderWidth: 1,
+    borderColor: '#F4D8A8',
+  },
+  verifyIcon: { fontSize: 22 },
+  verifyTitle: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: '700',
+    color: Colors.brown,
+    marginBottom: 2,
+  },
+  verifyText: {
+    fontSize: Typography.sizes.xs + 1,
+    color: Colors.tan500,
+    lineHeight: 17,
+  },
+  verifyChevron: {
+    fontSize: 22,
+    color: Colors.orange,
+    fontWeight: '600',
+  },
 });
