@@ -36,7 +36,9 @@ export default function NewPostScreen() {
   const me = useAuthStore((s) => s.user);
 
   const [content, setContent] = useState('');
-  const [visibility, setVisibility] = useState<Visibility>('friends');
+  // Default to "public" so new posts get discovery in the feed of users who
+  // are not yet friends. Users can still scope it down before publishing.
+  const [visibility, setVisibility] = useState<Visibility>('public');
   const [photos, setPhotos] = useState<Array<{ url: string }>>([]);
 
   const publishMut = useMutation({
