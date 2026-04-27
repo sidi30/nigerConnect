@@ -88,7 +88,6 @@
       "expo-font",
       "expo-secure-store",
       "expo-apple-authentication",
-      "@sentry/react-native/expo",
       [
         "expo-image-picker",
         {
@@ -110,8 +109,7 @@
         {
           "locationWhenInUsePermission": "NigerConnect utilise ta position uniquement quand tu l'actives, pour t'afficher sur la carte de la diaspora."
         }
-      ],
-      "@sentry/react-native"
+      ]
     ],
     "experiments": {
       "typedRoutes": true

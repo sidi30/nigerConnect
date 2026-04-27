@@ -17,8 +17,7 @@
       "channel": "preview",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
-      },
+        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"      },
       "ios": {
         "simulator": true
       }
@@ -27,8 +26,7 @@
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
-      },
+        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"      },
       "autoIncrement": true
     }
   },

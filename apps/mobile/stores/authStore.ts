@@ -5,7 +5,6 @@ import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
 import { registerLogoutHandler } from '@/services/api';
 import { registerForPushNotifications } from '@/services/pushService';
-import { setSentryUser } from '@/services/sentry';
 
 // Best-effort background push registration — never blocks auth flow.
 const kickOffPushRegistration = (): void => {
@@ -50,7 +49,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { user } = await authApi.me();
       set({ user, isAuthenticated: true, isHydrated: true });
-      setSentryUser({ id: user.id, email: user.email });
       kickOffPushRegistration();
     } catch {
       await tokenStore.clear();
@@ -62,7 +60,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user, tokens } = await authApi.login({ email, password });
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
-    setSentryUser({ id: user.id, email: user.email });
     kickOffPushRegistration();
   },
 
@@ -70,7 +67,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user, tokens } = await authApi.register(input);
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
-    setSentryUser({ id: user.id, email: user.email });
     kickOffPushRegistration();
   },
 
@@ -85,14 +81,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     await tokenStore.clear();
     set({ user: null, isAuthenticated: false });
-    setSentryUser(null);
   },
 
   async deleteAccount() {
     await profileApi.deleteAccount();
     await tokenStore.clear();
     set({ user: null, isAuthenticated: false });
-    setSentryUser(null);
   },
 
   setUser(user) {

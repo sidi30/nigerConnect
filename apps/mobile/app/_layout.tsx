@@ -19,10 +19,6 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { ThemeProvider } from '@/constants/theme-provider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { initSentry, reportError } from '@/services/sentry';
-
-// Initialize Sentry once at module load — before any component renders so we catch early errors too.
-initSentry();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,7 +47,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <ErrorBoundary onError={(error, info) => reportError(error, { componentStack: info.componentStack })}>
+    <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>

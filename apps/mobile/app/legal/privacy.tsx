@@ -40,7 +40,6 @@ export default function PrivacyScreen() {
             'AWS / Cloudflare R2 — stockage des photos (UE).',
             'Firebase Cloud Messaging — acheminement des notifications push.',
             'Resend — envoi des emails transactionnels.',
-            'Sentry — rapports de crash anonymisés.',
           ],
         },
         {
@@ -68,7 +67,7 @@ export default function PrivacyScreen() {
         },
         {
           heading: 'Transferts hors UE',
-          body: 'Certains sous-traitants (FCM, Sentry) sont hors UE. Les transferts reposent sur les Clauses Contractuelles Types de la Commission européenne et un chiffrement en transit.',
+          body: 'Certains sous-traitants (FCM) sont hors UE. Les transferts reposent sur les Clauses Contractuelles Types de la Commission européenne et un chiffrement en transit.',
         },
       ]}
       contact="Délégué à la protection des données : privacy@nigerconnect.ne. Réclamation CNIL : cnil.fr."
