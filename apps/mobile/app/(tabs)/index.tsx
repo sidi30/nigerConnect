@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { feedApi } from '@/services/feedApi';
 import { friendsApi } from '@/services/friendsApi';
+import { notificationApi } from '@/services/notificationApi';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function FeedTab() {
@@ -46,6 +47,13 @@ export default function FeedTab() {
     queryKey: ['friends', 'incoming'],
     queryFn: () => friendsApi.incoming(),
   });
+
+  const unreadQuery = useQuery({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: () => notificationApi.unreadCount(),
+    refetchInterval: 30_000,
+  });
+  const unreadCount = unreadQuery.data ?? 0;
 
   const shareMut = useMutation({
     mutationFn: (postId: string) => feedApi.share(postId),
@@ -140,8 +148,19 @@ export default function FeedTab() {
           </Text>
         </View>
         <View style={styles.headerRight}>
-          <Pressable style={styles.iconBtn} hitSlop={8}>
+          <Pressable
+            style={styles.iconBtn}
+            hitSlop={8}
+            onPress={() => router.push('/settings/notifications' as never)}
+          >
             <Text style={styles.iconText}>🔔</Text>
+            {unreadCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
           </Pressable>
           <Pressable onPress={() => router.push('/(tabs)/profile')} hitSlop={6}>
             <Avatar
@@ -276,8 +295,28 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.tan100,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   iconText: { fontSize: 16 },
+  notifBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: Colors.orange,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.cream,
+  },
+  notifBadgeText: {
+    color: Colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+  },
   loader: { padding: Spacing.xxl, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
   emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
