@@ -14,6 +14,21 @@ export interface PostMedia {
   sortOrder: number;
 }
 
+/**
+ * Original post a share refers back to. Comes WITHOUT viewer-specific fields
+ * (`isLikedByMe`) and never recurses (no shared-of-shared chains in the wire
+ * format). Backend serializer only attaches author + media.
+ */
+export interface SharedPost {
+  id: string;
+  author: PublicUser;
+  content: string | null;
+  visibility: PostVisibility;
+  isStory: boolean;
+  media: PostMedia[];
+  createdAt: string;
+}
+
 export interface Post {
   id: string;
   author: PublicUser;
@@ -22,6 +37,8 @@ export interface Post {
   associationId: string | null;
   isStory: boolean;
   storyExpiresAt: string | null;
+  /** When set, this post is a re-share. The original is here. */
+  sharedPost: SharedPost | null;
   likeCount: number;
   commentCount: number;
   shareCount: number;

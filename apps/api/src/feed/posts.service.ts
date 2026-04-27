@@ -27,6 +27,16 @@ const AUTHOR_SELECT = {
   identityStatus: true,
 } as const satisfies Prisma.UserSelect;
 
+/**
+ * Includes for the *original* post a share refers back to. We pull the same
+ * columns the feed needs (author + media) but don't recurse — a share of a
+ * share just shows the immediate parent.
+ */
+const SHARED_POST_INCLUDE = {
+  media: { orderBy: { sortOrder: 'asc' } },
+  author: { select: AUTHOR_SELECT },
+} as const satisfies Prisma.PostInclude;
+
 @Injectable()
 export class PostsService {
   constructor(
@@ -60,7 +70,11 @@ export class PostsService {
             }
           : undefined,
       },
-      include: { media: true, author: { select: AUTHOR_SELECT } },
+      include: {
+        media: true,
+        author: { select: AUTHOR_SELECT },
+        sharedPost: { include: SHARED_POST_INCLUDE },
+      },
     });
 
     await this.invalidateFeedCache(authorId);
@@ -88,7 +102,11 @@ export class PostsService {
           },
         },
       },
-      include: { media: true, author: { select: AUTHOR_SELECT } },
+      include: {
+        media: true,
+        author: { select: AUTHOR_SELECT },
+        sharedPost: { include: SHARED_POST_INCLUDE },
+      },
     });
   }
 
@@ -99,6 +117,7 @@ export class PostsService {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
         likes: { where: { userId: viewerId }, select: { userId: true } },
+        sharedPost: { include: SHARED_POST_INCLUDE },
       },
     });
     if (!post) throw new NotFoundException('Post not found');
@@ -118,7 +137,11 @@ export class PostsService {
     const updated = await this.prisma.post.update({
       where: { id: postId },
       data: { content: dto.content ?? post.content, visibility: dto.visibility ?? post.visibility },
-      include: { media: true, author: { select: AUTHOR_SELECT } },
+      include: {
+        media: true,
+        author: { select: AUTHOR_SELECT },
+        sharedPost: { include: SHARED_POST_INCLUDE },
+      },
     });
     await this.invalidateFeedCache(authorId);
     return updated;
@@ -169,7 +192,10 @@ export class PostsService {
           visibility: 'friends',
           sharedPostId: postId,
         },
-        include: { author: { select: AUTHOR_SELECT }, sharedPost: true },
+        include: {
+          author: { select: AUTHOR_SELECT },
+          sharedPost: { include: SHARED_POST_INCLUDE },
+        },
       }),
       this.prisma.post.update({
         where: { id: postId },
@@ -227,6 +253,7 @@ export class PostsService {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
         likes: { where: { userId }, select: { userId: true } },
+        sharedPost: { include: SHARED_POST_INCLUDE },
       },
       orderBy: { createdAt: 'desc' },
       take: limit + 1,
@@ -306,6 +333,7 @@ export class PostsService {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
         likes: { where: { userId: viewerId }, select: { userId: true } },
+        sharedPost: { include: SHARED_POST_INCLUDE },
       },
       orderBy: { createdAt: 'desc' },
       take: limit + 1,
@@ -334,7 +362,11 @@ export class PostsService {
         storyExpiresAt: { gt: new Date() },
         authorId: { in: [...friendIds, userId] },
       },
-      include: { media: true, author: { select: AUTHOR_SELECT } },
+      include: {
+        media: true,
+        author: { select: AUTHOR_SELECT },
+        sharedPost: { include: SHARED_POST_INCLUDE },
+      },
       orderBy: { createdAt: 'desc' },
     });
 

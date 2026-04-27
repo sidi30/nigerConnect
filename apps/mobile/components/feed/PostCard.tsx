@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import type { Post } from '@nigerconnect/shared-types';
+import type { Post, SharedPost } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -131,6 +131,14 @@ export function PostCard({
         />
       ) : null}
 
+      {post.sharedPost ? (
+        <SharedPostPreview
+          shared={post.sharedPost}
+          onPhotoPress={onPhotoPress}
+          onOpen={() => router.push(`/post/${post.sharedPost!.id}`)}
+        />
+      ) : null}
+
       <View style={styles.actions}>
         <ActionButton
           icon={liked ? '❤️' : '🤍'}
@@ -151,6 +159,43 @@ export function PostCard({
         <ActionButton icon="📤" />
       </View>
     </View>
+  );
+}
+
+function SharedPostPreview({
+  shared,
+  onPhotoPress,
+  onOpen,
+}: {
+  shared: SharedPost;
+  onPhotoPress?: (photos: string[], index: number) => void;
+  onOpen: () => void;
+}) {
+  const author = shared.author;
+  const name =
+    author.displayName ?? `${author.firstName ?? ''} ${author.lastName ?? ''}`.trim() ?? 'Anonyme';
+  return (
+    <Pressable onPress={onOpen} style={styles.shared}>
+      <View style={styles.sharedHeader}>
+        <Avatar uri={author.avatarUrl} name={name} size={28} borderColor={colorForId(author.id)} />
+        <Text style={styles.sharedName} numberOfLines={1}>
+          {name}
+        </Text>
+        {author.identityStatus === 'approved' && <VerifiedBadge size={11} />}
+        <Text style={styles.sharedTime}>· {relativeTime(shared.createdAt)}</Text>
+      </View>
+      {shared.content ? (
+        <Text style={styles.sharedContent} numberOfLines={4}>
+          {shared.content}
+        </Text>
+      ) : null}
+      {shared.media.length > 0 ? (
+        <PhotoGallery
+          photos={shared.media.map((m) => m.mediaUrl)}
+          onPress={onPhotoPress}
+        />
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -226,6 +271,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md + 2,
     marginTop: Spacing.sm + 2,
     marginBottom: Spacing.md,
+  },
+  shared: {
+    marginHorizontal: Spacing.md + 2,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    borderRadius: Radii.md,
+    padding: Spacing.md,
+    backgroundColor: Colors.tan50 ?? '#FAF6F0',
+    gap: 6,
+  },
+  sharedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sharedName: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: '700',
+    color: Colors.brown,
+    flexShrink: 1,
+  },
+  sharedTime: { fontSize: Typography.sizes.xs, color: Colors.tan500 },
+  sharedContent: {
+    fontSize: Typography.sizes.sm,
+    lineHeight: 19,
+    color: Colors.brownSoft,
   },
   singlePhoto: { width: '100%', height: 240, backgroundColor: Colors.tan100 },
   gallery: { paddingHorizontal: 2 },
