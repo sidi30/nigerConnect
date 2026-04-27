@@ -7,6 +7,7 @@ import {
 import type { Prisma, MessageType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { BlockService } from '../social/block.service';
+import { NotificationService } from '../notification/notification.service';
 
 /**
  * Hard cap on a single message. Matches our DTO validation but also guards
@@ -55,6 +56,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async listConversations(userId: string, cursor?: string, limit = 30) {
@@ -205,6 +207,36 @@ export class ChatService {
       where: { conversationId },
       select: { userId: true },
     });
+
+    // Notify every other member — fire-and-forget so the HTTP response stays
+    // fast. NotificationService.create persists the row + dispatches the push.
+    const sender = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true, firstName: true },
+    });
+    const senderName =
+      sender?.displayName ?? sender?.firstName ?? 'Quelqu’un';
+    const preview = cleanContent
+      ? cleanContent.slice(0, 140)
+      : messageType === 'image'
+        ? '📷 Photo'
+        : '📎 Pièce jointe';
+    for (const m of members) {
+      if (m.userId === userId) continue;
+      void this.notifications
+        .create({
+          userId: m.userId,
+          actorId: userId,
+          type: 'message',
+          title: senderName,
+          body: preview,
+          data: { conversationId, messageId: message.id },
+        })
+        .catch(() => {
+          /* fire-and-forget */
+        });
+    }
+
     return { message, memberIds: members.map((m) => m.userId) };
   }
 

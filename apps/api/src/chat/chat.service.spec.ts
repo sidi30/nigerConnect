@@ -5,10 +5,14 @@ function makeBlocks(blocked = false) {
   return { isBlocked: jest.fn(async () => blocked) };
 }
 
+function makeNotifications() {
+  return { create: jest.fn(async () => null) };
+}
+
 describe('ChatService', () => {
   it('refuses to create conversation with only self', async () => {
     const prisma = { conversation: {}, conversationMember: {}, user: {} } as never;
-    const svc = new ChatService(prisma, makeBlocks() as never);
+    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never);
     await expect(svc.createConversation('me', ['me'])).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -16,7 +20,7 @@ describe('ChatService', () => {
     const prisma = {
       conversationMember: { findUnique: jest.fn(async () => null) },
     } as never;
-    const svc = new ChatService(prisma, makeBlocks() as never);
+    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never);
     await expect(svc.sendMessage('me', 'c1', { content: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -30,7 +34,7 @@ describe('ChatService', () => {
         create: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never);
     const result = await svc.createConversation('me', ['other']);
     expect((result as { id: string }).id).toBe('existing-convo');
     expect(prisma.conversation.create).not.toHaveBeenCalled();
@@ -43,7 +47,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never);
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -52,7 +56,7 @@ describe('ChatService', () => {
       user: { findMany: jest.fn(async () => []) },
       conversation: { findFirst: jest.fn(), create: jest.fn() },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never);
     await expect(svc.createConversation('me', ['ghost'])).rejects.toBeInstanceOf(
       NotFoundException,
     );
