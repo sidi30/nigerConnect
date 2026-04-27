@@ -130,12 +130,26 @@ export default function MapTab() {
   useEffect(() => {
     if (webReady && markersQuery.data && webRef.current) {
       const q = search.trim().toLowerCase();
+      const matches = (
+        ...fields: Array<string | null | undefined>
+      ): boolean => fields.some((f) => f && f.toLowerCase().includes(q));
       const filtered = q
         ? markersQuery.data.filter((m) => {
-            if (m.kind === 'individual') return (m.name ?? '').toLowerCase().includes(q);
-            if (m.kind === 'association') return m.name.toLowerCase().includes(q);
-            // Hide aggregate clusters (country/city) while searching by name
-            return false;
+            if (m.kind === 'individual') {
+              const country = m.countryCode ? CountryNames[m.countryCode] : null;
+              return matches(m.name, m.city, m.countryCode, country);
+            }
+            if (m.kind === 'association') {
+              const country = m.countryCode ? CountryNames[m.countryCode] : null;
+              return matches(m.name, m.city, m.countryCode, country);
+            }
+            // For country / city clusters, match the cluster's own label.
+            const country = m.countryCode ? CountryNames[m.countryCode] : null;
+            return matches(
+              m.kind === 'city' ? m.city : null,
+              m.countryCode,
+              country,
+            );
           })
         : markersQuery.data;
       const payload = filtered.map((m) =>
