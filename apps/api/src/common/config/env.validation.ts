@@ -10,6 +10,12 @@ const envSchema = z
     REDIS_URL: z.string().url(),
 
     S3_ENDPOINT: z.string().url().optional(),
+    // Public-facing S3/MinIO endpoint used to sign URLs the CLIENT will hit
+    // (uploads + private-file presigned downloads). When MinIO sits behind a
+    // reverse proxy, S3_ENDPOINT is the internal Docker hostname (unreachable
+    // from outside) and S3_PUBLIC_ENDPOINT is the public URL. Falls back to
+    // S3_ENDPOINT if not set.
+    S3_PUBLIC_ENDPOINT: z.string().url().optional(),
     S3_REGION: z.string().default('us-east-1'),
     S3_BUCKET: z.string().default('nigerconnect'),
     S3_PRIVATE_BUCKET: z.string().default('nigerconnect-private'),

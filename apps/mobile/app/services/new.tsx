@@ -74,7 +74,7 @@ export default function NewServiceScreen() {
     title.trim().length > 0 && category !== null && !mut.isPending;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text style={styles.cancel}>Annuler</Text>

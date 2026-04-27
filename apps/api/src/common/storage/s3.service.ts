@@ -40,7 +40,16 @@ export interface PresignedUpload {
 @Injectable()
 export class S3Service {
   private readonly logger = new Logger(S3Service.name);
+  /** Internal client — talks to MinIO/S3 from the backend (delete, etc.). */
   private readonly client: S3Client;
+  /**
+   * Signing client — used only to generate presigned URLs the *client* will hit.
+   * When MinIO runs behind a reverse proxy, the internal endpoint
+   * (`http://minio:9000`) is unreachable from outside, so signing must use
+   * the public hostname. Falls back to the internal client when
+   * S3_PUBLIC_ENDPOINT is not configured (single-host dev setups).
+   */
+  private readonly signingClient: S3Client;
   private readonly publicBucket: string;
   private readonly privateBucket: string;
   private readonly cdnUrl?: string;
@@ -50,15 +59,22 @@ export class S3Service {
     this.privateBucket = config.get('S3_PRIVATE_BUCKET', { infer: true });
     this.cdnUrl = config.get('CDN_URL', { infer: true });
     const endpoint = config.get('S3_ENDPOINT', { infer: true });
+    const publicEndpoint = config.get('S3_PUBLIC_ENDPOINT', { infer: true });
+    const region = config.get('S3_REGION', { infer: true });
+    const forcePathStyle = config.get('S3_FORCE_PATH_STYLE', { infer: true });
+    const credentials = {
+      accessKeyId: config.get('S3_ACCESS_KEY', { infer: true }) ?? 'minioadmin',
+      secretAccessKey: config.get('S3_SECRET_KEY', { infer: true }) ?? 'minioadmin',
+    };
     this.client = new S3Client({
-      region: config.get('S3_REGION', { infer: true }),
+      region,
       endpoint: endpoint || undefined,
-      forcePathStyle: config.get('S3_FORCE_PATH_STYLE', { infer: true }),
-      credentials: {
-        accessKeyId: config.get('S3_ACCESS_KEY', { infer: true }) ?? 'minioadmin',
-        secretAccessKey: config.get('S3_SECRET_KEY', { infer: true }) ?? 'minioadmin',
-      },
+      forcePathStyle,
+      credentials,
     });
+    this.signingClient = publicEndpoint
+      ? new S3Client({ region, endpoint: publicEndpoint, forcePathStyle, credentials })
+      : this.client;
   }
 
   async createPresignedUpload(params: {
@@ -83,7 +99,7 @@ export class S3Service {
       // is bound into the signature: a client cannot opt out.
       ServerSideEncryption: 'AES256',
     });
-    const uploadUrl = await getSignedUrl(this.client, command, {
+    const uploadUrl = await getSignedUrl(this.signingClient, command, {
       expiresIn,
       // Force the client to echo back the exact headers we baked into the
       // signature (content-type + SSE). Any tampering breaks the signature.
@@ -111,7 +127,7 @@ export class S3Service {
       Bucket: this.privateBucket,
       Key: key,
     });
-    return getSignedUrl(this.client, command, { expiresIn: capped });
+    return getSignedUrl(this.signingClient, command, { expiresIn: capped });
   }
 
   publicUrl(key: string): string {

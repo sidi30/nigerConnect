@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
@@ -51,8 +51,16 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([20, 10], 3);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', { subdomains:'abcd', maxZoom: 19 }).addTo(map);
+  const worldBounds = L.latLngBounds([[-85, -180], [85, 180]]);
+  const map = L.map('map', {
+    zoomControl: true,
+    attributionControl: false,
+    worldCopyJump: false,
+    maxBounds: worldBounds,
+    maxBoundsViscosity: 1.0,
+    minZoom: 2,
+  }).setView([20, 10], 3);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', { subdomains:'abcd', maxZoom: 19, noWrap: true, bounds: worldBounds }).addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
 
   function post(msg){ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg)); }
@@ -104,10 +112,12 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 
 export default function MapTab() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
   const [bounds, setBounds] = useState(INITIAL_BOUNDS);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [selected, setSelected] = useState<MapMarker | null>(null);
   const [webReady, setWebReady] = useState(false);
 
@@ -119,7 +129,16 @@ export default function MapTab() {
 
   useEffect(() => {
     if (webReady && markersQuery.data && webRef.current) {
-      const payload = markersQuery.data.map((m) =>
+      const q = search.trim().toLowerCase();
+      const filtered = q
+        ? markersQuery.data.filter((m) => {
+            if (m.kind === 'individual') return (m.name ?? '').toLowerCase().includes(q);
+            if (m.kind === 'association') return m.name.toLowerCase().includes(q);
+            // Hide aggregate clusters (country/city) while searching by name
+            return false;
+          })
+        : markersQuery.data;
+      const payload = filtered.map((m) =>
         m.kind === 'country' || m.kind === 'city'
           ? { ...m, flag: Flags[m.countryCode] ?? '🌍' }
           : m,
@@ -128,7 +147,7 @@ export default function MapTab() {
         `window.renderMarkers(${JSON.stringify(payload)}); true;`,
       );
     }
-  }, [webReady, markersQuery.data]);
+  }, [webReady, markersQuery.data, search]);
 
   function onMessage(e: WebViewMessageEvent) {
     try {
@@ -161,17 +180,7 @@ export default function MapTab() {
         startInLoadingState
       />
 
-      <View style={styles.topBar}>
-        <View style={styles.searchWrap}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Rechercher…"
-            placeholderTextColor={Colors.tan400}
-            style={styles.searchInput}
-          />
-        </View>
+      <View style={[styles.topBar, { top: insets.top + Spacing.md }]}>
         <View style={styles.filtersRow}>
           {FILTERS.map((f) => {
             const active = filter === f.id;
@@ -187,7 +196,37 @@ export default function MapTab() {
               </Pressable>
             );
           })}
+          <Pressable
+            onPress={() => setSearchOpen((v) => !v)}
+            style={[styles.searchPill, searchOpen && styles.filterPillActive]}
+            hitSlop={6}
+          >
+            <Text style={[styles.filterLabel, searchOpen && { color: Colors.white }]}>🔍</Text>
+          </Pressable>
         </View>
+        {searchOpen && (
+          <View style={styles.searchWrap}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Rechercher par nom…"
+              placeholderTextColor={Colors.tan400}
+              style={styles.searchInput}
+              autoFocus
+              returnKeyType="search"
+            />
+            {search.length > 0 && (
+              <Pressable
+                onPress={() => setSearch('')}
+                hitSlop={10}
+                style={styles.searchClose}
+              >
+                <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
       </View>
 
       {markersQuery.isLoading && (
@@ -312,7 +351,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   topBar: {
     position: 'absolute',
-    top: Spacing.md,
     left: Spacing.md,
     right: Spacing.md,
     gap: Spacing.sm,
@@ -333,7 +371,7 @@ const styles = StyleSheet.create({
   },
   searchIcon: { fontSize: 15 },
   searchInput: { flex: 1, fontSize: Typography.sizes.sm, color: Colors.brown, padding: 0 },
-  filtersRow: { flexDirection: 'row', gap: 6 },
+  filtersRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   filterPill: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
@@ -342,6 +380,22 @@ const styles = StyleSheet.create({
   },
   filterPillActive: { backgroundColor: Colors.brown },
   filterLabel: { fontSize: Typography.sizes.xs, fontWeight: '700', color: Colors.tan600 },
+  searchPill: {
+    width: 36,
+    height: 32,
+    borderRadius: Radii.md,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  searchClose: {
+    width: 28,
+    height: 28,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   loader: {
     position: 'absolute',
     top: 130,

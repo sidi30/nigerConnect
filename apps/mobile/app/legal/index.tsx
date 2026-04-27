@@ -27,7 +27,7 @@ const ITEMS: Array<{ icon: string; title: string; desc: string; href: Href }> = 
 export default function LegalIndex() {
   const router = useRouter();
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
           <Text style={styles.backIcon}>←</Text>

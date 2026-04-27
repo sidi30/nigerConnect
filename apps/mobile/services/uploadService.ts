@@ -102,11 +102,20 @@ export async function pickAndUploadImage(
     const blob = await fetch(asset.uri).then((r) => r.blob());
     const put = await fetch(presigned.uploadUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': contentType },
+      headers: {
+        'Content-Type': contentType,
+        // Backend bakes SSE into the signature via signableHeaders — must echo it
+        // back exactly or S3 rejects with SignatureDoesNotMatch.
+        'x-amz-server-side-encryption': 'AES256',
+      },
       body: blob,
     });
     if (!put.ok) {
-      throw new UploadError(`Upload failed: ${put.status}`, 'upload_failed');
+      const body = await put.text().catch(() => '');
+      throw new UploadError(
+        `Upload failed: ${put.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+        'upload_failed',
+      );
     }
     return presigned.publicUrl;
   } catch (err) {

@@ -88,7 +88,7 @@ export default function ChatScreen() {
     peer.displayName ?? `${peer.firstName ?? ''} ${peer.lastName ?? ''}`.trim() ?? 'Contact';
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Text style={styles.backIcon}>←</Text>
