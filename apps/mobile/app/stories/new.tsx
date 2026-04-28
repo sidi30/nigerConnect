@@ -59,7 +59,7 @@ export default function NewStoryScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>Annuler</Text>
+          <Text style={styles.cancel}>‹ Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouvelle story</Text>
         <Pressable

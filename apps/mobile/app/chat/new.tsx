@@ -79,7 +79,7 @@ export default function NewChatScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>Annuler</Text>
+          <Text style={styles.cancel}>‹ Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouveau message</Text>
         <View style={{ width: 60 }} />
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.tan200,
   },
-  cancel: { fontSize: Typography.sizes.md, color: Colors.tan600, width: 60 },
+  cancel: { fontSize: Typography.sizes.md, color: Colors.brown, width: 80, fontWeight: '600' },
   title: {
     fontSize: Typography.sizes.lg,
     fontWeight: '700',

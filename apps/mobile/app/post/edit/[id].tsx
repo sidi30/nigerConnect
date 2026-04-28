@@ -85,7 +85,7 @@ export default function EditPostScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>Annuler</Text>
+          <Text style={styles.cancel}>‹ Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Modifier</Text>
         <Pressable
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     gap: Spacing.md,
   },
-  cancel: { color: Colors.tan500, fontSize: Typography.sizes.md, fontWeight: '600' },
+  cancel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '600' },
   title: { flex: 1, textAlign: 'center', fontSize: Typography.sizes.md + 1, fontWeight: '700', color: Colors.brown },
   publish: {
     paddingHorizontal: Spacing.md + 2,

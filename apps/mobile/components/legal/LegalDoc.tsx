@@ -25,7 +25,7 @@ interface Props {
 export function LegalDoc({ title, lastUpdated, intro, sections, contact }: Props) {
   const router = useRouter();
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
           <Text style={styles.backIcon}>←</Text>

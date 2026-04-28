@@ -77,7 +77,7 @@ export default function NewPostScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>Annuler</Text>
+          <Text style={styles.cancel}>‹ Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouvelle publication</Text>
         <Pressable
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.tan200,
   },
-  cancel: { color: Colors.tan600, fontSize: Typography.sizes.md, fontWeight: '600' },
+  cancel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '600' },
   title: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   publish: {
     paddingHorizontal: Spacing.md + 2,
