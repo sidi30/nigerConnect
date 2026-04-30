@@ -21,6 +21,11 @@ yarn-error.log*
 !.env.example
 !.env.prod.example
 
+# Firebase secrets — never commit. Each developer / CI keeps their own.
+google-services.json
+GoogleService-Info.plist
+*-firebase-adminsdk-*.json
+
 coverage/
 .nyc_output/
 

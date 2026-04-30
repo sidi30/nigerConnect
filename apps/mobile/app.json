@@ -42,6 +42,7 @@
       "package": "com.nigerconnect.app",
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#E05206"
