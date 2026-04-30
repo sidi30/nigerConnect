@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -14,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { geoApi, type MapMarker } from '@/services/geoApi';
+import { profileApi } from '@/services/profileApi';
 
 type Filter = 'all' | 'people' | 'associations';
 
@@ -76,6 +78,10 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   map.on('moveend zoomend', boundsChanged);
   setTimeout(boundsChanged, 300);
 
+  window.flyTo = function(lat, lon, zoom){
+    map.flyTo([lat, lon], zoom || 9, { duration: 0.8 });
+  };
+
   window.renderMarkers = function(markers){
     markerLayer.clearLayers();
     for (const m of markers) {
@@ -113,6 +119,15 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 </script>
 </body></html>`;
 
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
 export default function MapTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -123,6 +138,17 @@ export default function MapTab() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selected, setSelected] = useState<MapMarker | null>(null);
   const [webReady, setWebReady] = useState(false);
+
+  // Global name search via the API — runs only when the search bar is open
+  // AND the user typed at least 2 characters. Hits /profile/search regardless
+  // of the current map zoom, so people in clustered countries (e.g. Raya in
+  // Saudi Arabia) are findable even from the world view.
+  const debouncedSearch = useDebouncedValue(search.trim(), 250);
+  const globalSearch = useQuery({
+    queryKey: ['profile', 'search', 'map', debouncedSearch],
+    queryFn: () => profileApi.search({ q: debouncedSearch, limit: 10 }),
+    enabled: searchOpen && debouncedSearch.length >= 2,
+  });
 
   const markersQuery = useQuery({
     queryKey: ['geo', 'members', bounds, filter],
@@ -241,6 +267,59 @@ export default function MapTab() {
               >
                 <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
               </Pressable>
+            )}
+          </View>
+        )}
+        {searchOpen && debouncedSearch.length >= 2 && (
+          <View style={styles.resultsCard}>
+            {globalSearch.isLoading ? (
+              <View style={styles.resultsLoading}>
+                <ActivityIndicator color={Colors.orange} />
+              </View>
+            ) : (globalSearch.data?.items.length ?? 0) === 0 ? (
+              <View style={styles.resultsLoading}>
+                <Text style={styles.resultsEmpty}>Aucun résultat global</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={globalSearch.data?.items ?? []}
+                keyExtractor={(u) => u.id}
+                style={{ maxHeight: 280 }}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const name =
+                    item.displayName ??
+                    `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() ??
+                    'Anonyme';
+                  return (
+                    <Pressable
+                      onPress={() => {
+                        setSearch('');
+                        setSearchOpen(false);
+                        router.push(`/user/${item.id}`);
+                      }}
+                      style={styles.resultRow}
+                      android_ripple={{ color: Colors.tan100 }}
+                    >
+                      <Avatar
+                        uri={item.avatarUrl}
+                        name={name}
+                        size={36}
+                        borderColor={Colors.orange}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.resultName} numberOfLines={1}>
+                          {name}
+                        </Text>
+                        <Text style={styles.resultMeta} numberOfLines={1}>
+                          {Flags[item.countryCode ?? ''] ?? '🌍'}{' '}
+                          {[item.city, item.countryCode].filter(Boolean).join(', ')}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                }}
+              />
             )}
           </View>
         )}
@@ -413,6 +492,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  resultsCard: {
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  resultsLoading: {
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+  },
+  resultsEmpty: { fontSize: Typography.sizes.sm, color: Colors.tan500 },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.tan100,
+  },
+  resultName: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.brown },
+  resultMeta: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 2 },
   loader: {
     position: 'absolute',
     top: 130,
