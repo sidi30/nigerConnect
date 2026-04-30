@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as Notifications from 'expo-notifications';
 import {
   DMSans_400Regular,
   DMSans_500Medium,
@@ -54,6 +56,7 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <StatusBar style="dark" />
               <AuthGate />
+              <NotificationDeepLink />
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }}>
                 <Stack.Screen name="(auth)" />
                 <Stack.Screen name="(tabs)" />
@@ -86,6 +89,53 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </ErrorBoundary>
   );
+}
+
+/**
+ * Routes the user to the right screen when they tap on a push notification.
+ * The notification's `data` payload — set on the backend in NotificationService
+ * — carries one of: conversationId, postId, friendshipId. We map each to the
+ * matching screen, falling back to the in-app notification list.
+ *
+ * Also handles the cold-start case (`getLastNotificationResponseAsync`) so a
+ * tap that launched the app from terminated state still deep-links once the
+ * router is ready.
+ */
+function NotificationDeepLink() {
+  const router = useRouter();
+  const navState = useRootNavigationState();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    if (!navState?.key || !isAuthenticated) return;
+
+    function handle(data: Record<string, unknown> | null | undefined): void {
+      if (!data) return;
+      const conversationId = typeof data.conversationId === 'string' ? data.conversationId : null;
+      const postId = typeof data.postId === 'string' ? data.postId : null;
+      if (conversationId) router.push(`/chat/${conversationId}` as never);
+      else if (postId) router.push(`/post/${postId}` as never);
+      else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
+        router.push('/friends' as never);
+      } else {
+        router.push('/settings/notifications' as never);
+      }
+    }
+
+    // Cold start: the user tapped a notif while the app was killed.
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) handle(response.notification.request.content.data as Record<string, unknown>);
+    });
+
+    // Warm start: every subsequent tap.
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      handle(response.notification.request.content.data as Record<string, unknown>);
+    });
+    return () => sub.remove();
+  }, [navState?.key, isAuthenticated, router]);
+
+  return null;
 }
 
 function AuthGate() {

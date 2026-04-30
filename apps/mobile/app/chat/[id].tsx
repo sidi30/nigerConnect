@@ -21,7 +21,7 @@ import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constant
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
 import { useAuthStore } from '@/stores/authStore';
-import { getChatSocket, useChatSocket } from '@/hooks/useSocket';
+import { getChatSocket } from '@/hooks/useSocket';
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -44,13 +44,6 @@ export default function ChatScreen() {
   const sendMut = useMutation({
     mutationFn: (content: string) => chatApi.sendMessage(id!, content),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
-      void qc.invalidateQueries({ queryKey: ['conversations'] });
-    },
-  });
-
-  useChatSocket({
-    onMessage: () => {
       void qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
       void qc.invalidateQueries({ queryKey: ['conversations'] });
     },

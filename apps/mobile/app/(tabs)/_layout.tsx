@@ -1,9 +1,10 @@
 import { Tabs } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { chatApi } from '@/services/chatApi';
+import { useChatSocket } from '@/hooks/useSocket';
 
 function TabIcon({
   emoji,
@@ -30,12 +31,29 @@ const TAB_BAR_CONTENT_HEIGHT = 60;
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const qc = useQueryClient();
   const { data: convos } = useQuery({
     queryKey: ['conversations'],
     queryFn: () => chatApi.listConversations(),
     refetchInterval: 30_000,
   });
   const unreadTotal = convos?.items.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0) ?? 0;
+
+  // Global chat socket — opened once for the entire authenticated session.
+  // Keeps the conversations list, individual chat screens, and the unread
+  // badge in sync without waiting for the 30s poll. The chat screen used to
+  // mount this hook itself; now it just relies on this global mount so we
+  // don't end up with two competing connections.
+  useChatSocket({
+    onMessage: () => {
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+      void qc.invalidateQueries({ queryKey: ['conversation'] });
+      void qc.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onConversationUpdated: () => {
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
 
   // Bottom padding sits above the device's reserved area (home indicator on
   // iPhone, gesture nav bar on Android). Fall back to 8px so older devices

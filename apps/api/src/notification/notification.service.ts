@@ -32,12 +32,23 @@ export class NotificationService {
       },
     });
 
+    // Forward the original `data` payload (postId, conversationId, friendshipId,
+    // …) so the mobile deep-link handler can route the tap to the right screen.
+    // Push payloads only carry strings — flatten any non-string value.
+    const pushData: Record<string, string> = {
+      notificationId: notification.id,
+      type: params.type,
+    };
+    if (params.data && typeof params.data === 'object' && !Array.isArray(params.data)) {
+      for (const [key, value] of Object.entries(params.data as Record<string, unknown>)) {
+        if (value === null || value === undefined) continue;
+        pushData[key] =
+          typeof value === 'string' ? value : JSON.stringify(value);
+      }
+    }
     // Fire & forget push — real-time delivery
     void this.push
-      .sendToUser(params.userId, params.title, params.body ?? null, {
-        notificationId: notification.id,
-        type: params.type,
-      })
+      .sendToUser(params.userId, params.title, params.body ?? null, pushData)
       .catch((e) => this.logger.warn(`Push send failed: ${String(e)}`));
 
     return notification;
