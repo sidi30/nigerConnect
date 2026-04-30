@@ -53,13 +53,16 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 <script>
   const worldBounds = L.latLngBounds([[-85, -180], [85, 180]]);
   const map = L.map('map', {
-    zoomControl: true,
+    // Default zoomControl is top-left, which collides with our filters bar.
+    // We add it explicitly bottom-right so the top remains clean.
+    zoomControl: false,
     attributionControl: false,
     worldCopyJump: false,
     maxBounds: worldBounds,
     maxBoundsViscosity: 1.0,
     minZoom: 2,
   }).setView([20, 10], 3);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', { subdomains:'abcd', maxZoom: 19, noWrap: true, bounds: worldBounds }).addTo(map);
   const markerLayer = L.layerGroup().addTo(map);
 

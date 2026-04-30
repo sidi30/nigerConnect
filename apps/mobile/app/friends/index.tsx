@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,12 +14,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { friendsApi } from '@/services/friendsApi';
+import { profileApi } from '@/services/profileApi';
 import { Colors, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
-type Tab = 'friends' | 'received' | 'sent' | 'suggestions';
+type Tab = 'friends' | 'received' | 'sent' | 'suggestions' | 'search';
 
 const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'search', label: 'Rechercher' },
   { id: 'friends', label: 'Amis' },
   { id: 'received', label: 'Reçues' },
   { id: 'sent', label: 'Envoyées' },
@@ -48,6 +51,16 @@ export default function FriendsScreen() {
     enabled: tab === 'suggestions',
   });
 
+  const [searchQ, setSearchQ] = useState('');
+  // Trim + require at least 2 chars to avoid hammering the API on each keystroke.
+  // 250ms debounce to keep typing responsive.
+  const debouncedQ = useDebouncedValue(searchQ.trim(), 250);
+  const searchQuery = useQuery({
+    queryKey: ['profile', 'search', debouncedQ],
+    queryFn: () => profileApi.search({ q: debouncedQ, limit: 30 }),
+    enabled: tab === 'search' && debouncedQ.length >= 2,
+  });
+
   const acceptMut = useMutation({
     mutationFn: (id: string) => friendsApi.accept(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
@@ -65,11 +78,13 @@ export default function FriendsScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
   });
 
-  const counts = {
+  const counts: Record<Tab, number> = {
     friends: friendsQuery.data?.items.length ?? 0,
     received: incomingQuery.data?.length ?? 0,
     sent: outgoingQuery.data?.length ?? 0,
     suggestions: suggestionsQuery.data?.length ?? 0,
+    // The search tab doesn't show a count badge — its content is the input.
+    search: 0,
   };
 
   return (
@@ -234,6 +249,80 @@ export default function FriendsScreen() {
         />
       )}
 
+      {tab === 'search' && (
+        <View style={{ flex: 1 }}>
+          <View style={styles.searchWrap}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              value={searchQ}
+              onChangeText={setSearchQ}
+              placeholder="Nom, prénom, ou pseudo…"
+              placeholderTextColor={Colors.tan400}
+              style={styles.searchInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {searchQ.length > 0 && (
+              <Pressable onPress={() => setSearchQ('')} hitSlop={10}>
+                <Text style={{ fontSize: 14, color: Colors.tan500 }}>✕</Text>
+              </Pressable>
+            )}
+          </View>
+          {debouncedQ.length < 2 ? (
+            <Empty
+              emoji="🔎"
+              title="Tape au moins 2 lettres"
+              subtitle="Cherche par prénom, nom ou pseudo."
+            />
+          ) : searchQuery.isLoading ? (
+            <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+          ) : (
+            <FlatList
+              data={searchQuery.data?.items ?? []}
+              keyExtractor={(u) => u.id}
+              renderItem={({ item }) => (
+                <View style={styles.row}>
+                  <Pressable
+                    onPress={() => router.push(`/user/${item.id}`)}
+                    style={styles.userBlock}
+                    hitSlop={4}
+                  >
+                    <Avatar
+                      uri={item.avatarUrl}
+                      name={item.displayName ?? 'N'}
+                      size={48}
+                      borderColor={colorForId(item.id)}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.name} numberOfLines={1}>
+                          {item.displayName ??
+                            `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim()}
+                        </Text>
+                        {item.identityStatus === 'approved' && <VerifiedBadge size={12} />}
+                      </View>
+                      <Text style={styles.meta} numberOfLines={1}>
+                        {Flags[item.countryCode ?? ''] ?? ''} {item.city ?? ''}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    style={styles.primaryBtn}
+                    onPress={() => sendRequestMut.mutate(item.id)}
+                  >
+                    <Text style={styles.primaryLabel}>+ Ajouter</Text>
+                  </Pressable>
+                </View>
+              )}
+              ListEmptyComponent={
+                <Empty emoji="🤷" title="Aucun résultat" subtitle="Essaie un autre nom." />
+              }
+            />
+          )}
+        </View>
+      )}
+
       {tab === 'suggestions' && (
         <FlatList
           data={suggestionsQuery.data ?? []}
@@ -280,6 +369,15 @@ export default function FriendsScreen() {
       )}
     </SafeAreaView>
   );
+}
+
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
 }
 
 function Empty({
@@ -370,6 +468,25 @@ const styles = StyleSheet.create({
   },
   ghostLabel: { color: Colors.tan600, fontSize: Typography.sizes.xs + 1, fontWeight: '700' },
   empty: { padding: Spacing.xxxl, alignItems: 'center' },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    margin: Spacing.md,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+  },
+  searchIcon: { fontSize: 15 },
+  searchInput: {
+    flex: 1,
+    fontSize: Typography.sizes.sm,
+    color: Colors.brown,
+    padding: 0,
+  },
   emptyEmoji: { fontSize: 48, marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   emptyText: {
