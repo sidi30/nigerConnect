@@ -54,7 +54,11 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <ThemeProvider>
             <QueryClientProvider client={queryClient}>
-              <StatusBar style="dark" />
+              {/* Translucent on Android so content sits BEHIND the status bar,
+                  letting react-native-safe-area-context calculate insets.top
+                  correctly. Without this, headers can stick to the very top
+                  of the screen and overlap the system clock/battery row. */}
+              <StatusBar style="dark" translucent backgroundColor="transparent" />
               <AuthGate />
               <NotificationDeepLink />
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }}>
