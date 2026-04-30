@@ -282,6 +282,12 @@ export class ProfileService {
             { firstName: { contains: dto.q, mode: 'insensitive' } },
             { lastName: { contains: dto.q, mode: 'insensitive' } },
             { displayName: { contains: dto.q, mode: 'insensitive' } },
+            // Allow lookup by email — useful when someone shared an address
+            // and we have no idea what they put as displayName. Email match
+            // is exposed only if the candidate's privacy already permits
+            // search visibility (`public` / `friends`), so we are not
+            // leaking new information.
+            { email: { contains: dto.q, mode: 'insensitive' } },
           ],
         },
       ];
