@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Post } from '@nigerconnect/shared-types';
@@ -25,10 +25,17 @@ import { friendsApi } from '@/services/friendsApi';
 import { notificationApi } from '@/services/notificationApi';
 import { useAuthStore } from '@/stores/authStore';
 
+// Tab bar content height (kept in sync with `(tabs)/_layout.tsx`).
+const TAB_BAR_CONTENT_HEIGHT = 60;
+
 export default function FeedTab() {
   const router = useRouter();
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const insets = useSafeAreaInsets();
+  // FAB sits above the tab bar; tab bar = TAB_BAR_CONTENT_HEIGHT + bottom inset.
+  // Without this, the button slides under the tab bar on Android edge-to-edge.
+  const fabBottom = TAB_BAR_CONTENT_HEIGHT + Math.max(insets.bottom, 8) + 16;
   const [reportingId, setReportingId] = useState<string | null>(null);
 
   const feedQuery = useInfiniteQuery({
@@ -173,7 +180,7 @@ export default function FeedTab() {
         </View>
       </View>
 
-      <Pressable style={styles.fab} onPress={() => router.push('/post/new')}>
+      <Pressable style={[styles.fab, { bottom: fabBottom }]} onPress={() => router.push('/post/new')}>
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
         <Text style={styles.fabIcon}>✍️</Text>
       </Pressable>
@@ -329,7 +336,6 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: Spacing.xl,
     right: Spacing.lg,
     width: 56,
     height: 56,

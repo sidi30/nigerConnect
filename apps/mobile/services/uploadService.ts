@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { api } from './api';
 
@@ -45,6 +46,61 @@ function pickerOptionsFor(kind: UploadKind): ImagePicker.ImagePickerOptions {
 }
 
 /**
+ * Upload a file URI to a presigned S3 PUT URL.
+ *
+ * On native (iOS/Android), `fetch(uri).blob()` then `fetch(url, { body: blob })`
+ * is unreliable: RN sometimes ships the request without a Content-Length header,
+ * and S3 rejects with `MissingContentLength` or `SignatureDoesNotMatch`. Switch
+ * to `expo-file-system`'s `uploadAsync` with `BINARY_CONTENT` — that streams the
+ * file straight from disk and computes Content-Length correctly.
+ *
+ * On web, fall back to the fetch+blob path because `FileSystem.uploadAsync` is
+ * not available.
+ */
+async function putToS3(args: {
+  uploadUrl: string;
+  fileUri: string;
+  contentType: string;
+}): Promise<void> {
+  if (Platform.OS === 'web') {
+    const blob = await fetch(args.fileUri).then((r) => r.blob());
+    const put = await fetch(args.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': args.contentType,
+        'x-amz-server-side-encryption': 'AES256',
+      },
+      body: blob,
+    });
+    if (!put.ok) {
+      const body = await put.text().catch(() => '');
+      throw new UploadError(
+        `Upload failed: ${put.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+        'upload_failed',
+      );
+    }
+    return;
+  }
+
+  const result = await FileSystem.uploadAsync(args.uploadUrl, args.fileUri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      'Content-Type': args.contentType,
+      // Backend bakes SSE into the signature via signableHeaders — must echo it
+      // back exactly or S3 rejects with SignatureDoesNotMatch.
+      'x-amz-server-side-encryption': 'AES256',
+    },
+  });
+  if (result.status < 200 || result.status >= 300) {
+    throw new UploadError(
+      `Upload failed: ${result.status}${result.body ? ` — ${result.body.slice(0, 200)}` : ''}`,
+      'upload_failed',
+    );
+  }
+}
+
+/**
  * Pick an image from the library OR camera, request a presigned S3 upload URL,
  * PUT the blob, return the public URL. Throws `UploadError` on failure so callers
  * can render a feedback banner instead of relying on `Alert.alert` (invisible on web).
@@ -57,8 +113,6 @@ export async function pickAndUploadImage(
   source: UploadSource = 'library',
 ): Promise<string | null> {
   if (source === 'camera' && Platform.OS === 'web') {
-    // expo-image-picker's camera mode is unreliable on the web — fall back to the
-    // library picker with a file input, which most browsers allow via <input capture>.
     return pickAndUploadImage(kind, 'library');
   }
 
@@ -99,24 +153,7 @@ export async function pickAndUploadImage(
   }
 
   try {
-    const blob = await fetch(asset.uri).then((r) => r.blob());
-    const put = await fetch(presigned.uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType,
-        // Backend bakes SSE into the signature via signableHeaders — must echo it
-        // back exactly or S3 rejects with SignatureDoesNotMatch.
-        'x-amz-server-side-encryption': 'AES256',
-      },
-      body: blob,
-    });
-    if (!put.ok) {
-      const body = await put.text().catch(() => '');
-      throw new UploadError(
-        `Upload failed: ${put.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
-        'upload_failed',
-      );
-    }
+    await putToS3({ uploadUrl: presigned.uploadUrl, fileUri: asset.uri, contentType });
     return presigned.publicUrl;
   } catch (err) {
     if (err instanceof UploadError) throw err;

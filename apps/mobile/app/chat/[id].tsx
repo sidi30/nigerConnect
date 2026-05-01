@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -10,11 +11,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Message } from '@nigerconnect/shared-types';
+import type { Message, CursorPage } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
@@ -22,52 +24,211 @@ import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
 import { useAuthStore } from '@/stores/authStore';
 import { getChatSocket } from '@/hooks/useSocket';
+import { pickAndUploadImage, UploadError } from '@/services/uploadService';
+
+type MessagesPage = CursorPage<Message>;
+type PendingMessage = Message & { __pending?: boolean; __failed?: boolean };
+
+function makeOptimisticMessage(args: {
+  conversationId: string;
+  content: string | null;
+  mediaUrl?: string | null;
+  messageType: 'text' | 'image' | 'file';
+  me: {
+    id: string;
+    displayName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    avatarUrl: string | null;
+    city: string | null;
+    countryCode: string | null;
+    identityStatus: Message['sender']['identityStatus'];
+  };
+}): PendingMessage {
+  return {
+    id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    conversationId: args.conversationId,
+    sender: {
+      id: args.me.id,
+      displayName: args.me.displayName,
+      firstName: args.me.firstName,
+      lastName: args.me.lastName,
+      avatarUrl: args.me.avatarUrl,
+      city: args.me.city,
+      countryCode: args.me.countryCode,
+      identityStatus: args.me.identityStatus,
+    },
+    content: args.content,
+    mediaUrl: args.mediaUrl ?? null,
+    messageType: args.messageType,
+    replyToId: null,
+    deletedAt: null,
+    createdAt: new Date().toISOString(),
+    __pending: true,
+  };
+}
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
-  const listRef = useRef<FlatList<Message>>(null);
+  const listRef = useRef<FlatList<PendingMessage>>(null);
   const [draft, setDraft] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  const messagesKey = useMemo(() => ['conversation', id, 'messages'] as const, [id]);
 
   const convosQuery = useQuery({
     queryKey: ['conversations'],
     queryFn: () => chatApi.listConversations(),
   });
-  const messagesQuery = useQuery({
-    queryKey: ['conversation', id, 'messages'],
+  const messagesQuery = useQuery<MessagesPage>({
+    queryKey: messagesKey,
     queryFn: () => chatApi.listMessages(id!),
     enabled: !!id,
   });
 
+  // Mark conversation as read when opened, and once again on focus.
+  useEffect(() => {
+    if (!id) return;
+    void chatApi.markRead(id).catch(() => null);
+    const socket = getChatSocket();
+    socket?.emit('message:read', { conversationId: id });
+  }, [id]);
+
+  // Live updates: subscribe to socket events and update the cache directly.
+  // Without this, the screen relies on the global tab-layout listener which
+  // (a) may be detached while this screen is on top of the stack and
+  // (b) only invalidates queries — the user sees a flicker of "loading" between
+  // sending and the message appearing.
+  useEffect(() => {
+    if (!id) return;
+    const socket = getChatSocket();
+    if (!socket) return;
+
+    function handleNewMessage(payload: unknown): void {
+      const msg = payload as Message | undefined;
+      if (!msg || msg.conversationId !== id) return;
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) => {
+        if (!prev) return { items: [msg], nextCursor: null };
+        // Replace any optimistic message from the same sender with same content
+        // so we don't double-display while waiting for server echo.
+        const items = prev.items.filter((m) => {
+          if (!('__pending' in m) || !(m as PendingMessage).__pending) return true;
+          if (m.sender.id !== msg.sender.id) return true;
+          if (m.content !== msg.content) return true;
+          if (m.mediaUrl !== msg.mediaUrl) return true;
+          return false;
+        });
+        if (items.some((m) => m.id === msg.id)) return prev;
+        return { ...prev, items: [msg, ...items] };
+      });
+      // Conversations list (preview, unread, ordering) needs refresh too.
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+      // Mark as read since user is actively in the chat.
+      if (msg.sender.id !== me?.id) {
+        void chatApi.markRead(id).catch(() => null);
+        socket?.emit('message:read', { conversationId: id });
+      }
+    }
+
+    socket.on('message:new', handleNewMessage);
+    return () => {
+      socket.off('message:new', handleNewMessage);
+    };
+  }, [id, me?.id, messagesKey, qc]);
+
   const sendMut = useMutation({
-    mutationFn: (content: string) => chatApi.sendMessage(id!, content),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['conversation', id, 'messages'] });
+    mutationFn: async (vars: {
+      content?: string;
+      mediaUrl?: string;
+      messageType: 'text' | 'image';
+      tempId: string;
+    }) => {
+      // Always go through REST: socket emit doesn't return the saved row,
+      // and we want a single source of truth for replacing the optimistic entry.
+      // The server will also broadcast over the socket — the listener above
+      // dedupes by content so the message:new echo replaces ours cleanly.
+      const sent = await chatApi.sendMessage(id!, vars.content ?? '', {
+        messageType: vars.messageType,
+        mediaUrl: vars.mediaUrl,
+      });
+      return { sent, tempId: vars.tempId };
+    },
+    onSuccess: ({ sent, tempId }) => {
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) => {
+        if (!prev) return { items: [sent], nextCursor: null };
+        if (prev.items.some((m) => m.id === sent.id)) {
+          // Already inserted via socket — drop the optimistic entry.
+          return { ...prev, items: prev.items.filter((m) => m.id !== tempId) };
+        }
+        return {
+          ...prev,
+          items: prev.items.map((m) => (m.id === tempId ? sent : m)),
+        };
+      });
       void qc.invalidateQueries({ queryKey: ['conversations'] });
     },
+    onError: (_err, vars) => {
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: prev.items.map((m) =>
+            m.id === vars.tempId ? ({ ...m, __failed: true, __pending: false } as PendingMessage) : m,
+          ),
+        };
+      });
+    },
   });
-
-  useEffect(() => {
-    if (id) void chatApi.markRead(id).catch(() => null);
-  }, [id]);
 
   const conversation = convosQuery.data?.items.find((c) => c.id === id);
   const peer = conversation?.members.find((m) => m.id !== me?.id) ?? conversation?.members[0];
 
-  const messages = messagesQuery.data?.items ?? [];
+  const messages = (messagesQuery.data?.items ?? []) as PendingMessage[];
 
-  function handleSend() {
-    if (!draft.trim() || !id) return;
-    const socket = getChatSocket();
-    if (socket && socket.connected) {
-      socket.emit('message:send', { conversationId: id, content: draft.trim() });
-    } else {
-      sendMut.mutate(draft.trim());
-    }
+  const handleSend = useCallback(() => {
+    const text = draft.trim();
+    if (!text || !id || !me) return;
     setDraft('');
-  }
+    const optimistic = makeOptimisticMessage({
+      conversationId: id,
+      content: text,
+      messageType: 'text',
+      me,
+    });
+    qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+      prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
+    );
+    sendMut.mutate({ content: text, messageType: 'text', tempId: optimistic.id });
+  }, [draft, id, me, messagesKey, qc, sendMut]);
+
+  const handleAttachPhoto = useCallback(async () => {
+    if (!id || !me) return;
+    setUploading(true);
+    try {
+      const url = await pickAndUploadImage('photo');
+      if (!url) return;
+      const optimistic = makeOptimisticMessage({
+        conversationId: id,
+        content: null,
+        mediaUrl: url,
+        messageType: 'image',
+        me,
+      });
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
+      );
+      sendMut.mutate({ mediaUrl: url, messageType: 'image', tempId: optimistic.id });
+    } catch (err) {
+      const message =
+        err instanceof UploadError ? err.message : (err as Error).message ?? "Échec de l'envoi de la photo";
+      Alert.alert('Photo non envoyée', message);
+    } finally {
+      setUploading(false);
+    }
+  }, [id, me, messagesKey, qc, sendMut]);
 
   if (!conversation || !peer) {
     return (
@@ -126,6 +287,9 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesContent}
           renderItem={({ item }) => {
             const isMe = item.sender.id === me?.id;
+            const isImage = item.messageType === 'image' && item.mediaUrl;
+            const pending = (item as PendingMessage).__pending;
+            const failed = (item as PendingMessage).__failed;
             return (
               <View style={[styles.msgRow, { justifyContent: isMe ? 'flex-end' : 'flex-start' }]}>
                 {!isMe && (
@@ -136,12 +300,45 @@ export default function ChatScreen() {
                     borderColor={colorForId(item.sender.id)}
                   />
                 )}
-                <View style={[styles.bubble, isMe ? styles.bubbleMine : styles.bubbleTheirs]}>
-                  {isMe && <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />}
-                  <Text style={[styles.bubbleText, isMe && { color: Colors.white }]}>
-                    {item.content}
-                  </Text>
-                </View>
+                {isImage ? (
+                  <View
+                    style={[
+                      styles.imageBubble,
+                      isMe ? styles.bubbleMineCorners : styles.bubbleTheirsCorners,
+                      (pending || failed) && { opacity: failed ? 0.5 : 0.7 },
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: item.mediaUrl! }}
+                      style={styles.imageContent}
+                      contentFit="cover"
+                    />
+                    {pending && (
+                      <View style={styles.imageOverlay}>
+                        <ActivityIndicator color={Colors.white} />
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.bubble,
+                      isMe ? styles.bubbleMine : styles.bubbleTheirs,
+                      pending && { opacity: 0.7 },
+                      failed && { opacity: 0.5 },
+                    ]}
+                  >
+                    {isMe && <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />}
+                    <Text style={[styles.bubbleText, isMe && { color: Colors.white }]}>
+                      {item.content}
+                    </Text>
+                    {failed && (
+                      <Text style={[styles.bubbleMeta, isMe && { color: Colors.white }]}>
+                        ⚠️ Échec — touche pour réessayer
+                      </Text>
+                    )}
+                  </View>
+                )}
               </View>
             );
           }}
@@ -155,8 +352,13 @@ export default function ChatScreen() {
         />
 
         <View style={styles.composer}>
-          <Pressable style={styles.photoBtn} hitSlop={8}>
-            <Text style={styles.photoIcon}>📷</Text>
+          <Pressable
+            style={[styles.photoBtn, uploading && { opacity: 0.5 }]}
+            hitSlop={8}
+            onPress={handleAttachPhoto}
+            disabled={uploading}
+          >
+            <Text style={styles.photoIcon}>{uploading ? '⏳' : '📷'}</Text>
           </Pressable>
           <TextInput
             style={styles.input}
@@ -167,7 +369,12 @@ export default function ChatScreen() {
             multiline
             maxLength={2000}
           />
-          <Pressable onPress={handleSend} style={styles.sendBtn} hitSlop={8}>
+          <Pressable
+            onPress={handleSend}
+            style={[styles.sendBtn, !draft.trim() && { opacity: 0.4 }]}
+            hitSlop={8}
+            disabled={!draft.trim()}
+          >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
             <Text style={styles.sendIcon}>➤</Text>
           </Pressable>
@@ -227,7 +434,32 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4,
     borderBottomRightRadius: 18,
   },
+  bubbleMineCorners: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 4,
+  },
+  bubbleTheirsCorners: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 18,
+  },
+  imageBubble: {
+    maxWidth: '70%',
+    overflow: 'hidden',
+    backgroundColor: Colors.tan100,
+  },
+  imageContent: { width: 220, height: 220 },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   bubbleText: { fontSize: Typography.sizes.md, color: Colors.brown, lineHeight: 20 },
+  bubbleMeta: { fontSize: Typography.sizes.xs, color: Colors.brown, marginTop: 4, opacity: 0.85 },
   empty: {
     textAlign: 'center',
     color: Colors.tan400,
