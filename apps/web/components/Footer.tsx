@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LogoMark } from "./Logo";
 
 export function Footer() {
@@ -43,28 +44,48 @@ export function Footer() {
 
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-tan-500">
-              À propos
+              Légal
             </h4>
             <ul className="mt-4 space-y-2.5 text-sm">
               <li>
-                <a href="#" className="text-brand-brown transition hover:text-brand-orange">
-                  L'équipe
-                </a>
+                <Link
+                  href="/terms"
+                  className="text-brand-brown transition hover:text-brand-orange"
+                >
+                  Conditions d&apos;utilisation
+                </Link>
               </li>
               <li>
-                <a href="#" className="text-brand-brown transition hover:text-brand-orange">
-                  Mentions légales
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-brand-brown transition hover:text-brand-orange">
+                <Link
+                  href="/privacy"
+                  className="text-brand-brown transition hover:text-brand-orange"
+                >
                   Confidentialité
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#" className="text-brand-brown transition hover:text-brand-orange">
-                  Contact
-                </a>
+                <Link
+                  href="/community"
+                  className="text-brand-brown transition hover:text-brand-orange"
+                >
+                  Règles communautaires
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/account-deletion"
+                  className="text-brand-brown transition hover:text-brand-orange"
+                >
+                  Supprimer mon compte
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/support"
+                  className="text-brand-brown transition hover:text-brand-orange"
+                >
+                  Aide &amp; contact
+                </Link>
               </li>
             </ul>
           </div>

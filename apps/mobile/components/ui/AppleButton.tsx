@@ -1,5 +1,6 @@
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import * as AppleAuth from 'expo-apple-authentication';
+import Constants from 'expo-constants';
 import { useAppleAuth } from '@/services/appleAuth';
 import { Radii, Typography } from '@/constants/theme';
 
@@ -15,17 +16,21 @@ interface Props {
  * custom drawings of the Apple mark can get the app rejected. We use
  * `AppleAuthenticationButton` on iOS and render nothing on Android/web.
  *
- * Apple Sign-in désactivé tant qu'on n'a pas l'Apple Developer Program ($99/an).
- * Pour réactiver : retirer le `return null` ci-dessous + remplir APPLE_* dans
- * .env.prod + créer le Service ID + Key .p8 (cf docs/GO-LIVE.md).
- * NOTE: obligatoire pour la review App Store si on garde le login Google.
+ * Apple Sign-in is **required** by App Store Guideline 4.8 when the app also
+ * offers a third-party social login (Google here). The button is gated by
+ * `extra.appleSignInEnabled` in `app.json` so the project owner can toggle
+ * Apple Sign-In on once the Apple Developer Program ($99/yr) and the Key .p8
+ * are in place. While disabled, `GoogleButton` hides itself on iOS to keep
+ * the app compliant with 4.8 (no third-party social login at all on iOS).
  */
 export function AppleButton({ mode = 'signIn', label }: Props) {
   const { signIn, isLoading, error, isAvailable } = useAppleAuth();
 
-  // Désactivation temporaire — voir commentaire ci-dessus.
-  return null;
-  // eslint-disable-next-line no-unreachable
+  const enabled = Boolean(
+    (Constants.expoConfig?.extra as { appleSignInEnabled?: boolean } | undefined)
+      ?.appleSignInEnabled ?? process.env.EXPO_PUBLIC_APPLE_SIGNIN_ENABLED === 'true',
+  );
+  if (!enabled) return null;
   if (Platform.OS !== 'ios' || !isAvailable) return null;
 
   const buttonType =

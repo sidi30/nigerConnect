@@ -1,7 +1,9 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
+
+const WEB_BASE = 'https://nigerconnect.sahabiguide.com';
 
 const ITEMS: Array<{ icon: string; title: string; desc: string; href: Href }> = [
   {
@@ -46,7 +48,19 @@ export default function LegalIndex() {
             <Text style={styles.chevron}>›</Text>
           </Pressable>
         ))}
-        <Text style={styles.version}>Version de l’app 0.1.0</Text>
+        <View style={styles.webLinks}>
+          <Text style={styles.webLinksTitle}>Versions web (consultables sans l’app)</Text>
+          <Pressable onPress={() => void Linking.openURL(`${WEB_BASE}/terms`)}>
+            <Text style={styles.webLink}>{WEB_BASE}/terms</Text>
+          </Pressable>
+          <Pressable onPress={() => void Linking.openURL(`${WEB_BASE}/privacy`)}>
+            <Text style={styles.webLink}>{WEB_BASE}/privacy</Text>
+          </Pressable>
+          <Pressable onPress={() => void Linking.openURL(`${WEB_BASE}/community`)}>
+            <Text style={styles.webLink}>{WEB_BASE}/community</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.version}>Version de l’app 1.0.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -102,6 +116,26 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   chevron: { fontSize: 22, color: Colors.tan400 },
+  webLinks: {
+    marginTop: Spacing.lg,
+    padding: Spacing.md,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    borderRadius: Radii.lg,
+    gap: 4,
+  },
+  webLinksTitle: {
+    fontSize: Typography.sizes.xs,
+    fontWeight: '700',
+    color: Colors.tan600,
+    marginBottom: 4,
+  },
+  webLink: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.orange,
+    textDecorationLine: 'underline',
+  },
   version: {
     textAlign: 'center',
     color: Colors.tan400,

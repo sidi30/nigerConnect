@@ -341,6 +341,125 @@ export class ProfileService {
   }
 
   /**
+   * RGPD article 20 — produce a portable JSON dump of every row we hold for
+   * the user. Excludes credentials (password hash, MFA secret, OAuth provider
+   * IDs) — those would let someone with the dump impersonate the user. Avoids
+   * dumping other users' messages: the user sees their own messages but the
+   * peer's content is referenced by sender ID + display name only (the peer
+   * has their own export route).
+   */
+  async exportUserData(userId: string): Promise<Record<string, unknown>> {
+    const [
+      user,
+      photos,
+      friendships,
+      blocksMade,
+      posts,
+      likes,
+      comments,
+      conversationMembers,
+      messages,
+      serviceRequests,
+      serviceResponses,
+      associationMemberships,
+      notifications,
+      reportsMade,
+      identityDocuments,
+      pushTokens,
+      refreshTokens,
+    ] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          firstName: true,
+          lastName: true,
+          displayName: true,
+          bio: true,
+          avatarUrl: true,
+          coverUrl: true,
+          city: true,
+          countryCode: true,
+          latitude: true,
+          longitude: true,
+          showOnMap: true,
+          languages: true,
+          privacyLevel: true,
+          emailVerified: true,
+          phoneVerified: true,
+          identityStatus: true,
+          role: true,
+          status: true,
+          mfaEnabled: true,
+          createdAt: true,
+          updatedAt: true,
+          lastLoginAt: true,
+        },
+      }),
+      this.prisma.userPhoto.findMany({ where: { userId } }),
+      this.prisma.friendship.findMany({
+        where: { OR: [{ requesterId: userId }, { addresseeId: userId }] },
+      }),
+      this.prisma.block.findMany({ where: { blockerId: userId } }),
+      this.prisma.post.findMany({ where: { authorId: userId } }),
+      this.prisma.like.findMany({ where: { userId } }),
+      this.prisma.comment.findMany({ where: { authorId: userId } }),
+      this.prisma.conversationMember.findMany({ where: { userId } }),
+      this.prisma.message.findMany({ where: { senderId: userId } }),
+      this.prisma.serviceRequest.findMany({ where: { authorId: userId } }),
+      this.prisma.serviceResponse.findMany({ where: { responderId: userId } }),
+      this.prisma.associationMember.findMany({ where: { userId } }),
+      this.prisma.notification.findMany({ where: { userId } }),
+      this.prisma.report.findMany({ where: { reporterId: userId } }),
+      this.prisma.identityDocument.findMany({
+        where: { userId },
+        // Don't include `fileUrl` — it's a presigned-URL handle that becomes
+        // useless after expiry anyway, and exposing the bucket key in a JSON
+        // file the user might forward is bad hygiene.
+        select: { id: true, documentType: true, status: true, createdAt: true, reviewedAt: true },
+      }),
+      this.prisma.pushToken.findMany({
+        where: { userId },
+        select: { id: true, platform: true, createdAt: true },
+      }),
+      this.prisma.refreshToken.findMany({
+        where: { userId },
+        select: { id: true, deviceName: true, createdAt: true, expiresAt: true, revokedAt: true },
+      }),
+    ]);
+
+    if (!user) throw new NotFoundException('User not found');
+
+    return {
+      _meta: {
+        exportedAt: new Date().toISOString(),
+        format: 'nigerconnect-rgpd-v1',
+        notes:
+          'RGPD article 20 export. Credentials (password, MFA secret, OAuth IDs) are never exported.',
+      },
+      profile: user,
+      photos,
+      friendships,
+      blocksMade,
+      posts,
+      likes,
+      comments,
+      conversationMemberships: conversationMembers,
+      messagesIAuthored: messages,
+      serviceRequests,
+      serviceResponses,
+      associationMemberships,
+      notifications,
+      reportsMade,
+      identityDocuments,
+      activeDevices: pushTokens,
+      activeSessions: refreshTokens,
+    };
+  }
+
+  /**
    * RGPD — hard-delete the user account and cascading data.
    *
    * Cascades via FK `onDelete: Cascade` for posts, comments, likes, photos,

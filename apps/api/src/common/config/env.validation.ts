@@ -87,6 +87,11 @@ const envSchema = z
       'JWT_PRIVATE_KEY_PATH',
       'JWT_PUBLIC_KEY_PATH',
       'DATA_ENCRYPTION_KEY',
+      // Email verification + password reset links MUST point at the web
+      // frontend, not the API (the API's reset-password route is POST-only).
+      // Without APP_WEB_URL the mailer falls back to API_URL — which used to
+      // produce 405-returning links. Fail fast in prod.
+      'APP_WEB_URL',
     ];
     for (const key of requiredInProd) {
       if (!env[key]) {
@@ -115,6 +120,30 @@ const envSchema = z
           message: 'DATA_ENCRYPTION_KEY must be valid base64',
         });
       }
+    }
+
+    // CORS_ORIGINS in prod must NOT be the localhost dev default — that would
+    // accept any localhost origin and silently undermine the policy.
+    const localhostOnly = env.CORS_ORIGINS.every((o) => /localhost|127\.0\.0\.1/.test(o));
+    if (env.CORS_ORIGINS.length === 0 || localhostOnly) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CORS_ORIGINS'],
+        message: 'CORS_ORIGINS must list at least one non-localhost origin in production',
+      });
+    }
+
+    // SMTP / Resend coherence: if any SMTP_* is set, all of HOST/USER/PASS must
+    // be set. Otherwise, mail silently falls back to JSON transport in prod —
+    // a real footgun (password resets just stop working).
+    const smtpFields = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'] as const;
+    const smtpSet = smtpFields.filter((k) => env[k]);
+    if (smtpSet.length > 0 && smtpSet.length < smtpFields.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SMTP_HOST'],
+        message: 'SMTP_HOST/USER/PASS must all be set together (or all empty to disable SMTP)',
+      });
     }
   });
 

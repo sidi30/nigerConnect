@@ -8,10 +8,13 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Request } from 'express';
+import { ConfigService } from '@nestjs/config';
+import type { Request, Response } from 'express';
+import type { Env } from '../common/config/env.validation';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser, JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -34,7 +37,10 @@ import { serializeUser } from './auth.serializer';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly config: ConfigService<Env, true>,
+  ) {}
 
   @Public()
   @Throttle({ short: { limit: 3, ttl: 60_000 }, long: { limit: 5, ttl: 3_600_000 } })
@@ -161,14 +167,35 @@ export class AuthController {
     await this.auth.sendVerificationEmail(user.sub);
   }
 
+  /**
+   * Verify-email endpoint accessed via the token link sent by email.
+   *
+   * Two callers:
+   *   1. The web app (`/verify-email` page) does an `Accept: application/json`
+   *      fetch and renders the result itself.
+   *   2. A user clicks the API URL directly (e.g. legacy email sent before the
+   *      mailer was switched to point at the web). For that case we redirect
+   *      to the web page so they don't see raw JSON.
+   */
   @Public()
   @Get('verify-email')
-  async verifyEmail(@Query('token') token: string) {
-    if (!token) return { ok: false, message: 'Token manquant' };
-    const result = await this.auth.verifyEmail(token);
-    return result.ok
-      ? { ok: true, message: 'Email vérifié ✓ — tu peux fermer cet onglet.' }
-      : { ok: false, message: 'Lien invalide ou expiré.' };
+  async verifyEmail(
+    @Query('token') token: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = token ? await this.auth.verifyEmail(token) : { ok: false };
+    const wantsJson = (req.headers.accept ?? '').includes('application/json');
+    if (wantsJson) {
+      return result.ok
+        ? { ok: true, message: 'Email vérifié ✓' }
+        : { ok: false, message: token ? 'Lien invalide ou expiré.' : 'Token manquant' };
+    }
+    const webBase =
+      this.config.get('APP_WEB_URL', { infer: true }) ?? this.config.get('API_URL', { infer: true });
+    const target = `${webBase}/verify-email${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    res.redirect(302, target);
+    return null;
   }
 
   @Post('identity/submit')

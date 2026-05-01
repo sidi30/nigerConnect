@@ -20,6 +20,7 @@
     "@expo-google-fonts/playfair-display": "^0.4.2",
     "@expo/metro-runtime": "~6.1.2",
     "@nigerconnect/shared-types": "workspace:*",
+    "@sentry/react-native": "~7.2.0",
     "@tanstack/react-query": "^5.62.8",
     "axios": "^1.7.9",
     "expo": "^54.0.0",

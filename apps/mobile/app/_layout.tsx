@@ -21,6 +21,11 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { ThemeProvider } from '@/constants/theme-provider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { captureRenderError, initSentry } from '@/services/sentry';
+
+// Boot Sentry as early as possible — before any React render — so the very
+// first error during font loading or auth hydration still gets captured.
+initSentry();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -49,7 +54,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary onError={captureRenderError}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>

@@ -1,4 +1,5 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { useGoogleAuth } from '@/services/googleAuth';
 
@@ -11,10 +12,22 @@ interface Props {
  * Handles the OAuth flow, error surfacing, and loading state internally.
  * If Google sign-in is not configured (no client IDs), renders nothing so
  * the login/register screens degrade gracefully.
+ *
+ * iOS-specific gate: App Store Guideline 4.8 requires Sign in with Apple
+ * whenever a third-party social login is offered. If Apple Sign-In is NOT
+ * enabled (`extra.appleSignInEnabled !== true`), we hide Google on iOS to
+ * stay compliant. The user can still register with email/password. As soon
+ * as Apple Sign-In is wired (Apple Developer Program + APPLE_* env vars),
+ * flip `appleSignInEnabled` to true and Google reappears on iOS.
  */
 export function GoogleButton({ label = 'Continuer avec Google' }: Props) {
   const { signIn, isLoading, error, isConfigured } = useGoogleAuth();
 
+  const appleEnabled = Boolean(
+    (Constants.expoConfig?.extra as { appleSignInEnabled?: boolean } | undefined)
+      ?.appleSignInEnabled ?? process.env.EXPO_PUBLIC_APPLE_SIGNIN_ENABLED === 'true',
+  );
+  if (Platform.OS === 'ios' && !appleEnabled) return null;
   if (!isConfigured) return null;
 
   return (

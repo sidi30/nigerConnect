@@ -22,11 +22,23 @@ export class MailerService implements OnModuleInit {
   private readonly logger = new Logger(MailerService.name);
   private transporter!: Transporter;
   private readonly from: string;
-  private readonly baseUrl: string;
+  /**
+   * Web URL the email links point at. The reset-password and verify-email
+   * routes are SERVED BY THE WEB app — we MUST NOT link to the API directly:
+   *   - `/api/auth/reset-password` is `@Post()` only → clicking the email
+   *     yields HTTP 405. Always send users to the web frontend, which then
+   *     POSTs to the API.
+   *   - `/api/auth/verify-email` is `@Get()` and works, but returns JSON
+   *     instead of a friendly page. The web `/verify-email` route wraps it.
+   * In dev, `APP_WEB_URL` falls back to API_URL since the dev API can serve
+   * the JSON-only verify endpoint and the user is the developer themselves.
+   */
+  private readonly webUrl: string;
 
   constructor(private readonly config: ConfigService<Env, true>) {
     this.from = config.get('MAIL_FROM', { infer: true }) ?? 'no-reply@nigerconnect.local';
-    this.baseUrl = config.get('API_URL', { infer: true });
+    this.webUrl =
+      config.get('APP_WEB_URL', { infer: true }) ?? config.get('API_URL', { infer: true });
   }
 
   onModuleInit(): void {
@@ -86,7 +98,7 @@ export class MailerService implements OnModuleInit {
 
   async sendPasswordReset(to: string, token: string, firstName?: string | null): Promise<void> {
     // token is base64url, but encode defensively for URLs.
-    const link = `${this.baseUrl}/api/auth/reset-password?token=${encodeURIComponent(token)}`;
+    const link = `${this.webUrl}/reset-password?token=${encodeURIComponent(token)}`;
     const safeName = this.esc(firstName);
     const html = `
       <div style="font-family:system-ui;max-width:540px;margin:0 auto;padding:24px;color:#1A0F0A">
@@ -107,7 +119,7 @@ export class MailerService implements OnModuleInit {
     token: string,
     firstName?: string | null,
   ): Promise<void> {
-    const link = `${this.baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+    const link = `${this.webUrl}/verify-email?token=${encodeURIComponent(token)}`;
     const safeName = this.esc(firstName);
     const html = `
       <div style="font-family:system-ui;max-width:540px;margin:0 auto;padding:24px;color:#1A0F0A">

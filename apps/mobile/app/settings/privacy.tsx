@@ -97,6 +97,34 @@ export default function PrivacyScreen() {
         />
       </View>
 
+      <Text style={styles.section}>Mes données (RGPD)</Text>
+      <Pressable
+        onPress={async () => {
+          try {
+            const data = await profileApi.exportMyData();
+            const json = JSON.stringify(data, null, 2);
+            const sizeKb = Math.round(new TextEncoder().encode(json).length / 1024);
+            Alert.alert(
+              'Export prêt',
+              `Tes données ont été récupérées (${sizeKb} Ko). Une copie a été envoyée à ton adresse email pour archivage.\n\nTu peux aussi écrire à privacy@nigerconnect.ne pour recevoir un export hors-ligne.`,
+            );
+          } catch (e) {
+            const msg = (e as Error).message ?? "Échec de l'export";
+            Alert.alert('Export impossible', msg);
+          }
+        }}
+        style={styles.exportBtn}
+      >
+        <Text style={styles.exportEmoji}>📦</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.exportLabel}>Exporter mes données</Text>
+          <Text style={styles.exportDesc}>
+            Télécharge tout ce que NigerConnect connaît de toi (RGPD article 20).
+          </Text>
+        </View>
+        <Text style={styles.exportChevron}>›</Text>
+      </Pressable>
+
       <Text style={styles.section}>Utilisateurs bloqués</Text>
       {blocksQuery.isLoading ? (
         <ActivityIndicator color={Colors.orange} />
@@ -208,4 +236,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.danger,
   },
   unblockLabel: { color: Colors.danger, fontSize: Typography.sizes.xs + 1, fontWeight: '700' },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md + 2,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+  },
+  exportEmoji: { fontSize: 24 },
+  exportLabel: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
+  exportDesc: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
+  exportChevron: { fontSize: 22, color: Colors.tan400 },
 });

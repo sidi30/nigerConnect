@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,7 +11,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { serializeUser } from '../auth/auth.serializer';
@@ -73,6 +77,24 @@ export class ProfileController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteMe(@CurrentUser() user: JwtUserPayload): Promise<void> {
     await this.profile.deleteAccount(user.sub);
+  }
+
+  /**
+   * RGPD article 20 (right to data portability) — produces a JSON dump of
+   * everything we have on the caller. Streamed as a download so the user can
+   * archive it locally without going through email. Tightly throttled because
+   * the dump scans several large tables.
+   */
+  @Get('me/export')
+  @Throttle({ short: { limit: 1, ttl: 60_000 }, long: { limit: 5, ttl: 86_400_000 } })
+  @Header('Content-Type', 'application/json; charset=utf-8')
+  async exportMyData(@CurrentUser() user: JwtUserPayload, @Res() res: Response): Promise<void> {
+    const dump = await this.profile.exportUserData(user.sub);
+    const filename = `nigerconnect-export-${user.sub}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(dump, null, 2));
   }
 
   @Get('search')

@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import * as Sentry from '@sentry/node';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import type { Env } from './common/config/env.validation';
 import { ConfigService } from '@nestjs/config';
@@ -45,10 +46,24 @@ async function bootstrap(): Promise<void> {
       referrerPolicy: { policy: 'no-referrer' },
     }),
   );
+  // Auth is Bearer-token-based — we never read or set browser cookies. Setting
+  // `credentials: true` would make the API echo `Access-Control-Allow-Credentials: true`
+  // and authorise any future cookie to be sent cross-origin, broadening the
+  // attack surface (CSRF on any endpoint that ever starts using cookies). Leave
+  // it false until we explicitly need cookie auth.
   app.enableCors({
     origin: config.get('CORS_ORIGINS', { infer: true }),
-    credentials: true,
+    credentials: false,
+    // Cap the preflight cache: 10 min is enough to coalesce burst preflights
+    // without being so long that a CORS policy change takes hours to propagate.
+    maxAge: 600,
   });
+  // Bound the request body. Chat caps messages at 4kB (sanitizer-side) and the
+  // largest JSON payloads are presigned-upload metadata + report descriptions —
+  // 256kB leaves plenty of headroom while making it expensive to mass-spray
+  // huge bodies at the API.
+  app.use(json({ limit: '256kb' }));
+  app.use(urlencoded({ extended: false, limit: '256kb' }));
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
   // Graceful shutdown — flush Sentry events

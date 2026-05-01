@@ -1,5 +1,6 @@
 import type { User, CursorPage, Post, PublicUser } from '@nigerconnect/shared-types';
-import { api } from './api';
+import { api, BASE_URL } from './api';
+import { tokenStore } from './secureStore';
 
 export const profileApi = {
   async me(): Promise<User> {
@@ -45,5 +46,23 @@ export const profileApi = {
   /** RGPD — hard-delete the account. Server cascades posts, comments, messages, etc. */
   async deleteAccount(): Promise<void> {
     await api.delete('/profile/me');
+  },
+
+  /**
+   * RGPD article 20 — fetch the data export as raw JSON. Returns the parsed
+   * payload so the caller can either save it locally (Sharing API) or render
+   * a preview. Throttled server-side to once a minute / 5 a day.
+   */
+  async exportMyData(): Promise<unknown> {
+    const token = await tokenStore.getAccess();
+    if (!token) throw new Error('Non authentifié');
+    const res = await fetch(`${BASE_URL}/api/profile/me/export`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Export impossible (${res.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
+    }
+    return res.json();
   },
 };
