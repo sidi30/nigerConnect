@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "958624990787",
+    "project_id": "diaspora-connect-c8473",
+    "storage_bucket": "diaspora-connect-c8473.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:958624990787:android:a008bce136669d7e5b36f6",
+        "android_client_info": {
+          "package_name": "com.nigerconnect.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfmZJC9XVVvS4LweXvLzNdNKWajN25CA0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -21,8 +21,11 @@ yarn-error.log*
 !.env.example
 !.env.prod.example
 
-# Firebase secrets — never commit. Each developer / CI keeps their own.
-google-services.json
+# Firebase secrets — keep service-account JSON OUT of the repo (full project
+# access). google-services.json itself is shipped inside every APK we
+# distribute, so committing it here doesn't leak anything new — and EAS Build
+# needs it from git to embed the FCM Sender ID into the build.
+!apps/mobile/google-services.json
 GoogleService-Info.plist
 *-firebase-adminsdk-*.json
 
