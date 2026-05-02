@@ -61,4 +61,32 @@ describe('ChatService', () => {
       NotFoundException,
     );
   });
+
+  it('refuses to send a message in a direct convo when the peer has blocked the sender', async () => {
+    // Membership row exists (the block came AFTER the convo was created),
+    // so without the explicit block check the message would have gone
+    // through and notified the blocker.
+    const prisma = {
+      conversationMember: {
+        findUnique: jest.fn(async () => ({ userId: 'me' })),
+      },
+      conversation: {
+        findUnique: jest.fn(async () => ({
+          type: 'direct',
+          members: [{ userId: 'me' }, { userId: 'peer' }],
+        })),
+      },
+      message: { create: jest.fn() },
+      $transaction: jest.fn(),
+    };
+    const svc = new ChatService(
+      prisma as never,
+      makeBlocks(true) as never,
+      makeNotifications() as never,
+    );
+    await expect(
+      svc.sendMessage('me', 'c1', { content: 'hi' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
 });

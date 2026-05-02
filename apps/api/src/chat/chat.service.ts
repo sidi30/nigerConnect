@@ -186,6 +186,25 @@ export class ChatService {
   ) {
     await this.assertMember(userId, conversationId);
 
+    // Block check for direct conversations. createConversation already
+    // refuses NEW DMs across a block, but if A and B were already in a
+    // direct conv when B blocked A, the membership row stays around and
+    // A could keep messaging B unfiltered. Group chats are intentionally
+    // exempt — blocking one member doesn't muzzle the whole room.
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: {
+        type: true,
+        members: { select: { userId: true } },
+      },
+    });
+    if (conv?.type === 'direct') {
+      const other = conv.members.find((m) => m.userId !== userId)?.userId;
+      if (other && (await this.blocks.isBlocked(userId, other))) {
+        throw new ForbiddenException('Cannot send message: user has blocked you');
+      }
+    }
+
     // Sanitize + length-cap the text content BEFORE touching the DB.
     // Applies to both REST and Gateway paths.
     const cleanContent = payload.content !== undefined

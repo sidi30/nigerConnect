@@ -85,7 +85,6 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       authed.userJti = payload.jti;
       client.join(`user:${payload.sub}`);
 
-      const memberRows = await this.chat.getMemberIds.bind(this.chat);
       // Subscribe to all conversation rooms the user belongs to
       const convos = await this.chat['prisma'].conversationMember.findMany({
         where: { userId: payload.sub },
@@ -94,7 +93,11 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       for (const c of convos) client.join(`conv:${c.conversationId}`);
 
       await this.presence.markOnline(payload.sub);
-      client.broadcast.emit('user:online', { userId: payload.sub });
+      // Presence has to be scoped to people who can plausibly already see
+      // this user's online status — i.e. members of conversations they
+      // share. `client.broadcast.emit(...)` would have leaked presence to
+      // every connected socket in the namespace, including total strangers.
+      this.emitPresence(client, payload.sub, 'user:online', convos.map((c) => c.conversationId));
       this.logger.debug(`${payload.sub} connected`);
     } catch (error) {
       this.logger.warn(`Rejecting socket: ${String(error)}`);
@@ -106,7 +109,29 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     const authed = client as AuthedSocket;
     if (!authed.userId) return;
     await this.presence.markOfflineDelayed(authed.userId);
-    client.broadcast.emit('user:offline', { userId: authed.userId });
+    // Same scoping as 'user:online' — only conv co-members get notified.
+    // We can read the rooms the socket was in directly off the socket; by
+    // the time disconnect fires they're still attached.
+    const convRooms = Array.from(client.rooms).filter((r) => r.startsWith('conv:'));
+    this.emitPresence(
+      client,
+      authed.userId,
+      'user:offline',
+      convRooms.map((r) => r.slice('conv:'.length)),
+    );
+  }
+
+  private emitPresence(
+    client: Socket,
+    userId: string,
+    event: 'user:online' | 'user:offline',
+    conversationIds: string[],
+  ): void {
+    if (conversationIds.length === 0) return;
+    const rooms = conversationIds.map((id) => `conv:${id}`);
+    // `client.to(rooms).emit(...)` excludes the sender's own socket, which
+    // is the right semantic — we don't echo presence back to the owner.
+    client.to(rooms).emit(event, { userId });
   }
 
   @SubscribeMessage('heartbeat')
