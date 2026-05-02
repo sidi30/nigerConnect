@@ -9,32 +9,41 @@ function makeNotifs() {
   return { create: jest.fn(async () => ({ id: 'n1' })) };
 }
 
-function makePostsStub() {
+function makePostsStub(opts?: {
+  assert?: () => Promise<{ id: string; authorId: string; visibility: string; associationId: string | null }>;
+}) {
+  const defaultAssert = async () => ({
+    id: 'p1',
+    authorId: 'u2',
+    visibility: 'public',
+    associationId: null,
+  });
   return {
+    assertCanViewPost: jest.fn(opts?.assert ?? defaultAssert),
     invalidateFeedCache: jest.fn(async () => undefined),
     invalidateFeedForUsers: jest.fn(async () => undefined),
   };
 }
 
 describe('CommentsService', () => {
-  it('throws NotFound if post does not exist', async () => {
-    const prisma = {
-      post: { findFirst: jest.fn(async () => null) },
-      comment: {},
-      $transaction: jest.fn(),
-    };
+  it('throws NotFound when the visibility gate refuses the viewer', async () => {
+    const prisma = { post: {}, comment: {}, $transaction: jest.fn() };
+    const posts = makePostsStub({
+      assert: async () => {
+        throw new NotFoundException('Post not found');
+      },
+    });
     const svc = new CommentsService(
       prisma as never,
       makeBlocks() as never,
       makeNotifs() as never,
-      makePostsStub() as never,
+      posts as never,
     );
     await expect(svc.create('u1', 'p1', 'hello')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('rejects nested reply beyond one level', async () => {
     const prisma = {
-      post: { findFirst: jest.fn(async () => ({ id: 'p1', authorId: 'u2' })) },
       comment: {
         findUnique: jest.fn(async () => ({
           id: 'c-parent',
@@ -58,7 +67,7 @@ describe('CommentsService', () => {
   it('creates comment and increments commentCount in a transaction', async () => {
     const tx = jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops));
     const prisma = {
-      post: { findFirst: jest.fn(async () => ({ id: 'p1', authorId: 'u2' })), update: jest.fn() },
+      post: { update: jest.fn() },
       comment: {
         findUnique: jest.fn(),
         create: jest.fn(async () => ({
@@ -78,5 +87,23 @@ describe('CommentsService', () => {
     const result = await svc.create('u1', 'p1', 'hello');
     expect(result.id).toBe('c1');
     expect(tx).toHaveBeenCalled();
+  });
+
+  it('list throws NotFound when the viewer cannot see the post', async () => {
+    const prisma = { comment: { findMany: jest.fn() } };
+    const posts = makePostsStub({
+      assert: async () => {
+        throw new NotFoundException('Post not found');
+      },
+    });
+    const svc = new CommentsService(
+      prisma as never,
+      makeBlocks() as never,
+      makeNotifs() as never,
+      posts as never,
+    );
+    await expect(svc.list('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
+    // Must not reach the DB if the gate refused.
+    expect(prisma.comment.findMany).not.toHaveBeenCalled();
   });
 });

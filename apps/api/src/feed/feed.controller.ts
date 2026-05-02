@@ -100,12 +100,13 @@ export class FeedController {
 
   @Get('posts/:id/likes')
   listLikers(
+    @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
     const lim = limit ? Math.min(100, Math.max(1, Number(limit))) : 30;
-    return this.likes.listLikers(id, cursor, lim);
+    return this.likes.listLikers(me.sub, id, cursor, lim);
   }
 
   @Post('posts/:id/comments')
@@ -119,12 +120,13 @@ export class FeedController {
 
   @Get('posts/:id/comments')
   listComments(
+    @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
     const lim = limit ? Math.min(50, Math.max(1, Number(limit))) : 20;
-    return this.comments.list(id, cursor, lim);
+    return this.comments.list(me.sub, id, cursor, lim);
   }
 
   @Patch('comments/:id')

@@ -141,12 +141,13 @@ export class ProfileController {
 
   @Get(':id/photos')
   async getPhotos(
+    @CurrentUser() viewer: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
     const lim = limit ? Math.min(50, Math.max(1, Number(limit))) : 20;
-    return this.profile.getPhotos(id, cursor, lim);
+    return this.profile.getPhotos(viewer.sub, id, cursor, lim);
   }
 
   @Get(':id/friends')

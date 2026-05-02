@@ -27,14 +27,11 @@ export class CommentsService {
   ) {}
 
   async create(userId: string, postId: string, content: string, parentId?: string) {
-    const post = await this.prisma.post.findFirst({
-      where: { id: postId, deletedAt: null },
-      select: { id: true, authorId: true },
-    });
-    if (!post) throw new NotFoundException('Post not found');
-    if (await this.blocks.isBlocked(userId, post.authorId)) {
-      throw new NotFoundException('Post not found');
-    }
+    // Visibility gate first — anything weaker (just blocks) lets a user
+    // comment on a friends-only post by a non-friend, which simultaneously
+    // confirms the post exists AND inserts the commenter into the author's
+    // notifications.
+    const post = await this.posts.assertCanViewPost(userId, postId);
 
     if (parentId) {
       const parent = await this.prisma.comment.findUnique({
@@ -99,7 +96,11 @@ export class CommentsService {
     return comment;
   }
 
-  async list(postId: string, cursor?: string, limit = 20) {
+  async list(viewerId: string, postId: string, cursor?: string, limit = 20) {
+    // Same visibility gate as viewing the post itself: you must be allowed
+    // to see the post to read its comments, otherwise comments leak content
+    // through the side channel.
+    await this.posts.assertCanViewPost(viewerId, postId);
     const roots = await this.prisma.comment.findMany({
       where: { postId, parentId: null, deletedAt: null },
       take: limit + 1,

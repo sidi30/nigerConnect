@@ -14,14 +14,15 @@ export class LikesService {
   ) {}
 
   async toggleLike(userId: string, postId: string): Promise<{ liked: boolean; count: number }> {
+    // Visibility gate first — without it, a non-friend could like a
+    // friends-only post and surface their identity in the author's
+    // notifications, working around the privacy setting entirely.
+    await this.posts.assertCanViewPost(userId, postId);
     const post = await this.prisma.post.findFirst({
       where: { id: postId, deletedAt: null },
       select: { id: true, authorId: true, likeCount: true },
     });
     if (!post) throw new NotFoundException('Post not found');
-    if (await this.blocks.isBlocked(userId, post.authorId)) {
-      throw new NotFoundException('Post not found');
-    }
 
     const existing = await this.prisma.like.findUnique({
       where: { userId_postId: { userId, postId } },
@@ -75,7 +76,11 @@ export class LikesService {
     }
   }
 
-  async listLikers(postId: string, cursor?: string, limit = 30) {
+  async listLikers(viewerId: string, postId: string, cursor?: string, limit = 30) {
+    // Likers are publicly named on the post — but only to viewers who can
+    // see the post. Without this gate, a stranger could enumerate which
+    // diaspora members liked a friends-only or association-only post.
+    await this.posts.assertCanViewPost(viewerId, postId);
     const likes = await this.prisma.like.findMany({
       where: { postId },
       take: limit + 1,

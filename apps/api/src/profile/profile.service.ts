@@ -232,9 +232,15 @@ export class ProfileService {
     };
   }
 
-  async getPhotos(userId: string, cursor?: string, limit = 20) {
+  async getPhotos(viewerId: string, ownerId: string, cursor?: string, limit = 20) {
+    // Anyone could previously list ANY user's photos by guessing a UUID,
+    // including users who set their profile to private and users who blocked
+    // the viewer. Reuse `getById`'s gate — same rules: private → 404,
+    // friends-only → header-shape user (so photos visible to anyone who
+    // could already see them in search), blocks → 404.
+    await this.getById(viewerId, ownerId);
     const photos = await this.prisma.userPhoto.findMany({
-      where: { userId },
+      where: { userId: ownerId },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],

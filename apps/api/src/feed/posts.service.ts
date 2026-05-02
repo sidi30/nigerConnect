@@ -110,7 +110,63 @@ export class PostsService {
     });
   }
 
+  /**
+   * Authoritative gate every "read or write something on a post" surface MUST
+   * call before doing anything else. Centralises the visibility rules so a
+   * future fanout (likes, comments, share, attach-to-thread, …) can't forget
+   * one of them.
+   *
+   * 404 (not 403) is intentional: existence-of-resource is itself privileged
+   * info — we don't want to confirm "post X exists but you can't see it" to
+   * an attacker fishing UUIDs.
+   */
+  async assertCanViewPost(
+    viewerId: string,
+    postId: string,
+  ): Promise<{ id: string; authorId: string; visibility: string; associationId: string | null }> {
+    const post = await this.prisma.post.findFirst({
+      where: { id: postId, deletedAt: null },
+      select: { id: true, authorId: true, visibility: true, associationId: true },
+    });
+    if (!post) throw new NotFoundException('Post not found');
+    if (post.authorId === viewerId) return post;
+    if (await this.blocks.isBlocked(viewerId, post.authorId)) {
+      throw new NotFoundException('Post not found');
+    }
+    if (post.visibility === 'public') return post;
+    if (post.visibility === 'friends') {
+      const isFriend =
+        (await this.prisma.friendship.count({
+          where: {
+            status: 'accepted',
+            OR: [
+              { requesterId: viewerId, addresseeId: post.authorId },
+              { requesterId: post.authorId, addresseeId: viewerId },
+            ],
+          },
+        })) > 0;
+      if (!isFriend) throw new NotFoundException('Post not found');
+      return post;
+    }
+    if (post.visibility === 'association') {
+      if (!post.associationId) throw new NotFoundException('Post not found');
+      const isMember =
+        (await this.prisma.associationMember.count({
+          where: {
+            userId: viewerId,
+            associationId: post.associationId,
+            status: 'approved',
+          },
+        })) > 0;
+      if (!isMember) throw new NotFoundException('Post not found');
+      return post;
+    }
+    // Unknown visibility value — refuse rather than expose.
+    throw new NotFoundException('Post not found');
+  }
+
   async getById(viewerId: string, postId: string) {
+    await this.assertCanViewPost(viewerId, postId);
     const post = await this.prisma.post.findFirst({
       where: { id: postId, deletedAt: null },
       include: {
@@ -121,9 +177,6 @@ export class PostsService {
       },
     });
     if (!post) throw new NotFoundException('Post not found');
-    if (await this.blocks.isBlocked(viewerId, post.authorId)) {
-      throw new NotFoundException('Post not found');
-    }
     return this.decoratePost(post, viewerId);
   }
 
@@ -175,14 +228,9 @@ export class PostsService {
   }
 
   async share(sharerId: string, postId: string, content?: string) {
-    const original = await this.prisma.post.findFirst({
-      where: { id: postId, deletedAt: null },
-      select: { id: true, authorId: true, visibility: true },
-    });
-    if (!original) throw new NotFoundException('Post not found');
-    if (await this.blocks.isBlocked(sharerId, original.authorId)) {
-      throw new NotFoundException('Post not found');
-    }
+    // Same visibility rules as viewing — you can't share something you
+    // shouldn't be able to see in the first place.
+    await this.assertCanViewPost(sharerId, postId);
 
     const [share] = await this.prisma.$transaction([
       this.prisma.post.create({
