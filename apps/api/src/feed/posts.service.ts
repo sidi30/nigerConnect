@@ -278,6 +278,17 @@ export class PostsService {
       new Set(blockedRows.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId))),
     );
 
+    // Association posts are only visible to approved members of the
+    // association — being friends with the author is NOT enough. Without
+    // this set, friends-of-association-author would see association-only
+    // posts they were never meant to read.
+    const memberAssocIds = (
+      await this.prisma.associationMember.findMany({
+        where: { userId, status: 'approved' },
+        select: { associationId: true },
+      })
+    ).map((m) => m.associationId);
+
     const cursorDate = cursor ? new Date(cursor) : null;
 
     const posts = await this.prisma.post.findMany({
@@ -291,8 +302,22 @@ export class PostsService {
           cursorDate ? { createdAt: { lt: cursorDate } } : {},
           {
             OR: [
+              // Self always sees their own posts regardless of visibility.
+              { authorId: userId },
+              // Public: visible to anyone (subject to the block filter above).
               { visibility: 'public' },
-              { authorId: { in: [...friendIds, userId] } },
+              // Friends-only: only when the author is actually a friend.
+              { visibility: 'friends', authorId: { in: friendIds } },
+              // Association: only when viewer is an approved member of the
+              // post's association — friendship with the author is irrelevant.
+              ...(memberAssocIds.length > 0
+                ? [
+                    {
+                      visibility: 'association' as const,
+                      associationId: { in: memberAssocIds },
+                    },
+                  ]
+                : []),
             ],
           },
         ],
