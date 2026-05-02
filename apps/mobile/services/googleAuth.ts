@@ -77,6 +77,21 @@ export function useGoogleAuth(): GoogleAuthState {
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Surface the resolved redirect URI in dev so the project owner knows
+  // exactly which URL to whitelist in Google Cloud Console. Without this,
+  // diagnosing "redirect_uri_mismatch" on Android is a 30-min google-fu
+  // session every single time.
+  useEffect(() => {
+    if (__DEV__ && request?.redirectUri) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[google-auth] redirectUri = ${request.redirectUri}\n` +
+          `If sign-in fails with "redirect_uri_mismatch", add this URL to the\n` +
+          `Authorized redirect URIs of your Web OAuth client in Google Cloud Console.`,
+      );
+    }
+  }, [request?.redirectUri]);
+
   useEffect(() => {
     if (response?.type === 'success') {
       const idToken =
@@ -106,12 +121,30 @@ export function useGoogleAuth(): GoogleAuthState {
         }
       })();
     } else if (response?.type === 'error') {
-      setError(response.error?.message ?? 'Connexion Google échouée');
+      const errMsg = response.error?.message ?? response.error?.code ?? '';
+      // Map Google's most common errors to actionable messages so the user
+      // (and the dev) know what to fix without digging through web docs.
+      let friendly = 'Connexion Google échouée.';
+      if (/redirect_uri_mismatch/i.test(errMsg)) {
+        const redirectUri = request?.redirectUri ?? '<unknown>';
+        friendly = __DEV__
+          ? `Redirect URI non autorisé. Ajoute cette URL aux Authorized redirect URIs du Web client Google Cloud Console:\n${redirectUri}`
+          : 'Connexion Google indisponible — contacte le support.';
+      } else if (/invalid_client/i.test(errMsg)) {
+        friendly = __DEV__
+          ? 'client_id Google invalide. Vérifie googleClientIdWeb/Android/Ios dans app.json.'
+          : 'Connexion Google indisponible — contacte le support.';
+      } else if (/access_denied/i.test(errMsg)) {
+        friendly = 'Tu as refusé l’accès Google.';
+      } else if (errMsg) {
+        friendly = errMsg;
+      }
+      setError(friendly);
       setLoading(false);
     } else if (response?.type === 'cancel' || response?.type === 'dismiss') {
       setLoading(false);
     }
-  }, [response, setUser]);
+  }, [response, request?.redirectUri, setUser]);
 
   const isConfigured = Boolean(
     CLIENT_IDS.webClientId ?? CLIENT_IDS.androidClientId ?? CLIENT_IDS.iosClientId,

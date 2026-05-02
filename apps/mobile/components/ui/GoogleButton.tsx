@@ -14,11 +14,12 @@ interface Props {
  * the login/register screens degrade gracefully.
  *
  * iOS-specific gate: App Store Guideline 4.8 requires Sign in with Apple
- * whenever a third-party social login is offered. If Apple Sign-In is NOT
- * enabled (`extra.appleSignInEnabled !== true`), we hide Google on iOS to
- * stay compliant. The user can still register with email/password. As soon
- * as Apple Sign-In is wired (Apple Developer Program + APPLE_* env vars),
- * flip `appleSignInEnabled` to true and Google reappears on iOS.
+ * whenever a third-party social login is offered. We only enforce that gate
+ * in **production builds** (`__DEV__ === false`) — Expo Go, dev clients and
+ * simulators are not subject to App Store review, so showing the button in
+ * dev keeps the OAuth flow testable. As soon as Apple Sign-In is wired
+ * (Apple Developer Program + APPLE_* env vars), flip `appleSignInEnabled`
+ * to true and Google appears on iOS prod builds too.
  */
 export function GoogleButton({ label = 'Continuer avec Google' }: Props) {
   const { signIn, isLoading, error, isConfigured } = useGoogleAuth();
@@ -27,7 +28,7 @@ export function GoogleButton({ label = 'Continuer avec Google' }: Props) {
     (Constants.expoConfig?.extra as { appleSignInEnabled?: boolean } | undefined)
       ?.appleSignInEnabled ?? process.env.EXPO_PUBLIC_APPLE_SIGNIN_ENABLED === 'true',
   );
-  if (Platform.OS === 'ios' && !appleEnabled) return null;
+  if (!__DEV__ && Platform.OS === 'ios' && !appleEnabled) return null;
   if (!isConfigured) return null;
 
   return (

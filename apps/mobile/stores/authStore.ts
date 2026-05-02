@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import type { User } from '@nigerconnect/shared-types';
 import { authApi } from '@/services/authApi';
+import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
 import { registerLogoutHandler } from '@/services/api';
 import { registerForPushNotifications } from '@/services/pushService';
+import { prefetchImages } from '@/services/imagePrefetch';
 
 // Best-effort background push registration — never blocks auth flow.
 const kickOffPushRegistration = (): void => {
@@ -12,6 +14,24 @@ const kickOffPushRegistration = (): void => {
     // ignore: permissions denied, simulator, or network glitch
   });
 };
+
+/**
+ * Warm the image cache with the freshly-authenticated user's avatar plus
+ * their friends'. Fire-and-forget: any failure (offline, expired URL) is
+ * swallowed by `prefetchImages` itself.
+ */
+function kickOffImagePrefetch(user: User | null): void {
+  if (!user) return;
+  void (async () => {
+    try {
+      const friends = await friendsApi.list();
+      const urls = [user.avatarUrl, ...friends.items.map((f) => f.avatarUrl)];
+      await prefetchImages(urls);
+    } catch {
+      /* ignore */
+    }
+  })();
+}
 
 interface AuthState {
   user: User | null;
@@ -50,6 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { user } = await authApi.me();
       set({ user, isAuthenticated: true, isHydrated: true });
       kickOffPushRegistration();
+      kickOffImagePrefetch(user);
     } catch {
       await tokenStore.clear();
       set({ isHydrated: true });
@@ -61,6 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
     kickOffPushRegistration();
+    kickOffImagePrefetch(user);
   },
 
   async register(input) {
@@ -68,6 +90,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
     kickOffPushRegistration();
+    kickOffImagePrefetch(user);
   },
 
   async logout() {

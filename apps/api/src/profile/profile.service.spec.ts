@@ -84,7 +84,11 @@ describe('ProfileService', () => {
     expect(result.id).toBe('other');
   });
 
-  it('friends-only profile returns NotFound when not friend', async () => {
+  it('friends-only profile returns the basic header to any viewer (so search hits stay clickable)', async () => {
+    // Regression: previously 404'd when viewer was not a friend, which made
+    // tapping a friends-only result on the map look like the profile vanished.
+    // The header is the same fields already exposed by /profile/search and
+    // /geo/members, so no new info is leaked.
     const prisma = {
       user: {
         findUnique: jest.fn(async () => ({
@@ -93,10 +97,54 @@ describe('ProfileService', () => {
           status: 'active',
         })),
       },
-      $queryRaw: jest.fn(async () => [{ count: 0n }]),
     };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
-    await expect(svc.getById('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
+    const result = await svc.getById('viewer', 'other');
+    expect(result.id).toBe('other');
+    expect(result.privacyLevel).toBe('friends');
+  });
+
+  it('listFriendsOf 404s when target is friends-only and viewer is not actually a friend', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'other',
+          privacyLevel: 'friends',
+          status: 'active',
+        })),
+      },
+      friendship: {
+        count: jest.fn(async () => 0),
+        findMany: jest.fn(),
+      },
+      block: { findMany: jest.fn(async () => []) },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
+    await expect(svc.listFriendsOf('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
+    // We must NOT have queried the friendship list — the privacy gate
+    // short-circuits before any data is read.
+    expect(prisma.friendship.findMany).not.toHaveBeenCalled();
+  });
+
+  it('listFriendsOf returns the friend list to friends of a friends-only target', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'other',
+          privacyLevel: 'friends',
+          status: 'active',
+        })),
+      },
+      friendship: {
+        count: jest.fn(async () => 1),
+        findMany: jest.fn(async () => []),
+      },
+      block: { findMany: jest.fn(async () => []) },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
+    const result = await svc.listFriendsOf('viewer', 'other');
+    expect(result.items).toEqual([]);
+    expect(prisma.friendship.findMany).toHaveBeenCalled();
   });
 
   it('prevents deleting photos owned by others', async () => {

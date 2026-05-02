@@ -9,6 +9,13 @@ export const chatApi = {
     return data;
   },
 
+  /** Fetch a single conversation by id — much cheaper than listing all of them
+   *  just to render the chat header. */
+  async getConversation(conversationId: string): Promise<Conversation> {
+    const { data } = await api.get<Conversation>(`/conversations/${conversationId}`);
+    return data;
+  },
+
   async listMessages(conversationId: string, cursor?: string): Promise<CursorPage<Message>> {
     const { data } = await api.get<CursorPage<Message>>(`/conversations/${conversationId}/messages`, {
       params: { cursor },

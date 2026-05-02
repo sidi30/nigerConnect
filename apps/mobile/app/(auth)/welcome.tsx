@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { geoApi } from '@/services/geoApi';
 import { associationsApi } from '@/services/associationsApi';
+import { probeApi, type Reachability } from '@/services/connectivity';
 
 const FLOATING_FLAGS = [
   { x: '6%', y: '8%', size: 54, code: 'FR' },
@@ -86,6 +87,20 @@ function FloatingFlag({
 export default function WelcomeScreen() {
   const router = useRouter();
   const flagEntries = Object.entries(Flags).filter(([k]) => k !== 'NE');
+  // In dev only: probe the API once at mount and surface a banner if it can't
+  // be reached. Cuts down on hours of "why does login fail" debugging when
+  // the resolved BASE_URL points at the wrong server.
+  const [probe, setProbe] = useState<Reachability | null>(null);
+  useEffect(() => {
+    if (!__DEV__) return;
+    let active = true;
+    void probeApi().then((r) => {
+      if (active) setProbe(r);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   const statsQuery = useQuery({
     queryKey: ['geo', 'stats'],
     queryFn: () => geoApi.stats(),
@@ -174,6 +189,27 @@ export default function WelcomeScreen() {
               </Text>
             ))}
           </View>
+
+          {__DEV__ && probe ? (
+            <View
+              style={[
+                styles.devProbe,
+                probe.ok ? styles.devProbeOk : styles.devProbeKo,
+              ]}
+            >
+              <Text style={styles.devProbeTitle}>
+                {probe.ok ? '✓ API joignable' : '✗ API injoignable'}
+              </Text>
+              <Text style={styles.devProbeText} numberOfLines={2}>
+                {probe.baseUrl}
+              </Text>
+              <Text style={styles.devProbeText}>
+                {probe.ok
+                  ? `${probe.latencyMs}ms · db ${probe.checks.db} · redis ${probe.checks.redis}`
+                  : probe.reason}
+              </Text>
+            </View>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -285,4 +321,30 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   flag: { fontSize: 20 },
+  devProbe: {
+    marginTop: Spacing.lg,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+  },
+  devProbeOk: {
+    backgroundColor: 'rgba(13,176,43,0.12)',
+    borderColor: 'rgba(13,176,43,0.4)',
+  },
+  devProbeKo: {
+    backgroundColor: 'rgba(192,57,43,0.18)',
+    borderColor: 'rgba(192,57,43,0.5)',
+  },
+  devProbeTitle: {
+    color: Colors.white,
+    fontSize: Typography.sizes.xs,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  devProbeText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: Typography.sizes.xs,
+    fontFamily: 'monospace',
+  },
 });

@@ -191,6 +191,15 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   }
 
   broadcastNewMessage(conversationId: string, message: unknown, memberIds: string[]): void {
+    // Make sure every member who's currently connected is in the conv: room
+    // before we emit. `handleConnection` only joins rooms for conversations
+    // that already existed at connect time — without this, a member who's
+    // online and just got added to a fresh conversation would miss every
+    // `message:new` until they reconnect. `socketsJoin` is idempotent: if the
+    // socket is already in the room it's a no-op.
+    for (const userId of memberIds) {
+      this.server.in(`user:${userId}`).socketsJoin(`conv:${conversationId}`);
+    }
     this.server.to(`conv:${conversationId}`).emit('message:new', message);
     // Also notify member user-rooms (so they can update conversation list even without opening convo)
     for (const id of memberIds) {

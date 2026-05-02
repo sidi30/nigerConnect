@@ -11,7 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Post } from '@nigerconnect/shared-types';
+import type { CursorPage, Post, PublicUser, User } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { PostCard } from '@/components/feed/PostCard';
@@ -33,6 +33,29 @@ import {
 
 type Relationship = 'self' | 'friends' | 'outgoing' | 'incoming' | 'blocked' | 'none';
 
+/**
+ * Make profile-fetch errors actionable to the end user. The default React
+ * Query / axios error message ("Network Error", "timeout of 15000ms exceeded")
+ * is incomprehensible to a non-technical person. Map the most common cases to
+ * a sentence the user can act on (or report).
+ */
+function describeProfileError(err: unknown): string {
+  const e = err as {
+    code?: string;
+    message?: string;
+    response?: { status?: number; data?: { message?: string | string[] } };
+  } | null;
+  if (!e) return 'Vérifie ta connexion puis réessaie.';
+  const status = e.response?.status;
+  if (status === 404) return "Ce profil n'existe plus.";
+  if (status === 403) return "Ce profil est privé.";
+  if (status && status >= 500) return 'Le serveur ne répond pas correctement. Réessaie dans un instant.';
+  const msg = e.message ?? '';
+  if (/timeout/i.test(msg)) return 'Le serveur est lent à répondre. Vérifie ta connexion puis réessaie.';
+  if (/network/i.test(msg)) return 'Pas de connexion. Vérifie ton Wi-Fi ou tes données mobiles.';
+  return msg || 'Vérifie ta connexion puis réessaie.';
+}
+
 const RELATION_COPY: Record<Relationship, string> = {
   self: '',
   friends: '✓ Amis',
@@ -49,10 +72,43 @@ export default function UserScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
 
-  const userQuery = useQuery({
+  // Pre-populate from any other place we might already have this user — feed
+  // cache (post.author), friends list, search results, conversation member.
+  // The screen then paints instantly with whatever fields PublicUser gives,
+  // and the network fetch upgrades it to the richer User shape in the bg.
+  const userQuery = useQuery<User | PublicUser>({
     queryKey: ['user', id],
     queryFn: () => profileApi.getById(id!),
     enabled: !!id,
+    placeholderData: (): PublicUser | undefined => {
+      if (!id) return undefined;
+      // 1. Feed cache: any post by this user has the author embedded.
+      const feed = qc.getQueryData<{ pages: Array<{ items: Post[] }> }>(['feed']);
+      const fromFeed = feed?.pages
+        .flatMap((p) => p.items)
+        .find((post) => post.author.id === id)?.author;
+      if (fromFeed) return fromFeed;
+      // 2. Friends list (current user's friends).
+      const friendsList = qc.getQueryData<CursorPage<PublicUser>>(['friends', 'list']);
+      const fromFriends = friendsList?.items.find((u) => u.id === id);
+      if (fromFriends) return fromFriends;
+      // 3. Search results cache — the user may have just clicked a hit on the
+      //    map page. Without this, the screen has nothing to paint until the
+      //    network round-trip finishes, which is what makes failed fetches
+      //    look like "the profile never opens".
+      const searchCaches = qc.getQueriesData<CursorPage<PublicUser>>({
+        queryKey: ['profile', 'search'],
+      });
+      for (const [, page] of searchCaches) {
+        const hit = page?.items.find((u) => u.id === id);
+        if (hit) return hit;
+      }
+      return undefined;
+    },
+    staleTime: 60_000,
+    // 1 retry — default 3 means a flaky network keeps the screen on a spinner
+    // for ~45s (3 × 15s axios timeout). 1 retry makes failures surface in ~15s.
+    retry: 1,
   });
 
   const relationshipQuery = useQuery({
@@ -125,10 +181,40 @@ export default function UserScreen() {
     else if (rel.status === 'friends') removeMut.mutate();
   }, [relationshipQuery.data, sendRequestMut, acceptMut, removeMut]);
 
-  if (userQuery.isLoading || !userQuery.data) {
+  if (!userQuery.data) {
+    // Three states: still loading (spinner), errored (visible message + retry),
+    // or query disabled because `id` is missing (treat like an error). Without
+    // this, an axios timeout would leave the screen on an indefinite spinner
+    // for ~45s (3 retries × 15s) before silently giving up — what users
+    // perceive as "the profile never opens".
+    const isErrored = userQuery.isError || !id;
     return (
-      <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.topBar}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
+            <Text style={styles.backIcon}>←</Text>
+          </Pressable>
+        </View>
+        {isErrored ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Profil indisponible</Text>
+            <Text style={styles.errorHint}>
+              {!id
+                ? 'Identifiant manquant.'
+                : describeProfileError(userQuery.error)}
+            </Text>
+            {id ? (
+              <Pressable
+                onPress={() => userQuery.refetch()}
+                style={styles.retryBtn}
+              >
+                <Text style={styles.retryLabel}>Réessayer</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : (
+          <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+        )}
       </SafeAreaView>
     );
   }
@@ -230,7 +316,7 @@ export default function UserScreen() {
                   {u.countryCode ? Flags[u.countryCode] ?? '🌍' : '🌍'} {u.city ?? ''}
                   {u.countryCode ? `, ${CountryNames[u.countryCode] ?? u.countryCode}` : ''}
                 </Text>
-                {u.bio ? <Text style={styles.bio}>{u.bio}</Text> : null}
+                {'bio' in u && u.bio ? <Text style={styles.bio}>{u.bio}</Text> : null}
               </View>
             </View>
 
@@ -450,5 +536,36 @@ const styles = StyleSheet.create({
     color: Colors.brown,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  errorBox: {
+    marginTop: Spacing.xxl,
+    marginHorizontal: Spacing.lg,
+    padding: Spacing.lg,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  errorTitle: {
+    fontSize: Typography.sizes.md,
+    fontWeight: '700',
+    color: Colors.brown,
+  },
+  errorHint: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.tan500,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.orange,
+  },
+  retryLabel: {
+    color: Colors.white,
+    fontSize: Typography.sizes.sm,
+    fontWeight: '700',
   },
 });

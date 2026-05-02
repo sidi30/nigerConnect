@@ -16,6 +16,13 @@ if (!BASE_URL) {
   );
 }
 
+if (__DEV__) {
+  // Surface the resolved URL once at boot — saves an hour debugging "why does
+  // login fail" when the mobile app silently points at prod.
+  // eslint-disable-next-line no-console
+  console.log(`[api] BASE_URL = ${BASE_URL}`);
+}
+
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,
   timeout: 15000,
@@ -43,6 +50,15 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
     if (error.response?.status === 401 && original && !original._retry) {
+      // Skip the silent refresh for routes where 401 is the *expected* failure
+      // signal (login + OAuth). Without this, a wrong password would trigger
+      // a refresh attempt that itself 401s, then the catch logs the user out
+      // mid-typing. The login UI handles the 401 itself.
+      const url = original.url ?? '';
+      const isAuthEntryPoint = /\/auth\/(login|register|google|apple|forgot-password|reset-password|refresh)/.test(
+        url,
+      );
+      if (isAuthEntryPoint) return Promise.reject(error);
       original._retry = true;
       try {
         if (!refreshPromise) {

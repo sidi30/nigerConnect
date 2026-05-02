@@ -59,15 +59,20 @@ export default function NewPostScreen() {
   });
 
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   async function addPhoto(source: 'library' | 'camera' = 'library') {
     setUploading(true);
+    setUploadProgress(0);
     try {
-      const url = await pickAndUploadImage('photo', source);
+      const url = await pickAndUploadImage('photo', source, {
+        onProgress: setUploadProgress,
+      });
       if (url) setPhotos((p) => [...p, { url }]);
     } catch (error) {
       Alert.alert('Upload impossible', (error as Error).message);
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   }
 
@@ -164,7 +169,11 @@ export default function NewPostScreen() {
               style={[styles.actionBtn, uploading && { opacity: 0.5 }]}
             >
               <Text style={styles.actionEmoji}>🖼️</Text>
-              <Text style={styles.actionLabel}>{uploading ? 'Envoi…' : 'Galerie'}</Text>
+              <Text style={styles.actionLabel}>
+                {uploading
+                  ? `Envoi… ${Math.round(uploadProgress * 100)}%`
+                  : 'Galerie'}
+              </Text>
             </Pressable>
             <Pressable
               onPress={() => addPhoto('camera')}

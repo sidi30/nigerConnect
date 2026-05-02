@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
+import { NCImage } from './NCImage';
 import { Colors } from '@/constants/theme';
 
 interface Props {
@@ -9,6 +9,12 @@ interface Props {
   online?: boolean;
   border?: boolean;
   borderColor?: string;
+  /**
+   * Pass `user.id` when rendering an avatar inside a virtualised list
+   * (`<FlatList renderItem>`). Without it, expo-image reuses cells and
+   * briefly flashes a peer's bitmap on someone else's row during scroll.
+   */
+  recyclingKey?: string;
 }
 
 export function Avatar({
@@ -18,6 +24,7 @@ export function Avatar({
   online,
   border = true,
   borderColor = Colors.orange,
+  recyclingKey,
 }: Props) {
   const initials = (name ?? '')
     .split(' ')
@@ -32,7 +39,7 @@ export function Avatar({
   return (
     <View style={[styles.wrapper, { width: size, height: size }]}>
       {uri ? (
-        <Image
+        <NCImage
           source={{ uri }}
           style={{
             width: size,
@@ -42,7 +49,7 @@ export function Avatar({
             borderColor,
             backgroundColor: Colors.tan100,
           }}
-          contentFit="cover"
+          recyclingKey={recyclingKey ?? uri}
         />
       ) : (
         <View

@@ -91,9 +91,7 @@ export default function PhotosScreen() {
   });
 
   const setAvatarMut = useMutation({
-    mutationFn: async (url: string) => {
-      return profileApi.updateMe({ avatarUrl: url } as never);
-    },
+    mutationFn: (url: string) => profileApi.updateAvatar(url),
     onSuccess: (updated) => {
       setUser(updated);
       setSelected(null);

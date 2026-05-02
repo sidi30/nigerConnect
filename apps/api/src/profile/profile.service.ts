@@ -106,18 +106,14 @@ export class ProfileService {
 
     if (target.privacyLevel === 'private') throw new NotFoundException('User not found');
 
-    if (target.privacyLevel === 'friends') {
-      const friend = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*)::bigint AS count FROM friendships
-        WHERE status = 'accepted'
-          AND (
-            (requester_id = ${viewerId}::uuid AND addressee_id = ${targetId}::uuid)
-            OR (requester_id = ${targetId}::uuid AND addressee_id = ${viewerId}::uuid)
-          )
-      `.catch(() => [{ count: 0n }]);
-      if ((friend[0]?.count ?? 0n) === 0n) throw new NotFoundException('User not found');
-    }
-
+    // `friends`-only users still appear in search and on the map, so 404ing
+    // their *profile header* (avatar, name, city, country) when a stranger
+    // taps a search hit is misleading: the UI shows them in the list one
+    // moment, then claims they no longer exist the next. Detail surfaces —
+    // posts (gated in posts.service.ts) and the friends list (gated in
+    // listFriendsOf below) — remain restricted; what we expose here is the
+    // same set of fields already visible in the search/map response, so no
+    // new information leaks.
     return target;
   }
 
@@ -143,8 +139,26 @@ export class ProfileService {
     }>;
     nextCursor: string | null;
   }> {
-    // Reuse the privacy gate of getById (throws 404 if forbidden).
-    await this.getById(viewerId, targetId);
+    // `getById` no longer 404s on friends-only profiles (the header is
+    // visible to anyone who could already see them in search), so the
+    // friend-list privacy gate has to run here instead. Rules:
+    //   - private  → 404 (also applied by getById, kept for defense in depth)
+    //   - friends  → 404 unless viewer is the target or an accepted friend
+    //   - public   → visible to anyone
+    //   - blocked  → 404 (getById throws first)
+    const target = await this.getById(viewerId, targetId);
+    if (target.privacyLevel === 'friends' && viewerId !== targetId) {
+      const friendCount = await this.prisma.friendship.count({
+        where: {
+          status: 'accepted',
+          OR: [
+            { requesterId: viewerId, addresseeId: targetId },
+            { requesterId: targetId, addresseeId: viewerId },
+          ],
+        },
+      });
+      if (friendCount === 0) throw new NotFoundException('User not found');
+    }
 
     const friendships = await this.prisma.friendship.findMany({
       where: {

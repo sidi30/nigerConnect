@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import type { Post, SharedPost } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
+import { NCImage } from '../ui/NCImage';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
@@ -20,7 +20,29 @@ interface Props {
   onReport?: (postId: string) => void;
 }
 
-export function PostCard({
+/**
+ * Memoised so that scrolling the feed (which mutates intra-page React Query
+ * caches and triggers parent re-renders) doesn't re-mount every card. The
+ * comparator covers the fields that actually drive the render: identity,
+ * counters, like state, and the author avatar/name. Callbacks are reference-
+ * stable from the parent (`useCallback`), so we don't have to compare them.
+ */
+function arePostPropsEqual(prev: Props, next: Props): boolean {
+  if (prev.post === next.post) return true;
+  if (prev.post.id !== next.post.id) return false;
+  return (
+    prev.post.likeCount === next.post.likeCount &&
+    prev.post.commentCount === next.post.commentCount &&
+    prev.post.shareCount === next.post.shareCount &&
+    prev.post.isLikedByMe === next.post.isLikedByMe &&
+    prev.post.content === next.post.content &&
+    prev.post.author.avatarUrl === next.post.author.avatarUrl &&
+    prev.post.author.displayName === next.post.author.displayName &&
+    prev.currentUserId === next.currentUserId
+  );
+}
+
+function PostCardImpl({
   post,
   currentUserId,
   onLike,
@@ -162,6 +184,8 @@ export function PostCard({
   );
 }
 
+export const PostCard = memo(PostCardImpl, arePostPropsEqual);
+
 function SharedPostPreview({
   shared,
   onPhotoPress,
@@ -209,7 +233,7 @@ function PhotoGallery({
   if (photos.length === 1) {
     return (
       <Pressable onPress={() => onPress?.(photos, 0)}>
-        <Image source={{ uri: photos[0] }} style={styles.singlePhoto} contentFit="cover" />
+        <NCImage source={{ uri: photos[0] }} style={styles.singlePhoto} recyclingKey={photos[0]} />
       </Pressable>
     );
   }
@@ -217,7 +241,7 @@ function PhotoGallery({
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
       {photos.map((ph, i) => (
         <Pressable key={i} onPress={() => onPress?.(photos, i)}>
-          <Image source={{ uri: ph }} style={styles.galleryPhoto} contentFit="cover" />
+          <NCImage source={{ uri: ph }} style={styles.galleryPhoto} recyclingKey={ph} />
         </Pressable>
       ))}
     </ScrollView>

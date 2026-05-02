@@ -188,6 +188,15 @@ export default function FeedTab() {
       <FlatList
         data={posts}
         keyExtractor={(p) => p.id}
+        // Virtualisation tighter than the RN defaults — the feed is the screen
+        // most likely to grow long, and PostCard mounts an Image plus a
+        // ScrollView for the gallery. Defaults render too many cards and
+        // janky scroll on low-end Android.
+        windowSize={5}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         renderItem={({ item }) => (
           <PostCard
             post={item}

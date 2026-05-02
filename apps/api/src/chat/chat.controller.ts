@@ -46,6 +46,14 @@ export class ChatController {
     return this.chat.createConversation(me.sub, dto.participantIds, dto.name);
   }
 
+  @Get('conversations/:id')
+  getOne(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.chat.getConversation(me.sub, id);
+  }
+
   @Get('conversations/:id/messages')
   messages(
     @CurrentUser() me: JwtUserPayload,

@@ -4,7 +4,12 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-rout
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, onlineManager, QueryClient } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { AppState, type AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import {
   DMSans_400Regular,
@@ -21,16 +26,57 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { ThemeProvider } from '@/constants/theme-provider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { captureRenderError, initSentry } from '@/services/sentry';
 
 // Boot Sentry as early as possible — before any React render — so the very
 // first error during font loading or auth hydration still gets captured.
 initSentry();
 
+// Wire React Query to NetInfo so queries auto-pause when the device drops
+// offline and resume on reconnection — no per-call retry logic needed.
+onlineManager.setEventListener((setOnline) => {
+  return NetInfo.addEventListener((state) => {
+    setOnline(Boolean(state.isConnected));
+  });
+});
+
+// Background → foreground triggers a refetch of stale queries. Without this
+// the app shows the bitmap-frozen state when the user comes back from another
+// app — feels like the app didn't update.
+function onAppStateChange(status: AppStateStatus) {
+  if (Platform.OS !== 'web') focusManager.setFocused(status === 'active');
+}
+AppState.addEventListener('change', onAppStateChange);
+
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1 },
+    queries: {
+      // 30 s stale: avoid flicker on tab switches but still refresh hourly content.
+      staleTime: 30_000,
+      // Keep cached data 24h so a cold start renders instantly while we
+      // background-refetch.
+      gcTime: 24 * 60 * 60 * 1000,
+      retry: 1,
+      // Skip refetch when the device is offline — `onlineManager` flips this
+      // back automatically once connectivity returns.
+      networkMode: 'online',
+    },
+    mutations: {
+      networkMode: 'online',
+    },
   },
+});
+
+// Persist the cache to AsyncStorage. Cold-start cost: a few MB read once;
+// gain: feed/profile/messages render instantly from cache while the network
+// fetches the latest. Cache survives app kill, but expires after 24 h to
+// avoid serving stale-by-a-week data.
+const persister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'nigerconnect:rq',
+  // Throttle writes so we don't churn AsyncStorage on every cache update.
+  throttleTime: 1000,
 });
 
 export default function RootLayout() {
@@ -58,12 +104,23 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
-            <QueryClientProvider client={queryClient}>
+            <PersistQueryClientProvider
+              client={queryClient}
+              persistOptions={{
+                persister,
+                maxAge: 24 * 60 * 60 * 1000,
+                // Bust the persisted cache when the app version changes — a
+                // schema change in shared-types would otherwise leave the user
+                // with a hydrated cache that no longer matches the new types.
+                buster: 'v1',
+              }}
+            >
               {/* Translucent on Android so content sits BEHIND the status bar,
                   letting react-native-safe-area-context calculate insets.top
                   correctly. Without this, headers can stick to the very top
                   of the screen and overlap the system clock/battery row. */}
               <StatusBar style="dark" translucent backgroundColor="transparent" />
+              <OfflineBanner />
               <AuthGate />
               <NotificationDeepLink />
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }}>
@@ -92,7 +149,7 @@ export default function RootLayout() {
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/community" options={{ presentation: 'card' }} />
               </Stack>
-            </QueryClientProvider>
+            </PersistQueryClientProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

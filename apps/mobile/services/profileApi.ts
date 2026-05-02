@@ -13,6 +13,22 @@ export const profileApi = {
     return data.user;
   },
 
+  /**
+   * Avatar / cover live on dedicated routes because their Zod schemas accept
+   * a `null` to clear the field, which `updateProfileSchema` doesn't. Calling
+   * `updateMe({ avatarUrl })` was a silent no-op (the field was stripped),
+   * which is why "définir comme photo de profil" looked broken.
+   */
+  async updateAvatar(avatarUrl: string | null): Promise<User> {
+    const { data } = await api.patch<{ user: User }>('/profile/me/avatar', { avatarUrl });
+    return data.user;
+  },
+
+  async updateCover(coverUrl: string | null): Promise<User> {
+    const { data } = await api.patch<{ user: User }>('/profile/me/cover', { coverUrl });
+    return data.user;
+  },
+
   async search(params: {
     q?: string;
     country?: string;

@@ -16,7 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Message, CursorPage } from '@nigerconnect/shared-types';
+import type { Conversation, CursorPage, Message } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
@@ -79,9 +79,19 @@ export default function ChatScreen() {
 
   const messagesKey = useMemo(() => ['conversation', id, 'messages'] as const, [id]);
 
-  const convosQuery = useQuery({
-    queryKey: ['conversations'],
-    queryFn: () => chatApi.listConversations(),
+  // Fetch *just* the conversation we need. Use the conversations-list cache
+  // as `placeholderData` so the header paints instantly when we navigated in
+  // from Messages tab; otherwise fall back to a single `GET /conversations/:id`
+  // request which is still much cheaper than the full list.
+  const conversationQuery = useQuery<Conversation>({
+    queryKey: ['conversation', id, 'meta'],
+    queryFn: () => chatApi.getConversation(id!),
+    enabled: !!id,
+    placeholderData: () => {
+      const cached = qc.getQueryData<CursorPage<Conversation>>(['conversations']);
+      return cached?.items.find((c) => c.id === id);
+    },
+    staleTime: 60_000,
   });
   const messagesQuery = useQuery<MessagesPage>({
     queryKey: messagesKey,
@@ -183,7 +193,7 @@ export default function ChatScreen() {
     },
   });
 
-  const conversation = convosQuery.data?.items.find((c) => c.id === id);
+  const conversation = conversationQuery.data;
   const peer = conversation?.members.find((m) => m.id !== me?.id) ?? conversation?.members[0];
 
   const messages = (messagesQuery.data?.items ?? []) as PendingMessage[];

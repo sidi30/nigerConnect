@@ -22,6 +22,16 @@ const envSchema = z
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),
     S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+    /**
+     * Whether presigned uploads should pin `x-amz-server-side-encryption: AES256`
+     * into the signature. Default OFF: MinIO standalone (without a KMS sidecar)
+     * rejects SSE requests with HTTP 501 NotImplemented, so forcing it broke
+     * every upload on dev + on the VPS-hosted MinIO. Turn ON in real AWS S3
+     * production (it works there transparently). The bucket-level "default
+     * encryption" toggle in the AWS console covers the at-rest requirement
+     * just as well, without requiring the client to cooperate.
+     */
+    S3_SSE: z.coerce.boolean().default(false),
     CDN_URL: z.string().url().optional(),
 
     // JWT: RS256 keypair + audience/issuer claims.

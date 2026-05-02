@@ -137,7 +137,7 @@ export default function EditProfileScreen() {
               try {
                 const url = await pickAndUploadImage('avatar');
                 if (!url) return;
-                const updated = await profileApi.updateMe({ avatarUrl: url } as never);
+                const updated = await profileApi.updateAvatar(url);
                 setUser(updated);
                 void qc.invalidateQueries();
                 setFeedback({ kind: 'success', message: 'Avatar mis à jour ✓' });
