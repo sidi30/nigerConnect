@@ -52,10 +52,10 @@
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "blockedPermissions": [
-        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.RECORD_AUDIO",
@@ -125,7 +125,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "a3dec8bd-23a8-4f19-89d7-4bf44cd15e5e"
+        "projectId": "1599c4cb-35b7-466b-80ba-056ad7c50d02"
       }
     },
     "owner": "sidi300",

@@ -54,7 +54,7 @@ export class GeoService {
   ) {}
 
   async getMarkers(viewerId: string, dto: BoundsDto): Promise<MapMarker[]> {
-    const cacheKey = this.cacheKey(dto);
+    const cacheKey = this.cacheKey(viewerId, dto);
     const cached = await this.redis.client.get(cacheKey);
     if (cached) return JSON.parse(cached) as MapMarker[];
 
@@ -295,7 +295,7 @@ export class GeoService {
       }));
   }
 
-  private cacheKey(dto: BoundsDto): string {
-    return `geo:${dto.zoom}:${dto.type}:${dto.north.toFixed(2)}:${dto.south.toFixed(2)}:${dto.east.toFixed(2)}:${dto.west.toFixed(2)}`;
+  private cacheKey(viewerId: string, dto: BoundsDto): string {
+    return `geo:${viewerId}:${dto.zoom}:${dto.type}:${dto.north.toFixed(2)}:${dto.south.toFixed(2)}:${dto.east.toFixed(2)}:${dto.west.toFixed(2)}`;
   }
 }

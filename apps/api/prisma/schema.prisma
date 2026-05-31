@@ -512,6 +512,7 @@ model ServiceRating {
   comment     String?        @db.Text
   createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
 
+  @@unique([requestId, ratedUserId])
   @@index([ratedUserId])
   @@map("service_ratings")
 }
