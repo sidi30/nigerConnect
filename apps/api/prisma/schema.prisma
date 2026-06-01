@@ -73,6 +73,8 @@ model User {
   latitude         Decimal?        @db.Decimal(10, 7)
   longitude        Decimal?        @db.Decimal(10, 7)
   showOnMap        Boolean         @default(true) @map("show_on_map")
+  proximityAlerts  Boolean         @default(false) @map("proximity_alerts")
+  proximityRadius  Int             @default(100) @map("proximity_radius")
 
   languages        String[]        @default(["fr"])
   privacyLevel     PrivacyLevel    @default(friends) @map("privacy_level")
@@ -218,6 +220,7 @@ enum NotificationType {
   association_join_rejected
   identity_approved
   identity_rejected
+  proximity
   system
 }
 

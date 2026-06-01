@@ -2,10 +2,22 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { NotificationService } from '../notification/notification.service';
 import { geocode } from '../common/geo/city-coords';
-import type { BoundsDto, NearbyDto } from './dto/geo.dto';
+import type { BoundsDto, NearbyDto, ProximityPingDto } from './dto/geo.dto';
 
 const CLUSTER_TTL = 300;
+const PROXIMITY_COOLDOWN = 300;
+// Max users notified by a single ping — caps the notification fan-out in dense
+// areas (a crowd at an event must not trigger hundreds of pushes per ping).
+const PROXIMITY_MATCH_LIMIT = 50;
+
+export interface ProximityMatch {
+  userId: string;
+  name: string | null;
+  avatarUrl: string | null;
+  distance: number;
+}
 
 export interface CountryCluster {
   kind: 'country';
@@ -51,6 +63,7 @@ export class GeoService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async getMarkers(viewerId: string, dto: BoundsDto): Promise<MapMarker[]> {
@@ -142,8 +155,9 @@ export class GeoService {
 
   async getNearby(viewerId: string, dto: NearbyDto) {
     const blockedIds = await this.blockedIds(viewerId);
+    // id is uuid, bound params are text — compare via id::text (no uuid<>text op).
     const blockedClause = blockedIds.length
-      ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
+      ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
       : Prisma.empty;
 
     // Distance is great-circle km (Haversine). The `radius` (km) caps results
@@ -177,7 +191,7 @@ export class GeoService {
         AND status = 'active'
         AND latitude IS NOT NULL
         AND longitude IS NOT NULL
-        AND id <> ${viewerId}
+        AND id::text <> ${viewerId}
         ${blockedClause}
         AND ${distanceExpr} <= ${dto.radius}
       ORDER BY distance
@@ -185,7 +199,143 @@ export class GeoService {
     `);
   }
 
+  /**
+   * Foreground-only proximity ping. The pinger reports their current location;
+   * we find OTHER opted-in users within the PINGER's chosen radius and notify
+   * each that the pinger is near them. The radius belongs to the person moving
+   * (they choose how sensitive their own alerts are).
+   *
+   * Privacy/anti-abuse:
+   *  - Opt-in is OFF by default; a non-opted-in pinger neither broadcasts nor
+   *    receives — we return an empty result without touching anyone.
+   *  - Only opted-in, active, non-blocked users are ever matched or returned.
+   *  - A Redis cooldown on the ORDERED pair (pinger -> candidate) caps re-notifies
+   *    to once per 5 minutes.
+   */
+  async proximityPing(
+    viewerId: string,
+    dto: ProximityPingDto,
+  ): Promise<{ matches: ProximityMatch[] }> {
+    const pinger = await this.prisma.user.findUnique({
+      where: { id: viewerId },
+      select: { proximityAlerts: true, proximityRadius: true, showOnMap: true },
+    });
+    // Proximity is a map feature: a user must both opt into proximity AND be
+    // map-visible to broadcast or receive. Opting into proximity while hidden
+    // from the map must NOT turn it into a one-way live-location tracker.
+    if (!pinger || !pinger.proximityAlerts || !pinger.showOnMap) return { matches: [] };
+
+    // Persist the pinger's location — conditionally, so a user who flipped
+    // either flag off between the read and the write is not written. We never
+    // store live GPS for someone not currently broadcasting on the map.
+    await this.prisma.user.updateMany({
+      where: { id: viewerId, proximityAlerts: true, showOnMap: true },
+      data: { latitude: dto.lat, longitude: dto.lon },
+    });
+
+    const blockedIds = await this.blockedIds(viewerId);
+    // users.id is uuid; the bound params are JS strings (text). Postgres has no
+    // uuid <> text / uuid IN (text) operator, so compare as text via id::text.
+    const blockedClause = blockedIds.length
+      ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
+      : Prisma.empty;
+
+    // Same Haversine (great-circle km) expression style as getNearby. The
+    // pinger's radius is in meters → convert to km for the comparison.
+    const radiusKm = pinger.proximityRadius / 1000;
+    const distanceExpr = Prisma.sql`
+      (6371 * acos(
+        LEAST(1, cos(radians(${dto.lat})) * cos(radians(latitude)) *
+          cos(radians(longitude) - radians(${dto.lon})) +
+          sin(radians(${dto.lat})) * sin(radians(latitude)))
+      ))`;
+
+    // Cap fan-out: one ping in a dense area must not notify hundreds. The
+    // nearest MATCH_LIMIT opted-in, map-visible, non-blocked users only.
+    const candidates = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        display_name: string | null;
+        avatar_url: string | null;
+        distance: number;
+      }>
+    >(Prisma.sql`
+      SELECT id, display_name, avatar_url,
+             ${distanceExpr} AS distance
+      FROM users
+      WHERE proximity_alerts = TRUE
+        AND show_on_map = TRUE
+        AND status = 'active'
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND id::text <> ${viewerId}
+        ${blockedClause}
+        AND ${distanceExpr} <= ${radiusKm}
+      ORDER BY distance
+      LIMIT ${PROXIMITY_MATCH_LIMIT}
+    `);
+
+    const pingerName = await this.displayName(viewerId);
+
+    const matches: ProximityMatch[] = [];
+    for (const c of candidates) {
+      // Bucket the distance instead of exposing meter-level position — a raw
+      // meter count lets a recipient triangulate the pinger by moving around.
+      const bucket = this.distanceBucket(c.distance * 1000);
+      matches.push({
+        userId: c.id,
+        name: c.display_name,
+        avatarUrl: c.avatar_url,
+        distance: bucket,
+      });
+
+      // Ordered-pair cooldown: only notify if the key is newly set. If Redis is
+      // unavailable we fail CLOSED (skip the notification) rather than risk a
+      // notification storm with no cooldown guarantee.
+      let fresh: string | null = null;
+      try {
+        const key = `prox:${viewerId}:${c.id}`;
+        fresh = await this.redis.client.set(key, '1', 'EX', PROXIMITY_COOLDOWN, 'NX');
+      } catch {
+        continue;
+      }
+      if (!fresh) continue;
+
+      await this.notifications.create({
+        userId: c.id,
+        type: 'proximity',
+        title: pingerName,
+        body: `est à proximité (${this.distanceLabel(bucket)})`,
+        data: { userId: viewerId },
+        actorId: viewerId,
+      });
+    }
+
+    return { matches };
+  }
+
+  /** Round a raw distance (meters) up to a coarse bucket so we never disclose
+   *  meter-level position. Buckets mirror the gauge tiers. */
+  private distanceBucket(meters: number): number {
+    if (meters <= 50) return 50;
+    if (meters <= 100) return 100;
+    if (meters <= 500) return 500;
+    return 1000;
+  }
+
+  private distanceLabel(bucket: number): string {
+    return bucket >= 1000 ? "à moins d'1 km" : `à moins de ${bucket} m`;
+  }
+
   // ── internal ────────────────────────────────────────────────
+
+  private async displayName(userId: string): Promise<string> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true, firstName: true },
+    });
+    return u?.displayName ?? u?.firstName ?? 'Quelqu’un';
+  }
 
   private async blockedIds(viewerId: string): Promise<string[]> {
     const rows = await this.prisma.block.findMany({
@@ -199,7 +349,7 @@ export class GeoService {
 
   private async countryClusters(_dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
     const blockedClause = blockedIds.length
-      ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
+      ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
       : Prisma.empty;
     const rows = await this.prisma.$queryRaw<
       Array<{
@@ -233,7 +383,7 @@ export class GeoService {
 
   private async cityClusters(dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
     const blockedClause = blockedIds.length
-      ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
+      ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
       : Prisma.empty;
     const rows = await this.prisma.$queryRaw<
       Array<{

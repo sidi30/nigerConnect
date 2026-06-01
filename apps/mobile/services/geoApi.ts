@@ -51,4 +51,13 @@ export const geoApi = {
     const { data } = await api.get('/geo/nearby', { params });
     return data;
   },
+  async proximityPing(params: {
+    lat: number;
+    lon: number;
+  }): Promise<{
+    matches: Array<{ userId: string; name: string | null; avatarUrl: string | null; distance: number }>;
+  }> {
+    const { data } = await api.post('/geo/proximity/ping', params);
+    return data;
+  },
 };

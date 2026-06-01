@@ -23,6 +23,8 @@ export default function PrivacyScreen() {
   const qc = useQueryClient();
   const [privacyLevel, setPrivacyLevel] = useState(user?.privacyLevel ?? 'friends');
   const [showOnMap, setShowOnMap] = useState(user?.showOnMap ?? true);
+  const [proximityAlerts, setProximityAlerts] = useState(user?.proximityAlerts ?? false);
+  const [proximityRadius, setProximityRadius] = useState(user?.proximityRadius ?? 500);
 
   const blocksQuery = useQuery({
     queryKey: ['blocks'],
@@ -37,6 +39,14 @@ export default function PrivacyScreen() {
     },
   });
 
+  const saveProximityMut = useMutation({
+    mutationFn: (input: { proximityAlerts: boolean; proximityRadius: number }) =>
+      profileApi.updateMe(input),
+    onSuccess: (updated) => {
+      setUser(updated);
+    },
+  });
+
   const unblockMut = useMutation({
     mutationFn: (userId: string) => blocksApi.unblock(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['blocks'] }),
@@ -46,6 +56,12 @@ export default function PrivacyScreen() {
     setPrivacyLevel(level);
     setShowOnMap(mapVisible);
     savePrivacyMut.mutate({ privacyLevel: level, showOnMap: mapVisible });
+  }
+
+  function saveProximity(alerts: boolean, radius: number) {
+    setProximityAlerts(alerts);
+    setProximityRadius(radius);
+    saveProximityMut.mutate({ proximityAlerts: alerts, proximityRadius: radius });
   }
 
   if (!user) return null;
@@ -95,6 +111,61 @@ export default function PrivacyScreen() {
           trackColor={{ false: Colors.tan300, true: Colors.orange }}
           thumbColor={Colors.white}
         />
+      </View>
+
+      <Text style={styles.section}>Alertes de proximité</Text>
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.switchLabel}>Activer les alertes</Text>
+          <Text style={styles.switchHint}>
+            Fonctionne uniquement quand l&apos;application est ouverte. Tu es notifié
+            lorsqu&apos;un autre membre se trouve dans le rayon que tu as choisi.
+          </Text>
+        </View>
+        <Switch
+          value={proximityAlerts}
+          onValueChange={(v) => saveProximity(v, proximityRadius)}
+          trackColor={{ false: Colors.tan300, true: Colors.orange }}
+          thumbColor={Colors.white}
+        />
+      </View>
+
+      {proximityAlerts && !showOnMap ? (
+        <View style={styles.hintCard}>
+          <Text style={styles.hintText}>
+            ⚠️ Pour que les alertes de proximité fonctionnent, tu dois être visible sur la
+            carte. Active « Afficher mon avatar » ci-dessus.
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.radiusRow}>
+        {([50, 100, 500, 1000] as const).map((r) => {
+          const active = proximityRadius === r;
+          const label = r >= 1000 ? `${r / 1000} km` : `${r} m`;
+          return (
+            <Pressable
+              key={r}
+              disabled={!proximityAlerts}
+              onPress={() => saveProximity(proximityAlerts, r)}
+              style={[
+                styles.radiusPill,
+                active && styles.radiusPillActive,
+                !proximityAlerts && styles.radiusPillDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.radiusPillLabel,
+                  active && styles.radiusPillLabelActive,
+                  !proximityAlerts && styles.radiusPillLabelDisabled,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <Text style={styles.section}>Mes données (RGPD)</Text>
@@ -208,6 +279,29 @@ const styles = StyleSheet.create({
   },
   switchLabel: { fontSize: Typography.sizes.md, fontWeight: '600', color: Colors.brown },
   switchHint: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
+  hintCard: {
+    padding: Spacing.md,
+    backgroundColor: Colors.peach50,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.orange,
+  },
+  hintText: { fontSize: Typography.sizes.xs + 1, color: Colors.brown, lineHeight: 18 },
+  radiusRow: { flexDirection: 'row', gap: 8 },
+  radiusPill: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.tan200,
+  },
+  radiusPillActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
+  radiusPillDisabled: { opacity: 0.5 },
+  radiusPillLabel: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.brown },
+  radiusPillLabelActive: { color: Colors.orange },
+  radiusPillLabelDisabled: { color: Colors.tan500 },
   emptyCard: {
     padding: Spacing.lg,
     backgroundColor: Colors.white,

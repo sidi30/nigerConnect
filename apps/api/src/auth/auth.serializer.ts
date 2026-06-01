@@ -25,10 +25,17 @@ export function serializeUser(
 ): Record<string, unknown> {
   const clone: Record<string, unknown> = { ...user };
   for (const key of SENSITIVE_FIELDS) delete clone[key];
-  const lat = user.latitude as { toString: () => string } | null | undefined;
-  const lon = user.longitude as { toString: () => string } | null | undefined;
-  clone.latitude = lat === null || lat === undefined ? null : Number(lat);
-  clone.longitude = lon === null || lon === undefined ? null : Number(lon);
+  // Normalize Decimal lat/lon to number ONLY when the field is actually
+  // present. Public-profile selects omit coordinates entirely (privacy) — we
+  // must not re-add `latitude: null` keys and signal the field exists.
+  if ('latitude' in user) {
+    const lat = user.latitude as { toString: () => string } | null | undefined;
+    clone.latitude = lat === null || lat === undefined ? null : Number(lat);
+  }
+  if ('longitude' in user) {
+    const lon = user.longitude as { toString: () => string } | null | undefined;
+    clone.longitude = lon === null || lon === undefined ? null : Number(lon);
+  }
   return clone;
 }
 

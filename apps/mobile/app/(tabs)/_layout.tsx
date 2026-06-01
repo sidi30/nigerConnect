@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { chatApi } from '@/services/chatApi';
 import { useChatSocket } from '@/hooks/useSocket';
+import { useProximityAlerts } from '@/hooks/useProximityAlerts';
 
 function TabIcon({
   emoji,
@@ -54,6 +55,12 @@ export default function TabsLayout() {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
     },
   });
+
+  // Foreground-only proximity alerts. No-op unless the user has opted in; runs
+  // a location watch + periodic backend ping while the app is foregrounded and
+  // tears itself down on background. Mounted here (inside the authed tabs) so it
+  // never runs before the user is loaded. No background location.
+  useProximityAlerts();
 
   // Bottom padding sits above the device's reserved area (home indicator on
   // iPhone, gesture nav bar on Android). Fall back to 8px so older devices

@@ -17,3 +17,9 @@ export const nearbySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 export type NearbyDto = z.infer<typeof nearbySchema>;
+
+export const proximityPingSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+});
+export type ProximityPingDto = z.infer<typeof proximityPingSchema>;

@@ -44,6 +44,8 @@ export class ProfileService {
     if (dto.latitude !== undefined) data.latitude = dto.latitude;
     if (dto.longitude !== undefined) data.longitude = dto.longitude;
     if (dto.showOnMap !== undefined) data.showOnMap = dto.showOnMap;
+    if (dto.proximityAlerts !== undefined) data.proximityAlerts = dto.proximityAlerts;
+    if (dto.proximityRadius !== undefined) data.proximityRadius = dto.proximityRadius;
     if (dto.languages !== undefined) data.languages = dto.languages;
     if (dto.privacyLevel !== undefined) data.privacyLevel = dto.privacyLevel;
 

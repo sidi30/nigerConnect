@@ -22,6 +22,8 @@ export interface User extends PublicUser {
   latitude: number | null;
   longitude: number | null;
   showOnMap: boolean;
+  proximityAlerts: boolean;
+  proximityRadius: number;
   languages: string[];
   privacyLevel: PrivacyLevel;
   emailVerified: boolean;

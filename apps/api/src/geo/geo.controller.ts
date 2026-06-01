@@ -1,9 +1,16 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { GeoService } from './geo.service';
-import { boundsSchema, nearbySchema, type BoundsDto, type NearbyDto } from './dto/geo.dto';
+import {
+  boundsSchema,
+  nearbySchema,
+  proximityPingSchema,
+  type BoundsDto,
+  type NearbyDto,
+  type ProximityPingDto,
+} from './dto/geo.dto';
 
 @Controller('geo')
 export class GeoController {
@@ -29,5 +36,13 @@ export class GeoController {
     @Query(new ZodValidationPipe(nearbySchema)) dto: NearbyDto,
   ) {
     return this.geo.getNearby(me.sub, dto);
+  }
+
+  @Post('proximity/ping')
+  proximityPing(
+    @CurrentUser() me: JwtUserPayload,
+    @Body(new ZodValidationPipe(proximityPingSchema)) dto: ProximityPingDto,
+  ) {
+    return this.geo.proximityPing(me.sub, dto);
   }
 }

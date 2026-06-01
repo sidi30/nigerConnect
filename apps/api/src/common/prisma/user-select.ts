@@ -28,6 +28,8 @@ export const USER_SELF_SELECT = {
   latitude: true,
   longitude: true,
   showOnMap: true,
+  proximityAlerts: true,
+  proximityRadius: true,
   languages: true,
   privacyLevel: true,
   emailVerified: true,
@@ -46,6 +48,12 @@ export const USER_SELF_SELECT = {
  *
  * Strictly narrower than USER_SELF_SELECT: no email, no phone, no role,
  * no internal metadata. Enough to render a card / profile header.
+ *
+ * Deliberately EXCLUDES exact latitude/longitude: with live GPS now written on
+ * every proximity ping, exposing precise coordinates on a public profile fetch
+ * would turn the app into a stalking tool. The map surfaces position only at
+ * cluster/marker granularity through the dedicated geo endpoints — never here.
+ * City/country are the coarsest location a profile reveals.
  */
 export const USER_PUBLIC_SELECT = {
   id: true,
@@ -57,8 +65,6 @@ export const USER_PUBLIC_SELECT = {
   coverUrl: true,
   city: true,
   countryCode: true,
-  latitude: true,
-  longitude: true,
   showOnMap: true,
   languages: true,
   privacyLevel: true,

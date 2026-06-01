@@ -15,6 +15,12 @@ export const updateProfileSchema = z.object({
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   showOnMap: z.boolean().optional(),
+  proximityAlerts: z.boolean().optional(),
+  proximityRadius: z
+    .number()
+    .int()
+    .refine((v) => [50, 100, 500, 1000].includes(v), 'proximityRadius must be 50, 100, 500 or 1000')
+    .optional(),
   languages: z.array(z.string().min(2).max(5)).max(10).optional(),
   privacyLevel: z.enum(['public', 'friends', 'private']).optional(),
 });
