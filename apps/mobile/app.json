@@ -125,7 +125,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "1599c4cb-35b7-466b-80ba-056ad7c50d02"
+        "projectId": "dba4dd42-9658-4a6c-bff1-e78c6a959f50"
       }
     },
     "owner": "sidi30",
@@ -133,7 +133,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/1599c4cb-35b7-466b-80ba-056ad7c50d02"
+      "url": "https://u.expo.dev/dba4dd42-9658-4a6c-bff1-e78c6a959f50"
     }
   }
 }
