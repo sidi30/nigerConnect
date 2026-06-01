@@ -45,11 +45,9 @@ describe('Publication / feed (e2e)', () => {
     expect(feed.body.items.some((p: { id: string }) => p.id === created.body.id)).toBe(true);
   });
 
-  // GENUINE APP BUG (full root cause in upload-media.e2e-spec.ts): the upload
-  // PUT succeeds and the object is externally HEAD-able, but the backend's own
-  // assertOwnedPublicImage HEAD fails, so creating a post with real media 400s.
-  // `.failing` on purpose — flips green once the server-side HEAD is fixed.
-  it.failing('HAPPY: create post WITH uploaded image -> media URL is canonical', async () => {
+  // Real upload round-trips through MinIO: presign -> PUT bytes -> attach the
+  // returned URL, which assertOwnedPublicImage HEAD-validates server-side.
+  it('HAPPY: create post WITH uploaded image -> media URL is canonical', async () => {
     const publicUrl = await uploadImage(app, alice.accessToken, 'photo');
     const created = await request(app.getHttpServer())
       .post('/api/posts')
