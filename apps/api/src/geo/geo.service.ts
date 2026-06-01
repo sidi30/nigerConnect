@@ -146,6 +146,17 @@ export class GeoService {
       ? Prisma.sql`AND id NOT IN (${Prisma.join(blockedIds)})`
       : Prisma.empty;
 
+    // Distance is great-circle km (Haversine). The `radius` (km) caps results
+    // to the user's local zone — without it a sparse map returned people on the
+    // other side of the planet as "nearby". Filtered via HAVING on the computed
+    // distance so the cap and the ordering share the same expression.
+    const distanceExpr = Prisma.sql`
+      (6371 * acos(
+        LEAST(1, cos(radians(${dto.lat})) * cos(radians(latitude)) *
+          cos(radians(longitude) - radians(${dto.lon})) +
+          sin(radians(${dto.lat})) * sin(radians(latitude)))
+      ))`;
+
     return this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -160,11 +171,7 @@ export class GeoService {
     >(Prisma.sql`
       SELECT id, display_name, avatar_url, city, country_code,
              latitude::float, longitude::float,
-             (6371 * acos(
-               cos(radians(${dto.lat})) * cos(radians(latitude)) *
-               cos(radians(longitude) - radians(${dto.lon})) +
-               sin(radians(${dto.lat})) * sin(radians(latitude))
-             )) AS distance
+             ${distanceExpr} AS distance
       FROM users
       WHERE show_on_map = TRUE
         AND status = 'active'
@@ -172,6 +179,7 @@ export class GeoService {
         AND longitude IS NOT NULL
         AND id <> ${viewerId}
         ${blockedClause}
+        AND ${distanceExpr} <= ${dto.radius}
       ORDER BY distance
       LIMIT ${dto.limit}
     `);

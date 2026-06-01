@@ -65,4 +65,20 @@ describe('GeoService', () => {
     expect(resultForB).toEqual([]);
     expect(prisma.block.findMany).toHaveBeenCalledTimes(1);
   });
+
+  it('getNearby caps results to the requested radius (km)', async () => {
+    const { redis, prisma } = makeMocks();
+    const svc = new GeoService(prisma as never, redis as never);
+
+    await svc.getNearby('viewer-A', { lat: 13.5, lon: 2.1, radius: 25, limit: 30 });
+
+    // The raw query is built as a Prisma.Sql; its `values` carry the bound
+    // params. The radius (25) must be among them — proving the cap is applied
+    // and not silently dropped (the bug this guards against).
+    const sql = prisma.$queryRaw.mock.calls[0]![0] as { values: unknown[] };
+    expect(sql.values).toContain(25);
+    // lat/lon are bound too (appear twice: distance expr in SELECT + WHERE).
+    expect(sql.values).toContain(13.5);
+    expect(sql.values).toContain(2.1);
+  });
 });

@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { geoApi, type MapMarker } from '@/services/geoApi';
 import { profileApi } from '@/services/profileApi';
+import { useAuthStore } from '@/stores/authStore';
 
 type Filter = 'all' | 'people' | 'associations';
 
@@ -33,6 +35,13 @@ const INITIAL_BOUNDS = {
   zoom: 3,
 };
 
+// Local-zone defaults: on first load we geolocate the user, draw a ~50km zone
+// circle around them and zoom to it so the map opens on "people near me" rather
+// than the whole world. ZONE_ZOOM lands between city-cluster (≥9) and the
+// individual-marker threshold so nearby people render as avatars right away.
+const ZONE_RADIUS_KM = 50;
+const ZONE_ZOOM = 11;
+
 const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
@@ -46,6 +55,7 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .marker-ind{width:48px;height:48px;border-radius:50%;border:3px solid #E05206;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
   .marker-assoc{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#1565C0;border:3px solid #fff;box-shadow:0 3px 10px rgba(21,101,192,.5);font-size:22px;position:relative}
   .marker-assoc .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+  .marker-me{width:22px;height:22px;border-radius:50%;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3),0 2px 6px rgba(0,0,0,.4)}
   .leaflet-marker-icon{background:none;border:none}
   .leaflet-container{background:#E8F4F8}
 </style>
@@ -80,6 +90,24 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 
   window.flyTo = function(lat, lon, zoom){
     map.flyTo([lat, lon], zoom || 9, { duration: 0.8 });
+  };
+
+  // "You are here" marker + the local zone circle (radius in km). Drawn in a
+  // dedicated layer so re-locating just replaces it without touching members.
+  var meLayer = L.layerGroup().addTo(map);
+  var meLat = null, meLon = null;
+  window.drawMe = function(lat, lon, radiusKm){
+    meLat = lat; meLon = lon;
+    meLayer.clearLayers();
+    L.circle([lat, lon], {
+      radius: (radiusKm || 50) * 1000,
+      color: '#1E88E5', weight: 1.5, fillColor: '#1E88E5', fillOpacity: 0.08,
+    }).addTo(meLayer);
+    var icon = L.divIcon({ html: '<div class="marker-me"></div>', className: '', iconSize: [22,22], iconAnchor: [11,11] });
+    L.marker([lat, lon], { icon: icon, zIndexOffset: 1000 }).addTo(meLayer);
+  };
+  window.recenterMe = function(zoom){
+    if (meLat !== null) map.flyTo([meLat, meLon], zoom || 11, { duration: 0.8 });
   };
 
   window.renderMarkers = function(markers){
@@ -138,6 +166,75 @@ export default function MapTab() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selected, setSelected] = useState<MapMarker | null>(null);
   const [webReady, setWebReady] = useState(false);
+  const [myLocation, setMyLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [locating, setLocating] = useState(true);
+  const located = useRef(false);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  // Ask permission, get a fix, draw the "you are here" marker + zone circle and
+  // fly to it. Returns silently on denial/failure so the map just stays on the
+  // world view — geolocation is best-effort, never blocking.
+  const locateAndDraw = useRef<() => Promise<void>>(async () => {});
+  locateAndDraw.current = async () => {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      setMyLocation({ lat, lon });
+      webRef.current?.injectJavaScript(
+        `window.drawMe(${lat}, ${lon}, ${ZONE_RADIUS_KM}); window.flyTo(${lat}, ${lon}, ${ZONE_ZOOM}); true;`,
+      );
+      // Persist the fresh GPS position so this user shows up on other people's
+      // maps at their real spot — but only if they've opted into map visibility.
+      // Skipped silently when showOnMap is off (privacy) or the coords barely
+      // moved (avoid spamming the API on every recenter).
+      void persistMyPosition(lat, lon);
+    } catch {
+      /* location unavailable — fall back to world view */
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  async function persistMyPosition(lat: number, lon: number) {
+    if (!user || user.showOnMap === false) return;
+    // ~100m threshold: skip the write if we're essentially where the server
+    // already has us (0.001° ≈ 111m).
+    const moved =
+      user.latitude == null ||
+      user.longitude == null ||
+      Math.abs(user.latitude - lat) > 0.001 ||
+      Math.abs(user.longitude - lon) > 0.001;
+    if (!moved) return;
+    try {
+      const updated = await profileApi.updateMe({ latitude: lat, longitude: lon });
+      setUser(updated);
+    } catch {
+      /* non-blocking — position will sync on a later open */
+    }
+  }
+
+  // On first WebView ready, auto-locate so the map opens on "people near me".
+  useEffect(() => {
+    if (!webReady || located.current) return;
+    located.current = true;
+    void locateAndDraw.current();
+  }, [webReady]);
+
+  // FAB: recenter on the existing fix, or (re)try locating if we have none yet.
+  function recenterOnMe() {
+    if (myLocation) {
+      webRef.current?.injectJavaScript(`window.recenterMe(${ZONE_ZOOM}); true;`);
+    } else {
+      void locateAndDraw.current();
+    }
+  }
 
   // Global name search via the API — runs only when the search bar is open
   // AND the user typed at least 2 characters. Hits /profile/search regardless
@@ -330,6 +427,18 @@ export default function MapTab() {
           <ActivityIndicator color={Colors.orange} />
         </View>
       )}
+
+      <Pressable
+        onPress={recenterOnMe}
+        style={[styles.recenterFab, { bottom: insets.bottom + 150 }]}
+        hitSlop={8}
+      >
+        {locating ? (
+          <ActivityIndicator color={Colors.orange} size="small" />
+        ) : (
+          <Text style={styles.recenterIcon}>{myLocation ? '📍' : '🧭'}</Text>
+        )}
+      </Pressable>
 
       {statsQuery.data && (
         <View style={styles.statsBadge}>
@@ -526,6 +635,22 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: Radii.full,
   },
+  recenterFab: {
+    position: 'absolute',
+    right: Spacing.md,
+    width: 48,
+    height: 48,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  recenterIcon: { fontSize: 22 },
   statsBadge: {
     position: 'absolute',
     bottom: 100,
