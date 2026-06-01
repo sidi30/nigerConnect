@@ -27,8 +27,12 @@ export const authApi = {
     return data;
   },
 
-  async loginWithGoogle(idToken: string, deviceName?: string): Promise<AuthResponse> {
-    const { data } = await api.post<AuthResponse>('/auth/google', { idToken, deviceName });
+  async loginWithGoogle(
+    idToken: string,
+    deviceName?: string,
+    nonce?: string,
+  ): Promise<AuthResponse> {
+    const { data } = await api.post<AuthResponse>('/auth/google', { idToken, deviceName, nonce });
     return data;
   },
 

@@ -24,6 +24,7 @@ import {
 } from '@/constants/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { GoogleButton } from '@/components/ui/GoogleButton';
+import { AppleButton } from '@/components/ui/AppleButton';
 
 interface RegisterData {
   firstName: string;
@@ -159,7 +160,8 @@ export default function RegisterScreen() {
                 Commençons par les infos de base — tu pourras tout modifier plus tard.
               </Text>
 
-              <View style={{ marginBottom: Spacing.lg }}>
+              <View style={{ marginBottom: Spacing.lg, gap: Spacing.sm }}>
+                <AppleButton mode="signUp" />
                 <GoogleButton label="S'inscrire avec Google" />
               </View>
               <View style={registerExtras.divider}>

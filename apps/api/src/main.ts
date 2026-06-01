@@ -30,6 +30,19 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService<Env, true>);
 
+  // Trust the reverse proxy in front of us (prod: Traefik, itself behind
+  // Cloudflare) so Express derives `req.ip` / `X-Forwarded-For` from the real
+  // client instead of the proxy's address. Without this, every request appears
+  // to come from the proxy and all clients share one per-IP rate-limit bucket —
+  // defeating the OAuth/login throttles. The deploy has exactly one proxy hop
+  // reaching the container (Traefik → api), so a hop count of 1 is correct;
+  // override via TRUST_PROXY_HOPS if the topology changes.
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '1');
+  const expressInstance = app.getHttpAdapter().getInstance() as {
+    set(setting: string, val: unknown): void;
+  };
+  expressInstance.set('trust proxy', Number.isFinite(trustProxyHops) ? trustProxyHops : 1);
+
   const isProd = process.env.NODE_ENV === 'production';
   app.use(
     helmet({

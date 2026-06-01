@@ -120,7 +120,11 @@ model User {
   reportsMade             Report[]             @relation("ReportReporter")
   reportsReviewed         Report[]             @relation("ReportReviewer")
 
-  @@index([oauthProvider, oauthProviderId])
+  // Unique per OAuth identity so concurrent link-or-create requests can't mint
+  // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
+  // Both columns are nullable; Postgres treats NULLs as distinct, so the many
+  // password-only users (provider + id both NULL) are unaffected.
+  @@unique([oauthProvider, oauthProviderId])
   @@index([countryCode, city])
   @@index([latitude, longitude])
   @@index([showOnMap, status])

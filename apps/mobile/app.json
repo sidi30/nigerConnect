@@ -20,7 +20,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.nigerconnect.app",
       "buildNumber": "1",
-      "usesAppleSignIn": false,
+      "usesAppleSignIn": true,
       "associatedDomains": [
         "applinks:nigerconnect.sahabiguide.com",
         "webcredentials:nigerconnect.sahabiguide.com"
@@ -119,7 +119,7 @@
       "googleClientIdWeb": "682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com",
       "googleClientIdAndroid": "682162626945-opkbbi8ikl552tb7sk52fk7a80svfkmk.apps.googleusercontent.com",
       "googleClientIdIos": "",
-      "appleSignInEnabled": false,
+      "appleSignInEnabled": true,
       "sentryDsn": "",
       "router": {
         "origin": false

@@ -103,8 +103,24 @@ export function useGoogleAuth(): GoogleAuthState {
       }
       (async () => {
         try {
-          const { user, tokens } = await authApi.loginWithGoogle(idToken);
-          await tokenStore.save(tokens.accessToken, tokens.refreshToken);
+          // Anti-replay: forward the request nonce (echoed into the ID token's
+          // `nonce` claim) so the server can reject a replayed token. Optional —
+          // older server builds ignore it.
+          const { user, tokens } = await authApi.loginWithGoogle(
+            idToken,
+            undefined,
+            request?.nonce,
+          );
+          // Server auth succeeded — don't let a Keychain write failure surface as
+          // a generic "Connexion Google échouée". Give a specific message.
+          try {
+            await tokenStore.save(tokens.accessToken, tokens.refreshToken);
+          } catch {
+            setError(
+              'Connexion réussie mais impossible d’enregistrer la session sur cet appareil. Réessaie.',
+            );
+            return;
+          }
           setUser(user);
           // Fire-and-forget push registration
           void registerForPushNotifications().catch(() => {});

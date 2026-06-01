@@ -22,6 +22,10 @@
     },
     "clean": {
       "cache": false
+    },
+    "test:e2e:playwright": {
+      "cache": false,
+      "dependsOn": []
     }
   }
 }

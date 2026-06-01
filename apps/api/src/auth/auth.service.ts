@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -8,6 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import type { OAuthProvider, User } from '@prisma/client';
 import type { Env } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -18,7 +20,7 @@ import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { EmailTokenService } from './email-token.service';
 import { GoogleOAuthService } from './google-oauth.service';
-import { AppleVerifierService } from './apple-verifier.service';
+import { AppleVerifierService, sha256Hex } from './apple-verifier.service';
 import type { RegisterDto } from './dto/register.dto';
 import type { LoginDto } from './dto/login.dto';
 
@@ -47,8 +49,12 @@ export class AuthService {
     private readonly config: ConfigService<Env, true>,
   ) {}
 
-  async signInWithGoogle(idToken: string, deviceName?: string): Promise<AuthResult> {
-    const profile = await this.google.verifyIdToken(idToken);
+  async signInWithGoogle(
+    idToken: string,
+    deviceName?: string,
+    nonce?: string,
+  ): Promise<AuthResult> {
+    const profile = await this.google.verifyIdToken(idToken, nonce);
     // Refuse unverified Google emails. Google returns email_verified=false for
     // some edge cases (hosted domain users with unverified aliases). Accepting
     // them would allow anyone to claim any email via a Google account.
@@ -81,9 +87,14 @@ export class AuthService {
     identityToken: string;
     fullName?: { givenName?: string; familyName?: string };
     email?: string;
+    rawNonce?: string;
     deviceName?: string;
   }): Promise<AuthResult> {
-    const verified = await this.apple.verify(input.identityToken);
+    // Anti-replay: if the client generated a nonce, the token must carry
+    // sha256(rawNonce) in its `nonce` claim. Verifier enforces only when set.
+    const expectedNonce =
+      input.rawNonce !== undefined ? sha256Hex(input.rawNonce) : undefined;
+    const verified = await this.apple.verify(input.identityToken, expectedNonce);
     // Prefer the token email (Apple-verified) over the client-sent one.
     const email = verified.email ?? input.email ?? undefined;
     return this.loginWithOAuth(
@@ -91,11 +102,13 @@ export class AuthService {
       verified.sub,
       {
         email,
-        // Apple identityToken is only issued for verified Apple IDs, so any
-        // email claim it carries is implicitly verified. The client-supplied
-        // email (on first sign-in) is NOT trusted — we only fall back to it
-        // when the token didn't include one.
-        emailVerified: verified.email !== null && verified.email !== undefined,
+        // Trust ONLY the verifier's verdict, which now requires an explicit
+        // `email_verified` claim in the token. A missing claim → not verified,
+        // so the OAuth auto-link guard won't attach this identity to an existing
+        // email. We only fall back to the token email here (never the
+        // client-supplied one) and verification follows that token claim: if the
+        // token carried no email, there is nothing to mark verified.
+        emailVerified: verified.email !== null && verified.email === email && verified.emailVerified,
         firstName: input.fullName?.givenName,
         lastName: input.fullName?.familyName,
       },
@@ -293,8 +306,11 @@ export class AuthService {
           byEmail.passwordHash === null &&
           (byEmail.oauthProvider === null || byEmail.oauthProvider === provider);
         if (!safeToLink) {
+          // Don't log the raw email (PII). A short SHA-256 prefix keeps the line
+          // correlatable across attempts without exposing the address.
+          const emailHash = createHash('sha256').update(profile.email).digest('hex').slice(0, 12);
           this.logger.warn(
-            `Refused OAuth auto-link for provider=${provider} email=${profile.email} existingProvider=${byEmail.oauthProvider ?? 'none'} hasPassword=${byEmail.passwordHash !== null}`,
+            `Refused OAuth auto-link for provider=${provider} emailHash=${emailHash} existingProvider=${byEmail.oauthProvider ?? 'none'} hasPassword=${byEmail.passwordHash !== null}`,
           );
           throw new ConflictException(
             'An account already exists for this email. Sign in with your password, then link your provider from settings.',
@@ -308,20 +324,37 @@ export class AuthService {
     }
 
     if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          email: profile.email ?? null,
-          oauthProvider: provider,
-          oauthProviderId: providerId,
-          firstName: profile.firstName ?? null,
-          lastName: profile.lastName ?? null,
-          displayName: [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
-          avatarUrl: profile.avatarUrl ?? null,
-          // Only trust the provider's verdict — don't mark verified just
-          // because an email string was supplied.
-          emailVerified: profile.emailVerified === true,
-        },
-      });
+      // Concurrent first-sign-ins for the same (provider, providerId) both reach
+      // here after seeing `findFirst` return null. The @@unique constraint makes
+      // the loser's create fail with P2002 — we catch it and re-read the winning
+      // row instead of minting a duplicate (upsert-style idempotency). The email
+      // auto-link guard above already ran, so we never silently take over an
+      // account on this path.
+      try {
+        user = await this.prisma.user.create({
+          data: {
+            email: profile.email ?? null,
+            oauthProvider: provider,
+            oauthProviderId: providerId,
+            firstName: profile.firstName ?? null,
+            lastName: profile.lastName ?? null,
+            displayName: [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
+            avatarUrl: profile.avatarUrl ?? null,
+            // Only trust the provider's verdict — don't mark verified just
+            // because an email string was supplied.
+            emailVerified: profile.emailVerified === true,
+          },
+        });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          user = await this.prisma.user.findFirst({
+            where: { oauthProvider: provider, oauthProviderId: providerId },
+          });
+          if (!user) throw e;
+        } else {
+          throw e;
+        }
+      }
     }
 
     const issued = await this.tokens.issueTokens(user.id, user.role, user.identityStatus, deviceName);

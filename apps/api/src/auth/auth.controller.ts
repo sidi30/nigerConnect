@@ -78,7 +78,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('google')
   async google(@Body(new ZodValidationPipe(oauthSchema)) dto: OAuthDto) {
-    const result = await this.auth.signInWithGoogle(dto.idToken, dto.deviceName);
+    const result = await this.auth.signInWithGoogle(dto.idToken, dto.deviceName, dto.nonce);
     return {
       user: serializeUser(result.user),
       tokens: { accessToken: result.accessToken, refreshToken: result.refreshToken },
@@ -94,6 +94,7 @@ export class AuthController {
       identityToken: dto.identityToken,
       fullName: dto.fullName,
       email: dto.email,
+      rawNonce: dto.rawNonce,
       deviceName: dto.deviceName,
     });
     return {

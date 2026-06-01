@@ -16,6 +16,11 @@ export type RefreshDto = z.infer<typeof refreshSchema>;
 
 export const oauthSchema = z.object({
   idToken: z.string().min(1),
+  // Optional anti-replay nonce. When the client supplies it, the server asserts
+  // it matches the `nonce` claim Google echoed into the ID token. Optional for
+  // backward compatibility — older clients that don't send it still work, but a
+  // present-and-mismatched nonce is rejected.
+  nonce: z.string().min(1).max(256).optional(),
   deviceName: z.string().max(100).optional(),
 });
 
@@ -32,6 +37,11 @@ export const appleSchema = z.object({
     })
     .optional(),
   email: z.string().email().optional(),
+  // Optional anti-replay nonce — the RAW value the client generated. The client
+  // passed `sha256(rawNonce)` to AppleAuth.signInAsync, so the server hashes
+  // this and asserts it equals the token's `nonce` claim. Optional for backward
+  // compatibility; a present-and-mismatched nonce is rejected.
+  rawNonce: z.string().min(1).max(256).optional(),
   deviceName: z.string().max(100).optional(),
 });
 
