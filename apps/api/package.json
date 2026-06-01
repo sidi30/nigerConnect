@@ -42,6 +42,7 @@
     "@prisma/client": "^6.0.1",
     "@sentry/node": "^10.49.0",
     "argon2": "^0.41.1",
+    "express": "^4.22.1",
     "expo-server-sdk": "^6.1.0",
     "firebase-admin": "^13.8.0",
     "google-auth-library": "^10.6.2",
