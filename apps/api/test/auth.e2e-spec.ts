@@ -1,8 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { NoopThrottlerStorage } from './helpers';
 
 const strongPassword = 'Str0ng!Password';
 
@@ -15,7 +17,14 @@ describe('Auth (e2e)', () => {
   let prisma: PrismaService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    // Disable rate limiting for this suite by swapping the ThrottlerStorage
+    // (overriding the guard does NOT work — see helpers.ts NoopThrottlerStorage).
+    // register is @Throttle({short:{limit:3,ttl:60s}}); this suite registers
+    // several users in one process, so without this it 429s mid-suite.
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ThrottlerStorage)
+      .useClass(NoopThrottlerStorage)
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();

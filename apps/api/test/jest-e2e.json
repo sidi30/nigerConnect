@@ -5,5 +5,8 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^expo-server-sdk$": "<rootDir>/mocks/expo-server-sdk.ts"
   }
 }

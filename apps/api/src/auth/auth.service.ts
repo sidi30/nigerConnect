@@ -7,7 +7,9 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { OAuthProvider, User } from '@prisma/client';
+import type { Env } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { MailerService } from '../common/mail/mailer.service';
@@ -42,6 +44,7 @@ export class AuthService {
     private readonly emailTokens: EmailTokenService,
     private readonly google: GoogleOAuthService,
     private readonly apple: AppleVerifierService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   async signInWithGoogle(idToken: string, deviceName?: string): Promise<AuthResult> {
@@ -332,15 +335,46 @@ export class AuthService {
   }
 
   async submitIdentity(userId: string, documentType: string, fileUrl: string): Promise<void> {
+    // Identity docs live in the PRIVATE bucket. The presign step returns an
+    // `s3://<privateBucket>/<key>` pointer; we must never persist a free-form
+    // client URL (stored SSRF — a moderator's presign-download would later be
+    // pointed at an attacker-chosen object). Accept only our own private
+    // pointer, scoped to this user's identity folder.
+    const validatedPointer = this.validatePrivateIdentityPointer(userId, fileUrl);
     await this.prisma.$transaction([
       this.prisma.identityDocument.create({
-        data: { userId, documentType, fileUrl, status: 'pending' },
+        data: { userId, documentType, fileUrl: validatedPointer, status: 'pending' },
       }),
       this.prisma.user.update({
         where: { id: userId },
         data: { identityStatus: 'pending' },
       }),
     ]);
+  }
+
+  /**
+   * Validate a client-supplied identity file pointer. Must be exactly an
+   * `s3://<S3_PRIVATE_BUCKET>/<key>` URL whose key lives under
+   * `users/<userId>/identity/`. Anything else (foreign host, public bucket,
+   * another user's folder, path traversal) is rejected.
+   */
+  private validatePrivateIdentityPointer(userId: string, fileUrl: string): string {
+    const privateBucket = this.config.get('S3_PRIVATE_BUCKET', { infer: true });
+    const prefix = `s3://${privateBucket}/`;
+    if (typeof fileUrl !== 'string' || !fileUrl.startsWith(prefix)) {
+      throw new BadRequestException('Identity file must be uploaded via the identity presign');
+    }
+    const key = fileUrl.slice(prefix.length).split(/[?#]/)[0] ?? '';
+    const expectedKeyPrefix = `users/${userId}/identity/`;
+    if (
+      !key.startsWith(expectedKeyPrefix) ||
+      key.includes('..') ||
+      key.includes('//') ||
+      key.length <= expectedKeyPrefix.length
+    ) {
+      throw new BadRequestException('Identity file does not belong to you');
+    }
+    return fileUrl;
   }
 
   async getIdentityStatus(userId: string): Promise<{ status: string; latestSubmission: Date | null; rejectionReason: string | null }> {

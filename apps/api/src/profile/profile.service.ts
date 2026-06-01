@@ -57,9 +57,13 @@ export class ProfileService {
   }
 
   async updateAvatar(userId: string, avatarUrl: string | null): Promise<SelfUser> {
+    // Never trust the client URL: it must point at an object this user uploaded
+    // to our public bucket (users/<id>/...). Returns the canonical CDN URL.
+    const canonicalUrl =
+      avatarUrl === null ? null : await this.s3.assertOwnedPublicImage(avatarUrl, userId);
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: { avatarUrl },
+      data: { avatarUrl: canonicalUrl },
       select: USER_SELF_SELECT,
     });
     await this.invalidateProfileCache(userId);
@@ -67,9 +71,11 @@ export class ProfileService {
   }
 
   async updateCover(userId: string, coverUrl: string | null): Promise<SelfUser> {
+    const canonicalUrl =
+      coverUrl === null ? null : await this.s3.assertOwnedPublicImage(coverUrl, userId);
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: { coverUrl },
+      data: { coverUrl: canonicalUrl },
       select: USER_SELF_SELECT,
     });
     await this.invalidateProfileCache(userId);
@@ -251,11 +257,17 @@ export class ProfileService {
   }
 
   async addPhoto(userId: string, dto: CreatePhotoDto) {
+    // Validate both the main image and (when present) the thumbnail point at
+    // objects this user uploaded to our public bucket; store canonical URLs.
+    const url = await this.s3.assertOwnedPublicImage(dto.url, userId);
+    const thumbnailUrl = dto.thumbnailUrl
+      ? await this.s3.assertOwnedPublicImage(dto.thumbnailUrl, userId)
+      : null;
     return this.prisma.userPhoto.create({
       data: {
         userId,
-        url: dto.url,
-        thumbnailUrl: dto.thumbnailUrl ?? null,
+        url,
+        thumbnailUrl,
         caption: dto.caption ?? null,
         sortOrder: dto.sortOrder ?? 0,
       },
@@ -298,16 +310,14 @@ export class ProfileService {
       where.AND = [
         ...(where.AND as Prisma.UserWhereInput[]),
         {
+          // Match on names only. Matching `email` here let anyone confirm an
+          // address belongs to a registered user (and partial-match it),
+          // which is a user/email enumeration leak — email is never exposed
+          // in the search response, so it must not be searchable either.
           OR: [
             { firstName: { contains: dto.q, mode: 'insensitive' } },
             { lastName: { contains: dto.q, mode: 'insensitive' } },
             { displayName: { contains: dto.q, mode: 'insensitive' } },
-            // Allow lookup by email — useful when someone shared an address
-            // and we have no idea what they put as displayName. Email match
-            // is exposed only if the candidate's privacy already permits
-            // search visibility (`public` / `friends`), so we are not
-            // leaking new information.
-            { email: { contains: dto.q, mode: 'insensitive' } },
           ],
         },
       ];

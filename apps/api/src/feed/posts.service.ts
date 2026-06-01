@@ -7,6 +7,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
 import type { CreatePostDto, CreateStoryDto, UpdatePostDto } from './dto/post.dto';
 
@@ -43,12 +44,36 @@ export class PostsService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly blocks: BlockService,
+    private readonly s3: S3Service,
   ) {}
 
   async create(authorId: string, dto: CreatePostDto) {
     if (dto.visibility === 'association' && !dto.associationId) {
       throw new BadRequestException('associationId required for association posts');
     }
+    if (dto.visibility === 'association') {
+      const isMember = await this.prisma.associationMember.count({
+        where: { userId: authorId, associationId: dto.associationId, status: 'approved' },
+      });
+      if (!isMember) throw new ForbiddenException('Not a member of this association');
+    }
+
+    // Client-supplied media URLs are only validated as well-formed URLs by the
+    // DTO. Bind each one to our own public bucket and confirm it exists / is an
+    // image within size caps; persist the canonical URL the helper returns.
+    const media = dto.media
+      ? await Promise.all(
+          dto.media.map(async (m, i) => ({
+            mediaUrl: await this.s3.assertOwnedPublicImage(m.mediaUrl, authorId),
+            thumbnailUrl: m.thumbnailUrl ?? null,
+            mediaType: m.mediaType,
+            width: m.width ?? null,
+            height: m.height ?? null,
+            blurhash: m.blurhash ?? null,
+            sortOrder: m.sortOrder ?? i,
+          })),
+        )
+      : undefined;
 
     const post = await this.prisma.post.create({
       data: {
@@ -56,19 +81,7 @@ export class PostsService {
         content: dto.content ?? null,
         visibility: dto.visibility,
         associationId: dto.associationId ?? null,
-        media: dto.media
-          ? {
-              create: dto.media.map((m, i) => ({
-                mediaUrl: m.mediaUrl,
-                thumbnailUrl: m.thumbnailUrl ?? null,
-                mediaType: m.mediaType,
-                width: m.width ?? null,
-                height: m.height ?? null,
-                blurhash: m.blurhash ?? null,
-                sortOrder: m.sortOrder ?? i,
-              })),
-            }
-          : undefined,
+        media: media ? { create: media } : undefined,
       },
       include: {
         media: true,
@@ -83,6 +96,8 @@ export class PostsService {
 
   async createStory(authorId: string, dto: CreateStoryDto) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Same host-binding guard as posts — never persist an unvalidated URL.
+    const mediaUrl = await this.s3.assertOwnedPublicImage(dto.media.mediaUrl, authorId);
     return this.prisma.post.create({
       data: {
         authorId,
@@ -92,7 +107,7 @@ export class PostsService {
         storyExpiresAt: expiresAt,
         media: {
           create: {
-            mediaUrl: dto.media.mediaUrl,
+            mediaUrl,
             thumbnailUrl: dto.media.thumbnailUrl ?? null,
             mediaType: dto.media.mediaType,
             width: dto.media.width ?? null,
@@ -230,7 +245,14 @@ export class PostsService {
   async share(sharerId: string, postId: string, content?: string) {
     // Same visibility rules as viewing — you can't share something you
     // shouldn't be able to see in the first place.
-    await this.assertCanViewPost(sharerId, postId);
+    const original = await this.assertCanViewPost(sharerId, postId);
+    // The shared post is embedded for the sharer's (friends) audience without
+    // re-checking each viewer against the original's visibility. Restrict
+    // sharing to public posts so a friends-only/association post can never be
+    // re-exposed to people who couldn't see the original.
+    if (original.visibility !== 'public') {
+      throw new ForbiddenException('Only public posts can be shared');
+    }
 
     const [share] = await this.prisma.$transaction([
       this.prisma.post.create({

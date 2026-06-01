@@ -205,6 +205,19 @@ export class ChatService {
       }
     }
 
+    // A reply must point at a live message in THIS conversation. Without this
+    // check a caller could thread a message onto an arbitrary message id from
+    // another conversation (or a soft-deleted one), leaking its existence.
+    if (payload.replyToId) {
+      const replyTo = await this.prisma.message.findUnique({
+        where: { id: payload.replyToId },
+        select: { conversationId: true, deletedAt: true },
+      });
+      if (!replyTo || replyTo.conversationId !== conversationId || replyTo.deletedAt !== null) {
+        throw new BadRequestException('Invalid replyToId');
+      }
+    }
+
     // Sanitize + length-cap the text content BEFORE touching the DB.
     // Applies to both REST and Gateway paths.
     const cleanContent = payload.content !== undefined
@@ -244,7 +257,7 @@ export class ChatService {
 
     const members = await this.prisma.conversationMember.findMany({
       where: { conversationId },
-      select: { userId: true },
+      select: { userId: true, muted: true },
     });
 
     // Notify every other member — fire-and-forget so the HTTP response stays
@@ -262,6 +275,9 @@ export class ChatService {
         : '📎 Pièce jointe';
     for (const m of members) {
       if (m.userId === userId) continue;
+      // Muted members still get the live socket message (they're in memberIds
+      // below) but no notification row and no push.
+      if (m.muted) continue;
       void this.notifications
         .create({
           userId: m.userId,

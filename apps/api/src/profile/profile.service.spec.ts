@@ -29,6 +29,8 @@ function makeS3() {
       key: 'key',
       expiresIn: 600,
     })),
+    // Mirrors S3Service.assertOwnedPublicImage: echoes back a canonical URL.
+    assertOwnedPublicImage: jest.fn(async (url: string) => `https://cdn.example/${url}`),
   };
 }
 
@@ -145,6 +147,46 @@ describe('ProfileService', () => {
     const result = await svc.listFriendsOf('viewer', 'other');
     expect(result.items).toEqual([]);
     expect(prisma.friendship.findMany).toHaveBeenCalled();
+  });
+
+  it('validates the avatar URL against the owner bucket before storing it', async () => {
+    const s3 = makeS3();
+    const prisma = {
+      user: { update: jest.fn(async (args: { data: { avatarUrl: string | null } }) => ({ id: 'u1', avatarUrl: args.data.avatarUrl })) },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never);
+    const result = await svc.updateAvatar('u1', 'https://cdn.example/users/u1/avatar/a.jpg');
+    expect(s3.assertOwnedPublicImage).toHaveBeenCalledWith(
+      'https://cdn.example/users/u1/avatar/a.jpg',
+      'u1',
+    );
+    // Stored value is the canonical URL returned by the validator, not the raw input.
+    expect(result.avatarUrl).toBe('https://cdn.example/https://cdn.example/users/u1/avatar/a.jpg');
+  });
+
+  it('clears the avatar without hitting S3 when null is passed', async () => {
+    const s3 = makeS3();
+    const prisma = { user: { update: jest.fn(async () => ({ id: 'u1', avatarUrl: null })) } };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never);
+    await svc.updateAvatar('u1', null);
+    expect(s3.assertOwnedPublicImage).not.toHaveBeenCalled();
+  });
+
+  it('does not search by email (no enumeration)', async () => {
+    const findMany = jest.fn(async (_args: { where: { AND: Array<{ OR?: unknown[] }> } }) => []);
+    const prisma = {
+      $queryRawUnsafe: jest.fn(() => 'TRUE'),
+      user: { findMany },
+      block: { findMany: jest.fn(async () => []) },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
+    await svc.search('viewer', { q: 'foo@bar.com', limit: 20 } as never);
+    const where = findMany.mock.calls[0]![0].where;
+    const orClause = where.AND.find((c: { OR?: unknown[] }) => Array.isArray(c.OR))!.OR as Array<
+      Record<string, unknown>
+    >;
+    expect(orClause.some((cond) => 'email' in cond)).toBe(false);
+    expect(orClause.map((c) => Object.keys(c)[0])).toEqual(['firstName', 'lastName', 'displayName']);
   });
 
   it('prevents deleting photos owned by others', async () => {
