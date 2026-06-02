@@ -7,6 +7,7 @@ import {
   uploadImage,
   presignOnly,
   cleanupTestData,
+  itUpload,
   type RegisteredUser,
 } from './helpers';
 
@@ -28,7 +29,7 @@ describe('Upload media (e2e)', () => {
   // Real uploads round-trip through MinIO: presign -> client PUTs bytes ->
   // attach the returned publicUrl, which the server verifies with a HEAD.
 
-  it(
+  itUpload(
     'HAPPY: presign -> PUT bytes -> attach avatar',
     async () => {
       const publicUrl = await uploadImage(app, user.accessToken, 'avatar');
@@ -42,7 +43,7 @@ describe('Upload media (e2e)', () => {
     },
   );
 
-  it(
+  itUpload(
     'HAPPY: a fully uploaded cover attaches',
     async () => {
       const coverUrl = await uploadImage(app, user.accessToken, 'cover');
@@ -55,7 +56,7 @@ describe('Upload media (e2e)', () => {
     },
   );
 
-  it('a really-uploaded object attaches successfully (200)', async () => {
+  itUpload('a really-uploaded object attaches successfully (200)', async () => {
     const publicUrl = await uploadImage(app, user.accessToken, 'avatar');
     const patch = await request(app.getHttpServer())
       .patch('/api/profile/me/avatar')

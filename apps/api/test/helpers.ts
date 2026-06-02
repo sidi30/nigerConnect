@@ -8,6 +8,19 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 export const STRONG_PASSWORD = 'Str0ng!Password';
 
 /**
+ * Some e2e specs round-trip real bytes through object storage
+ * (presign -> client PUT -> server HEAD). That needs a reachable MinIO/S3.
+ * The local dev stack and a full docker-compose CI provide it; the lean
+ * `quality-api` CI job (postgres + redis only) does not, so those specs would
+ * fail on connection-refused. Gate them on S3 credentials being present:
+ * skip where storage is absent, run everywhere it exists. Validation-only
+ * upload tests (foreign host, missing object -> 400) don't need a live bucket
+ * and keep running unconditionally.
+ */
+export const S3_LIVE = Boolean(process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY);
+export const itUpload = S3_LIVE ? it : it.skip;
+
+/**
  * In-memory ThrottlerStorage replacement that always reports zero hits, so the
  * global rate limiter never trips during e2e runs.
  *

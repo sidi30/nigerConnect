@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { PrismaService } from '../src/common/prisma/prisma.service';
-import { bootApp, register, uploadImage, presignOnly, cleanupTestData, type RegisteredUser } from './helpers';
+import { bootApp, register, uploadImage, presignOnly, cleanupTestData, itUpload, type RegisteredUser } from './helpers';
 
 describe('Publication / feed (e2e)', () => {
   let app: INestApplication;
@@ -47,7 +47,7 @@ describe('Publication / feed (e2e)', () => {
 
   // Real upload round-trips through MinIO: presign -> PUT bytes -> attach the
   // returned URL, which assertOwnedPublicImage HEAD-validates server-side.
-  it('HAPPY: create post WITH uploaded image -> media URL is canonical', async () => {
+  itUpload('HAPPY: create post WITH uploaded image -> media URL is canonical', async () => {
     const publicUrl = await uploadImage(app, alice.accessToken, 'photo');
     const created = await request(app.getHttpServer())
       .post('/api/posts')
