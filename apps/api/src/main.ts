@@ -24,8 +24,11 @@ async function bootstrap(): Promise<void> {
     Logger.log('Sentry initialized', 'Bootstrap');
   }
 
+  const isProd = process.env.NODE_ENV === 'production';
   const app = await NestFactory.create(AppModule, {
-    logger: ['log', 'error', 'warn', 'debug', 'verbose'],
+    logger: isProd
+      ? ['log', 'error', 'warn']
+      : ['log', 'error', 'warn', 'debug', 'verbose'],
   });
 
   const config = app.get(ConfigService<Env, true>);
@@ -43,7 +46,6 @@ async function bootstrap(): Promise<void> {
   };
   expressInstance.set('trust proxy', Number.isFinite(trustProxyHops) ? trustProxyHops : 1);
 
-  const isProd = process.env.NODE_ENV === 'production';
   app.use(
     helmet({
       contentSecurityPolicy: {

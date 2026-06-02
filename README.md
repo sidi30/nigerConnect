@@ -126,7 +126,7 @@ marche, Communauté, Sécurité, FAQ, Download, Footer. SEO / Open Graph / sitem
 
 ## Plan en 10 phases
 
-Voir `NigerConnect-Architecture-v2.md` pour le détail complet.
+Voir `docs/NigerConnect-Architecture-v2.md` pour le détail complet.
 
 | Phase | Contenu | Statut |
 |---|---|---|
