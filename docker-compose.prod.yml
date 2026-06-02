@@ -213,10 +213,16 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://${WEB_HOST}}
       API_URL: https://${API_HOST}
       APP_WEB_URL: https://${WEB_HOST}
-      GOOGLE_CLIENT_ID_WEB: ${GOOGLE_CLIENT_ID_WEB:-}
-      GOOGLE_CLIENT_ID_ANDROID: ${GOOGLE_CLIENT_ID_ANDROID:-}
+      # OAuth client IDs are PUBLIC identifiers (they ship inside the mobile app),
+      # not secrets — safe to bake as defaults so prod works out of the box.
+      # Still overridable via .env.prod. The API trusts a Google token whose
+      # `aud` matches ANY of these; list every platform that signs in.
+      GOOGLE_CLIENT_ID_WEB: ${GOOGLE_CLIENT_ID_WEB:-682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com}
+      GOOGLE_CLIENT_ID_ANDROID: ${GOOGLE_CLIENT_ID_ANDROID:-682162626945-opkbbi8ikl552tb7sk52fk7a80svfkmk.apps.googleusercontent.com}
+      # iOS: empty until a dedicated iOS-type OAuth client is created (bundle com.nigerconnect.app).
       GOOGLE_CLIENT_ID_IOS: ${GOOGLE_CLIENT_ID_IOS:-}
-      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      # Apple audience = the app bundle id (public). Required for Sign in with Apple to verify.
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.nigerconnect.app}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
       APPLE_KEY_ID: ${APPLE_KEY_ID:-}
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
