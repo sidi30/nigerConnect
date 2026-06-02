@@ -1,0 +1,231 @@
+name: Production deploy
+
+# =============================================================================
+# Pipeline production — push sur main (ou déclenchement manuel) :
+#
+#   ┌─ quality-api ──┐
+#   ├─ quality-web ──┤
+#   ├─ e2e ──────────┼──► deploy-vps (SSH) ──► smoke
+#   └─ docker-build ─┘
+#
+# Cible : VPS rag-prod-1 (Traefik + docker compose, stack sahabiguide.com).
+# Le job deploy se connecte en SSH, fait un git pull --ff-only puis exécute
+# scripts/deploy-vps.sh (build images, migrations Prisma, up).
+#
+# Secrets GitHub requis (Settings → Secrets → Actions) :
+#   VPS_SSH_HOST   46.224.193.109 (ou hostname)
+#   VPS_SSH_USER   root (ou l'utilisateur de déploiement)
+#   VPS_SSH_KEY    clé privée OpenSSH (ed25519 recommandé) autorisée sur le VPS
+#   VPS_SSH_PORT   optionnel, défaut 22
+#
+# Variables optionnelles (Settings → Variables → Actions) :
+#   PROD_WEB_URL   défaut https://nigerconnect.sahabiguide.com
+#   PROD_API_URL   défaut https://api-nigerconnect.sahabiguide.com
+#   VPS_APP_DIR    défaut /opt/apps/nigerConnect
+# =============================================================================
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'packages/shared-types/**'
+      - 'packages/config/**'
+      - 'e2e/**'
+      - 'docker-compose.prod.yml'
+      - 'scripts/deploy-vps.sh'
+      - 'scripts/smoke-prod.sh'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/e2e.yml'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+    inputs:
+      skip_e2e:
+        description: 'Skip Playwright e2e gate (emergency deploy only)'
+        type: boolean
+        default: false
+
+# Un seul déploiement à la fois ; on ne tue JAMAIS un deploy en cours
+# (migration Prisma à moitié appliquée = base incohérente).
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Gate 1 : qualité API (typecheck + tests + build) ──────────────────────
+  quality-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_DB: nigerconnect_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports: [5432:5432]
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports: [6379:6379]
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@localhost:5432/nigerconnect_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_PRIVATE_KEY_PATH: ./apps/api/keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: ./apps/api/keys/jwt-public.pem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Generate JWT keys
+        run: node apps/api/scripts/generate-keys.js
+      - name: Prisma generate + migrate
+        run: |
+          pnpm --filter @nigerconnect/api exec prisma generate
+          pnpm --filter @nigerconnect/api exec prisma migrate deploy
+      - name: Typecheck
+        run: |
+          pnpm --filter @nigerconnect/shared-types typecheck
+          pnpm --filter @nigerconnect/api typecheck
+      - name: Unit tests
+        run: pnpm --filter @nigerconnect/api test
+      - name: E2E tests (Jest + supertest)
+        run: pnpm --filter @nigerconnect/api test:e2e
+      - name: Build
+        run: pnpm --filter @nigerconnect/api build
+
+  # ── Gate 2 : qualité web (typecheck + lint + build) ───────────────────────
+  quality-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: |
+          pnpm --filter @nigerconnect/shared-types typecheck
+          pnpm --filter @nigerconnect/web typecheck
+      - name: Lint
+        run: pnpm --filter @nigerconnect/web lint
+      - name: Build (Next.js standalone)
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+        run: pnpm --filter @nigerconnect/web build
+
+  # ── Gate 3 : e2e Playwright full-stack (workflow réutilisable) ────────────
+  e2e:
+    if: ${{ !inputs.skip_e2e }}
+    uses: ./.github/workflows/e2e.yml
+
+  # ── Gate 4 : les images Docker buildent (sans push — le VPS rebuild) ──────
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        app: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (${{ matrix.app }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: false
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+
+  # ── Déploiement VPS via SSH ────────────────────────────────────────────────
+  deploy-vps:
+    needs: [quality-api, quality-web, e2e, docker-build]
+    # `always()` + vérification explicite : nécessaire car le gate e2e peut
+    # être skippé (workflow_dispatch avec skip_e2e) — sans ça, needs sur un
+    # job skippé skipperait aussi le deploy.
+    if: |
+      always()
+      && needs.quality-api.result == 'success'
+      && needs.quality-web.result == 'success'
+      && needs.docker-build.result == 'success'
+      && (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.PROD_WEB_URL || 'https://nigerconnect.sahabiguide.com' }}
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          command_timeout: 25m
+          script: |
+            set -euo pipefail
+            cd ${{ vars.VPS_APP_DIR || '/opt/apps/nigerConnect' }}
+            echo "── Syncing to origin/main (${{ github.sha }}) ──"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+            # Sécurité : on déploie exactement le commit qui a passé les gates.
+            if [ "$(git rev-parse HEAD)" != "${{ github.sha }}" ]; then
+              echo "::warning::HEAD ($(git rev-parse HEAD)) != commit CI (${{ github.sha }}) — un push plus récent existe, déploiement de HEAD."
+            fi
+            echo "── Running deploy script ──"
+            ./scripts/deploy-vps.sh
+
+      - name: Summary
+        run: |
+          echo "🚀 **Déployé sur le VPS**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Web : ${{ vars.PROD_WEB_URL || 'https://nigerconnect.sahabiguide.com' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- API : ${{ vars.PROD_API_URL || 'https://api-nigerconnect.sahabiguide.com' }}" >> $GITHUB_STEP_SUMMARY
+
+  # ── Smoke test post-déploiement ────────────────────────────────────────────
+  smoke:
+    needs: deploy-vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run production smoke tests
+        run: |
+          chmod +x scripts/smoke-prod.sh
+          ./scripts/smoke-prod.sh \
+            "${{ vars.PROD_WEB_URL || 'https://nigerconnect.sahabiguide.com' }}" \
+            "${{ vars.PROD_API_URL || 'https://api-nigerconnect.sahabiguide.com' }}"
+      - name: Summary
+        if: success()
+        run: echo "✅ Smoke tests OK — production saine." >> $GITHUB_STEP_SUMMARY

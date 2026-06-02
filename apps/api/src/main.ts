@@ -77,7 +77,9 @@ async function bootstrap(): Promise<void> {
   // huge bodies at the API.
   app.use(json({ limit: '256kb' }));
   app.use(urlencoded({ extended: false, limit: '256kb' }));
-  app.setGlobalPrefix('api', { exclude: ['health'] });
+  // Health endpoints stay unprefixed: Docker/Traefik healthchecks, the prod
+  // smoke script and the Playwright e2e runbook all probe /health[/live|/ready].
+  app.setGlobalPrefix('api', { exclude: ['health', 'health/live', 'health/ready'] });
 
   // Graceful shutdown — flush Sentry events
   if (sentryDsn) {

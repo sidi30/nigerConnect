@@ -1,0 +1,143 @@
+name: E2E Playwright
+
+# Full-stack e2e suite (e2e/ workspace):
+#   - api-oauth-contract     : POST /api/auth/google + apple (request fixture)
+#   - api-session-lifecycle  : register/login/me/refresh/logout
+#   - web-auth-pages         : /reset-password + /verify-email (Chromium)
+#
+# Runs on PRs touching api/web/e2e, and is called by deploy.yml as a
+# pre-production gate (workflow_call).
+on:
+  workflow_call:
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'e2e/**'
+      - 'packages/shared-types/**'
+      - 'packages/config/**'
+      - '.github/workflows/e2e.yml'
+      - 'pnpm-lock.yaml'
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_DB: nigerconnect_e2e
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+        options: >-
+          --health-cmd "pg_isready -U e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports: [5432:5432]
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports: [6379:6379]
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://e2e:e2e@localhost:5432/nigerconnect_e2e?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_PRIVATE_KEY_PATH: ./apps/api/keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: ./apps/api/keys/jwt-public.pem
+      NEXT_TELEMETRY_DISABLED: 1
+      API_BASE_URL: http://localhost:3000
+      WEB_BASE_URL: http://localhost:3001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate JWT keys
+        run: node apps/api/scripts/generate-keys.js
+
+      - name: Prisma generate + migrate
+        run: |
+          pnpm --filter @nigerconnect/api exec prisma generate
+          pnpm --filter @nigerconnect/api exec prisma migrate deploy
+
+      - name: Build API
+        run: pnpm --filter @nigerconnect/api build
+
+      - name: Build web (standalone)
+        run: |
+          pnpm --filter @nigerconnect/web build
+          # standalone needs static assets + public/ copied next to server.js
+          cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+          cp -r apps/web/public apps/web/.next/standalone/apps/web/public
+
+      - name: Start API (background)
+        run: |
+          node apps/api/dist/main.js > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+
+      - name: Start web (background)
+        run: |
+          PORT=3001 HOSTNAME=0.0.0.0 node apps/web/.next/standalone/apps/web/server.js > /tmp/web.log 2>&1 &
+          echo $! > /tmp/web.pid
+
+      - name: Wait for servers
+        run: |
+          for i in $(seq 1 60); do
+            api_ok=$(curl -fso /dev/null -w '%{http_code}' http://localhost:3000/health/live || true)
+            web_ok=$(curl -fso /dev/null -w '%{http_code}' http://localhost:3001/ || true)
+            if [ "$api_ok" = "200" ] && [ "$web_ok" = "200" ]; then
+              echo "API + web up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Servers did not come up in time"
+          echo "── API log ──"; cat /tmp/api.log
+          echo "── Web log ──"; cat /tmp/web.log
+          exit 1
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @nigerconnect/e2e exec playwright install --with-deps chromium
+
+      - name: Run Playwright suite
+        run: pnpm --filter @nigerconnect/e2e test
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: |
+          echo "── API log ──"; cat /tmp/api.log || true
+          echo "── Web log ──"; cat /tmp/web.log || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7

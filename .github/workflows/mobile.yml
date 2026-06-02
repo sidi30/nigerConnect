@@ -1,4 +1,4 @@
-name: Mobile CI
+name: Mobile CI + OTA
 
 on:
   push:
@@ -14,10 +14,15 @@ on:
       - 'apps/mobile/**'
       - 'packages/shared-types/**'
       - 'packages/config/**'
+      - '.github/workflows/mobile.yml'
+      - 'pnpm-lock.yaml'
 
 concurrency:
   group: mobile-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   typecheck:
@@ -42,3 +47,56 @@ jobs:
         run: |
           pnpm --filter @nigerconnect/shared-types typecheck
           pnpm --filter @nigerconnect/mobile typecheck
+
+  # ── OTA update (EAS Update) on every push to main ─────────────────────
+  # Publishes the JS bundle to the `production` channel. Devices running a
+  # build whose runtime version matches pick it up at next app launch.
+  # Native changes (new packages, app.json plugins, SDK upgrade) are NOT
+  # shipped this way — they need a full `eas build` + store submission.
+  #
+  # Required secret: EXPO_TOKEN (https://expo.dev/accounts/sidi30/settings/access-tokens)
+  eas-update:
+    needs: typecheck
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production-mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish OTA update (channel production)
+        working-directory: apps/mobile
+        env:
+          # Passed via env (not inline interpolation) — commit messages can
+          # contain quotes/newlines that would break or inject into the shell.
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          eas update \
+            --channel production \
+            --message "$(echo "$COMMIT_MSG" | head -1 | cut -c1-120)" \
+            --non-interactive
+
+      - name: Summary
+        run: |
+          echo "📲 OTA update published on channel **production**" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

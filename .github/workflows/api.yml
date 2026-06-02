@@ -1,8 +1,11 @@
 name: API CI
 
+# CI on PRs and develop. Pushes to main are covered by the production
+# pipeline (.github/workflows/deploy.yml) which re-runs these gates
+# before deploying — no double run here.
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
     paths:
       - 'apps/api/**'
       - 'packages/shared-types/**'
@@ -14,10 +17,15 @@ on:
       - 'apps/api/**'
       - 'packages/shared-types/**'
       - 'packages/config/**'
+      - '.github/workflows/api.yml'
+      - 'pnpm-lock.yaml'
 
 concurrency:
   group: api-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   lint-test-build:
@@ -84,8 +92,8 @@ jobs:
       - name: Unit tests
         run: pnpm --filter @nigerconnect/api test
 
-      - name: E2E tests
-        run: pnpm --filter @nigerconnect/api exec jest --config test/jest-e2e.json
+      - name: E2E tests (Jest + supertest)
+        run: pnpm --filter @nigerconnect/api test:e2e
 
       - name: Build
         run: pnpm --filter @nigerconnect/api build
