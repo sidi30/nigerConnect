@@ -48,7 +48,7 @@ export default function TermsScreen() {
           body: 'Nous pouvons mettre à jour ces conditions. Tu seras notifié avant toute modification importante et pourras refuser en supprimant ton compte.',
         },
       ]}
-      contact="Questions légales : legal@nigerconnect.ne — l’équipe répond sous 5 jours ouvrés."
+      contact="Questions légales : contact@sahabiguide.com — l’équipe répond sous 5 jours ouvrés."
     />
   );
 }

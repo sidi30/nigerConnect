@@ -70,7 +70,7 @@ export default function PrivacyScreen() {
           body: 'Certains sous-traitants (FCM) sont hors UE. Les transferts reposent sur les Clauses Contractuelles Types de la Commission européenne et un chiffrement en transit.',
         },
       ]}
-      contact="Délégué à la protection des données : privacy@nigerconnect.ne. Réclamation CNIL : cnil.fr."
+      contact="Délégué à la protection des données : contact@sahabiguide.com. Réclamation CNIL : cnil.fr."
     />
   );
 }

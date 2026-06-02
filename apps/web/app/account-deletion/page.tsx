@@ -222,8 +222,8 @@ export default function AccountDeletionPage() {
         </p>
         <p>
           Tu peux demander un export complet de tes données au format JSON en écrivant
-          à <a href="mailto:privacy@nigerconnect.ne" className="text-[#E05206] hover:underline">
-            privacy@nigerconnect.ne
+          à <a href="mailto:contact@sahabiguide.com" className="text-[#E05206] hover:underline">
+            contact@sahabiguide.com
           </a>{" "}
           (réponse sous 30 jours, conformément au RGPD).
         </p>
