@@ -14,6 +14,7 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { friendsApi } from '@/services/friendsApi';
 import { geoApi, type MapMarker } from '@/services/geoApi';
@@ -374,7 +375,7 @@ export default function MapTab() {
           <View style={styles.resultsCard}>
             {globalSearch.isLoading ? (
               <View style={styles.resultsLoading}>
-                <ActivityIndicator color={Colors.orange} />
+                <Loader style={{ marginTop: 0 }} />
               </View>
             ) : (globalSearch.data?.items.length ?? 0) === 0 ? (
               <View style={styles.resultsLoading}>
@@ -427,7 +428,7 @@ export default function MapTab() {
 
       {markersQuery.isLoading && (
         <View style={styles.loader}>
-          <ActivityIndicator color={Colors.orange} />
+          <Loader style={{ marginTop: 0 }} />
         </View>
       )}
 

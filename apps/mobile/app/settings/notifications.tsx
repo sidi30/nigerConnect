@@ -1,7 +1,8 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '@/services/notificationApi';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
+import { Loader } from '@/components/ui/Loader';
 import { relativeTime } from '@/constants/lookups';
 
 const TYPE_LABELS: Record<string, { emoji: string; color: string }> = {
@@ -33,7 +34,7 @@ export default function NotificationsScreen() {
   });
 
   if (isLoading) {
-    return <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />;
+    return <Loader />;
   }
 
   const notifs = data?.items ?? [];

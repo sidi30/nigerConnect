@@ -1,10 +1,11 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { associationsApi } from '@/services/associationsApi';
 import { Colors, CountryNames, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
+import { Loader } from '@/components/ui/Loader';
 
 const ROLE_LABELS: Record<string, { color: string; bg: string; label: string }> = {
   admin: { color: Colors.orange, bg: Colors.peach50, label: 'Admin' },
@@ -20,7 +21,7 @@ export default function MyAssociationsScreen() {
   });
 
   if (isLoading) {
-    return <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />;
+    return <Loader />;
   }
 
   const assocs = data ?? [];

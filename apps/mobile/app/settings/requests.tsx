@@ -1,8 +1,9 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { api } from '@/services/api';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
+import { Loader } from '@/components/ui/Loader';
 import { relativeTime } from '@/constants/lookups';
 
 interface MyService {
@@ -37,7 +38,7 @@ export default function MyRequestsScreen() {
   });
 
   if (isLoading) {
-    return <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />;
+    return <Loader />;
   }
 
   const requests = data ?? [];

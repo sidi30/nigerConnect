@@ -1,5 +1,4 @@
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -14,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { associationsApi } from '@/services/associationsApi';
 import { useAuthStore } from '@/stores/authStore';
 import {
@@ -127,7 +127,7 @@ export default function AssociationDetailScreen() {
             <Text style={styles.backIcon}>←</Text>
           </Pressable>
         </View>
-        <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+        <Loader />
       </SafeAreaView>
     );
   }
@@ -277,7 +277,7 @@ export default function AssociationDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Membres ({a.memberCount})</Text>
           {membersQuery.isLoading ? (
-            <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.sm }} />
+            <Loader style={{ marginTop: Spacing.sm }} />
           ) : membersQuery.isError ? (
             <Text style={styles.sectionHint}>Impossible de charger les membres.</Text>
           ) : members.length === 0 ? (

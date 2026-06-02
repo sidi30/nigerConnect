@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,6 +8,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Loader } from '@/components/ui/Loader';
 import { identityApi } from '@/services/identityApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -101,7 +101,7 @@ export default function IdentityScreen() {
   }
 
   if (isLoading) {
-    return <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />;
+    return <Loader />;
   }
 
   const state = STATUS_LABELS[data?.status ?? 'not_submitted']!;

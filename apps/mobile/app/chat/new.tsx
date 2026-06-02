@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -13,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PublicUser } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
@@ -105,7 +105,7 @@ export default function NewChatScreen() {
 
       {friendsQuery.isLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={Colors.orange} />
+          <Loader style={{ marginTop: 0 }} />
         </View>
       ) : friends.length === 0 ? (
         <View style={styles.center}>
@@ -133,7 +133,7 @@ export default function NewChatScreen() {
 
       {createMut.isPending && (
         <View style={styles.overlay}>
-          <ActivityIndicator color={Colors.orange} />
+          <Loader style={{ marginTop: 0 }} />
         </View>
       )}
     </SafeAreaView>

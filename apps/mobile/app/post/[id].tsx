@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -18,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Comment, CursorPage } from '@nigerconnect/shared-types';
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentItem } from '@/components/feed/CommentItem';
+import { Loader } from '@/components/ui/Loader';
 import { feedApi } from '@/services/feedApi';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -145,7 +145,7 @@ export default function PostScreen() {
           keyExtractor={(c) => c.id}
           ListHeaderComponent={
             postQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : postQuery.data ? (
               <View>
                 <PostCard

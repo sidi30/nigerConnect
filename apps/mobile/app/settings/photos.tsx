@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CursorPage } from '@nigerconnect/shared-types';
 import { api } from '@/services/api';
+import { Loader } from '@/components/ui/Loader';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { profileApi } from '@/services/profileApi';
 import { useAuthStore } from '@/stores/authStore';
@@ -217,7 +217,7 @@ export default function PhotosScreen() {
         ) : null}
 
         {photosQuery.isLoading ? (
-          <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xl }} />
+          <Loader style={{ marginTop: Spacing.xl }} />
         ) : photos.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>📷</Text>

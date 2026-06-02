@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { blocksApi } from '@/services/blocksApi';
 import { profileApi } from '@/services/profileApi';
 import { useAuthStore } from '@/stores/authStore';
@@ -107,6 +107,7 @@ export default function PrivacyScreen() {
         </View>
         <Switch
           value={showOnMap}
+          disabled={savePrivacyMut.isPending}
           onValueChange={(v) => savePrivacy(privacyLevel as 'public' | 'friends' | 'private', v)}
           trackColor={{ false: Colors.tan300, true: Colors.orange }}
           thumbColor={Colors.white}
@@ -124,6 +125,7 @@ export default function PrivacyScreen() {
         </View>
         <Switch
           value={proximityAlerts}
+          disabled={saveProximityMut.isPending}
           onValueChange={(v) => saveProximity(v, proximityRadius)}
           trackColor={{ false: Colors.tan300, true: Colors.orange }}
           thumbColor={Colors.white}
@@ -198,7 +200,7 @@ export default function PrivacyScreen() {
 
       <Text style={styles.section}>Utilisateurs bloqués</Text>
       {blocksQuery.isLoading ? (
-        <ActivityIndicator color={Colors.orange} />
+        <Loader style={{ marginTop: 0 }} />
       ) : (blocksQuery.data ?? []).length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>Aucun utilisateur bloqué.</Text>

@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -13,6 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CursorPage, Post, PublicUser, User } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
@@ -213,7 +213,7 @@ export default function UserScreen() {
             ) : null}
           </View>
         ) : (
-          <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+          <Loader />
         )}
       </SafeAreaView>
     );
@@ -408,7 +408,7 @@ export default function UserScreen() {
         }
         ListEmptyComponent={
           postsQuery.isLoading ? (
-            <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xl }} />
+            <Loader style={{ marginTop: Spacing.xl }} />
           ) : null
         }
         contentContainerStyle={{ paddingBottom: Spacing.xxxl }}

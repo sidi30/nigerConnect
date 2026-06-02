@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -26,6 +25,7 @@ import { profileApi } from '@/services/profileApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { Avatar } from '@/components/ui/Avatar';
 import { CitySearchField } from '@/components/ui/CitySearchField';
+import { Loader } from '@/components/ui/Loader';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function EditProfileScreen() {
@@ -116,9 +116,7 @@ export default function EditProfileScreen() {
 
   if (!user) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={Colors.orange} />
-      </View>
+      <Loader fullScreen />
     );
   }
 
@@ -275,7 +273,6 @@ function Field(props: React.ComponentProps<typeof TextInput> & { label: string }
 
 const styles = StyleSheet.create({
   scroll: { padding: Spacing.lg, paddingBottom: Spacing.xxxl },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   section: {
     fontSize: Typography.sizes.xs,
     fontWeight: '800',

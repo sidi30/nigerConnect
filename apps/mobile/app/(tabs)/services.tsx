@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import {
   Colors,
   CountryNames,
@@ -184,7 +184,7 @@ export default function ServicesTab() {
 
         {servicesQuery.isLoading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.orange} />
+            <Loader style={{ marginTop: 0 }} />
           </View>
         ) : services.length === 0 ? (
           <View style={styles.empty}>

@@ -18,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Conversation, CursorPage, Message } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
@@ -243,7 +244,7 @@ export default function ChatScreen() {
   if (!conversation || !peer) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+        <Loader />
       </SafeAreaView>
     );
   }
@@ -354,7 +355,7 @@ export default function ChatScreen() {
           }}
           ListEmptyComponent={
             messagesQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xl }} />
+              <Loader style={{ marginTop: Spacing.xl }} />
             ) : (
               <Text style={styles.empty}>Envoie le premier message ✨</Text>
             )

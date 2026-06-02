@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -12,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
@@ -156,7 +156,7 @@ export default function FriendsScreen() {
           )}
           ListEmptyComponent={
             friendsQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
               <Empty emoji="👥" title="Aucun ami" subtitle="Accepte les demandes ou envoie-en." />
             )
@@ -206,7 +206,7 @@ export default function FriendsScreen() {
           }}
           ListEmptyComponent={
             incomingQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
               <Empty emoji="📬" title="Aucune demande" subtitle="Tu n'as pas de demande en attente." />
             )
@@ -241,7 +241,7 @@ export default function FriendsScreen() {
           }}
           ListEmptyComponent={
             outgoingQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
               <Empty emoji="📤" title="Aucune demande envoyée" />
             )
@@ -276,7 +276,7 @@ export default function FriendsScreen() {
               subtitle="Cherche par prénom, nom ou pseudo."
             />
           ) : searchQuery.isLoading ? (
-            <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+            <Loader />
           ) : (
             <FlatList
               data={searchQuery.data?.items ?? []}
@@ -360,7 +360,7 @@ export default function FriendsScreen() {
           }}
           ListEmptyComponent={
             suggestionsQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
               <Empty emoji="✨" title="Pas de suggestions" subtitle="Reviens plus tard." />
             )

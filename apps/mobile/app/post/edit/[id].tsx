@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { feedApi } from '@/services/feedApi';
+import { Loader } from '@/components/ui/Loader';
 import {
   Colors,
   Gradients,
@@ -76,7 +76,7 @@ export default function EditPostScreen() {
   if (postQuery.isLoading || !postQuery.data) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+        <Loader />
       </SafeAreaView>
     );
   }

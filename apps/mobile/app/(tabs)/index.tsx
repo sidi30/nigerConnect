@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -14,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Post } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FriendRequestsBanner } from '@/components/feed/FriendRequestsBanner';
 import { PostCard } from '@/components/feed/PostCard';
@@ -272,7 +272,7 @@ export default function FeedTab() {
         ListEmptyComponent={
           feedQuery.isLoading ? (
             <View style={styles.loader}>
-              <ActivityIndicator color={Colors.orange} />
+              <Loader style={{ marginTop: 0 }} />
             </View>
           ) : (
             <View style={styles.empty}>

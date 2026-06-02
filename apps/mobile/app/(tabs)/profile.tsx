@@ -1,5 +1,4 @@
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -13,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/services/api';
@@ -80,7 +80,7 @@ export default function ProfileTab() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+        <Loader />
       </SafeAreaView>
     );
   }
