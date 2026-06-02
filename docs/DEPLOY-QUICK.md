@@ -58,11 +58,31 @@ L'OTA ne peut PAS livrer du code natif. Il faut un nouveau build :
 
 ```powershell
 cd apps\mobile
+# iPhone (ad-hoc, appareil enregistré)
 npx eas-cli build --profile preview --platform ios --non-interactive --no-wait
+# Android (APK installable directement)
+npx eas-cli build --profile preview --platform android --non-interactive --no-wait
 ```
 
-Suivre le lien affiché (expo.dev) → quand le build est fini (~15-20 min),
-ouvrir le lien sur l'iPhone → **Install**.
+Suivre le lien affiché (expo.dev) → quand le build est fini (~15-20 min) :
+- **iPhone** : ouvrir le lien sur l'iPhone → **Install**
+- **Android** : ouvrir le lien sur le téléphone → télécharger l'APK → installer
+  (autoriser "sources inconnues" si demandé). Pas d'enregistrement d'appareil requis —
+  l'APK s'installe sur n'importe quel Android.
+
+> Les OTA (Cas 1) fonctionnent ensuite sur les deux plateformes :
+> ajouter `--platform all` à la commande `eas update` (ou omettre `--platform`).
+
+## Cas 5 — TestFlight / App Store (iOS) et Play Store (Android)
+
+```powershell
+cd apps\mobile
+# iOS → TestFlight (entièrement automatique grâce à la clé API ASC stockée sur EAS)
+npx eas-cli build --profile production --platform ios --auto-submit --non-interactive
+
+# Android → AAB pour le Play Store (nécessite un compte Play Console + service account)
+npx eas-cli build --profile production --platform android --non-interactive
+```
 
 ---
 
