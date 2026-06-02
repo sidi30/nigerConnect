@@ -12,9 +12,10 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
+import { friendsApi } from '@/services/friendsApi';
 import { geoApi, type MapMarker } from '@/services/geoApi';
 import { profileApi } from '@/services/profileApi';
 import { useAuthStore } from '@/stores/authStore';
@@ -134,7 +135,9 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
         const icon = L.divIcon({ html: html, className: '', iconSize: [size,size], iconAnchor: [size/2,size/2] });
         const mk = L.marker([m.lat, m.lon], { icon });
         mk.on('click', () => {
-          if (m.kind === 'country') map.setView([m.lat, m.lon], 5);
+          // Country clusters jump straight to the individual-marker threshold
+          // (zoom 9) so members become tappable avatars; city goes one closer.
+          if (m.kind === 'country') map.setView([m.lat, m.lon], 9);
           else if (m.kind === 'city') map.setView([m.lat, m.lon], 10);
           post({ type:'select', marker: m });
         });
@@ -456,6 +459,18 @@ export default function MapTab() {
             setSelected(null);
             router.push(`/user/${id}`);
           }}
+          onOpenAssociation={(id) => {
+            setSelected(null);
+            // associations/[id].tsx is being added in parallel; cast until the
+            // typed route exists.
+            router.push(`/associations/${id}` as never);
+          }}
+          onZoomToCluster={(lat, lon, zoom) => {
+            setSelected(null);
+            webRef.current?.injectJavaScript(
+              `window.flyTo(${lat}, ${lon}, ${zoom}); true;`,
+            );
+          }}
         />
       )}
     </SafeAreaView>
@@ -466,37 +481,21 @@ function SelectedSheet({
   marker,
   onClose,
   onOpenProfile,
+  onOpenAssociation,
+  onZoomToCluster,
 }: {
   marker: MapMarker;
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
+  onOpenAssociation: (associationId: string) => void;
+  onZoomToCluster: (lat: number, lon: number, zoom: number) => void;
 }) {
+  // SelectedSheet branches by marker.kind with early returns, so any hooks must
+  // live in a child rendered only for the individual case. Otherwise the hook
+  // order would change between an individual and a cluster selection.
   if (marker.kind === 'individual') {
     return (
-      <View style={styles.sheet}>
-        <View style={styles.sheetHandle} />
-        <View style={styles.sheetTop}>
-          <Avatar
-            uri={marker.avatarUrl}
-            name={marker.name ?? '?'}
-            size={56}
-            borderColor={Colors.orange}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sheetName}>{marker.name}</Text>
-            <Text style={styles.sheetMeta}>
-              {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
-              {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
-            </Text>
-          </View>
-          <Pressable onPress={onClose} style={styles.sheetClose}>
-            <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
-          </Pressable>
-        </View>
-        <Pressable onPress={() => onOpenProfile(marker.userId)} style={styles.sheetBtn}>
-          <Text style={styles.sheetBtnLabel}>Voir le profil</Text>
-        </Pressable>
-      </View>
+      <IndividualSheet marker={marker} onClose={onClose} onOpenProfile={onOpenProfile} />
     );
   }
 
@@ -525,6 +524,12 @@ function SelectedSheet({
             <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
           </Pressable>
         </View>
+        <Pressable
+          onPress={() => onOpenAssociation(marker.associationId)}
+          style={styles.sheetBtn}
+        >
+          <Text style={styles.sheetBtnLabel}>Voir l&apos;association</Text>
+        </Pressable>
       </View>
     );
   }
@@ -533,6 +538,9 @@ function SelectedSheet({
     marker.kind === 'country'
       ? CountryNames[marker.countryCode] ?? marker.countryCode
       : marker.city;
+  // Country clusters zoom to the individual-marker threshold (9); city goes one
+  // closer (10) so members surface as tappable avatars.
+  const zoom = marker.kind === 'country' ? 9 : 10;
   return (
     <View style={styles.sheet}>
       <View style={styles.sheetHandle} />
@@ -542,12 +550,99 @@ function SelectedSheet({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.sheetName}>{title}</Text>
-          <Text style={styles.sheetMeta}>{marker.count} membres</Text>
+          <Text style={styles.sheetMeta}>
+            {marker.count} {marker.count > 1 ? 'membres' : 'membre'}
+          </Text>
         </View>
         <Pressable onPress={onClose} style={styles.sheetClose}>
           <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
         </Pressable>
       </View>
+      <Pressable
+        onPress={() => onZoomToCluster(marker.lat, marker.lon, zoom)}
+        style={styles.sheetBtn}
+      >
+        <Text style={styles.sheetBtnLabel}>Voir les membres</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function IndividualSheet({
+  marker,
+  onClose,
+  onOpenProfile,
+}: {
+  marker: Extract<MapMarker, { kind: 'individual' }>;
+  onClose: () => void;
+  onOpenProfile: (userId: string) => void;
+}) {
+  const qc = useQueryClient();
+  const relationshipQuery = useQuery({
+    queryKey: ['user', marker.userId, 'relationship'],
+    queryFn: () => friendsApi.relationship(marker.userId),
+  });
+  const sendRequestMut = useMutation({
+    mutationFn: () => friendsApi.sendRequest(marker.userId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['user', marker.userId, 'relationship'] });
+      void qc.invalidateQueries({ queryKey: ['friends'] });
+    },
+  });
+
+  const rel = relationshipQuery.data?.status ?? 'none';
+  // self / blocked: no friend action. incoming routes to the profile where the
+  // request can be accepted with its friendshipId.
+  const showFriendBtn = rel !== 'self' && rel !== 'blocked';
+  const friendLabel =
+    rel === 'friends'
+      ? '✓ Amis'
+      : rel === 'outgoing'
+        ? '⌛ Demande envoyée'
+        : rel === 'incoming'
+          ? '📩 Accepter la demande'
+          : '👤 Ajouter en ami';
+  const friendDisabled =
+    rel === 'friends' || rel === 'outgoing' || sendRequestMut.isPending;
+
+  function onFriendPress() {
+    if (rel === 'none') sendRequestMut.mutate();
+    else if (rel === 'incoming') onOpenProfile(marker.userId);
+  }
+
+  return (
+    <View style={styles.sheet}>
+      <View style={styles.sheetHandle} />
+      <View style={styles.sheetTop}>
+        <Avatar
+          uri={marker.avatarUrl}
+          name={marker.name ?? '?'}
+          size={56}
+          borderColor={Colors.orange}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sheetName}>{marker.name}</Text>
+          <Text style={styles.sheetMeta}>
+            {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+            {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
+          </Text>
+        </View>
+        <Pressable onPress={onClose} style={styles.sheetClose}>
+          <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+        </Pressable>
+      </View>
+      <Pressable onPress={() => onOpenProfile(marker.userId)} style={styles.sheetBtn}>
+        <Text style={styles.sheetBtnLabel}>Voir le profil</Text>
+      </Pressable>
+      {showFriendBtn ? (
+        <Pressable
+          onPress={onFriendPress}
+          disabled={friendDisabled}
+          style={[styles.sheetBtnSecondary, friendDisabled && { opacity: 0.6 }]}
+        >
+          <Text style={styles.sheetBtnSecondaryLabel}>{friendLabel}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -712,4 +807,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sheetBtnLabel: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
+  sheetBtnSecondary: {
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.orange,
+    paddingVertical: Spacing.md + 2,
+    alignItems: 'center',
+  },
+  sheetBtnSecondaryLabel: {
+    color: Colors.orange,
+    fontSize: Typography.sizes.md,
+    fontWeight: '700',
+  },
 });

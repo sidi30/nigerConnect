@@ -88,7 +88,32 @@ export default function FeedTab() {
 
   const deleteMut = useMutation({
     mutationFn: (postId: string) => feedApi.deletePost(postId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feed'] }),
+    // Optimistic: drop the post from the cached feed pages immediately
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: ['feed'] });
+      const prev = qc.getQueryData(['feed']);
+      qc.setQueryData(['feed'], (old: unknown) => {
+        const typed = old as { pages: Array<{ items: Post[] }> } | undefined;
+        if (!typed) return old;
+        return {
+          ...typed,
+          pages: typed.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((p) => p.id !== postId),
+          })),
+        };
+      });
+      return { prev };
+    },
+    onError: (_e, _postId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['feed'], ctx.prev);
+    },
+    // Re-sync with the server so the feed, profile counts and post cache match DB truth.
+    onSettled: (_data, _err, postId) => {
+      void qc.invalidateQueries({ queryKey: ['feed'] });
+      void qc.invalidateQueries({ queryKey: ['user'] });
+      void qc.invalidateQueries({ queryKey: ['post', postId] });
+    },
   });
 
   const likeMut = useMutation({

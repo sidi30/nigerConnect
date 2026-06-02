@@ -56,7 +56,7 @@ export default function MyAssociationsScreen() {
             <Pressable
               key={a.id}
               style={styles.card}
-              onPress={() => router.push(`/associations/${a.id}` as never)}
+              onPress={() => router.push(`/associations/${a.id}`)}
             >
               <View style={styles.logoWrap}>
                 {a.logoUrl ? (

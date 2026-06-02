@@ -71,7 +71,7 @@ export default function NewAssociationScreen() {
     onSuccess: (assoc) => {
       void qc.invalidateQueries({ queryKey: ['associations'] });
       setFeedback({ kind: 'success', message: 'Association créée ✓' });
-      setTimeout(() => router.replace(`/associations/${assoc.id}` as never), 800);
+      setTimeout(() => router.replace(`/associations/${assoc.id}`), 800);
     },
     onError: (e) => {
       const err = e as {

@@ -15,7 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Comment } from '@nigerconnect/shared-types';
+import type { Comment, CursorPage } from '@nigerconnect/shared-types';
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentItem } from '@/components/feed/CommentItem';
 import { feedApi } from '@/services/feedApi';
@@ -57,12 +57,33 @@ export default function PostScreen() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: async (commentId: string) => {
-      await feedApi.deleteComment(commentId);
+    mutationFn: (commentId: string) => feedApi.deleteComment(commentId),
+    // Optimistic: drop the comment (and any nested reply) from the cached page immediately
+    onMutate: async (commentId) => {
+      await qc.cancelQueries({ queryKey: ['post', id, 'comments'] });
+      const prev = qc.getQueryData<CursorPage<Comment>>(['post', id, 'comments']);
+      qc.setQueryData<CursorPage<Comment>>(['post', id, 'comments'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          items: old.items
+            .filter((c) => c.id !== commentId)
+            .map((c) => ({
+              ...c,
+              replies: (c.replies ?? []).filter((r) => r.id !== commentId),
+            })),
+        };
+      });
+      return { prev };
     },
-    onSuccess: () => {
+    onError: (_e, _commentId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['post', id, 'comments'], ctx.prev);
+    },
+    // Re-sync with the server: list, post comment counter, and the feed card counter.
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['post', id, 'comments'] });
       void qc.invalidateQueries({ queryKey: ['post', id] });
+      void qc.invalidateQueries({ queryKey: ['feed'] });
     },
   });
 
@@ -71,6 +92,8 @@ export default function PostScreen() {
       feedApi.editComment(commentId, content),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['post', id, 'comments'] });
+      void qc.invalidateQueries({ queryKey: ['post', id] });
+      void qc.invalidateQueries({ queryKey: ['feed'] });
     },
   });
 

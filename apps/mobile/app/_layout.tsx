@@ -140,6 +140,7 @@ export default function RootLayout() {
                   name="photos/viewer"
                   options={{ presentation: 'fullScreenModal', animation: 'fade' }}
                 />
+                <Stack.Screen name="associations/[id]" />
                 <Stack.Screen name="associations/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="friends" />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
