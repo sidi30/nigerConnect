@@ -33,7 +33,14 @@
         "NSCameraUsageDescription": "NigerConnect utilise ton appareil photo pour prendre tes photos de profil, tes publications et tes stories.",
         "NSPhotoLibraryUsageDescription": "NigerConnect accède à tes photos pour choisir ton avatar, tes publications et tes stories.",
         "NSPhotoLibraryAddUsageDescription": "NigerConnect peut enregistrer des photos partagées dans ton téléphone, uniquement lorsque tu le demandes.",
-        "NSLocationWhenInUseUsageDescription": "NigerConnect utilise ta position uniquement quand tu l'actives, pour t'afficher sur la carte de la diaspora et trouver des membres proches."
+        "NSLocationWhenInUseUsageDescription": "NigerConnect utilise ta position uniquement quand tu l'actives, pour t'afficher sur la carte de la diaspora et trouver des membres proches.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.682162626945-3ue1vob70l5m0mbv58isko0pcdoc3071"
+            ]
+          }
+        ]
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -190,7 +197,7 @@
     "extra": {
       "googleClientIdWeb": "682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com",
       "googleClientIdAndroid": "682162626945-opkbbi8ikl552tb7sk52fk7a80svfkmk.apps.googleusercontent.com",
-      "googleClientIdIos": "",
+      "googleClientIdIos": "682162626945-3ue1vob70l5m0mbv58isko0pcdoc3071.apps.googleusercontent.com",
       "appleSignInEnabled": true,
       "sentryDsn": "",
       "router": {

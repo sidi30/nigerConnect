@@ -219,8 +219,7 @@ services:
       # `aud` matches ANY of these; list every platform that signs in.
       GOOGLE_CLIENT_ID_WEB: ${GOOGLE_CLIENT_ID_WEB:-682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com}
       GOOGLE_CLIENT_ID_ANDROID: ${GOOGLE_CLIENT_ID_ANDROID:-682162626945-opkbbi8ikl552tb7sk52fk7a80svfkmk.apps.googleusercontent.com}
-      # iOS: empty until a dedicated iOS-type OAuth client is created (bundle com.nigerconnect.app).
-      GOOGLE_CLIENT_ID_IOS: ${GOOGLE_CLIENT_ID_IOS:-}
+      GOOGLE_CLIENT_ID_IOS: ${GOOGLE_CLIENT_ID_IOS:-682162626945-3ue1vob70l5m0mbv58isko0pcdoc3071.apps.googleusercontent.com}
       # Apple audience = the app bundle id (public). Required for Sign in with Apple to verify.
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.nigerconnect.app}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
