@@ -208,6 +208,7 @@ function NotificationDeepLink() {
 function AuthGate() {
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
   const segments = useSegments();
   const router = useRouter();
   const navState = useRootNavigationState();
@@ -216,12 +217,17 @@ function AuthGate() {
     if (!navState?.key || !isHydrated) return;
     const first = segments[0];
     const inAuth = first === '(auth)';
+    const onVerifyEmail = first === 'verify-email';
     if (!isAuthenticated && !inAuth) {
       router.replace('/(auth)/welcome');
-    } else if (isAuthenticated && inAuth) {
+    } else if (isAuthenticated && user && !user.emailVerified && !onVerifyEmail) {
+      // Authenticated but email not confirmed → corral them onto the
+      // verify-email screen until they confirm (mirrors the API guard).
+      router.replace('/verify-email');
+    } else if (isAuthenticated && user?.emailVerified && inAuth) {
       router.replace('/(tabs)');
     }
-  }, [navState?.key, isHydrated, isAuthenticated, segments, router]);
+  }, [navState?.key, isHydrated, isAuthenticated, user, segments, router]);
 
   return null;
 }

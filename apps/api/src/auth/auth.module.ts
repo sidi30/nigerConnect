@@ -13,6 +13,7 @@ import { MfaSecretService } from './mfa-secret.service';
 import { IdentityCleanupCron } from './identity-cleanup.cron';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { EmailVerifiedGuard } from './guards/email-verified.guard';
 
 @Module({
   imports: [PassportModule, JwtModule.register({})],
@@ -27,7 +28,11 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     MfaSecretService,
     IdentityCleanupCron,
     JwtStrategy,
+    // Order matters: APP_GUARD providers run in declaration order. JwtAuthGuard
+    // authenticates and populates req.user first; EmailVerifiedGuard then runs
+    // and blocks authenticated-but-unverified users.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: EmailVerifiedGuard },
   ],
   exports: [AuthService, TokenService, PasswordService, MfaSecretService],
 })

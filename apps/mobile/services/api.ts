@@ -45,10 +45,30 @@ export function registerLogoutHandler(cb: OnLogoutCallback): void {
   onLogout = cb;
 }
 
+// Fired when the API rejects a request with 403 EMAIL_NOT_VERIFIED. The auth
+// store registers a handler that flips the local user to unverified, which lets
+// AuthGate corral the user onto /verify-email. We use a callback (same pattern
+// as the logout handler) because the expo-router `router` isn't available from
+// this non-React module.
+type OnEmailUnverifiedCallback = () => void | Promise<void>;
+let onEmailUnverified: OnEmailUnverifiedCallback | null = null;
+export function registerEmailUnverifiedHandler(cb: OnEmailUnverifiedCallback): void {
+  onEmailUnverified = cb;
+}
+
 api.interceptors.response.use(
   (r) => r,
   async (error: AxiosError) => {
     const original = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
+
+    // The user's email is no longer (or never was) verified server-side. Notify
+    // the auth store so the UI redirects to the verification screen.
+    const data = error.response?.data as { code?: string } | undefined;
+    if (error.response?.status === 403 && data?.code === 'EMAIL_NOT_VERIFIED') {
+      if (onEmailUnverified) await onEmailUnverified();
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && original && !original._retry) {
       // Skip the silent refresh for routes where 401 is the *expected* failure
       // signal (login + OAuth). Without this, a wrong password would trigger

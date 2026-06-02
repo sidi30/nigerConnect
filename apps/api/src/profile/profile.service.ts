@@ -10,6 +10,7 @@ import {
   type SelfUser,
 } from '../common/prisma/user-select';
 import { BlockService } from '../social/block.service';
+import { geocode } from '../common/geo/city-coords';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
 import type { CreatePhotoDto, SearchDto } from './dto/photo.dto';
 
@@ -48,6 +49,33 @@ export class ProfileService {
     if (dto.proximityRadius !== undefined) data.proximityRadius = dto.proximityRadius;
     if (dto.languages !== undefined) data.languages = dto.languages;
     if (dto.privacyLevel !== undefined) data.privacyLevel = dto.privacyLevel;
+
+    // When the user moves (city or country changes) but doesn't send explicit
+    // coordinates, recompute lat/lon from the resolved city/country — otherwise
+    // their pin on the map stays at the old location. We need the *effective*
+    // values: a field the DTO doesn't touch keeps its stored value, so fetch
+    // the current row when only one of the two is being updated.
+    const locationChanged =
+      (dto.city !== undefined || dto.countryCode !== undefined) &&
+      dto.latitude === undefined &&
+      dto.longitude === undefined;
+    if (locationChanged) {
+      const current =
+        dto.city !== undefined && dto.countryCode !== undefined
+          ? null
+          : await this.prisma.user.findUnique({
+              where: { id: userId },
+              select: { city: true, countryCode: true },
+            });
+      const city = dto.city !== undefined ? dto.city : current?.city ?? null;
+      const countryCode =
+        dto.countryCode !== undefined ? dto.countryCode : current?.countryCode ?? null;
+      const coords = geocode(city, countryCode);
+      if (coords) {
+        data.latitude = coords.lat;
+        data.longitude = coords.lon;
+      }
+    }
 
     const user = await this.prisma.user.update({
       where: { id: userId },

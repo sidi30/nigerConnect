@@ -137,12 +137,16 @@ export class GeoService {
   }
 
   async getStats() {
+    // A member is a member whether or not they appear on the map: the total and
+    // the per-country distribution count invisible (show_on_map = FALSE) users
+    // anonymously, matching the cluster semantics. Only individual markers and
+    // proximity/direct disclosure honour show_on_map.
     const [total, countries] = await Promise.all([
-      this.prisma.user.count({ where: { showOnMap: true, status: 'active' } }),
+      this.prisma.user.count({ where: { status: 'active' } }),
       this.prisma.$queryRaw<Array<{ country_code: string; count: bigint }>>`
         SELECT country_code, COUNT(*)::bigint AS count
         FROM users
-        WHERE show_on_map = TRUE AND status = 'active' AND country_code IS NOT NULL
+        WHERE status = 'active' AND country_code IS NOT NULL
         GROUP BY country_code
         ORDER BY count DESC
       `,
@@ -347,6 +351,10 @@ export class GeoService {
     );
   }
 
+  // Clusters are aggregate, anonymous counts: a map-hidden user (show_on_map =
+  // FALSE) is COUNTED here so the country/city tally reflects every active
+  // member, but is never revealed individually. The show_on_map filter lives
+  // only on individual markers and direct disclosure (nearby/proximity).
   private async countryClusters(_dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
     const blockedClause = blockedIds.length
       ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
@@ -364,8 +372,7 @@ export class GeoService {
              AVG(latitude)::float AS avg_lat,
              AVG(longitude)::float AS avg_lon
       FROM users
-      WHERE show_on_map = TRUE
-        AND status = 'active'
+      WHERE status = 'active'
         AND country_code IS NOT NULL
         AND latitude IS NOT NULL
         AND longitude IS NOT NULL
@@ -381,6 +388,8 @@ export class GeoService {
     }));
   }
 
+  // Same anonymous-aggregate semantics as countryClusters: map-hidden users are
+  // counted in the city tally but never surfaced as individuals.
   private async cityClusters(dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
     const blockedClause = blockedIds.length
       ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
@@ -399,8 +408,7 @@ export class GeoService {
              AVG(latitude)::float AS avg_lat,
              AVG(longitude)::float AS avg_lon
       FROM users
-      WHERE show_on_map = TRUE
-        AND status = 'active'
+      WHERE status = 'active'
         AND city IS NOT NULL
         AND country_code IS NOT NULL
         AND latitude BETWEEN ${dto.south} AND ${dto.north}

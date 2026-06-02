@@ -10,7 +10,10 @@ import { useAuthStore } from '@/stores/authStore';
 export default function VerifyEmailScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const logout = useAuthStore((s) => s.logout);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,15 +33,36 @@ export default function VerifyEmailScreen() {
     }
   }
 
+  // Re-fetch the user after they say they've clicked the link. If the backend
+  // now reports the email as verified, AuthGate will let them through; we also
+  // route to the tabs explicitly for immediacy.
+  async function checkVerified() {
+    setChecking(true);
+    setError(null);
+    try {
+      const { user: fresh } = await authApi.me();
+      setUser(fresh);
+      if (fresh.emailVerified) {
+        router.replace('/(tabs)' as never);
+      } else {
+        setError("Ton email n'est pas encore confirmé. Clique sur le lien reçu puis réessaie.");
+      }
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      setError(err.response?.data?.message ?? err.message ?? 'Vérification impossible. Réessaie.');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function signOut() {
+    await logout();
+    router.replace('/(auth)/welcome' as never);
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.topRow}>
-          <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
-            <Text style={styles.backIcon}>←</Text>
-          </Pressable>
-        </View>
-
         <Text style={styles.emoji}>📧</Text>
         <Text style={styles.title}>Vérifie ton email</Text>
         <Text style={styles.subtitle}>
@@ -72,18 +96,28 @@ export default function VerifyEmailScreen() {
         ) : null}
 
         <Pressable
-          onPress={resend}
-          disabled={loading}
-          style={({ pressed }) => [styles.primary, (loading || pressed) && { opacity: 0.85 }]}
+          onPress={checkVerified}
+          disabled={checking}
+          style={({ pressed }) => [styles.primary, (checking || pressed) && { opacity: 0.85 }]}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
           <Text style={styles.primaryLabel}>
+            {checking ? 'Vérification…' : "J'ai cliqué sur le lien → Vérifier"}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={resend}
+          disabled={loading}
+          style={({ pressed }) => [styles.secondary, (loading || pressed) && { opacity: 0.85 }]}
+        >
+          <Text style={styles.secondaryLabel}>
             {loading ? 'Envoi…' : 'Renvoyer le lien'}
           </Text>
         </Pressable>
 
-        <Pressable onPress={() => router.replace('/(tabs)' as never)} style={styles.skip} hitSlop={8}>
-          <Text style={styles.skipLabel}>Plus tard →</Text>
+        <Pressable onPress={signOut} style={styles.skip} hitSlop={8}>
+          <Text style={styles.skipLabel}>Se déconnecter</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -93,16 +127,6 @@ export default function VerifyEmailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   scroll: { flexGrow: 1, padding: Spacing.xl },
-  topRow: { marginBottom: Spacing.lg },
-  back: {
-    width: 40,
-    height: 40,
-    borderRadius: Radii.lg,
-    backgroundColor: Colors.tan100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backIcon: { fontSize: 22, color: Colors.brown },
   emoji: { fontSize: 56, textAlign: 'center', marginVertical: Spacing.lg },
   title: {
     fontSize: Typography.sizes.display,
@@ -176,6 +200,17 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   primaryLabel: { color: Colors.white, fontSize: Typography.sizes.lg, fontWeight: '700' },
+  secondary: {
+    height: 52,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+  },
+  secondaryLabel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '700' },
   skip: { alignItems: 'center', marginTop: Spacing.lg, padding: Spacing.md },
   skipLabel: { color: Colors.tan500, fontSize: Typography.sizes.sm, fontWeight: '600' },
 });

@@ -16,6 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import type { Env } from '../common/config/env.validation';
 import { Public } from '../common/decorators/public.decorator';
+import { AllowUnverified } from '../common/decorators/allow-unverified.decorator';
 import { CurrentUser, JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -122,6 +123,7 @@ export class AuthController {
     };
   }
 
+  @AllowUnverified()
   @HttpCode(HttpStatus.NO_CONTENT)
   @Post('logout')
   async logout(
@@ -131,6 +133,7 @@ export class AuthController {
     await this.auth.logout(dto.refreshToken, user.jti, user.exp);
   }
 
+  @AllowUnverified()
   @Get('me')
   async me(@CurrentUser() user: JwtUserPayload) {
     const full = await this.auth.me(user.sub);
@@ -161,6 +164,7 @@ export class AuthController {
 
   // ── Email verification ────────────────────────────────────
 
+  @AllowUnverified()
   @Throttle({ short: { limit: 3, ttl: 60_000 }, long: { limit: 10, ttl: 3_600_000 } })
   @Post('verify-email/send')
   @HttpCode(HttpStatus.NO_CONTENT)

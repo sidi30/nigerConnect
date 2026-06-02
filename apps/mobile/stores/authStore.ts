@@ -4,7 +4,7 @@ import { authApi } from '@/services/authApi';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
-import { registerLogoutHandler } from '@/services/api';
+import { registerEmailUnverifiedHandler, registerLogoutHandler } from '@/services/api';
 import { registerForPushNotifications } from '@/services/pushService';
 import { prefetchImages } from '@/services/imagePrefetch';
 
@@ -119,4 +119,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 registerLogoutHandler(() => {
   useAuthStore.getState().setUser(null);
+});
+
+// When the API reports the email as unverified, flip the cached user so
+// AuthGate redirects to /verify-email on the next render.
+registerEmailUnverifiedHandler(() => {
+  const current = useAuthStore.getState().user;
+  if (current && current.emailVerified) {
+    useAuthStore.getState().setUser({ ...current, emailVerified: false });
+  }
 });

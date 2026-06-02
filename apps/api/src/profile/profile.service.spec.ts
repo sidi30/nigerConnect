@@ -57,6 +57,52 @@ describe('ProfileService', () => {
     expect(redis.client.del).toHaveBeenCalledWith('profile:u1');
   });
 
+  it('recomputes coordinates when the city changes without explicit coords', async () => {
+    const update = jest.fn(async (args: { data: { latitude?: number; longitude?: number } }) => ({
+      id: 'u1',
+      ...args.data,
+    }));
+    const prisma = { user: { update } };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
+    // City + country both provided → no need to read the current row.
+    await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR' });
+    const data = update.mock.calls[0]![0].data;
+    // Lyon is ~45.76 / 4.84; jitter is ±0.02 so a loose range is enough.
+    expect(data.latitude).toBeGreaterThan(45.7);
+    expect(data.latitude).toBeLessThan(45.8);
+    expect(data.longitude).toBeGreaterThan(4.8);
+    expect(data.longitude).toBeLessThan(4.9);
+  });
+
+  it('does not overwrite explicit coordinates sent alongside a city change', async () => {
+    const update = jest.fn(async (args: { data: { latitude?: number; longitude?: number } }) => ({
+      id: 'u1',
+      ...args.data,
+    }));
+    const prisma = { user: { update } };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
+    await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR', latitude: 1, longitude: 2 });
+    const data = update.mock.calls[0]![0].data;
+    expect(data.latitude).toBe(1);
+    expect(data.longitude).toBe(2);
+  });
+
+  it('reads the stored country when only the city changes, to geocode the move', async () => {
+    const update = jest.fn(async (args: { data: { latitude?: number; longitude?: number } }) => ({
+      id: 'u1',
+      ...args.data,
+    }));
+    const findUnique = jest.fn(async () => ({ city: 'Paris', countryCode: 'FR' }));
+    const prisma = { user: { update, findUnique } };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never);
+    await svc.updateMe('u1', { city: 'Marseille' });
+    expect(findUnique).toHaveBeenCalled();
+    const data = update.mock.calls[0]![0].data;
+    // Marseille ~43.30 / 5.37 (FR resolved from the stored row).
+    expect(data.latitude).toBeGreaterThan(43.2);
+    expect(data.latitude).toBeLessThan(43.4);
+  });
+
   it('returns private profile as NotFound when viewer is not owner', async () => {
     const prisma = {
       user: {

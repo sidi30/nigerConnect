@@ -72,6 +72,35 @@ describe('GeoService', () => {
     expect(prisma.block.findMany).toHaveBeenCalledTimes(1);
   });
 
+  it('counts map-hidden users in country clusters (anonymous aggregate), no show_on_map filter', async () => {
+    const { redis, prisma, notifications } = makeMocks();
+    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+
+    // zoom 3 (< 4) -> country clusters branch.
+    await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 3 });
+
+    const sql = (prisma.$queryRaw.mock.calls[0] as unknown[])[0] as { strings: string[] };
+    const query = sql.strings.join('');
+    // Clusters are anonymous counts: a hidden member is still counted, so the
+    // visibility filter must NOT be applied to the cluster aggregate.
+    expect(query).not.toContain('show_on_map');
+    // The active-member scope is still enforced.
+    expect(query).toContain("status = 'active'");
+  });
+
+  it('counts map-hidden users in city clusters (anonymous aggregate), no show_on_map filter', async () => {
+    const { redis, prisma, notifications } = makeMocks();
+    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+
+    // zoom 5 (>= 4, < 9) -> city clusters branch.
+    await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 5 });
+
+    const sql = (prisma.$queryRaw.mock.calls[0] as unknown[])[0] as { strings: string[] };
+    const query = sql.strings.join('');
+    expect(query).not.toContain('show_on_map');
+    expect(query).toContain("status = 'active'");
+  });
+
   it('getNearby caps results to the requested radius (km)', async () => {
     const { redis, prisma, notifications } = makeMocks();
     const svc = new GeoService(prisma as never, redis as never, notifications as never);

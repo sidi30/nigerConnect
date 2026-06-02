@@ -16,8 +16,6 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Colors,
-  CountryNames,
-  Flags,
   Gradients,
   palette,
   Radii,
@@ -27,6 +25,7 @@ import {
 import { profileApi } from '@/services/profileApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { Avatar } from '@/components/ui/Avatar';
+import { CitySearchField } from '@/components/ui/CitySearchField';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function EditProfileScreen() {
@@ -173,25 +172,15 @@ export default function EditProfileScreen() {
         />
 
         <Text style={styles.section}>Localisation</Text>
-        <Field label="Ville" value={city} onChangeText={setCity} placeholder="Ex : Paris" />
-        <Text style={styles.label}>Pays</Text>
-        <View style={styles.countryGrid}>
-          {Object.keys(Flags)
-            .filter((c) => c !== 'NE')
-            .map((code) => {
-              const active = countryCode === code;
-              return (
-                <Pressable
-                  key={code}
-                  onPress={() => setCountryCode(code)}
-                  style={[styles.countryCard, active && styles.countryCardActive]}
-                >
-                  <Text style={styles.flag}>{Flags[code]}</Text>
-                  <Text style={styles.countryName}>{CountryNames[code]}</Text>
-                </Pressable>
-              );
-            })}
-        </View>
+        <CitySearchField
+          label="Ville"
+          city={city}
+          countryCode={countryCode}
+          onChange={(nextCity, nextCountry) => {
+            setCity(nextCity);
+            setCountryCode(nextCountry);
+          }}
+        />
 
         <Text style={styles.section}>Apparaître sur la carte</Text>
         <View style={styles.switchRow}>
@@ -312,18 +301,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     color: Colors.brown,
   },
-  countryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  countryCard: {
-    flexBasis: '48%',
-    padding: Spacing.md,
-    borderRadius: Radii.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.tan300,
-    backgroundColor: Colors.white,
-  },
-  countryCardActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
-  flag: { fontSize: 22, marginBottom: 4 },
-  countryName: { fontSize: Typography.sizes.sm, fontWeight: '600', color: Colors.brown },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',

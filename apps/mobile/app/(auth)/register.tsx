@@ -15,7 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Colors,
   CountryNames,
-  Flags,
   Gradients,
   palette,
   Radii,
@@ -25,6 +24,7 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { GoogleButton } from '@/components/ui/GoogleButton';
 import { AppleButton } from '@/components/ui/AppleButton';
+import { CitySearchField } from '@/components/ui/CitySearchField';
 
 interface RegisterData {
   firstName: string;
@@ -35,8 +35,6 @@ interface RegisterData {
   bio: string;
   countryCode: string;
 }
-
-const COUNTRY_OPTIONS = Object.keys(Flags).filter((k) => k !== 'NE');
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -227,30 +225,17 @@ export default function RegisterScreen() {
 
           {step === 2 && (
             <View>
-              <Text style={styles.title}>🌍 Ton pays</Text>
+              <Text style={styles.title}>🌍 Ta ville</Text>
               <Text style={styles.subtitle}>Où vis-tu actuellement ?</Text>
-              <Field
+              <CitySearchField
                 label="Ville"
-                value={data.city}
-                onChangeText={(v) => update('city', v)}
-                placeholder="Ex : Paris"
+                city={data.city}
+                countryCode={data.countryCode}
+                onChange={(city, countryCode) => {
+                  setData((prev) => ({ ...prev, city, countryCode }));
+                  if (errorMessage) setErrorMessage(null);
+                }}
               />
-              <Text style={styles.label}>Pays</Text>
-              <View style={styles.countryGrid}>
-                {COUNTRY_OPTIONS.map((code) => {
-                  const active = data.countryCode === code;
-                  return (
-                    <Pressable
-                      key={code}
-                      onPress={() => update('countryCode', code)}
-                      style={[styles.countryCard, active && styles.countryCardActive]}
-                    >
-                      <Text style={styles.countryFlag}>{Flags[code]}</Text>
-                      <Text style={styles.countryName}>{CountryNames[code]}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
             </View>
           )}
 
@@ -437,19 +422,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     color: Colors.brown,
   },
-  countryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  countryCard: {
-    flexBasis: '48%',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    borderRadius: Radii.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.tan300,
-    backgroundColor: Colors.white,
-  },
-  countryCardActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
-  countryFlag: { fontSize: 22, marginBottom: 4 },
-  countryName: { fontSize: Typography.sizes.sm, fontWeight: '600', color: Colors.brown },
   recap: {
     backgroundColor: Colors.white,
     borderRadius: Radii.lg,
