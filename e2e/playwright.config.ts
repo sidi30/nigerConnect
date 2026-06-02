@@ -89,6 +89,14 @@ export default defineConfig({
         extraHTTPHeaders: { 'Content-Type': 'application/json' },
       },
     },
+    {
+      name: 'api-email-verification-gate',
+      testMatch: 'api/email-verification-gate.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
 
     // ── Browser tests against the Next.js web app ────────────────────────────
     {

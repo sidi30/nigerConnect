@@ -21,6 +21,20 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * RFC-1918 private address, unique per call.
+ * Sent as X-Forwarded-For so the global throttler (trust proxy = 1) sees a
+ * distinct IP for each test, preventing the shared 127.0.0.1 bucket from
+ * exhausting the per-IP rate limits when tests run in parallel or in
+ * rapid succession.
+ */
+function uniqueIp(): string {
+  const a = Math.floor(Math.random() * 254) + 1;
+  const b = Math.floor(Math.random() * 254) + 1;
+  const c = Math.floor(Math.random() * 254) + 1;
+  return `10.${a}.${b}.${c}`;
+}
+
 /** Build a structurally-valid but unsigned JWT (header.payload.signature). */
 function fakeJwt(payload: Record<string, unknown> = {}): string {
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
@@ -64,12 +78,18 @@ function assertSafeError(body: Record<string, unknown>, context: string) {
 test.describe('POST /api/auth/google', () => {
 
   test('route exists — does not 404', async ({ request }: { request: APIRequestContext }) => {
-    const res = await request.post('/api/auth/google', { data: { idToken: 'probe' } });
+    const res = await request.post('/api/auth/google', {
+      data: { idToken: 'probe' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status(), 'route must not 404').not.toBe(404);
   });
 
   test('garbage idToken → 401 "Invalid Google ID token"', async ({ request }) => {
-    const res = await request.post('/api/auth/google', { data: { idToken: 'garbage' } });
+    const res = await request.post('/api/auth/google', {
+      data: { idToken: 'garbage' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(401);
     const body = await res.json() as Record<string, unknown>;
     expect(typeof body['message']).toBe('string');
@@ -78,14 +98,20 @@ test.describe('POST /api/auth/google', () => {
   });
 
   test('structurally-valid-but-unsigned JWT → 401', async ({ request }) => {
-    const res = await request.post('/api/auth/google', { data: { idToken: fakeJwt() } });
+    const res = await request.post('/api/auth/google', {
+      data: { idToken: fakeJwt() },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(401);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'google/fake-jwt');
   });
 
   test('missing idToken (empty body {}) → 400 Zod validation', async ({ request }) => {
-    const res = await request.post('/api/auth/google', { data: {} });
+    const res = await request.post('/api/auth/google', {
+      data: {},
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'google/empty-body');
@@ -94,7 +120,10 @@ test.describe('POST /api/auth/google', () => {
   });
 
   test('empty string idToken → 400 Zod validation (min:1)', async ({ request }) => {
-    const res = await request.post('/api/auth/google', { data: { idToken: '' } });
+    const res = await request.post('/api/auth/google', {
+      data: { idToken: '' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'google/empty-string-idToken');
@@ -104,7 +133,7 @@ test.describe('POST /api/auth/google', () => {
     // Send raw JSON so the number is not coerced to string by a higher layer
     const res = await request.post('/api/auth/google', {
       data: '{"idToken":123}',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': uniqueIp() },
     });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
@@ -114,6 +143,7 @@ test.describe('POST /api/auth/google', () => {
   test('valid nonce forwarded but token invalid → still 401 (not 500)', async ({ request }) => {
     const res = await request.post('/api/auth/google', {
       data: { idToken: 'x.y.z', nonce: 'abc123nonce' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
     });
     expect(res.status()).toBe(401);
     const body = await res.json() as Record<string, unknown>;
@@ -123,6 +153,7 @@ test.describe('POST /api/auth/google', () => {
   test('extra unknown fields are ignored, validation still runs', async ({ request }) => {
     const res = await request.post('/api/auth/google', {
       data: { idToken: 'bad', extra: 'ignored', foo: true },
+      headers: { 'X-Forwarded-For': uniqueIp() },
     });
     // Has idToken so Zod passes, but token is invalid → 401
     expect(res.status()).toBe(401);
@@ -134,12 +165,18 @@ test.describe('POST /api/auth/google', () => {
 test.describe('POST /api/auth/apple', () => {
 
   test('route exists — does not 404', async ({ request }) => {
-    const res = await request.post('/api/auth/apple', { data: { identityToken: 'probe' } });
+    const res = await request.post('/api/auth/apple', {
+      data: { identityToken: 'probe' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status(), 'route must not 404').not.toBe(404);
   });
 
   test('garbage identityToken → 401', async ({ request }) => {
-    const res = await request.post('/api/auth/apple', { data: { identityToken: 'garbage' } });
+    const res = await request.post('/api/auth/apple', {
+      data: { identityToken: 'garbage' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(401);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'apple/garbage-identityToken');
@@ -147,14 +184,20 @@ test.describe('POST /api/auth/apple', () => {
 
   test('structurally-valid-but-unsigned JWT → 401', async ({ request }) => {
     const appleJwt = fakeJwt({ iss: 'https://appleid.apple.com', aud: 'com.example.app' });
-    const res = await request.post('/api/auth/apple', { data: { identityToken: appleJwt } });
+    const res = await request.post('/api/auth/apple', {
+      data: { identityToken: appleJwt },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(401);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'apple/fake-jwt');
   });
 
   test('missing identityToken → 400 Zod validation', async ({ request }) => {
-    const res = await request.post('/api/auth/apple', { data: {} });
+    const res = await request.post('/api/auth/apple', {
+      data: {},
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'apple/empty-body');
@@ -162,7 +205,10 @@ test.describe('POST /api/auth/apple', () => {
   });
 
   test('empty string identityToken → 400 Zod validation (min:1)', async ({ request }) => {
-    const res = await request.post('/api/auth/apple', { data: { identityToken: '' } });
+    const res = await request.post('/api/auth/apple', {
+      data: { identityToken: '' },
+      headers: { 'X-Forwarded-For': uniqueIp() },
+    });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
     assertSafeError(body, 'apple/empty-string-identityToken');
@@ -171,7 +217,7 @@ test.describe('POST /api/auth/apple', () => {
   test('numeric identityToken → 400 Zod validation', async ({ request }) => {
     const res = await request.post('/api/auth/apple', {
       data: '{"identityToken":123}',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': uniqueIp() },
     });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
@@ -186,6 +232,7 @@ test.describe('POST /api/auth/apple', () => {
         email: 'test@privaterelay.appleid.com',
         rawNonce: 'somenonce',
       },
+      headers: { 'X-Forwarded-For': uniqueIp() },
     });
     // Zod accepts the shape; token is invalid so → 401
     expect(res.status()).toBe(401);
@@ -199,6 +246,7 @@ test.describe('POST /api/auth/apple', () => {
         identityToken: 'garbage',
         fullName: 'not-an-object',
       },
+      headers: { 'X-Forwarded-For': uniqueIp() },
     });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;
@@ -211,6 +259,7 @@ test.describe('POST /api/auth/apple', () => {
         identityToken: 'garbage',
         email: 'not-an-email',
       },
+      headers: { 'X-Forwarded-For': uniqueIp() },
     });
     expect(res.status()).toBe(400);
     const body = await res.json() as Record<string, unknown>;

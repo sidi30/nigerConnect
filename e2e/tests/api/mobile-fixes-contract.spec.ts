@@ -81,6 +81,19 @@ function approveIdentityInDb(userId: string): void {
   );
 }
 
+/**
+ * Mark a user's email as verified directly in the DB.
+ * Required because the EmailVerifiedGuard blocks all authenticated routes
+ * (except @AllowUnverified ones) until email_verified=true.
+ * Column is `email_verified` (mapped from Prisma field `emailVerified`).
+ */
+function verifyEmailInDb(userId: string): void {
+  execSync(
+    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
+    { stdio: 'pipe' },
+  );
+}
+
 // ── Bug 1: Friend button on map — relationship + request endpoints ─────────
 
 test.describe('Friends (bug 1 — map friend button)', () => {
@@ -89,6 +102,8 @@ test.describe('Friends (bug 1 — map friend button)', () => {
     const emailB = randomEmail();
     const { user: userA, tokens: tokensA } = await register(request, emailA);
     const { user: userB } = await register(request, emailB);
+    verifyEmailInDb(userA.id);
+    verifyEmailInDb(userB.id);
 
     const res = await request.get(`${BASE_URL}/api/friends/relationship/${userB.id}`, {
       headers: { Authorization: `Bearer ${tokensA.accessToken}` },
@@ -104,6 +119,8 @@ test.describe('Friends (bug 1 — map friend button)', () => {
   test('POST /api/friends/request/:userId → 201/200, outgoing then incoming', async ({ request }) => {
     const { user: userA, tokens: tokensA } = await register(request, randomEmail());
     const { user: userB, tokens: tokensB } = await register(request, randomEmail());
+    verifyEmailInDb(userA.id);
+    verifyEmailInDb(userB.id);
 
     // A sends request to B
     const sendRes = await request.post(`${BASE_URL}/api/friends/request/${userB.id}`, {
@@ -130,7 +147,9 @@ test.describe('Friends (bug 1 — map friend button)', () => {
 
   test('POST /api/friends/request duplicate → 4xx, not 500', async ({ request }) => {
     const { user: userB } = await register(request, randomEmail());
-    const { tokens: tokensA } = await register(request, randomEmail());
+    const { user: userA, tokens: tokensA } = await register(request, randomEmail());
+    verifyEmailInDb(userB.id);
+    verifyEmailInDb(userA.id);
 
     // First request
     await request.post(`${BASE_URL}/api/friends/request/${userB.id}`, {
@@ -148,6 +167,7 @@ test.describe('Friends (bug 1 — map friend button)', () => {
 
   test('POST /api/friends/request to self → 400', async ({ request }) => {
     const { user, tokens } = await register(request, randomEmail());
+    verifyEmailInDb(user.id);
     const res = await request.post(`${BASE_URL}/api/friends/request/${user.id}`, {
       headers: { Authorization: `Bearer ${tokens.accessToken}` },
     });
@@ -158,10 +178,11 @@ test.describe('Friends (bug 1 — map friend button)', () => {
 // ── Bug 4: Association detail route ─────────────────────────────────────────
 
 test.describe('Associations (bug 4 — detail route)', () => {
-  /** Create a user with approved identity and return their auth tokens + id. */
+  /** Create a user with approved identity and verified email, return their auth tokens + id. */
   async function registerApproved(request: APIRequestContext) {
     const email = randomEmail();
     const { user, tokens } = await register(request, email);
+    verifyEmailInDb(user.id);
     approveIdentityInDb(user.id);
     // Re-login so the JWT carries the up-to-date identity status (the token
     // issued at register time still has identityStatus=not_submitted; the API
@@ -236,7 +257,8 @@ test.describe('Associations (bug 4 — detail route)', () => {
 
   test('GET /api/associations/:id with unknown UUID → 404', async ({ request }) => {
     // All endpoints are auth-guarded. We need a valid token to reach the 404 branch.
-    const { tokens } = await register(request, randomEmail());
+    const { user, tokens } = await register(request, randomEmail());
+    verifyEmailInDb(user.id);
     const fakeId = '00000000-0000-4000-a000-000000000001';
     const res = await request.get(`${BASE_URL}/api/associations/${fakeId}`, {
       headers: { Authorization: `Bearer ${tokens.accessToken}` },
@@ -246,7 +268,8 @@ test.describe('Associations (bug 4 — detail route)', () => {
 
   test('POST /api/associations/:id/join by a second user → 200/201', async ({ request }) => {
     const { tokens: creatorTokens } = await registerApproved(request);
-    const { tokens: joinerTokens } = await register(request, randomEmail());
+    const { user: joiner, tokens: joinerTokens } = await register(request, randomEmail());
+    verifyEmailInDb(joiner.id);
 
     const createRes = await request.post(`${BASE_URL}/api/associations`, {
       data: {
@@ -284,7 +307,8 @@ test.describe('Associations (bug 4 — detail route)', () => {
 
   test('DELETE /api/associations/:id/leave by a non-last member → 204', async ({ request }) => {
     const { tokens: creatorTokens } = await registerApproved(request);
-    const { tokens: joinerTokens } = await register(request, randomEmail());
+    const { user: joiner, tokens: joinerTokens } = await register(request, randomEmail());
+    verifyEmailInDb(joiner.id);
 
     const createRes = await request.post(`${BASE_URL}/api/associations`, {
       data: {
@@ -317,6 +341,7 @@ test.describe('Comments (bug 3 — live deletion)', () => {
   test('DELETE /api/comments/:id → 204; commentCount decremented; comment gone from list', async ({ request }) => {
     // Author creates a public post (public = accessible to themselves)
     const { user: author, tokens: authorTokens } = await register(request, randomEmail());
+    verifyEmailInDb(author.id);
 
     const postRes = await request.post(`${BASE_URL}/api/posts`, {
       data: { content: 'E2E comment deletion test post', visibility: 'public' },
@@ -370,8 +395,10 @@ test.describe('Comments (bug 3 — live deletion)', () => {
   });
 
   test('DELETE /api/comments/:id by non-owner → 403', async ({ request }) => {
-    const { tokens: authorTokens } = await register(request, randomEmail());
-    const { tokens: otherTokens } = await register(request, randomEmail());
+    const { user: authorUser, tokens: authorTokens } = await register(request, randomEmail());
+    const { user: otherUser, tokens: otherTokens } = await register(request, randomEmail());
+    verifyEmailInDb(authorUser.id);
+    verifyEmailInDb(otherUser.id);
 
     const postRes = await request.post(`${BASE_URL}/api/posts`, {
       data: { content: 'Post for 403 comment test', visibility: 'public' },
@@ -397,6 +424,8 @@ test.describe('Comments (bug 3 — live deletion)', () => {
   test('POST /api/posts/:id/comments by a friend on a friends-only post → 201', async ({ request }) => {
     const { user: userA, tokens: tokensA } = await register(request, randomEmail());
     const { user: userB, tokens: tokensB } = await register(request, randomEmail());
+    verifyEmailInDb(userA.id);
+    verifyEmailInDb(userB.id);
 
     // A creates a friends-only post
     const postRes = await request.post(`${BASE_URL}/api/posts`, {
