@@ -182,7 +182,8 @@ describe('Auth — OAuth (e2e)', () => {
       expect(res.body.user.passwordHash).toBeUndefined();
       expect(res.body.tokens.accessToken).toBeDefined();
       expect(res.body.tokens.refreshToken).toBeDefined();
-      expect(mockGoogleService.verifyIdToken).toHaveBeenCalledWith('valid-stub-token');
+      // verifyIdToken(idToken, expectedNonce?) — no nonce sent in this request.
+      expect(mockGoogleService.verifyIdToken).toHaveBeenCalledWith('valid-stub-token', undefined);
     });
 
     it('returns the same user on second sign-in (idempotent upsert)', async () => {
@@ -217,7 +218,8 @@ describe('Auth — OAuth (e2e)', () => {
       expect(res.body.user.passwordHash).toBeUndefined();
       expect(res.body.tokens.accessToken).toBeDefined();
       expect(res.body.tokens.refreshToken).toBeDefined();
-      expect(mockAppleService.verify).toHaveBeenCalledWith('valid-apple-stub-token');
+      // verify(identityToken, expectedNonce?) — no nonce sent in this request.
+      expect(mockAppleService.verify).toHaveBeenCalledWith('valid-apple-stub-token', undefined);
     });
 
     it('returns the same user on second sign-in (idempotent upsert)', async () => {

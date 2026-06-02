@@ -76,6 +76,19 @@ export async function register(
       lastName: overrides.lastName ?? 'User',
     })
     .expect(201);
+
+  // The email-activation gate (EmailVerifiedGuard) returns 403 on most write
+  // routes until the account is verified, reading `emailVerified` live from the
+  // DB. These specs exercise authenticated behaviour, not the activation flow
+  // itself (covered by the dedicated gate spec in auth.e2e-spec.ts), so mark
+  // the freshly-created user verified directly. The already-issued access token
+  // then passes the guard on the next request.
+  const prisma = app.get(PrismaService);
+  await prisma.user.update({
+    where: { id: res.body.user.id },
+    data: { emailVerified: true },
+  });
+
   return {
     id: res.body.user.id,
     email,
