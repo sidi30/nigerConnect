@@ -85,8 +85,8 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://test:test@localhost:5432/nigerconnect_test?schema=public
       REDIS_URL: redis://localhost:6379
-      JWT_PRIVATE_KEY_PATH: ./apps/api/keys/jwt-private.pem
-      JWT_PUBLIC_KEY_PATH: ./apps/api/keys/jwt-public.pem
+      JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/apps/api/keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: ${{ github.workspace }}/apps/api/keys/jwt-public.pem
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

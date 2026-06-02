@@ -57,8 +57,8 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://e2e:e2e@localhost:5432/nigerconnect_e2e?schema=public
       REDIS_URL: redis://localhost:6379
-      JWT_PRIVATE_KEY_PATH: ./apps/api/keys/jwt-private.pem
-      JWT_PUBLIC_KEY_PATH: ./apps/api/keys/jwt-public.pem
+      JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/apps/api/keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: ${{ github.workspace }}/apps/api/keys/jwt-public.pem
       NEXT_TELEMETRY_DISABLED: 1
       API_BASE_URL: http://localhost:3000
       WEB_BASE_URL: http://localhost:3001
