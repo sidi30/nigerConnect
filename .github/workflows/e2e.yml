@@ -62,6 +62,13 @@ jobs:
       NEXT_TELEMETRY_DISABLED: 1
       API_BASE_URL: http://localhost:3000
       WEB_BASE_URL: http://localhost:3001
+      # Configure OAuth like prod (public client IDs, not secrets) so the API
+      # rejects a garbage token with "Invalid Google ID token" rather than
+      # "not configured" — the oauth-contract spec asserts the configured path.
+      GOOGLE_CLIENT_ID_WEB: 682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com
+      GOOGLE_CLIENT_ID_ANDROID: 682162626945-opkbbi8ikl552tb7sk52fk7a80svfkmk.apps.googleusercontent.com
+      GOOGLE_CLIENT_ID_IOS: 682162626945-3ue1vob70l5m0mbv58isko0pcdoc3071.apps.googleusercontent.com
+      APPLE_CLIENT_ID: com.nigerconnect.app
 
     steps:
       - uses: actions/checkout@v4
