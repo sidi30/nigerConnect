@@ -34,6 +34,7 @@ const MENU_ITEMS: Array<{ icon: string; label: string; href: Href; badgeKey?: st
   { icon: '✓', label: 'Vérification identité', href: '/settings/identity' as Href },
   { icon: '👥', label: 'Amis & Communauté', href: '/friends' as Href },
   { icon: '🏛️', label: 'Mes associations', href: '/settings/associations' as Href },
+  { icon: '📄', label: 'Pages', href: '/pages' as Href },
   { icon: '🤝', label: 'Mes demandes', href: '/settings/requests' as Href },
   {
     icon: '🔔',

@@ -142,6 +142,9 @@ export default function RootLayout() {
                 />
                 <Stack.Screen name="associations/[id]" />
                 <Stack.Screen name="associations/new" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="pages/index" />
+                <Stack.Screen name="pages/[id]" />
+                <Stack.Screen name="pages/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="friends" />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
@@ -180,8 +183,22 @@ function NotificationDeepLink() {
     function handle(data: Record<string, unknown> | null | undefined): void {
       if (!data) return;
       const conversationId = typeof data.conversationId === 'string' ? data.conversationId : null;
+      const pageId = typeof data.pageId === 'string' ? data.pageId : null;
       const postId = typeof data.postId === 'string' ? data.postId : null;
+      // review_received carries { reviewTargetType: 'user'|'page', targetId }.
+      const reviewTargetType =
+        data.reviewTargetType === 'user' || data.reviewTargetType === 'page'
+          ? data.reviewTargetType
+          : null;
+      const reviewTargetId = typeof data.targetId === 'string' ? data.targetId : null;
       if (conversationId) router.push(`/chat/${conversationId}` as never);
+      else if (reviewTargetType && reviewTargetId) {
+        router.push(
+          (reviewTargetType === 'page'
+            ? `/pages/${reviewTargetId}`
+            : `/user/${reviewTargetId}`) as never,
+        );
+      } else if (pageId) router.push(`/pages/${pageId}` as never);
       else if (postId) router.push(`/post/${postId}` as never);
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
         router.push('/friends' as never);

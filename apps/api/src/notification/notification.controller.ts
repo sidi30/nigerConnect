@@ -57,6 +57,12 @@ export class NotificationController {
     return this.notifications.markAllRead(me.sub);
   }
 
+  @Delete('clear-all')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async clearAll(@CurrentUser() me: JwtUserPayload): Promise<void> {
+    await this.notifications.clearAll(me.sub);
+  }
+
   @Post('register-device')
   @HttpCode(HttpStatus.NO_CONTENT)
   async registerDevice(
@@ -73,5 +79,15 @@ export class NotificationController {
     @Body(new ZodValidationPipe(deleteDeviceSchema)) dto: z.infer<typeof deleteDeviceSchema>,
   ): Promise<void> {
     await this.notifications.deletePushToken(me.sub, dto.token);
+  }
+
+  // Declared last so the literal DELETE routes above (device, clear-all) win.
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    await this.notifications.remove(me.sub, id);
   }
 }

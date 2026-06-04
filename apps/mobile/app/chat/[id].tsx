@@ -58,6 +58,8 @@ function makeOptimisticMessage(args: {
       city: args.me.city,
       countryCode: args.me.countryCode,
       identityStatus: args.me.identityStatus,
+      ratingAvg: 0,
+      ratingCount: 0,
     },
     content: args.content,
     mediaUrl: args.mediaUrl ?? null,

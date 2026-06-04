@@ -54,60 +54,65 @@ enum Platform {
 }
 
 model User {
-  id               String          @id @default(uuid()) @db.Uuid
-  email            String?         @unique @db.VarChar(255)
-  phone            String?         @unique @db.VarChar(20)
-  passwordHash     String?         @map("password_hash") @db.VarChar(255)
-  oauthProvider    OAuthProvider?  @map("oauth_provider")
-  oauthProviderId  String?         @map("oauth_provider_id") @db.VarChar(255)
+  id              String         @id @default(uuid()) @db.Uuid
+  email           String?        @unique @db.VarChar(255)
+  phone           String?        @unique @db.VarChar(20)
+  passwordHash    String?        @map("password_hash") @db.VarChar(255)
+  oauthProvider   OAuthProvider? @map("oauth_provider")
+  oauthProviderId String?        @map("oauth_provider_id") @db.VarChar(255)
 
-  firstName        String?         @map("first_name") @db.VarChar(100)
-  lastName         String?         @map("last_name") @db.VarChar(100)
-  displayName      String?         @map("display_name") @db.VarChar(100)
-  bio              String?         @db.Text
-  avatarUrl        String?         @map("avatar_url") @db.VarChar(500)
-  coverUrl         String?         @map("cover_url") @db.VarChar(500)
+  firstName   String? @map("first_name") @db.VarChar(100)
+  lastName    String? @map("last_name") @db.VarChar(100)
+  displayName String? @map("display_name") @db.VarChar(100)
+  bio         String? @db.Text
+  avatarUrl   String? @map("avatar_url") @db.VarChar(500)
+  coverUrl    String? @map("cover_url") @db.VarChar(500)
 
-  city             String?         @db.VarChar(100)
-  countryCode      String?         @map("country_code") @db.Char(2)
-  latitude         Decimal?        @db.Decimal(10, 7)
-  longitude        Decimal?        @db.Decimal(10, 7)
-  showOnMap        Boolean         @default(true) @map("show_on_map")
-  proximityAlerts  Boolean         @default(false) @map("proximity_alerts")
-  proximityRadius  Int             @default(100) @map("proximity_radius")
+  city            String?  @db.VarChar(100)
+  countryCode     String?  @map("country_code") @db.Char(2)
+  latitude        Decimal? @db.Decimal(10, 7)
+  longitude       Decimal? @db.Decimal(10, 7)
+  showOnMap       Boolean  @default(true) @map("show_on_map")
+  proximityAlerts Boolean  @default(false) @map("proximity_alerts")
+  proximityRadius Int      @default(100) @map("proximity_radius")
 
-  languages        String[]        @default(["fr"])
-  privacyLevel     PrivacyLevel    @default(friends) @map("privacy_level")
+  languages    String[]     @default(["fr"])
+  privacyLevel PrivacyLevel @default(friends) @map("privacy_level")
 
-  emailVerified    Boolean         @default(false) @map("email_verified")
-  phoneVerified    Boolean         @default(false) @map("phone_verified")
-  identityStatus   IdentityStatus  @default(not_submitted) @map("identity_status")
-  role             UserRole        @default(user)
-  status           UserStatus      @default(active)
+  emailVerified  Boolean        @default(false) @map("email_verified")
+  phoneVerified  Boolean        @default(false) @map("phone_verified")
+  identityStatus IdentityStatus @default(not_submitted) @map("identity_status")
+  role           UserRole       @default(user)
+  status         UserStatus     @default(active)
 
-  mfaEnabled       Boolean         @default(false) @map("mfa_enabled")
-  mfaSecret        String?         @map("mfa_secret") @db.VarChar(255)
-  failedLoginCount Int             @default(0) @map("failed_login_count")
-  lockedUntil      DateTime?       @map("locked_until") @db.Timestamptz
-  lastLoginAt      DateTime?       @map("last_login_at") @db.Timestamptz
-  lastLoginIp      String?         @map("last_login_ip") @db.Inet
+  // Aggregate of reviews received on this profile (Feature: avis).
+  // Maintained transactionally by ReviewService — never written elsewhere.
+  ratingAvg   Float @default(0) @map("rating_avg")
+  ratingCount Int   @default(0) @map("rating_count")
 
-  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  mfaEnabled       Boolean   @default(false) @map("mfa_enabled")
+  mfaSecret        String?   @map("mfa_secret") @db.VarChar(255)
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until") @db.Timestamptz
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz
+  lastLoginIp      String?   @map("last_login_ip") @db.Inet
 
-  identityDocuments IdentityDocument[] @relation("UserIdentityDocuments")
-  reviewedDocuments IdentityDocument[] @relation("DocumentReviewer")
-  refreshTokens     RefreshToken[]
-  pushTokens        PushToken[]
-  emailTokens       EmailToken[]
-  photos            UserPhoto[]
-  friendshipsSent     Friendship[] @relation("FriendshipRequester")
-  friendshipsReceived Friendship[] @relation("FriendshipAddressee")
-  blocksMade          Block[]      @relation("BlockBlocker")
-  blocksReceived      Block[]      @relation("BlockBlocked")
-  posts               Post[]
-  likes               Like[]
-  comments            Comment[]
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  identityDocuments       IdentityDocument[]   @relation("UserIdentityDocuments")
+  reviewedDocuments       IdentityDocument[]   @relation("DocumentReviewer")
+  refreshTokens           RefreshToken[]
+  pushTokens              PushToken[]
+  emailTokens             EmailToken[]
+  photos                  UserPhoto[]
+  friendshipsSent         Friendship[]         @relation("FriendshipRequester")
+  friendshipsReceived     Friendship[]         @relation("FriendshipAddressee")
+  blocksMade              Block[]              @relation("BlockBlocker")
+  blocksReceived          Block[]              @relation("BlockBlocked")
+  posts                   Post[]
+  likes                   Like[]
+  comments                Comment[]
   conversationMemberships ConversationMember[]
   conversationsCreated    Conversation[]       @relation("ConversationCreator")
   messages                Message[]
@@ -119,6 +124,13 @@ model User {
   notificationsActedOn    Notification[]       @relation("NotificationActor")
   reportsMade             Report[]             @relation("ReportReporter")
   reportsReviewed         Report[]             @relation("ReportReviewer")
+  pagesCreated            Page[]               @relation("PageCreator")
+  pageFollows             PageFollower[]
+  pageAdminOf             PageAdmin[]
+  pollsCreated            Poll[]
+  pollVotes               PollVote[]
+  reviewsAuthored         Review[]             @relation("ReviewAuthor")
+  reviewsReceived         Review[]             @relation("ReviewTargetUser")
 
   // Unique per OAuth identity so concurrent link-or-create requests can't mint
   // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
@@ -211,6 +223,24 @@ enum MembershipStatus {
   rejected
 }
 
+enum PageKind {
+  community
+  cause
+  business
+  official
+  group
+}
+
+enum PageRole {
+  admin
+  editor
+}
+
+enum ReviewTargetType {
+  user
+  page
+}
+
 enum NotificationType {
   friend_request
   friend_accepted
@@ -225,6 +255,9 @@ enum NotificationType {
   identity_approved
   identity_rejected
   proximity
+  page_follow
+  poll_new
+  review_received
   system
 }
 
@@ -261,14 +294,14 @@ enum ReportAction {
 }
 
 model Friendship {
-  id           String           @id @default(uuid()) @db.Uuid
-  requesterId  String           @map("requester_id") @db.Uuid
-  requester    User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  addresseeId  String           @map("addressee_id") @db.Uuid
-  addressee    User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
-  status       FriendshipStatus @default(pending)
-  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  id          String           @id @default(uuid()) @db.Uuid
+  requesterId String           @map("requester_id") @db.Uuid
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String           @map("addressee_id") @db.Uuid
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendshipStatus @default(pending)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([requesterId, addresseeId])
   @@index([requesterId, status])
@@ -308,27 +341,27 @@ model EmailToken {
 }
 
 model Post {
-  id              String         @id @default(uuid()) @db.Uuid
-  authorId        String         @map("author_id") @db.Uuid
-  author          User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  content         String?        @db.Text
-  visibility      PostVisibility @default(friends)
+  id             String         @id @default(uuid()) @db.Uuid
+  authorId       String         @map("author_id") @db.Uuid
+  author         User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content        String?        @db.Text
+  visibility     PostVisibility @default(friends)
   associationId  String?        @map("association_id") @db.Uuid
-  isStory         Boolean        @default(false) @map("is_story")
-  storyExpiresAt  DateTime?      @map("story_expires_at") @db.Timestamptz
-  sharedPostId    String?        @map("shared_post_id") @db.Uuid
-  sharedPost      Post?          @relation("PostShares", fields: [sharedPostId], references: [id])
-  shares          Post[]         @relation("PostShares")
-  likeCount       Int            @default(0) @map("like_count")
-  commentCount    Int            @default(0) @map("comment_count")
-  shareCount      Int            @default(0) @map("share_count")
-  deletedAt       DateTime?      @map("deleted_at") @db.Timestamptz
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  isStory        Boolean        @default(false) @map("is_story")
+  storyExpiresAt DateTime?      @map("story_expires_at") @db.Timestamptz
+  sharedPostId   String?        @map("shared_post_id") @db.Uuid
+  sharedPost     Post?          @relation("PostShares", fields: [sharedPostId], references: [id])
+  shares         Post[]         @relation("PostShares")
+  likeCount      Int            @default(0) @map("like_count")
+  commentCount   Int            @default(0) @map("comment_count")
+  shareCount     Int            @default(0) @map("share_count")
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
-  media     PostMedia[]
-  likes     Like[]
-  comments  Comment[]
+  media    PostMedia[]
+  likes    Like[]
+  comments Comment[]
 
   @@index([authorId, createdAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
@@ -366,18 +399,18 @@ model Like {
 }
 
 model Comment {
-  id         String    @id @default(uuid()) @db.Uuid
-  postId     String    @map("post_id") @db.Uuid
-  post       Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  authorId   String    @map("author_id") @db.Uuid
-  author     User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  parentId   String?   @map("parent_id") @db.Uuid
-  parent     Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
-  replies    Comment[] @relation("CommentReplies")
-  content    String    @db.Text
-  likeCount  Int       @default(0) @map("like_count")
-  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id        String    @id @default(uuid()) @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String    @map("author_id") @db.Uuid
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId  String?   @map("parent_id") @db.Uuid
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+  content   String    @db.Text
+  likeCount Int       @default(0) @map("like_count")
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([postId, createdAt])
   @@index([parentId])
@@ -395,10 +428,14 @@ model Notification {
   actorId   String?          @map("actor_id") @db.Uuid
   actor     User?            @relation("NotificationActor", fields: [actorId], references: [id])
   read      Boolean          @default(false)
+  // History auto-expires (Feature: 24h notification history). Set by the service
+  // at creation; the list endpoint filters out and purges rows past this instant.
+  expiresAt DateTime?        @map("expires_at") @db.Timestamptz
   createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, read])
+  @@index([expiresAt])
   @@map("notifications")
 }
 
@@ -438,15 +475,15 @@ model UserPhoto {
 }
 
 model Conversation {
-  id                  String               @id @default(uuid()) @db.Uuid
-  type                ConversationType     @default(direct)
-  name                String?              @db.VarChar(100)
-  avatarUrl           String?              @map("avatar_url") @db.VarChar(500)
-  createdById         String?              @map("created_by") @db.Uuid
-  createdBy           User?                @relation("ConversationCreator", fields: [createdById], references: [id])
-  lastMessageAt       DateTime?            @map("last_message_at") @db.Timestamptz
-  lastMessagePreview  String?              @map("last_message_preview") @db.Text
-  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  id                 String           @id @default(uuid()) @db.Uuid
+  type               ConversationType @default(direct)
+  name               String?          @db.VarChar(100)
+  avatarUrl          String?          @map("avatar_url") @db.VarChar(500)
+  createdById        String?          @map("created_by") @db.Uuid
+  createdBy          User?            @relation("ConversationCreator", fields: [createdById], references: [id])
+  lastMessageAt      DateTime?        @map("last_message_at") @db.Timestamptz
+  lastMessagePreview String?          @map("last_message_preview") @db.Text
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
 
   members  ConversationMember[]
   messages Message[]
@@ -472,20 +509,20 @@ model ConversationMember {
 }
 
 model ServiceRequest {
-  id            String           @id @default(uuid()) @db.Uuid
-  authorId      String           @map("author_id") @db.Uuid
-  author        User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  title         String           @db.VarChar(200)
-  description   String?          @db.Text
+  id            String          @id @default(uuid()) @db.Uuid
+  authorId      String          @map("author_id") @db.Uuid
+  author        User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title         String          @db.VarChar(200)
+  description   String?         @db.Text
   category      ServiceCategory
-  urgency       ServiceUrgency   @default(normal)
-  budget        String?          @db.VarChar(50)
-  city          String?          @db.VarChar(100)
-  countryCode   String?          @map("country_code") @db.Char(2)
-  status        ServiceStatus    @default(open)
-  responseCount Int              @default(0) @map("response_count")
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  urgency       ServiceUrgency  @default(normal)
+  budget        String?         @db.VarChar(50)
+  city          String?         @db.VarChar(100)
+  countryCode   String?         @map("country_code") @db.Char(2)
+  status        ServiceStatus   @default(open)
+  responseCount Int             @default(0) @map("response_count")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz
 
   responses ServiceResponse[]
   ratings   ServiceRating[]
@@ -497,14 +534,14 @@ model ServiceRequest {
 }
 
 model ServiceResponse {
-  id           String         @id @default(uuid()) @db.Uuid
-  requestId    String         @map("request_id") @db.Uuid
-  request      ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  responderId  String         @map("responder_id") @db.Uuid
-  responder    User           @relation(fields: [responderId], references: [id], onDelete: Cascade)
-  message      String         @db.Text
-  accepted     Boolean        @default(false)
-  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  id          String         @id @default(uuid()) @db.Uuid
+  requestId   String         @map("request_id") @db.Uuid
+  request     ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  responderId String         @map("responder_id") @db.Uuid
+  responder   User           @relation(fields: [responderId], references: [id], onDelete: Cascade)
+  message     String         @db.Text
+  accepted    Boolean        @default(false)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([requestId])
   @@map("service_responses")
@@ -525,23 +562,23 @@ model ServiceRating {
 }
 
 model Association {
-  id           String              @id @default(uuid()) @db.Uuid
-  name         String              @db.VarChar(200)
-  description  String?             @db.Text
-  logoUrl      String?             @map("logo_url") @db.VarChar(500)
-  coverUrl     String?             @map("cover_url") @db.VarChar(500)
-  category     AssociationCategory
-  countryCode  String?             @map("country_code") @db.Char(2)
-  city         String?             @db.VarChar(100)
-  website      String?             @db.VarChar(300)
-  contactEmail String?             @map("contact_email") @db.VarChar(255)
-  isVerified   Boolean             @default(false) @map("is_verified")
-  requiresApproval Boolean         @default(false) @map("requires_approval")
-  memberCount  Int                 @default(0) @map("member_count")
-  createdById  String?             @map("created_by") @db.Uuid
-  createdBy    User?               @relation("AssociationCreator", fields: [createdById], references: [id])
-  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  id               String              @id @default(uuid()) @db.Uuid
+  name             String              @db.VarChar(200)
+  description      String?             @db.Text
+  logoUrl          String?             @map("logo_url") @db.VarChar(500)
+  coverUrl         String?             @map("cover_url") @db.VarChar(500)
+  category         AssociationCategory
+  countryCode      String?             @map("country_code") @db.Char(2)
+  city             String?             @db.VarChar(100)
+  website          String?             @db.VarChar(300)
+  contactEmail     String?             @map("contact_email") @db.VarChar(255)
+  isVerified       Boolean             @default(false) @map("is_verified")
+  requiresApproval Boolean             @default(false) @map("requires_approval")
+  memberCount      Int                 @default(0) @map("member_count")
+  createdById      String?             @map("created_by") @db.Uuid
+  createdBy        User?               @relation("AssociationCreator", fields: [createdById], references: [id])
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
   members AssociationMember[]
   events  AssociationEvent[]
@@ -551,13 +588,13 @@ model Association {
 }
 
 model AssociationMember {
-  associationId String              @map("association_id") @db.Uuid
-  association   Association         @relation(fields: [associationId], references: [id], onDelete: Cascade)
-  userId        String              @map("user_id") @db.Uuid
-  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role          AssociationRole     @default(member)
-  status        MembershipStatus    @default(approved)
-  joinedAt      DateTime            @default(now()) @map("joined_at") @db.Timestamptz
+  associationId String           @map("association_id") @db.Uuid
+  association   Association      @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId        String           @map("user_id") @db.Uuid
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          AssociationRole  @default(member)
+  status        MembershipStatus @default(approved)
+  joinedAt      DateTime         @default(now()) @map("joined_at") @db.Timestamptz
 
   @@id([associationId, userId])
   @@index([userId])
@@ -580,19 +617,19 @@ model AssociationEvent {
 }
 
 model Message {
-  id             String      @id @default(uuid()) @db.Uuid
-  conversationId String      @map("conversation_id") @db.Uuid
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderId       String      @map("sender_id") @db.Uuid
-  sender         User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  content        String?     @db.Text
-  messageType    MessageType @default(text) @map("message_type")
-  mediaUrl       String?     @map("media_url") @db.VarChar(500)
-  replyToId      String?     @map("reply_to_id") @db.Uuid
-  replyTo        Message?    @relation("MessageReplies", fields: [replyToId], references: [id])
-  replies        Message[]   @relation("MessageReplies")
-  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  senderId       String       @map("sender_id") @db.Uuid
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String?      @db.Text
+  messageType    MessageType  @default(text) @map("message_type")
+  mediaUrl       String?      @map("media_url") @db.VarChar(500)
+  replyToId      String?      @map("reply_to_id") @db.Uuid
+  replyTo        Message?     @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        Message[]    @relation("MessageReplies")
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([conversationId, createdAt(sort: Desc)])
   @@index([senderId])
@@ -619,15 +656,15 @@ model IdentityDocument {
 }
 
 model RefreshToken {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String   @unique @map("token_hash") @db.VarChar(255)
-  deviceName String?  @map("device_name") @db.VarChar(100)
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(255)
+  deviceName String?   @map("device_name") @db.VarChar(100)
   usedAt     DateTime? @map("used_at") @db.Timestamptz
   revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
-  expiresAt  DateTime @map("expires_at") @db.Timestamptz
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([userId])
   @@map("refresh_tokens")
@@ -643,4 +680,142 @@ model PushToken {
 
   @@unique([userId, token])
   @@map("push_tokens")
+}
+
+// ── Pages (Feature: créer une page) ──────────────────────────────
+// Generic user-created entity: communities, causes, businesses, official
+// pages, groups. Distinct from Association (which keeps its own membership
+// model). A Page has followers, admins, polls, and can receive reviews.
+model Page {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(200)
+  description   String?  @db.Text
+  kind          PageKind @default(community)
+  avatarUrl     String?  @map("avatar_url") @db.VarChar(500)
+  coverUrl      String?  @map("cover_url") @db.VarChar(500)
+  countryCode   String?  @map("country_code") @db.Char(2)
+  city          String?  @db.VarChar(100)
+  website       String?  @db.VarChar(300)
+  contactEmail  String?  @map("contact_email") @db.VarChar(255)
+  isVerified    Boolean  @default(false) @map("is_verified")
+  followerCount Int      @default(0) @map("follower_count")
+  ratingAvg     Float    @default(0) @map("rating_avg")
+  ratingCount   Int      @default(0) @map("rating_count")
+  createdById   String?  @map("created_by") @db.Uuid
+  createdBy     User?    @relation("PageCreator", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  followers PageFollower[]
+  admins    PageAdmin[]
+  polls     Poll[]
+  reviews   Review[]       @relation("ReviewTargetPage")
+
+  @@index([kind, countryCode])
+  @@index([createdById])
+  @@map("pages")
+}
+
+model PageFollower {
+  pageId    String   @map("page_id") @db.Uuid
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([pageId, userId])
+  @@index([userId])
+  @@map("page_followers")
+}
+
+model PageAdmin {
+  pageId    String   @map("page_id") @db.Uuid
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      PageRole @default(editor)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([pageId, userId])
+  @@index([userId])
+  @@map("page_admins")
+}
+
+// ── Polls / Sondages ─────────────────────────────────────────────
+// A poll may belong to a page (pageId) or be standalone (pageId null).
+model Poll {
+  id          String    @id @default(uuid()) @db.Uuid
+  pageId      String?   @map("page_id") @db.Uuid
+  page        Page?     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId    String    @map("author_id") @db.Uuid
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  question    String    @db.VarChar(300)
+  multiChoice Boolean   @default(false) @map("multi_choice")
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
+  voteCount   Int       @default(0) @map("vote_count")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  options PollOption[]
+  votes   PollVote[]
+
+  @@index([pageId, createdAt(sort: Desc)])
+  @@index([authorId])
+  @@map("polls")
+}
+
+model PollOption {
+  id        String @id @default(uuid()) @db.Uuid
+  pollId    String @map("poll_id") @db.Uuid
+  poll      Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  label     String @db.VarChar(200)
+  voteCount Int    @default(0) @map("vote_count")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  votes PollVote[]
+
+  @@index([pollId])
+  @@map("poll_options")
+}
+
+model PollVote {
+  pollId    String     @map("poll_id") @db.Uuid
+  poll      Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId  String     @map("option_id") @db.Uuid
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId    String     @map("user_id") @db.Uuid
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  // One row per (poll, user, option): single-choice polls keep one row,
+  // multi-choice polls allow several. Service enforces the single-choice rule.
+  @@id([pollId, userId, optionId])
+  @@index([optionId])
+  @@index([userId])
+  @@map("poll_votes")
+}
+
+// ── Reviews / Avis ───────────────────────────────────────────────
+// A review targets EITHER a user profile OR a page (exactly one of the two
+// target FKs is set). Aggregates are denormalised onto User/Page.
+model Review {
+  id           String           @id @default(uuid()) @db.Uuid
+  authorId     String           @map("author_id") @db.Uuid
+  author       User             @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  targetType   ReviewTargetType @map("target_type")
+  targetUserId String?          @map("target_user_id") @db.Uuid
+  targetUser   User?            @relation("ReviewTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  targetPageId String?          @map("target_page_id") @db.Uuid
+  targetPage   Page?            @relation("ReviewTargetPage", fields: [targetPageId], references: [id], onDelete: Cascade)
+  rating       Int
+  comment      String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  // One review per author per target. NULLs are distinct in Postgres, so the
+  // two partial uniques don't collide across target types.
+  @@unique([authorId, targetUserId])
+  @@unique([authorId, targetPageId])
+  @@index([targetUserId, createdAt(sort: Desc)])
+  @@index([targetPageId, createdAt(sort: Desc)])
+  @@map("reviews")
 }

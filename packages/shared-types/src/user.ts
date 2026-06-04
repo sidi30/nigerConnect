@@ -12,6 +12,8 @@ export interface PublicUser {
   city: string | null;
   countryCode: string | null;
   identityStatus: IdentityStatus;
+  ratingAvg: number;
+  ratingCount: number;
 }
 
 export interface User extends PublicUser {

@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '@/services/notificationApi';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
@@ -13,8 +13,15 @@ const TYPE_LABELS: Record<string, { emoji: string; color: string }> = {
   message: { emoji: '✉️', color: Colors.orange },
   service_response: { emoji: '🤝', color: Colors.orange },
   association_invite: { emoji: '🏛️', color: Colors.info },
+  association_join_request: { emoji: '🏛️', color: Colors.info },
+  association_join_approved: { emoji: '✓', color: Colors.green },
+  association_join_rejected: { emoji: '✕', color: Colors.danger },
   identity_approved: { emoji: '✓', color: Colors.green },
   identity_rejected: { emoji: '✕', color: Colors.danger },
+  proximity: { emoji: '📍', color: Colors.info },
+  page_follow: { emoji: '⭐', color: Colors.orange },
+  poll_new: { emoji: '📊', color: Colors.info },
+  review_received: { emoji: '⭐', color: Colors.orange },
   system: { emoji: '📢', color: Colors.tan500 },
 };
 
@@ -24,14 +31,33 @@ export default function NotificationsScreen() {
     queryKey: ['notifications'],
     queryFn: () => notificationApi.list(),
   });
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['notifications'] });
+    void qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+  };
   const markAllMut = useMutation({
     mutationFn: () => notificationApi.markAllRead(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+    onSuccess: invalidate,
   });
   const markReadMut = useMutation({
     mutationFn: (id: string) => notificationApi.markRead(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+    onSuccess: invalidate,
   });
+  const removeMut = useMutation({
+    mutationFn: (id: string) => notificationApi.remove(id),
+    onSuccess: invalidate,
+  });
+  const clearAllMut = useMutation({
+    mutationFn: () => notificationApi.clearAll(),
+    onSuccess: invalidate,
+  });
+
+  function confirmClearAll() {
+    Alert.alert('Tout effacer ?', 'Tout ton historique de notifications sera supprimé.', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Tout effacer', style: 'destructive', onPress: () => clearAllMut.mutate() },
+    ]);
+  }
 
   if (isLoading) {
     return <Loader />;
@@ -42,10 +68,19 @@ export default function NotificationsScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      {unreadCount > 0 && (
-        <Pressable onPress={() => markAllMut.mutate()} style={styles.markAll}>
-          <Text style={styles.markAllLabel}>Tout marquer comme lu ({unreadCount})</Text>
-        </Pressable>
+      {notifs.length > 0 && (
+        <View style={styles.toolbar}>
+          {unreadCount > 0 ? (
+            <Pressable onPress={() => markAllMut.mutate()} hitSlop={8}>
+              <Text style={styles.toolbarAction}>Tout marquer lu ({unreadCount})</Text>
+            </Pressable>
+          ) : (
+            <View />
+          )}
+          <Pressable onPress={confirmClearAll} hitSlop={8}>
+            <Text style={[styles.toolbarAction, { color: Colors.danger }]}>Tout effacer</Text>
+          </Pressable>
+        </View>
       )}
       <ScrollView contentContainerStyle={styles.scroll}>
         {notifs.length === 0 ? (
@@ -78,9 +113,22 @@ export default function NotificationsScreen() {
                   <Text style={styles.time}>{relativeTime(n.createdAt)}</Text>
                 </View>
                 {!n.read && <View style={styles.unreadDot} />}
+                <Pressable
+                  onPress={() => removeMut.mutate(n.id)}
+                  hitSlop={10}
+                  style={styles.deleteBtn}
+                  accessibilityLabel="Supprimer la notification"
+                >
+                  <Text style={styles.deleteIcon}>✕</Text>
+                </Pressable>
               </Pressable>
             );
           })
+        )}
+        {notifs.length > 0 && (
+          <Text style={styles.ttlNote}>
+            Les notifications sont conservées 24 h, puis supprimées automatiquement.
+          </Text>
         )}
       </ScrollView>
     </View>
@@ -88,13 +136,33 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  markAll: {
-    padding: Spacing.md,
-    backgroundColor: Colors.peach50,
+  toolbar: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    backgroundColor: Colors.peach50,
   },
-  markAllLabel: { color: Colors.orange, fontSize: Typography.sizes.sm, fontWeight: '700' },
+  toolbarAction: { color: Colors.orange, fontSize: Typography.sizes.sm, fontWeight: '700' },
   scroll: { padding: Spacing.md, gap: 8 },
+  deleteBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.tan100,
+    marginLeft: 4,
+  },
+  deleteIcon: { fontSize: 13, color: Colors.tan600, fontWeight: '700' },
+  ttlNote: {
+    textAlign: 'center',
+    color: Colors.tan400,
+    fontSize: Typography.sizes.xxs,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
   empty: { padding: Spacing.xxxl, alignItems: 'center' },
   emptyEmoji: { fontSize: 48, marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },

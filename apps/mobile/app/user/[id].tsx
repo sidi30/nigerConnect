@@ -13,7 +13,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CursorPage, Post, PublicUser, User } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { StarRating } from '@/components/ui/StarRating';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
 import { profileApi } from '@/services/profileApi';
@@ -316,6 +318,11 @@ export default function UserScreen() {
                   {u.countryCode ? Flags[u.countryCode] ?? '🌍' : '🌍'} {u.city ?? ''}
                   {u.countryCode ? `, ${CountryNames[u.countryCode] ?? u.countryCode}` : ''}
                 </Text>
+                {'ratingCount' in u && u.ratingCount > 0 ? (
+                  <View style={styles.heroRatingWrap}>
+                    <StarRating value={u.ratingAvg} count={u.ratingCount} size={14} />
+                  </View>
+                ) : null}
                 {'bio' in u && u.bio ? <Text style={styles.bio}>{u.bio}</Text> : null}
               </View>
             </View>
@@ -391,6 +398,12 @@ export default function UserScreen() {
                 />
               )}
             </View>
+
+            <ReviewsSection
+              targetType="user"
+              targetId={id!}
+              canReview={rel !== 'self' && rel !== 'blocked'}
+            />
 
             <View style={[styles.section, { paddingHorizontal: 0 }]}>
               <Text style={[styles.sectionTitle, { paddingHorizontal: Spacing.md }]}>
@@ -483,6 +496,7 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
   location: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
+  heroRatingWrap: { marginTop: 6 },
   bio: {
     fontSize: Typography.sizes.sm,
     color: 'rgba(255,255,255,0.6)',

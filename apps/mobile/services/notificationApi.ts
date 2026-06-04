@@ -16,6 +16,12 @@ export const notificationApi = {
   async markAllRead(): Promise<void> {
     await api.patch('/notifications/read-all');
   },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/notifications/${id}`);
+  },
+  async clearAll(): Promise<void> {
+    await api.delete('/notifications/clear-all');
+  },
   async registerDevice(token: string, platform: 'ios' | 'android' | 'web'): Promise<void> {
     await api.post('/notifications/register-device', { token, platform });
   },

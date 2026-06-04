@@ -38,6 +38,8 @@ export const USER_SELF_SELECT = {
   role: true,
   status: true,
   mfaEnabled: true,
+  ratingAvg: true,
+  ratingCount: true,
   lastLoginAt: true,
   createdAt: true,
   updatedAt: true,
@@ -69,6 +71,8 @@ export const USER_PUBLIC_SELECT = {
   languages: true,
   privacyLevel: true,
   identityStatus: true,
+  ratingAvg: true,
+  ratingCount: true,
   createdAt: true,
 } as const satisfies Prisma.UserSelect;
 

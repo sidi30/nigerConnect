@@ -8,8 +8,15 @@ export type NotificationType =
   | 'message'
   | 'service_response'
   | 'association_invite'
+  | 'association_join_request'
+  | 'association_join_approved'
+  | 'association_join_rejected'
   | 'identity_approved'
   | 'identity_rejected'
+  | 'proximity'
+  | 'page_follow'
+  | 'poll_new'
+  | 'review_received'
   | 'system';
 
 export interface Notification {
@@ -21,5 +28,7 @@ export interface Notification {
   data: Record<string, unknown> | null;
   actor: PublicUser | null;
   read: boolean;
+  /** ISO instant after which the item is purged from history (24h default). */
+  expiresAt: string | null;
   createdAt: string;
 }
