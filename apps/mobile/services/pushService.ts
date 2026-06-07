@@ -6,11 +6,16 @@ import { notificationApi } from './notificationApi';
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
+    // In the foreground we render our OWN in-app banner (see the
+    // addNotificationReceivedListener in app/(tabs)/_layout.tsx). Letting the OS
+    // ALSO show its system banner/alert here double-stacks the same notification.
+    // So suppress the OS visual surfaces (alert + banner) while keeping sound,
+    // badge, and the notification-centre list entry.
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowAlert: false,
       shouldPlaySound: true,
       shouldSetBadge: true,
-      shouldShowBanner: true,
+      shouldShowBanner: false,
       shouldShowList: true,
     }),
   });

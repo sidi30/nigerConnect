@@ -98,8 +98,48 @@ export default defineConfig({
       },
     },
     {
+      name: 'api-email-verification-code',
+      testMatch: 'api/email-verification-code.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-email-verification-flow',
+      testMatch: 'api/email-verification-flow.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
       name: 'api-features',
       testMatch: 'api/features-contract.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-geo-cities',
+      testMatch: 'api/geo-cities.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-register-location',
+      testMatch: 'api/register-location.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-chat-read-receipts',
+      testMatch: 'api/chat-read-receipts.spec.ts',
       use: {
         baseURL: API_BASE_URL,
         extraHTTPHeaders: { 'Content-Type': 'application/json' },

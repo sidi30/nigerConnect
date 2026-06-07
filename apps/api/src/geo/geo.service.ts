@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
-import { geocode } from '../common/geo/city-coords';
-import type { BoundsDto, NearbyDto, ProximityPingDto } from './dto/geo.dto';
+import { geocode, setWorldCitiesLookup } from '../common/geo/city-coords';
+import { WorldCitiesService } from './world-cities';
+import type { BoundsDto, CitiesQueryDto, NearbyDto, ProximityPingDto } from './dto/geo.dto';
 
 const CLUSTER_TTL = 300;
 const PROXIMITY_COOLDOWN = 300;
@@ -59,12 +60,47 @@ export interface AssociationMarker {
 export type MapMarker = CountryCluster | CityCluster | IndividualMarker | AssociationMarker;
 
 @Injectable()
-export class GeoService {
+export class GeoService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly notifications: NotificationService,
+    // @Optional() + default null so the existing unit-test spec (geo.service.spec.ts)
+    // can instantiate GeoService with 3 args. In the real DI container,
+    // WorldCitiesService is always provided via GeoModule, so this is never null
+    // in production.
+    //
+    // The explicit @Inject(WorldCitiesService) is REQUIRED: the `| null` union
+    // type makes TypeScript emit `Object` as the reflected param type, so without
+    // an explicit token Nest can't resolve the provider and @Optional silently
+    // injects null — leaving /geo/cities empty and the geocoder fallback unwired.
+    @Optional()
+    @Inject(WorldCitiesService)
+    private readonly worldCities: WorldCitiesService | null = null,
   ) {}
+
+  /**
+   * Wire the world-cities lookup into the geocoder module once both services
+   * are initialised. We use a module-level setter to avoid a circular import
+   * between the geocoder utility (common/geo) and the geo module.
+   */
+  onModuleInit(): void {
+    if (!this.worldCities) return; // guard for unit-test context (no DI)
+    setWorldCitiesLookup((city, countryCode) => {
+      const hit = this.worldCities!.findOne(city, countryCode);
+      if (!hit) return null;
+      return { lat: hit.lat, lon: hit.lng };
+    });
+  }
+
+  /**
+   * Search worldwide cities for the autocomplete endpoint GET /geo/cities.
+   * Returns results sorted by population descending; accent/case-insensitive.
+   */
+  searchCities(dto: CitiesQueryDto) {
+    if (!this.worldCities) return [];
+    return this.worldCities.search(dto.q, dto.country, dto.limit);
+  }
 
   async getMarkers(viewerId: string, dto: BoundsDto): Promise<MapMarker[]> {
     const cacheKey = this.cacheKey(viewerId, dto);

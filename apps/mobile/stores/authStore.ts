@@ -49,6 +49,11 @@ interface AuthState {
     countryCode?: string;
     bio?: string;
     avatarUrl?: string;
+    /** WGS-84 latitude from the city autocomplete; forwarded to POST /auth/register
+     *  so the server stores precise map coordinates without a second geocode. */
+    latitude?: number;
+    /** WGS-84 longitude from the city autocomplete. */
+    longitude?: number;
   }) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;

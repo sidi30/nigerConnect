@@ -110,8 +110,9 @@ test.describe('/verify-email', () => {
     await expect(
       page.getByRole('heading', { name: /vérification impossible/i }),
     ).toBeVisible({ timeout: 20_000 });
-    // Shows guidance to re-request from app
-    await expect(page.getByText(/paramètres/i)).toBeVisible();
+    // New copy (code-only flow): guidance instructs user to enter the 6-digit code in the app.
+    // The old "Paramètres → Vérifier mon email" link path has been removed.
+    await expect(page.getByText(/code|chiffres|app/i)).toBeVisible();
   });
 
   test('page always renders a "Retour" link back to home', async ({ page }) => {

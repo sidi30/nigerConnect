@@ -295,12 +295,20 @@ export class ChatService {
     return { message, memberIds: members.map((m) => m.userId) };
   }
 
-  async markAsRead(userId: string, conversationId: string): Promise<void> {
+  /**
+   * Mark all messages in a conversation as read for `userId`.
+   * Returns the updated lastReadAt timestamp so the gateway can broadcast
+   * it alongside the `message:read` event — clients use it to compute which
+   * of *their* messages are now ✓✓ without a separate fetch.
+   */
+  async markAsRead(userId: string, conversationId: string): Promise<Date> {
     await this.assertMember(userId, conversationId);
+    const now = new Date();
     await this.prisma.conversationMember.update({
       where: { conversationId_userId: { conversationId, userId } },
-      data: { unreadCount: 0, lastReadAt: new Date() },
+      data: { unreadCount: 0, lastReadAt: now },
     });
+    return now;
   }
 
   async softDeleteMessage(userId: string, messageId: string) {
@@ -349,6 +357,7 @@ export class ChatService {
       members: Array<{
         userId: string;
         unreadCount: number;
+        lastReadAt: Date | null;
         user: { id: string; displayName: string | null; avatarUrl: string | null };
       }>;
     },
@@ -365,6 +374,18 @@ export class ChatService {
       lastMessagePreview: c.lastMessagePreview,
       unreadCount: me?.unreadCount ?? 0,
       members: c.members.map((m) => m.user),
+      /**
+       * Per-member read metadata, index-aligned with `members`.
+       * The chat screen derives ✓✓ by checking whether a peer's lastReadAt
+       * is >= the message's createdAt — no per-message read column needed.
+       * Both the sender (me) and all peers are included so group chats can
+       * eventually show individual per-member receipts too.
+       */
+      membersMeta: c.members.map((m) => ({
+        userId: m.userId,
+        lastReadAt: m.lastReadAt?.toISOString() ?? null,
+        unreadCount: m.unreadCount,
+      })),
       createdAt: c.createdAt,
     };
   }

@@ -31,8 +31,10 @@ import type { ReviewIdentityDto, SubmitIdentityDto } from './dto/verify-identity
 import {
   forgotPasswordSchema,
   resetPasswordSchema,
+  verifyEmailCodeSchema,
   type ForgotPasswordDto,
   type ResetPasswordDto,
+  type VerifyEmailCodeDto,
 } from './dto/password.dto';
 import { serializeUser } from './auth.serializer';
 
@@ -170,6 +172,22 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async resendVerification(@CurrentUser() user: JwtUserPayload): Promise<void> {
     await this.auth.sendVerificationEmail(user.sub);
+  }
+
+  /**
+   * Verify the 6-digit code typed into the app. Authenticated + @AllowUnverified
+   * so a freshly-registered (unverified) user can reach it. Throttled hard —
+   * the code is low-entropy and the service also caps wrong guesses per token.
+   */
+  @AllowUnverified()
+  @Throttle({ short: { limit: 5, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
+  @Post('verify-email/code')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmailCode(
+    @CurrentUser() user: JwtUserPayload,
+    @Body(new ZodValidationPipe(verifyEmailCodeSchema)) dto: VerifyEmailCodeDto,
+  ): Promise<{ ok: true }> {
+    return this.auth.verifyEmailCode(user.sub, dto.code);
   }
 
   /**

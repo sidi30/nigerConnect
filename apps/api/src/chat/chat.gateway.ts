@@ -204,15 +204,24 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     if (!authed.userId) return;
     // markAsRead asserts membership and can throw (Forbidden / not found); mirror
     // onSend and swallow so a bad/forged id can't crash the handler.
+    let lastReadAt: Date;
     try {
-      await this.chat.markAsRead(authed.userId, payload.conversationId);
+      lastReadAt = await this.chat.markAsRead(authed.userId, payload.conversationId);
     } catch (error) {
       this.logger.warn(`message:read rejected for ${authed.userId}: ${String(error)}`);
       return;
     }
+    // Broadcast to all conversation members (including the reader themselves
+    // so they can sync across multiple devices). The `lastReadAt` ISO string
+    // allows the recipient's sender-side to compute ✓✓ by comparing it against
+    // each message's createdAt — no per-message read flag needed in the DB.
     this.server
       .to(`conv:${payload.conversationId}`)
-      .emit('message:read', { conversationId: payload.conversationId, userId: authed.userId });
+      .emit('message:read', {
+        conversationId: payload.conversationId,
+        userId: authed.userId,
+        lastReadAt: lastReadAt.toISOString(),
+      });
   }
 
   @SubscribeMessage('typing:start')

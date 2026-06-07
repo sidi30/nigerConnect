@@ -14,13 +14,13 @@ import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Colors,
-  CountryNames,
   Gradients,
   palette,
   Radii,
   Spacing,
   Typography,
 } from '@/constants/theme';
+import { countryName } from '@/constants/countries';
 import { useAuthStore } from '@/stores/authStore';
 import { GoogleButton } from '@/components/ui/GoogleButton';
 import { AppleButton } from '@/components/ui/AppleButton';
@@ -34,6 +34,11 @@ interface RegisterData {
   city: string;
   bio: string;
   countryCode: string;
+  /** WGS-84 latitude from the /geo/cities autocomplete. Undefined when the
+   *  user typed a free-text city without selecting an API suggestion. */
+  latitude: number | undefined;
+  /** WGS-84 longitude from the /geo/cities autocomplete. */
+  longitude: number | undefined;
 }
 
 export default function RegisterScreen() {
@@ -51,6 +56,8 @@ export default function RegisterScreen() {
     city: '',
     bio: '',
     countryCode: '',
+    latitude: undefined,
+    longitude: undefined,
   });
 
   function update<K extends keyof RegisterData>(key: K, value: RegisterData[K]) {
@@ -98,6 +105,11 @@ export default function RegisterScreen() {
         city: data.city.trim() || undefined,
         countryCode: data.countryCode || undefined,
         bio: data.bio.trim() || undefined,
+        // Forward the coordinates from the city autocomplete so the server
+        // can place the user precisely on the map without a second geocode
+        // lookup. The server still applies jitter before storing.
+        latitude: data.latitude,
+        longitude: data.longitude,
       });
     } catch (error) {
       const err = error as {
@@ -231,8 +243,14 @@ export default function RegisterScreen() {
                 label="Ville"
                 city={data.city}
                 countryCode={data.countryCode}
-                onChange={(city, countryCode) => {
-                  setData((prev) => ({ ...prev, city, countryCode }));
+                onChange={(city, countryCode, lat, lng) => {
+                  setData((prev) => ({
+                    ...prev,
+                    city,
+                    countryCode,
+                    latitude: lat,
+                    longitude: lng,
+                  }));
                   if (errorMessage) setErrorMessage(null);
                 }}
               />
@@ -252,7 +270,7 @@ export default function RegisterScreen() {
                 <RecapLine
                   label="Localisation"
                   value={`${data.city || '—'}${
-                    data.countryCode ? `, ${CountryNames[data.countryCode]}` : ''
+                    data.countryCode ? `, ${countryName(data.countryCode)}` : ''
                   }`}
                 />
                 {data.bio ? <RecapLine label="Bio" value={data.bio} /> : null}

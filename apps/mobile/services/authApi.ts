@@ -17,6 +17,10 @@ export const authApi = {
     countryCode?: string;
     bio?: string;
     avatarUrl?: string;
+    // Precise coordinates from the /geo/cities autocomplete. Sent so the server
+    // pins the user exactly instead of geocoding from the city name.
+    latitude?: number;
+    longitude?: number;
   }): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/register', input);
     return data;
@@ -55,5 +59,9 @@ export const authApi = {
 
   async resendVerification(): Promise<void> {
     await api.post('/auth/verify-email/send');
+  },
+
+  async verifyEmailCode(code: string): Promise<void> {
+    await api.post('/auth/verify-email/code', { code });
   },
 };

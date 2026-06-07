@@ -5,9 +5,11 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { GeoService } from './geo.service';
 import {
   boundsSchema,
+  citiesQuerySchema,
   nearbySchema,
   proximityPingSchema,
   type BoundsDto,
+  type CitiesQueryDto,
   type NearbyDto,
   type ProximityPingDto,
 } from './dto/geo.dto';
@@ -28,6 +30,20 @@ export class GeoController {
   @Get('stats')
   stats() {
     return this.geo.getStats();
+  }
+
+  /**
+   * City autocomplete for worldwide registration.
+   * Public — no auth required so the endpoint is usable during sign-up before
+   * the user has a JWT.
+   *
+   * GET /geo/cities?q=par&country=FR&limit=10
+   * Returns [{ name, countryCode, lat, lng, population }] sorted by population.
+   */
+  @Public()
+  @Get('cities')
+  cities(@Query(new ZodValidationPipe(citiesQuerySchema)) dto: CitiesQueryDto) {
+    return this.geo.searchCities(dto);
   }
 
   @Get('nearby')

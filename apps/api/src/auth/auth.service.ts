@@ -15,7 +15,12 @@ import type { Env } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { MailerService } from '../common/mail/mailer.service';
-import { geocode } from '../common/geo/city-coords';
+import {
+  geocode,
+  haversineKm,
+  jitterCoord,
+  resolveCityCentroid,
+} from '../common/geo/city-coords';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import { EmailTokenService } from './email-token.service';
@@ -26,6 +31,12 @@ import type { LoginDto } from './dto/login.dto';
 
 const MAX_FAILED_LOGINS = 5;
 const LOCK_STAGES_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000];
+
+// How far client-supplied coordinates may sit from the resolved city centroid
+// before we distrust them. ~150 km comfortably covers large metros + the city's
+// surrounding area while rejecting coordinates that clearly don't match the
+// claimed city (spoofing or a stale autocomplete pick from another city).
+const MAX_CLIENT_COORD_DISTANCE_KM = 150;
 
 export type AuthResult = {
   user: User;
@@ -125,7 +136,39 @@ export class AuthService {
     if (existing) throw new ConflictException('Email or phone already registered');
 
     const passwordHash = await this.password.hash(dto.password);
-    const coords = geocode(dto.city, dto.countryCode);
+
+    // Prefer coordinates sent by the client (from the /geo/cities autocomplete)
+    // so any world city gets a precise pin. Apply a small jitter so users in the
+    // same city don't stack perfectly on top of each other on the map.
+    //
+    // The client value is NOT blindly trusted: if the city+country resolve to a
+    // known centroid, the client coords must sit within MAX_CLIENT_COORD_DISTANCE
+    // of it — otherwise (spoofed, or a stale pick from a different city) we drop
+    // them and use the server geocode instead. Free-text cities with no resolvable
+    // centroid still use the client coords (within WGS-84 range, validated by the
+    // DTO) since there's nothing to cross-check against.
+    let latitude: number | null;
+    let longitude: number | null;
+    if (dto.latitude !== undefined && dto.longitude !== undefined) {
+      const centroid = resolveCityCentroid(dto.city, dto.countryCode);
+      const clientCoord = { lat: dto.latitude, lon: dto.longitude };
+      if (centroid && haversineKm(centroid, clientCoord) > MAX_CLIENT_COORD_DISTANCE_KM) {
+        // Client coords don't match the claimed city — fall back to the server
+        // geocode (jittered centroid) rather than trusting the client.
+        const coords = geocode(dto.city, dto.countryCode);
+        latitude = coords?.lat ?? null;
+        longitude = coords?.lon ?? null;
+      } else {
+        const jittered = jitterCoord(clientCoord);
+        latitude = jittered.lat;
+        longitude = jittered.lon;
+      }
+    } else {
+      const coords = geocode(dto.city, dto.countryCode);
+      latitude = coords?.lat ?? null;
+      longitude = coords?.lon ?? null;
+    }
+
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
@@ -138,8 +181,8 @@ export class AuthService {
         countryCode: dto.countryCode ?? null,
         bio: dto.bio ?? null,
         avatarUrl: dto.avatarUrl ?? null,
-        latitude: coords?.lat ?? null,
-        longitude: coords?.lon ?? null,
+        latitude,
+        longitude,
       },
     });
 
@@ -158,18 +201,78 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.email) return;
     if (user.emailVerified) return;
-    const token = await this.emailTokens.create(userId, 'verify_email');
-    await this.mailer.sendEmailVerification(user.email, token, user.firstName);
+    // Mint a 6-digit code (typed into the app) + a long link token (web
+    // fallback) — both verify the same row.
+    const { token, code } = await this.emailTokens.createWithCode(userId, 'verify_email');
+    // Catch delivery errors so neither register() nor the resend endpoint turn
+    // a delivery problem into an HTTP 500 — the client cannot act on a relay
+    // error. The failure is still logged (+ Sentry when configured).
+    try {
+      await this.mailer.sendEmailVerification(user.email, token, code, user.firstName);
+    } catch (e) {
+      this.logger.error(
+        `Verification email delivery failed for user ${userId}: ${String(e)}`,
+      );
+    }
   }
 
   async verifyEmail(token: string): Promise<{ ok: boolean; userId?: string }> {
     const userId = await this.emailTokens.consume(token, 'verify_email');
     if (!userId) return { ok: false };
-    await this.prisma.user.update({
-      where: { id: userId },
+    // Conditional update so the welcome email fires exactly once: only the
+    // transition false → true counts as "just verified".
+    const res = await this.prisma.user.updateMany({
+      where: { id: userId, emailVerified: false },
       data: { emailVerified: true },
     });
+    if (res.count > 0) this.sendWelcomeEmail(userId);
     return { ok: true, userId };
+  }
+
+  /**
+   * Verify the 6-digit code the user typed into the app. Scoped to the
+   * authenticated user. Throws BadRequest on a wrong/expired/locked code so the
+   * client can surface a precise message.
+   */
+  async verifyEmailCode(userId: string, code: string): Promise<{ ok: true }> {
+    const outcome = await this.emailTokens.consumeCode(userId, code, 'verify_email');
+    if (!outcome.ok) {
+      const message =
+        outcome.reason === 'locked'
+          ? 'Trop de tentatives. Demande un nouveau code.'
+          : outcome.reason === 'expired'
+            ? 'Code expiré. Demande un nouveau code.'
+            : outcome.reason === 'none'
+              ? 'Aucun code en attente. Demande un nouveau code.'
+              : 'Code invalide.';
+      throw new BadRequestException(message);
+    }
+    const res = await this.prisma.user.updateMany({
+      where: { id: outcome.userId, emailVerified: false },
+      data: { emailVerified: true },
+    });
+    if (res.count > 0) this.sendWelcomeEmail(outcome.userId);
+    return { ok: true };
+  }
+
+  /**
+   * Fire-and-forget welcome email, sent once right after email verification.
+   * Never throws into the verify flow — a mail failure must not fail the
+   * activation that already succeeded.
+   */
+  private sendWelcomeEmail(userId: string): void {
+    void (async () => {
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, firstName: true },
+        });
+        if (!user?.email) return;
+        await this.mailer.sendWelcome(user.email, user.firstName);
+      } catch (e) {
+        this.logger.warn(`Failed to send welcome email: ${String(e)}`);
+      }
+    })();
   }
 
   // ── Password reset ─────────────────────────────────────────

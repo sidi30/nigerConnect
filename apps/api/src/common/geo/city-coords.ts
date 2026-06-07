@@ -1,11 +1,71 @@
 // Coordonnées approximatives des principales villes de la diaspora nigérienne.
-// En production, cette table est remplacée par un vrai service de geocoding
-// (Nominatim / Mapbox / Google). Pour l'instant on fait un lookup direct — suffisant
-// pour un enregistrement rapide sans appel externe au moment du /register.
+// En production, cette table est un cache chaud : les entrées ici évitent une
+// itération sur le dataset complet (~135k villes) pour les cas les plus fréquents.
+//
+// La fonction `geocode()` effectue un fallback automatique vers l'index mondial
+// `all-the-cities` (enregistré via `setWorldCitiesLookup()` au démarrage du
+// module Geo) pour toute ville hors de cette table.
 
 interface CityCoord {
   lat: number;
   lon: number;
+}
+
+/**
+ * Spread applied to a known centroid so users in the same city don't stack on
+ * exactly the same map pixel. ±0.02° ≈ ±2.2 km. Shared by every path that
+ * places a user/association on the map (here and auth.service.register) so the
+ * scatter magnitude is defined in exactly one place.
+ */
+export const COORD_JITTER_DEGREES = 0.04; // full span; offset is ±half this
+
+/** Apply the standard ±half-span jitter around a coordinate. */
+export function jitterCoord(coord: CityCoord): CityCoord {
+  return {
+    lat: coord.lat + (Math.random() - 0.5) * COORD_JITTER_DEGREES,
+    lon: coord.lon + (Math.random() - 0.5) * COORD_JITTER_DEGREES,
+  };
+}
+
+/**
+ * Great-circle distance in km between two WGS-84 points (Haversine). Used to
+ * sanity-check client-supplied coordinates against the resolved city centroid
+ * before trusting them.
+ */
+export function haversineKm(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * Resolve a city centroid WITHOUT jitter — exact coordinates from the hardcoded
+ * diaspora table first, then the world-cities index. Returns null when the city
+ * can't be resolved (free-text city with no match). Used to validate that a
+ * client-supplied lat/lng actually belongs near the city the user claims.
+ */
+export function resolveCityCentroid(
+  city: string | null | undefined,
+  countryCode: string | null | undefined,
+): CityCoord | null {
+  if (!countryCode || !city) return null;
+  const cc = countryCode.toUpperCase();
+  const key = `${cc}:${city.toLowerCase().trim()}`;
+  const hit = CITY_COORDS[key];
+  if (hit) return { lat: hit.lat, lon: hit.lon };
+  if (_worldLookup) {
+    const world = _worldLookup(city, cc);
+    if (world) return { lat: world.lat, lon: world.lon };
+  }
+  return null;
 }
 
 const CITY_COORDS: Record<string, CityCoord> = {
@@ -215,24 +275,55 @@ const COUNTRY_CENTERS: Record<string, CityCoord> = {
   CN: { lat: 35.8617, lon: 104.1954 },
 };
 
+/**
+ * Optional world-cities lookup injected by WorldCitiesService.onModuleInit().
+ * Before the Geo module initialises this is null, which is fine because
+ * register() is only called after the application has fully bootstrapped.
+ */
+type WorldLookupFn = (city: string, countryCode: string) => CityCoord | null;
+let _worldLookup: WorldLookupFn | null = null;
+
+/**
+ * Called once by WorldCitiesService.onModuleInit() to wire in the world-cities
+ * fallback without creating a circular dependency between the two modules.
+ */
+export function setWorldCitiesLookup(fn: WorldLookupFn): void {
+  _worldLookup = fn;
+}
+
 export function geocode(
   city: string | null | undefined,
   countryCode: string | null | undefined,
 ): CityCoord | null {
   if (!countryCode) return null;
   const cc = countryCode.toUpperCase();
+
   if (city) {
+    // ── Fast path: hardcoded diaspora table ──────────────────────────────────
     const key = `${cc}:${city.toLowerCase().trim()}`;
     const hit = CITY_COORDS[key];
     if (hit) {
-      // Add tiny jitter so users in the same city don't stack on top of each other
-      return {
-        lat: hit.lat + (Math.random() - 0.5) * 0.04,
-        lon: hit.lon + (Math.random() - 0.5) * 0.04,
-      };
+      // Small jitter so users in the same city don't stack on top of each other
+      return jitterCoord(hit);
+    }
+
+    // ── World-cities fallback (any city on earth) ────────────────────────────
+    if (_worldLookup) {
+      const world = _worldLookup(city, cc);
+      if (world) {
+        return jitterCoord({ lat: world.lat, lon: world.lon });
+      }
     }
   }
+
+  // ── Country-centre fallback ──────────────────────────────────────────────
   const country = COUNTRY_CENTERS[cc];
-  if (country) return { lat: country.lat + (Math.random() - 0.5) * 0.5, lon: country.lon + (Math.random() - 0.5) * 0.5 };
+  if (country) {
+    return {
+      lat: country.lat + (Math.random() - 0.5) * 0.5,
+      lon: country.lon + (Math.random() - 0.5) * 0.5,
+    };
+  }
+
   return null;
 }

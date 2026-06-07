@@ -1,5 +1,18 @@
 import { api } from './api';
 
+/**
+ * A city result from the GET /geo/cities endpoint.
+ * `lat` and `lng` are WGS-84 coordinates (no jitter at this stage — jitter is
+ * applied by the server only when the coords are stored at registration).
+ */
+export interface CityResult {
+  name: string;
+  countryCode: string;
+  lat: number;
+  lng: number;
+  population: number;
+}
+
 export type MapMarker =
   | { kind: 'country'; countryCode: string; lat: number; lon: number; count: number }
   | { kind: 'city'; city: string; countryCode: string; lat: number; lon: number; count: number }
@@ -32,6 +45,24 @@ export interface GeoStats {
 }
 
 export const geoApi = {
+  /**
+   * Search world cities for the registration autocomplete.
+   * Calls GET /geo/cities — public endpoint, no JWT needed.
+   *
+   * @param q        Prefix/substring to search (e.g. "par", "niam")
+   * @param opts.country  Optional ISO-2 country filter (e.g. "FR")
+   * @param opts.limit    Max results (1–20, default 20)
+   */
+  async searchCities(
+    q: string,
+    opts?: { country?: string; limit?: number },
+  ): Promise<CityResult[]> {
+    const { data } = await api.get<CityResult[]>('/geo/cities', {
+      params: { q, ...opts },
+    });
+    return data;
+  },
+
   async members(bounds: {
     north: number;
     south: number;

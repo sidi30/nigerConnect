@@ -24,11 +24,17 @@ import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constant
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
 import { useAuthStore } from '@/stores/authStore';
-import { getChatSocket } from '@/hooks/useSocket';
+import { getChatSocket, useChatSocketInstance } from '@/hooks/useSocket';
+import type { MessageReadPayload } from '@/hooks/useSocket';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 
 type MessagesPage = CursorPage<Message>;
 type PendingMessage = Message & { __pending?: boolean; __failed?: boolean };
+
+// ── Typing indicator ─────────────────────────────────────────────────────────
+// How long we wait after the user stops typing before emitting `typing:stop`.
+// 2500 ms matches typical chat UX (Telegram, WhatsApp both use ~2–3 s).
+const TYPING_IDLE_MS = 2500;
 
 function makeOptimisticMessage(args: {
   conversationId: string;
@@ -76,9 +82,37 @@ export default function ChatScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
+  // Reactive singleton socket: re-renders (and re-runs the listener effect)
+  // whenever the underlying socket instance is swapped after a reconnect, so we
+  // never keep listeners bound to a dead socket.
+  const chatSocket = useChatSocketInstance();
   const listRef = useRef<FlatList<PendingMessage>>(null);
   const [draft, setDraft] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  // ── Read receipts ────────────────────────────────────────────────────────────
+  // `peerLastReadAt` tracks how far the peer has read. We seed it from the
+  // conversation's membersMeta on load, then update it in real-time from the
+  // `message:read` socket event.  A message I sent is "read" when its createdAt
+  // <= peerLastReadAt (string ISO comparison is safe because they're both UTC
+  // ISO-8601 from the same server clock).
+  const [peerLastReadAt, setPeerLastReadAt] = useState<string | null>(null);
+
+  // ── Typing indicator ─────────────────────────────────────────────────────────
+  // `peerIsTyping` is true while we're receiving `typing:start` events from the
+  // peer for THIS conversation.  It auto-clears when a `typing:stop` arrives or
+  // when the peer sends a new message (which implicitly means they stopped typing).
+  const [peerIsTyping, setPeerIsTyping] = useState(false);
+  // Timer ref for clearing peerIsTyping if `typing:stop` somehow gets lost
+  // (e.g. peer disconnects mid-typing). 6 s matches the server-side "stop after
+  // no heartbeat" convention used by most chat apps.
+  const peerTypingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Timer ref for emitting our own `typing:stop` after idle.
+  const myTypingIdleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether we're currently in a "typing" session so we don't spam
+  // `typing:start` on every keystroke.
+  const myTypingActiveRef = useRef(false);
 
   const messagesKey = useMemo(() => ['conversation', id, 'messages'] as const, [id]);
 
@@ -102,13 +136,29 @@ export default function ChatScreen() {
     enabled: !!id,
   });
 
-  // Mark conversation as read when opened, and once again on focus.
+  // Seed peerLastReadAt from the conversation meta once loaded.
+  // In a DM there's exactly one peer. For group chats we take the *earliest*
+  // (minimum) lastReadAt across ALL non-me members — the most conservative ✓✓
+  // threshold, so a message is only "read" once every peer has reached it.
+  // A future v2 could show per-avatar read receipts.
+  useEffect(() => {
+    if (!conversationQuery.data || !me?.id) return;
+    const peerReads = (conversationQuery.data.membersMeta ?? [])
+      .filter((m) => m.userId !== me.id)
+      .map((m) => m.lastReadAt)
+      .filter((t): t is string => !!t);
+    if (peerReads.length === 0) return;
+    const earliest = peerReads.reduce((min, t) => (Date.parse(t) < Date.parse(min) ? t : min));
+    setPeerLastReadAt(earliest);
+  }, [conversationQuery.data, me?.id]);
+
+  // Mark conversation as read when opened, and once again on focus or whenever
+  // the socket instance changes (a reconnect needs the read re-emitted).
   useEffect(() => {
     if (!id) return;
     void chatApi.markRead(id).catch(() => null);
-    const socket = getChatSocket();
-    socket?.emit('message:read', { conversationId: id });
-  }, [id]);
+    chatSocket?.emit('message:read', { conversationId: id });
+  }, [id, chatSocket]);
 
   // Live updates: subscribe to socket events and update the cache directly.
   // Without this, the screen relies on the global tab-layout listener which
@@ -117,7 +167,7 @@ export default function ChatScreen() {
   // sending and the message appearing.
   useEffect(() => {
     if (!id) return;
-    const socket = getChatSocket();
+    const socket = chatSocket;
     if (!socket) return;
 
     function handleNewMessage(payload: unknown): void {
@@ -143,14 +193,116 @@ export default function ChatScreen() {
       if (msg.sender.id !== me?.id) {
         void chatApi.markRead(id).catch(() => null);
         socket?.emit('message:read', { conversationId: id });
+        // Peer sent a message — they're no longer typing.
+        clearPeerTyping();
       }
     }
 
+    // ── Read receipt listener ────────────────────────────────────────────────
+    // When the peer reads the conversation, the server emits `message:read`
+    // with their userId and the updated lastReadAt timestamp.  We use it to
+    // advance peerLastReadAt so the ✓ → ✓✓ transition happens in real-time
+    // without waiting for a conversation refetch.
+    function handleMessageRead(payload: MessageReadPayload): void {
+      if (payload.conversationId !== id) return;
+      // Only update if the reader is NOT the current user (we already know our
+      // own read state from the optimistic mark-as-read above).
+      if (payload.userId === me?.id) return;
+      setPeerLastReadAt((prev) => {
+        // Only advance — never regress.  Protects against out-of-order delivery.
+        // Compare as epoch millis (not lexicographically) so non-Z timestamps
+        // (e.g. with a +HH:MM offset) still order correctly.
+        if (!prev || Date.parse(payload.lastReadAt) > Date.parse(prev)) return payload.lastReadAt;
+        return prev;
+      });
+    }
+
+    // ── Typing indicator listeners ───────────────────────────────────────────
+    function handleTypingStart(payload: { conversationId: string; userId: string }): void {
+      if (payload.conversationId !== id) return;
+      if (payload.userId === me?.id) return;   // don't show our own echo
+      setPeerIsTyping(true);
+      // Reset the safety timeout — if typing:stop gets lost we auto-clear.
+      if (peerTypingTimeoutRef.current) clearTimeout(peerTypingTimeoutRef.current);
+      peerTypingTimeoutRef.current = setTimeout(clearPeerTyping, 6000);
+    }
+
+    function handleTypingStop(payload: { conversationId: string; userId: string }): void {
+      if (payload.conversationId !== id) return;
+      if (payload.userId === me?.id) return;
+      clearPeerTyping();
+    }
+
+    // socket.io's built-in auto-reconnect reuses the SAME instance and re-fires
+    // `connect`. Re-emit our read marker then so the server-side room/read state
+    // is restored after a transient drop (a brand-new singleton is handled by
+    // this effect re-running on the `chatSocket` dependency change).
+    function handleConnect(): void {
+      void chatApi.markRead(id!).catch(() => null);
+      socket!.emit('message:read', { conversationId: id });
+    }
+
     socket.on('message:new', handleNewMessage);
+    socket.on('message:read', handleMessageRead);
+    socket.on('typing:start', handleTypingStart);
+    socket.on('typing:stop', handleTypingStop);
+    socket.on('connect', handleConnect);
+
     return () => {
       socket.off('message:new', handleNewMessage);
+      socket.off('message:read', handleMessageRead);
+      socket.off('typing:start', handleTypingStart);
+      socket.off('typing:stop', handleTypingStop);
+      socket.off('connect', handleConnect);
+      // Emit typing:stop on unmount so the peer's indicator clears immediately.
+      if (myTypingActiveRef.current) {
+        socket.emit('typing:stop', { conversationId: id });
+        myTypingActiveRef.current = false;
+      }
+      clearPeerTyping();
     };
-  }, [id, me?.id, messagesKey, qc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, me?.id, messagesKey, qc, chatSocket]);
+
+  /** Clear the peer typing indicator and cancel the safety timeout. */
+  function clearPeerTyping(): void {
+    setPeerIsTyping(false);
+    if (peerTypingTimeoutRef.current) {
+      clearTimeout(peerTypingTimeoutRef.current);
+      peerTypingTimeoutRef.current = null;
+    }
+  }
+
+  // ── Outgoing typing events ───────────────────────────────────────────────────
+  // Called on every draft keystroke.  Emits `typing:start` once (not on every
+  // key) and schedules `typing:stop` after TYPING_IDLE_MS of silence.
+  const handleDraftChange = useCallback((text: string) => {
+    setDraft(text);
+    if (!id) return;
+    const socket = getChatSocket();
+    if (!socket) return;
+
+    if (text.length > 0) {
+      // Only emit typing:start when we weren't already in a typing session.
+      if (!myTypingActiveRef.current) {
+        socket.emit('typing:start', { conversationId: id });
+        myTypingActiveRef.current = true;
+      }
+      // Reset idle timer.
+      if (myTypingIdleRef.current) clearTimeout(myTypingIdleRef.current);
+      myTypingIdleRef.current = setTimeout(() => {
+        socket.emit('typing:stop', { conversationId: id });
+        myTypingActiveRef.current = false;
+      }, TYPING_IDLE_MS);
+    } else {
+      // Draft cleared — stop immediately.
+      if (myTypingActiveRef.current) {
+        if (myTypingIdleRef.current) clearTimeout(myTypingIdleRef.current);
+        socket.emit('typing:stop', { conversationId: id });
+        myTypingActiveRef.current = false;
+      }
+    }
+  }, [id]);
 
   const sendMut = useMutation({
     mutationFn: async (vars: {
@@ -205,6 +357,15 @@ export default function ChatScreen() {
     const text = draft.trim();
     if (!text || !id || !me) return;
     setDraft('');
+
+    // Stop typing indicator immediately when sending.
+    const socket = getChatSocket();
+    if (myTypingActiveRef.current && socket) {
+      if (myTypingIdleRef.current) clearTimeout(myTypingIdleRef.current);
+      socket.emit('typing:stop', { conversationId: id });
+      myTypingActiveRef.current = false;
+    }
+
     const optimistic = makeOptimisticMessage({
       conversationId: id,
       content: text,
@@ -236,8 +397,8 @@ export default function ChatScreen() {
       sendMut.mutate({ mediaUrl: url, messageType: 'image', tempId: optimistic.id });
     } catch (err) {
       const message =
-        err instanceof UploadError ? err.message : (err as Error).message ?? "Échec de l'envoi de la photo";
-      Alert.alert('Photo non envoyée', message);
+        err instanceof UploadError ? err.message : (err as Error).message ?? "Echec de l'envoi de la photo";
+      Alert.alert('Photo non envoyee', message);
     } finally {
       setUploading(false);
     }
@@ -303,6 +464,20 @@ export default function ChatScreen() {
             const isImage = item.messageType === 'image' && item.mediaUrl;
             const pending = (item as PendingMessage).__pending;
             const failed = (item as PendingMessage).__failed;
+
+            // ── Read receipt derivation ──────────────────────────────────────
+            // Only shown on my own messages (not on pending/failed ones — we
+            // don't have a server timestamp for those yet).
+            // "read" = peer's lastReadAt is at or after this message's createdAt.
+            // Compare as epoch millis (not lexicographically) so the result is
+            // robust to non-Z timestamps with a numeric offset.
+            const isRead =
+              isMe &&
+              !pending &&
+              !failed &&
+              peerLastReadAt !== null &&
+              Date.parse(item.createdAt) <= Date.parse(peerLastReadAt);
+
             return (
               <View style={[styles.msgRow, { justifyContent: isMe ? 'flex-end' : 'flex-start' }]}>
                 {!isMe && (
@@ -331,6 +506,12 @@ export default function ChatScreen() {
                         <ActivityIndicator color={Colors.white} />
                       </View>
                     )}
+                    {/* Read receipt on image messages */}
+                    {isMe && !pending && (
+                      <Text style={styles.imageReadReceipt}>
+                        {isRead ? '✓✓' : '✓'}
+                      </Text>
+                    )}
                   </View>
                 ) : (
                   <View
@@ -347,7 +528,14 @@ export default function ChatScreen() {
                     </Text>
                     {failed && (
                       <Text style={[styles.bubbleMeta, isMe && { color: Colors.white }]}>
-                        ⚠️ Échec — touche pour réessayer
+                        ⚠️ Echec — touche pour reessayer
+                      </Text>
+                    )}
+                    {/* Read receipt tick — only on my sent (non-failed) messages.
+                        ✓ = delivered to server; ✓✓ (teal) = peer has read it. */}
+                    {isMe && !pending && !failed && (
+                      <Text style={[styles.readReceipt, isRead && styles.readReceiptRead]}>
+                        {isRead ? '✓✓' : '✓'}
                       </Text>
                     )}
                   </View>
@@ -364,6 +552,15 @@ export default function ChatScreen() {
           }
         />
 
+        {/* Typing indicator — shows above the composer when the peer is typing. */}
+        {peerIsTyping && (
+          <View style={styles.typingRow}>
+            <Text style={styles.typingText}>
+              {peerName} est en train d'ecrire…
+            </Text>
+          </View>
+        )}
+
         <View style={styles.composer}>
           <Pressable
             style={[styles.photoBtn, uploading && { opacity: 0.5 }]}
@@ -378,7 +575,7 @@ export default function ChatScreen() {
             placeholder="Message…"
             placeholderTextColor={Colors.tan400}
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={handleDraftChange}
             multiline
             maxLength={2000}
           />
@@ -471,8 +668,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  imageReadReceipt: {
+    position: 'absolute',
+    bottom: 4,
+    right: 6,
+    fontSize: 10,
+    color: Colors.white,
+    fontWeight: '700',
+  },
   bubbleText: { fontSize: Typography.sizes.md, color: Colors.brown, lineHeight: 20 },
   bubbleMeta: { fontSize: Typography.sizes.xs, color: Colors.brown, marginTop: 4, opacity: 0.85 },
+  // ✓ / ✓✓ read receipt below my message text.
+  readReceipt: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.65)',
+    textAlign: 'right',
+    marginTop: 2,
+  },
+  // Teal/green tint to distinguish "read" (✓✓) from "sent" (✓).
+  readReceiptRead: {
+    color: Colors.green,
+  },
+  // Typing indicator row above the composer.
+  typingRow: {
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: 4,
+    backgroundColor: Colors.cream,
+  },
+  typingText: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.tan500,
+    fontStyle: 'italic',
+  },
   empty: {
     textAlign: 'center',
     color: Colors.tan400,

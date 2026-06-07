@@ -16,3 +16,12 @@ export const resetPasswordSchema = z.object({
     .regex(/[^A-Za-z0-9]/, 'Password must contain a special character'),
 });
 export type ResetPasswordDto = z.infer<typeof resetPasswordSchema>;
+
+export const verifyEmailCodeSchema = z.object({
+  // Exactly 6 digits. Strip spaces the user might paste from the email.
+  code: z
+    .string()
+    .transform((s) => s.replace(/\s+/g, ''))
+    .pipe(z.string().regex(/^\d{6}$/, 'Le code doit contenir 6 chiffres')),
+});
+export type VerifyEmailCodeDto = z.infer<typeof verifyEmailCodeSchema>;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,9 +13,31 @@ export default function VerifyEmailScreen() {
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The user types the 6-digit code from the email to activate the account.
+  async function verifyCode() {
+    if (code.length !== 6) {
+      setError('Entre les 6 chiffres du code reçu par email.');
+      return;
+    }
+    setVerifying(true);
+    setError(null);
+    try {
+      await authApi.verifyEmailCode(code);
+      const { user: fresh } = await authApi.me();
+      setUser(fresh);
+      router.replace('/(tabs)' as never);
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      setError(err.response?.data?.message ?? err.message ?? 'Code invalide. Réessaie.');
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   async function resend() {
     setLoading(true);
@@ -33,28 +55,6 @@ export default function VerifyEmailScreen() {
     }
   }
 
-  // Re-fetch the user after they say they've clicked the link. If the backend
-  // now reports the email as verified, AuthGate will let them through; we also
-  // route to the tabs explicitly for immediacy.
-  async function checkVerified() {
-    setChecking(true);
-    setError(null);
-    try {
-      const { user: fresh } = await authApi.me();
-      setUser(fresh);
-      if (fresh.emailVerified) {
-        router.replace('/(tabs)' as never);
-      } else {
-        setError("Ton email n'est pas encore confirmé. Clique sur le lien reçu puis réessaie.");
-      }
-    } catch (e) {
-      const err = e as { response?: { data?: { message?: string } }; message?: string };
-      setError(err.response?.data?.message ?? err.message ?? 'Vérification impossible. Réessaie.');
-    } finally {
-      setChecking(false);
-    }
-  }
-
   async function signOut() {
     await logout();
     router.replace('/(auth)/welcome' as never);
@@ -64,17 +64,35 @@ export default function VerifyEmailScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.emoji}>📧</Text>
-        <Text style={styles.title}>Vérifie ton email</Text>
+        <Text style={styles.title}>Active ton compte</Text>
         <Text style={styles.subtitle}>
-          Nous avons envoyé un lien à{' '}
-          <Text style={styles.email}>{user?.email ?? 'ton adresse'}</Text>. Clique dessus
-          pour confirmer ton compte.
+          Nous avons envoyé un code à{' '}
+          <Text style={styles.email}>{user?.email ?? 'ton adresse'}</Text>. Saisis-le
+          ci-dessous pour activer ton compte.
         </Text>
+
+        <TextInput
+          style={styles.codeInput}
+          value={code}
+          onChangeText={(t) => {
+            setCode(t.replace(/\D/g, '').slice(0, 6));
+            if (error) setError(null);
+            if (sent) setSent(false);
+          }}
+          keyboardType="number-pad"
+          maxLength={6}
+          placeholder="000000"
+          placeholderTextColor={Colors.tan400}
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          returnKeyType="done"
+          onSubmitEditing={verifyCode}
+        />
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Pas reçu ?</Text>
           <Text style={styles.cardText}>
-            Vérifie tes spams. Le lien expire dans 24h. Tu peux en demander un nouveau
+            Vérifie tes spams. Le code expire dans 24h. Tu peux en demander un nouveau
             ci-dessous.
           </Text>
         </View>
@@ -83,7 +101,7 @@ export default function VerifyEmailScreen() {
           <View style={styles.successBanner}>
             <Text style={styles.successIcon}>✅</Text>
             <Text style={styles.successText}>
-              Nouveau lien envoyé. Pense à vérifier tes spams.
+              Nouveau code envoyé. Pense à vérifier tes spams.
             </Text>
           </View>
         ) : null}
@@ -96,13 +114,17 @@ export default function VerifyEmailScreen() {
         ) : null}
 
         <Pressable
-          onPress={checkVerified}
-          disabled={checking}
-          style={({ pressed }) => [styles.primary, (checking || pressed) && { opacity: 0.85 }]}
+          onPress={verifyCode}
+          disabled={verifying || code.length !== 6}
+          style={({ pressed }) => [
+            styles.primary,
+            (verifying || pressed) && { opacity: 0.85 },
+            code.length !== 6 && { opacity: 0.5 },
+          ]}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
           <Text style={styles.primaryLabel}>
-            {checking ? 'Vérification…' : "J'ai cliqué sur le lien → Vérifier"}
+            {verifying ? 'Vérification…' : 'Valider le code'}
           </Text>
         </Pressable>
 
@@ -112,9 +134,10 @@ export default function VerifyEmailScreen() {
           style={({ pressed }) => [styles.secondary, (loading || pressed) && { opacity: 0.85 }]}
         >
           <Text style={styles.secondaryLabel}>
-            {loading ? 'Envoi…' : 'Renvoyer le lien'}
+            {loading ? 'Envoi…' : 'Renvoyer le code'}
           </Text>
         </Pressable>
+
 
         <Pressable onPress={signOut} style={styles.skip} hitSlop={8}>
           <Text style={styles.skipLabel}>Se déconnecter</Text>
@@ -143,6 +166,19 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   email: { fontWeight: '700', color: Colors.brown },
+  codeInput: {
+    height: 64,
+    borderRadius: Radii.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+    color: Colors.brown,
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: 8,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
   card: {
     backgroundColor: Colors.white,
     borderRadius: Radii.lg,
