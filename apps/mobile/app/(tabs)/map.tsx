@@ -54,7 +54,8 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .marker-cluster.country{width:60px;height:60px;flex-direction:column;font-size:14px}
   .marker-cluster.city{width:50px;height:50px;flex-direction:column;font-size:12px}
   .marker-cluster .flag{font-size:12px;margin-top:1px}
-  .marker-ind{width:48px;height:48px;border-radius:50%;border:3px solid #E05206;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  .marker-ind{width:48px;height:48px;border-radius:50%;border:3px solid #E05206;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(0,0,0,.35);background-color:#F5EDE0}
+  .marker-ind-initials{display:flex;align-items:center;justify-content:center;background:#E05206;color:#fff;font-weight:800;font-size:16px;font-family:system-ui}
   .marker-assoc{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#1565C0;border:3px solid #fff;box-shadow:0 3px 10px rgba(21,101,192,.5);font-size:22px;position:relative}
   .marker-assoc .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
   .marker-me{width:22px;height:22px;border-radius:50%;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3),0 2px 6px rgba(0,0,0,.4)}
@@ -112,13 +113,45 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
     if (meLat !== null) map.flyTo([meLat, meLon], zoom || 11, { duration: 0.8 });
   };
 
+  function initials(name){
+    if(!name) return '?';
+    var p = name.trim().split(/\\s+/);
+    return (((p[0]||'')[0]||'') + ((p[1]||'')[0]||'')).toUpperCase() || '?';
+  }
+
   window.renderMarkers = function(markers){
     markerLayer.clearLayers();
+
+    // Fan out individuals that share (almost) the same coordinates so they don't
+    // stack invisibly on top of one another. Group by ~11m grid, then place each
+    // member of a >1 group on a small ring around the shared point.
+    var groups = {};
+    for (var i=0;i<markers.length;i++){
+      var mm = markers[i];
+      if (mm.kind === 'individual'){
+        var key = mm.lat.toFixed(4) + ',' + mm.lon.toFixed(4);
+        (groups[key] = groups[key] || []).push(mm);
+      }
+    }
+    var offset = {};
+    Object.keys(groups).forEach(function(key){
+      var arr = groups[key];
+      if (arr.length < 2) return;
+      var R = 0.00022; // ~24m
+      for (var j=0;j<arr.length;j++){
+        var ang = (2*Math.PI*j)/arr.length;
+        offset[arr[j].userId] = { dLat: R*Math.sin(ang), dLon: R*Math.cos(ang) };
+      }
+    });
+
     for (const m of markers) {
       if (m.kind === 'individual') {
-        const html = '<div class="marker-ind" style="background-image:url(\\'' + (m.avatarUrl || '') + '\\')"></div>';
-        const icon = L.divIcon({ html: html, className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
-        const mk = L.marker([m.lat, m.lon], { icon });
+        const off = offset[m.userId] || { dLat:0, dLon:0 };
+        const inner = m.avatarUrl
+          ? '<div class="marker-ind" style="background-image:url(\\'' + m.avatarUrl + '\\')"></div>'
+          : '<div class="marker-ind marker-ind-initials">' + initials(m.name) + '</div>';
+        const icon = L.divIcon({ html: inner, className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
+        const mk = L.marker([m.lat + off.dLat, m.lon + off.dLon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
         mk.addTo(markerLayer);
       } else if (m.kind === 'association') {
@@ -208,6 +241,12 @@ export default function MapTab() {
 
   async function persistMyPosition(lat: number, lon: number) {
     if (!user || user.showOnMap === false) return;
+    // Don't let a transient GPS fix overwrite the map position of a user who has
+    // a stated city: their pin should sit at their declared home (city centroid),
+    // not wherever their phone happens to be. We only seed coordinates from GPS
+    // for users who never set a city (e.g. OAuth sign-ups) — otherwise the pin
+    // and the displayed city drift apart (e.g. "Barcelona" plotted in France).
+    if (user.city && user.city.trim()) return;
     // ~100m threshold: skip the write if we're essentially where the server
     // already has us (0.001° ≈ 111m).
     const moved =

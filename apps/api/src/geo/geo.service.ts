@@ -128,10 +128,15 @@ export class GeoService implements OnModuleInit {
     if (includePeople) {
       if (dto.zoom < 4) {
         markers.push(...(await this.countryClusters(dto, blockedIds)));
+        // Users with coords but no country_code (e.g. OAuth sign-ups who never
+        // set a city) are invisible to the country/city aggregates. Cluster
+        // them geographically so they still appear at wide zooms.
+        markers.push(...(await this.orphanClusters(dto, blockedIds, 2)));
       } else if (dto.zoom < 9) {
         markers.push(...(await this.cityClusters(dto, blockedIds)));
+        markers.push(...(await this.orphanClusters(dto, blockedIds, 4)));
       } else {
-        markers.push(...(await this.individuals(dto, blockedIds)));
+        markers.push(...(await this.individuals(dto, blockedIds, viewerId)));
       }
     }
 
@@ -550,7 +555,15 @@ export class GeoService implements OnModuleInit {
     }));
   }
 
-  private async individuals(dto: BoundsDto, blockedIds: string[]): Promise<MapMarker[]> {
+  private async individuals(
+    dto: BoundsDto,
+    blockedIds: string[],
+    viewerId: string,
+  ): Promise<MapMarker[]> {
+    // Exclude the viewer themselves: their own "you are here" marker is drawn
+    // client-side, so returning a second individual pin at their position just
+    // stacks on top of it (and hides anyone sharing their coordinates).
+    const excludedIds = blockedIds.includes(viewerId) ? blockedIds : [...blockedIds, viewerId];
     const users = await this.prisma.user.findMany({
       where: {
         showOnMap: true,
@@ -563,7 +576,7 @@ export class GeoService implements OnModuleInit {
         privacyLevel: { not: 'private' },
         latitude: { gte: dto.south, lte: dto.north },
         longitude: { gte: dto.west, lte: dto.east },
-        id: blockedIds.length ? { notIn: blockedIds } : undefined,
+        id: { notIn: excludedIds },
       },
       take: 500,
       select: {
@@ -589,6 +602,61 @@ export class GeoService implements OnModuleInit {
         lat: Number(u.latitude),
         lon: Number(u.longitude),
       }));
+  }
+
+  /**
+   * Cluster users who have coordinates but NO country_code (e.g. OAuth sign-ups
+   * who never picked a city). They fall through the country/city aggregates
+   * (which require a country_code), so without this they'd be invisible at every
+   * zoom below the individual threshold. We bucket them by geohash cell so they
+   * cluster geographically; `precision` tunes the cell size to the zoom band.
+   */
+  private async orphanClusters(
+    dto: BoundsDto,
+    blockedIds: string[],
+    precision: number,
+  ): Promise<CityCluster[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        showOnMap: true,
+        status: 'active',
+        emailVerified: true,
+        privacyLevel: { not: 'private' },
+        countryCode: null,
+        latitude: { gte: dto.south, lte: dto.north },
+        longitude: { gte: dto.west, lte: dto.east },
+        id: blockedIds.length ? { notIn: blockedIds } : undefined,
+      },
+      take: 1000,
+      select: { latitude: true, longitude: true },
+    });
+
+    const buckets = new Map<string, { lat: number; lon: number; count: number }>();
+    for (const u of users) {
+      if (u.latitude === null || u.longitude === null) continue;
+      const lat = Number(u.latitude);
+      const lon = Number(u.longitude);
+      const key = geohashEncode(lat, lon, precision);
+      const b = buckets.get(key);
+      if (b) {
+        b.lat += lat;
+        b.lon += lon;
+        b.count += 1;
+      } else {
+        buckets.set(key, { lat, lon, count: 1 });
+      }
+    }
+
+    // Emitted as city-kind clusters with empty country (mobile renders the 🌍
+    // fallback flag). Tapping zooms in until they resolve to individual pins.
+    return Array.from(buckets.values()).map((b) => ({
+      kind: 'city' as const,
+      city: '',
+      countryCode: '',
+      lat: b.lat / b.count,
+      lon: b.lon / b.count,
+      count: b.count,
+    }));
   }
 
   private cacheKey(viewerId: string, dto: BoundsDto): string {
