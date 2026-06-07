@@ -110,13 +110,16 @@ export function CitySearchField({ city, countryCode, onChange, label }: Props) {
 
   // Merge: prefer API results, supplement with offline ones if API is sparse.
   // We cap at 10 total to keep the dropdown short.
-  const suggestions: Array<{ name: string; country: string; lat?: number; lng?: number }> =
+  const suggestions: Array<{ name: string; raw?: string; country: string; lat?: number; lng?: number }> =
     apiResults.length > 0
       ? apiResults.slice(0, 10).map((r) => ({
           // Localize big-city names to French (London → Londres); the long tail
           // keeps its dataset spelling. Coords come from the picked API result,
           // so storing the French name needs no server geocode.
           name: frenchCityName(r.name, r.countryCode),
+          // Keep the original API spelling so the free-text match below still
+          // recognises a typed exonym ("London") against a localized suggestion.
+          raw: r.name,
           country: r.countryCode,
           lat: r.lat,
           lng: r.lng,
@@ -124,12 +127,18 @@ export function CitySearchField({ city, countryCode, onChange, label }: Props) {
       : offlineResults.slice(0, 10).map((r) => ({ name: r.name, country: r.country }));
 
   // Only offer the free-text row when the typed value doesn't exactly match
-  // a suggestion and we're not still loading the first result.
+  // a suggestion and we're not still loading the first result. A suggestion
+  // counts as a match against its localized name OR its raw API name, so typing
+  // "London" suppresses the free-text row next to the "Londres" suggestion.
   const showFreeText =
     focused &&
     trimmed.length > 1 &&
     !apiLoading &&
-    !suggestions.some((s) => s.name.toLowerCase() === trimmed.toLowerCase());
+    !suggestions.some(
+      (s) =>
+        s.name.toLowerCase() === trimmed.toLowerCase() ||
+        s.raw?.toLowerCase() === trimmed.toLowerCase(),
+    );
 
   function selectCity(name: string, code: string, lat?: number, lng?: number) {
     onChange(name, code, lat, lng);

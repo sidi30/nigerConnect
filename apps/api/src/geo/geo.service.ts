@@ -366,7 +366,7 @@ export class GeoService implements OnModuleInit {
 
       // The whole notify decision touches Redis; on any Redis error we fail
       // CLOSED (skip the push) rather than risk a notification storm.
-      let shouldNotify = false;
+      const dedupKey = `prox:seen:${viewerId}:${c.id}:${zone}`;
       try {
         // 1) Habitual pair? Two people co-located in the same zone on ≥
         //    HABITUAL_DAYS distinct days are roommates / family / colleagues —
@@ -376,9 +376,24 @@ export class GeoService implements OnModuleInit {
           continue;
         }
 
-        // 2) Learn the routine: record today against this (pair, zone). When the
-        //    distinct-day count crosses the threshold, promote to "familiar" and
-        //    stop notifying for this pair going forward.
+        // 2) Claim the per-(direction, zone) dedup slot FIRST. SET NX returns
+        //    null when the key already exists ⇒ already notified in this zone
+        //    recently ⇒ stay silent. Claiming before day-counting means a
+        //    non-fresh ping (same zone within the TTL) never touches the
+        //    day-set, so a continuous meetup straddling 00:00 UTC accrues at
+        //    most one distinct day per TTL window (no midnight double-count).
+        const fresh = await this.redis.client.set(
+          dedupKey,
+          '1',
+          'EX',
+          PROXIMITY_ZONE_TTL_SECONDS,
+          'NX',
+        );
+        if (fresh === null) continue;
+
+        // 3) Fresh encounter only: learn the routine by recording today against
+        //    this (pair, zone). When the distinct-day count crosses the
+        //    threshold, promote to "familiar" and stop notifying this pair.
         const daysKey = `prox:days:${pair}:${zone}`;
         const distinctDays = await this.redis.client.sadd(daysKey, today);
         if (distinctDays > 0) {
@@ -390,40 +405,35 @@ export class GeoService implements OnModuleInit {
           await this.redis.client.set(familiarKey, '1', 'EX', HABITUAL_WINDOW_SECONDS);
           continue;
         }
-
-        // 3) One notification per (direction, zone) within the dedup window.
-        //    SET NX returns null when the key already exists ⇒ already notified
-        //    in this zone recently ⇒ stay silent.
-        const dedupKey = `prox:seen:${viewerId}:${c.id}:${zone}`;
-        const fresh = await this.redis.client.set(
-          dedupKey,
-          '1',
-          'EX',
-          PROXIMITY_ZONE_TTL_SECONDS,
-          'NX',
-        );
-        shouldNotify = fresh !== null;
       } catch {
         continue;
       }
-      if (!shouldNotify) continue;
 
-      // Only surface the match to the pinger when we actually notify the peer,
-      // so the pinger's courtesy local heads-up mirrors a real new encounter.
+      // 4) Notify, guarded on its own. If create() throws we must not leave the
+      //    dedup slot claimed (that peer would be muted for the whole TTL) nor
+      //    abort the loop and skip later candidates — release the slot so it can
+      //    re-fire next ping, and move on.
+      try {
+        await this.notifications.create({
+          userId: c.id,
+          type: 'proximity',
+          title: pingerName,
+          body: `est à proximité (${this.distanceLabel(bucket)})`,
+          data: { userId: viewerId },
+          actorId: viewerId,
+        });
+      } catch {
+        await this.redis.client.del(dedupKey);
+        continue;
+      }
+
+      // Only surface the match to the pinger after a successful notify, so the
+      // pinger's courtesy local heads-up mirrors a real new encounter.
       matches.push({
         userId: c.id,
         name: c.display_name,
         avatarUrl: c.avatar_url,
         distance: bucket,
-      });
-
-      await this.notifications.create({
-        userId: c.id,
-        type: 'proximity',
-        title: pingerName,
-        body: `est à proximité (${this.distanceLabel(bucket)})`,
-        data: { userId: viewerId },
-        actorId: viewerId,
       });
     }
 

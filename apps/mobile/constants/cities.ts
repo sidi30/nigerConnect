@@ -356,7 +356,8 @@ export function searchCities(query: string, limit = 8): City[] {
     const name = normalize(city.name);
     if (name.startsWith(q)) prefix.push(city);
     else if (name.includes(q)) contains.push(city);
-    if (prefix.length >= limit) break;
   }
+  // Scan the whole (~250-entry) list before truncating so prefix matches lower
+  // in the country-grouped list aren't dropped by an early break.
   return [...prefix, ...contains].slice(0, limit);
 }
