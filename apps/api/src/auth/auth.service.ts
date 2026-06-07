@@ -426,6 +426,7 @@ export class AuthService {
       }
     }
 
+    let createdNow = false;
     if (!user) {
       // Concurrent first-sign-ins for the same (provider, providerId) both reach
       // here after seeing `findFirst` return null. The @@unique constraint makes
@@ -443,11 +444,16 @@ export class AuthService {
             lastName: profile.lastName ?? null,
             displayName: [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
             avatarUrl: profile.avatarUrl ?? null,
-            // Only trust the provider's verdict — don't mark verified just
-            // because an email string was supplied.
-            emailVerified: profile.emailVerified === true,
+            // OAuth signup = the provider already authenticated the user and owns
+            // the address (Google rejects unverified upstream; Apple proves
+            // account ownership). Treat the account as email-verified so the user
+            // isn't stuck behind the verification gate / hidden from the map.
+            // Profile completion (city/country) is collected by the client in a
+            // follow-up onboarding step.
+            emailVerified: true,
           },
         });
+        createdNow = true;
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
           user = await this.prisma.user.findFirst({
@@ -459,6 +465,9 @@ export class AuthService {
         }
       }
     }
+
+    // Welcome email on first OAuth account creation — same as a normal signup.
+    if (createdNow) this.sendWelcomeEmail(user.id);
 
     const issued = await this.tokens.issueTokens(user.id, user.role, user.identityStatus, deviceName);
     return { user, accessToken: issued.accessToken, refreshToken: issued.refreshToken };
