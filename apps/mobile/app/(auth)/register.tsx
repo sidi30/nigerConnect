@@ -95,6 +95,13 @@ export default function RegisterScreen() {
 
   async function submit() {
     setErrorMessage(null);
+    // Defense-in-depth: never persist a password account without a countryCode
+    // (the map + the OAuth-onboarding gate both rely on it being set here).
+    if (!data.countryCode) {
+      setStep(2);
+      setErrorMessage('Sélectionne ta ville et ton pays.');
+      return;
+    }
     setLoading(true);
     try {
       await register({

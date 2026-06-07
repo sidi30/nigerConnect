@@ -421,7 +421,10 @@ export class AuthService {
         }
         user = await this.prisma.user.update({
           where: { id: byEmail.id },
-          data: { oauthProvider: provider, oauthProviderId: providerId },
+          // safeToLink already required profile.emailVerified === true, so the
+          // provider has verified this address → mark the linked account verified
+          // (otherwise it'd stay gated/off-map despite a verified OAuth identity).
+          data: { oauthProvider: provider, oauthProviderId: providerId, emailVerified: true },
         });
       }
     }

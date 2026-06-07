@@ -145,6 +145,14 @@ export default defineConfig({
         extraHTTPHeaders: { 'Content-Type': 'application/json' },
       },
     },
+    {
+      name: 'api-profile-and-map',
+      testMatch: 'api/profile-and-map.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
 
     // ── Browser tests against the Next.js web app ────────────────────────────
     {
