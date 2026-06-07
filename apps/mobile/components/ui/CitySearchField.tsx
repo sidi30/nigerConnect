@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
-import { searchCities as searchCitiesLocal } from '@/constants/cities';
+import { searchCities as searchCitiesLocal, frenchCityName } from '@/constants/cities';
 import { countryFlag, countryName, searchCountries } from '@/constants/countries';
 import { geoApi } from '@/services/geoApi';
 import type { CityResult } from '@/services/geoApi';
@@ -113,7 +113,10 @@ export function CitySearchField({ city, countryCode, onChange, label }: Props) {
   const suggestions: Array<{ name: string; country: string; lat?: number; lng?: number }> =
     apiResults.length > 0
       ? apiResults.slice(0, 10).map((r) => ({
-          name: r.name,
+          // Localize big-city names to French (London → Londres); the long tail
+          // keeps its dataset spelling. Coords come from the picked API result,
+          // so storing the French name needs no server geocode.
+          name: frenchCityName(r.name, r.countryCode),
           country: r.countryCode,
           lat: r.lat,
           lng: r.lng,
