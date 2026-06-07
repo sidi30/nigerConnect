@@ -6,6 +6,14 @@
         "appIDs": ["4SRJRX4N45.com.nigerconnect.app"],
         "components": [
           {
+            "/": "/verify-email*",
+            "comment": "Lien d'activation email -> ouvre l'app"
+          },
+          {
+            "/": "/reset-password*",
+            "comment": "Lien de réinitialisation mot de passe -> ouvre l'app"
+          },
+          {
             "/": "/app/*",
             "comment": "Lie toutes les routes /app/* au mobile (deep linking)"
           },

@@ -6,11 +6,11 @@ import { bootApp, register, cleanupTestData, type RegisteredUser } from './helpe
 /**
  * Real-HTTP e2e for the proximity-alerts feature.
  *
- * Each test uses a FRESH pair of users so the ordered-pair Redis cooldown
- * (key `prox:<pinger>:<candidate>`, 5 min TTL) from one test never bleeds into
- * another. Coordinates: "near" users sit a few metres apart; "far" users sit on
- * different continents. proximityRadius is pinned to 1000 m for near tests so
- * GPS-scale spacing always falls inside the radius.
+ * Each test uses a FRESH pair of users so the per-(direction, zone) Redis dedup
+ * key (`prox:seen:<pinger>:<candidate>:<geohash>`, 8 h TTL) from one test never
+ * bleeds into another. Coordinates: "near" users sit a few metres apart; "far"
+ * users sit on different continents. proximityRadius is pinned to 1000 m for
+ * near tests so GPS-scale spacing always falls inside the radius.
  */
 describe('Proximity alerts (e2e)', () => {
   let app: INestApplication;
@@ -146,7 +146,7 @@ describe('Proximity alerts (e2e)', () => {
     expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
   });
 
-  it('7. COOLDOWN: A pings twice near B → B gets exactly one proximity notification; matches returned both times', async () => {
+  it('7. ZONE DEDUP: A pings twice in the same zone near B → exactly one notification; the deduped second ping omits B from matches', async () => {
     const a = await register(app, { firstName: 'Halima', lastName: 'Cool' });
     const b = await register(app, { firstName: 'Boubacar', lastName: 'Cool' });
     await setUp(a, NEAR_A);
@@ -155,8 +155,10 @@ describe('Proximity alerts (e2e)', () => {
     const first = await ping(a, NEAR_A);
     expect(first.matches.find((m) => m.userId === b.id)).toBeDefined();
 
+    // Same geohash cell within the dedup window → no re-notify, and the match is
+    // omitted so the pinger's heads-up only ever reflects a NEW encounter.
     const second = await ping(a, NEAR_A);
-    expect(second.matches.find((m) => m.userId === b.id)).toBeDefined();
+    expect(second.matches.find((m) => m.userId === b.id)).toBeUndefined();
 
     const notifs = await proximityNotifs(b);
     expect(notifs).toHaveLength(1);
@@ -185,5 +187,39 @@ describe('Proximity alerts (e2e)', () => {
 
     expect(res.body.user.latitude).toBeUndefined();
     expect(res.body.user.longitude).toBeUndefined();
+  });
+
+  it('10. PRIVACY: B is private → excluded from A matches and gets no notification, even map-visible + opted in', async () => {
+    const a = await register(app, { firstName: 'Karim', lastName: 'Priv' });
+    const b = await register(app, { firstName: 'Bina', lastName: 'Priv' });
+    await setUp(a, NEAR_A);
+    await setUp(b, NEAR_B);
+    // B keeps proximityAlerts + showOnMap on but flips the profile to private:
+    // discovery must hide them everywhere, proximity included.
+    await request(app.getHttpServer())
+      .patch('/api/profile/me')
+      .set(auth(b.accessToken))
+      .send({ privacyLevel: 'private' })
+      .expect(200);
+
+    const { matches } = await ping(a, NEAR_A);
+    expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(await proximityNotifs(b)).toHaveLength(0);
+  });
+
+  it('11. PRIVACY: a private PINGER neither broadcasts nor reveals itself', async () => {
+    const a = await register(app, { firstName: 'Laila', lastName: 'PrivPing' });
+    const b = await register(app, { firstName: 'Boss', lastName: 'PrivPing' });
+    await setUp(a, NEAR_A);
+    await setUp(b, NEAR_B);
+    await request(app.getHttpServer())
+      .patch('/api/profile/me')
+      .set(auth(a.accessToken))
+      .send({ privacyLevel: 'private' })
+      .expect(200);
+
+    const { matches } = await ping(a, NEAR_A);
+    expect(matches).toEqual([]);
+    expect(await proximityNotifs(b)).toHaveLength(0);
   });
 });

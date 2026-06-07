@@ -8,6 +8,7 @@ export interface SendMailInput {
   subject: string;
   html: string;
   text: string;
+  attachments?: Array<{ filename: string; content: string | Buffer; contentType?: string }>;
 }
 
 /**
@@ -35,10 +36,28 @@ export class MailerService implements OnModuleInit {
    */
   private readonly webUrl: string;
 
+  /** DKIM signing config, built from env when all parts are present. */
+  private readonly dkim?: { domainName: string; keySelector: string; privateKey: string };
+  /** Bare email address parsed out of MAIL_FROM (for Reply-To / unsubscribe). */
+  private readonly fromAddress: string;
+
   constructor(private readonly config: ConfigService<Env, true>) {
     this.from = config.get('MAIL_FROM', { infer: true }) ?? 'no-reply@nigerconnect.local';
+    this.fromAddress = this.from.match(/<([^>]+)>/)?.[1] ?? this.from;
     this.webUrl =
       config.get('APP_WEB_URL', { infer: true }) ?? config.get('API_URL', { infer: true });
+
+    const dkimDomain = config.get('DKIM_DOMAIN', { infer: true });
+    const dkimSelector = config.get('DKIM_SELECTOR', { infer: true });
+    const dkimKeyB64 = config.get('DKIM_PRIVATE_KEY_B64', { infer: true });
+    if (dkimDomain && dkimSelector && dkimKeyB64) {
+      this.dkim = {
+        domainName: dkimDomain,
+        keySelector: dkimSelector,
+        // Stored base64-encoded so the multiline PEM survives .env / compose.
+        privateKey: Buffer.from(dkimKeyB64, 'base64').toString('utf8'),
+      };
+    }
   }
 
   onModuleInit(): void {
@@ -52,8 +71,15 @@ export class MailerService implements OnModuleInit {
           user: this.config.get('SMTP_USER', { infer: true }),
           pass: this.config.get('SMTP_PASS', { infer: true }),
         },
+        // DKIM signing (when configured) so receivers see DKIM=pass alongside
+        // SPF — required to stay out of spam under DMARC. Key + selector live in
+        // env; the matching public key must be published at
+        // <selector>._domainkey.<domain> in DNS.
+        ...(this.dkim ? { dkim: this.dkim } : {}),
       });
-      this.logger.log(`Mailer: SMTP → ${host}`);
+      this.logger.log(
+        `Mailer: SMTP → ${host}${this.dkim ? ` (DKIM: ${this.dkim.keySelector}._domainkey.${this.dkim.domainName})` : ' (no DKIM)'}`,
+      );
     } else {
       // Dev: log to console
       this.transporter = nodemailer.createTransport({ jsonTransport: true });
@@ -69,6 +95,13 @@ export class MailerService implements OnModuleInit {
         subject: input.subject,
         html: input.html,
         text: input.text,
+        replyTo: this.fromAddress,
+        ...(input.attachments ? { attachments: input.attachments } : {}),
+        // List-Unsubscribe improves inbox placement even for transactional mail;
+        // mailto target is the sending address. Helps reputation with Gmail.
+        headers: {
+          'List-Unsubscribe': `<mailto:${this.fromAddress}?subject=unsubscribe>`,
+        },
       });
       if ((info as { message?: string }).message) {
         // Dev json transport — log the whole email
@@ -335,5 +368,35 @@ export class MailerService implements OnModuleInit {
       bodyHtml,
     });
     await this.send({ to, subject: 'Bienvenue sur NigerConnect 🇳🇪', html, text });
+  }
+
+  /**
+   * RGPD data export delivered by email, with the full JSON dump attached.
+   * `json` is the already-serialized export payload.
+   */
+  async sendDataExport(to: string, json: string, firstName?: string | null): Promise<void> {
+    const b = MailerService.BRAND;
+    const safeName = this.esc(firstName);
+    const greeting = safeName ? `Bonjour ${safeName},` : 'Bonjour,';
+    const filename = `nigerconnect-donnees-${new Date().toISOString().slice(0, 10)}.json`;
+    const bodyHtml = `
+      <h1 style="margin:0 0 16px;font-size:24px;font-weight:800;color:${b.brown};">Tes données personnelles</h1>
+      <p style="margin:0 0 12px;">${greeting}</p>
+      <p style="margin:0 0 12px;">Tu as demandé une copie de tes données personnelles (RGPD, article 20). Tu la trouveras en <strong>pièce jointe</strong> de cet email, au format JSON (<code>${filename}</code>).</p>
+      <p style="margin:0 0 12px;">L'export contient ton profil, tes publications, tes relations et ton activité. Pour ta sécurité, il <strong>ne contient aucun identifiant de connexion</strong> (mot de passe, secret MFA, identifiants OAuth).</p>
+      <p style="margin:18px 0 0;font-size:13px;color:${b.tan500};">Si tu n'es pas à l'origine de cette demande, change ton mot de passe et contacte-nous.</p>`;
+    const text =
+      `NigerConnect — Tes données personnelles\n\n${greeting}\n` +
+      `Ta copie de données (RGPD art. 20) est en pièce jointe (${filename}).\n` +
+      `Elle ne contient aucun identifiant de connexion.\n\n` +
+      `Si tu n'es pas à l'origine de cette demande, change ton mot de passe.`;
+    const html = this.layout({ preheader: 'Ta copie de données personnelles NigerConnect.', bodyHtml });
+    await this.send({
+      to,
+      subject: 'NigerConnect — Tes données personnelles',
+      html,
+      text,
+      attachments: [{ filename, content: json, contentType: 'application/json' }],
+    });
   }
 }

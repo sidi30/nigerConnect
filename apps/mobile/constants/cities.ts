@@ -265,6 +265,84 @@ function normalize(value: string): string {
 }
 
 /**
+ * French exonyms for major world cities — the worldwide autocomplete dataset
+ * (`all-the-cities`) returns local/English spellings ("London", "Beijing"), but
+ * the app is in French. We override ONLY well-known big cities whose French name
+ * differs; every other city keeps its dataset spelling.
+ *
+ * Keyed by ISO-3166-1 alpha-2 country code → { normalizedEnglishName: French }.
+ * Scoping by country avoids collisions (e.g. "Florence" the Italian city vs the
+ * US one). Lookup keys are accent-stripped + lowercased (see `normalize`).
+ */
+const FRENCH_EXONYMS: Record<string, Record<string, string>> = {
+  GB: { london: 'Londres', edinburgh: 'Édimbourg' },
+  IE: { dublin: 'Dublin' },
+  BE: { brussels: 'Bruxelles', antwerp: 'Anvers', ghent: 'Gand', bruges: 'Bruges' },
+  NL: { 'the hague': 'La Haye' },
+  DE: {
+    munich: 'Munich',
+    cologne: 'Cologne',
+    'köln': 'Cologne',
+    koln: 'Cologne',
+    frankfurt: 'Francfort',
+    hamburg: 'Hambourg',
+    nuremberg: 'Nuremberg',
+    'nürnberg': 'Nuremberg',
+    nurnberg: 'Nuremberg',
+    bremen: 'Brême',
+    dresden: 'Dresde',
+    hanover: 'Hanovre',
+    hannover: 'Hanovre',
+    aachen: 'Aix-la-Chapelle',
+  },
+  IT: {
+    rome: 'Rome',
+    milan: 'Milan',
+    venice: 'Venise',
+    florence: 'Florence',
+    naples: 'Naples',
+    turin: 'Turin',
+    genoa: 'Gênes',
+    padua: 'Padoue',
+  },
+  ES: { seville: 'Séville', cordoba: 'Cordoue', 'córdoba': 'Cordoue' },
+  PT: { lisbon: 'Lisbonne' },
+  CH: { geneva: 'Genève', zurich: 'Zurich', 'zürich': 'Zurich', basel: 'Bâle' },
+  AT: { vienna: 'Vienne' },
+  GR: { athens: 'Athènes', thessaloniki: 'Thessalonique' },
+  PL: { warsaw: 'Varsovie', krakow: 'Cracovie', 'kraków': 'Cracovie' },
+  CZ: { prague: 'Prague' },
+  RO: { bucharest: 'Bucarest' },
+  RU: { moscow: 'Moscou', 'saint petersburg': 'Saint-Pétersbourg' },
+  UA: { kyiv: 'Kiev', kiev: 'Kiev' },
+  DK: { copenhagen: 'Copenhague' },
+  SE: { gothenburg: 'Göteborg' },
+  EG: { cairo: 'Le Caire', alexandria: 'Alexandrie' },
+  DZ: { algiers: 'Alger', oran: 'Oran' },
+  TN: { tunis: 'Tunis' },
+  SY: { damascus: 'Damas', aleppo: 'Alep' },
+  IR: { tehran: 'Téhéran' },
+  IQ: { baghdad: 'Bagdad' },
+  SA: { riyadh: 'Riyad', jeddah: 'Djeddah', mecca: 'La Mecque', medina: 'Médine' },
+  AE: { dubai: 'Dubaï', 'abu dhabi': 'Abou Dabi', sharjah: 'Charjah' },
+  CN: { beijing: 'Pékin', nanjing: 'Nankin' },
+  KR: { seoul: 'Séoul' },
+  SG: { singapore: 'Singapour' },
+  MX: { 'mexico city': 'Mexico' },
+};
+
+/**
+ * Returns the French exonym for a major city when one is known, else the name
+ * unchanged. Used to localize the worldwide autocomplete suggestions.
+ */
+export function frenchCityName(name: string, country: string | null | undefined): string {
+  if (!country) return name;
+  const table = FRENCH_EXONYMS[country.toUpperCase()];
+  if (!table) return name;
+  return table[normalize(name)] ?? name;
+}
+
+/**
  * Search the embedded city list, accent- and case-insensitively.
  * Prefix matches rank above substring matches; within each rank the original
  * list order (roughly by population) is preserved. Returns up to `limit` hits.

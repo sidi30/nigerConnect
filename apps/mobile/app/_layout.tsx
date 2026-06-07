@@ -148,6 +148,7 @@ export default function RootLayout() {
                 <Stack.Screen name="friends" />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
+                <Stack.Screen name="reset-password" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/terms" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />
@@ -235,7 +236,10 @@ function AuthGate() {
     const first = segments[0];
     const inAuth = first === '(auth)';
     const onVerifyEmail = first === 'verify-email';
-    if (!isAuthenticated && !inAuth) {
+    // Reset-password is reachable while logged-out (opened from the email
+    // link / universal link) — don't bounce it to the welcome screen.
+    const onResetPassword = first === 'reset-password';
+    if (!isAuthenticated && !inAuth && !onResetPassword) {
       router.replace('/(auth)/welcome');
     } else if (isAuthenticated && user && !user.emailVerified && !onVerifyEmail) {
       // Authenticated but email not confirmed → corral them onto the

@@ -64,4 +64,14 @@ export const authApi = {
   async verifyEmailCode(code: string): Promise<void> {
     await api.post('/auth/verify-email/code', { code });
   },
+
+  // Consume the long token carried by the email's activation link (universal
+  // link opens the app on /verify-email?token=...). Returns true if verified.
+  async verifyEmailToken(token: string): Promise<boolean> {
+    const { data } = await api.get<{ ok: boolean }>('/auth/verify-email', {
+      params: { token },
+      headers: { Accept: 'application/json' },
+    });
+    return data.ok === true;
+  },
 };

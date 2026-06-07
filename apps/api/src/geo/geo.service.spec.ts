@@ -15,6 +15,12 @@ function makeMocks() {
     client: {
       get: jest.fn<Promise<string | null>, [string]>(async () => null),
       set: jest.fn<Promise<string | null>, unknown[]>(async () => 'OK'),
+      // Proximity dedup/learning primitives. Defaults model a brand-new pair:
+      // not familiar, first sighting today, 1 distinct day so far.
+      exists: jest.fn<Promise<number>, [string]>(async () => 0),
+      sadd: jest.fn<Promise<number>, unknown[]>(async () => 1),
+      scard: jest.fn<Promise<number>, [string]>(async () => 1),
+      expire: jest.fn<Promise<number>, unknown[]>(async () => 1),
     },
   };
   const prisma = {
@@ -155,7 +161,7 @@ describe('GeoService', () => {
       expect(notifications.create).not.toHaveBeenCalled();
     });
 
-    it('skips notifying a candidate whose cooldown key already exists', async () => {
+    it('stays silent when already notified in this zone (dedup key exists)', async () => {
       const { redis, prisma, notifications } = makeMocks();
       // 1st findUnique = pinger opt-in/radius/showOnMap; 2nd = displayName lookup.
       prisma.user.findUnique
@@ -164,20 +170,44 @@ describe('GeoService', () => {
       prisma.$queryRaw.mockResolvedValueOnce([
         { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.04 },
       ]);
-      // Cooldown still set -> SET NX returns null.
+      // Per-zone dedup key already set -> SET NX returns null.
       redis.client.set.mockResolvedValueOnce(null);
       const svc = new GeoService(prisma as never, redis as never, notifications as never);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
-      // Still returned to the pinger (in-app), but no notification fired.
-      // Distance is bucketed (40m → "≤50" bucket), not raw meters.
-      expect(result.matches).toHaveLength(1);
-      expect(result.matches[0]).toMatchObject({ userId: 'cand-1', distance: 50 });
+      // No notification AND no match surfaced — the pinger's local heads-up
+      // mirrors a real new encounter, so a deduped peer is omitted.
+      expect(result.matches).toHaveLength(0);
       expect(notifications.create).not.toHaveBeenCalled();
     });
 
-    it('notifies the candidate with type proximity when the cooldown is fresh', async () => {
+    it('mutes a habitual pair (co-located ≥ threshold distinct days)', async () => {
+      const { redis, prisma, notifications } = makeMocks();
+      prisma.user.findUnique
+        .mockResolvedValueOnce({ proximityAlerts: true, proximityRadius: 100, showOnMap: true })
+        .mockResolvedValueOnce({ displayName: 'Aïcha', firstName: null });
+      prisma.$queryRaw.mockResolvedValueOnce([
+        { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.04 },
+      ]);
+      // 3rd distinct day in the same zone -> crosses HABITUAL_DAYS -> muted.
+      redis.client.scard.mockResolvedValueOnce(3);
+      const svc = new GeoService(prisma as never, redis as never, notifications as never);
+
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+
+      expect(result.matches).toHaveLength(0);
+      expect(notifications.create).not.toHaveBeenCalled();
+      // The pair is promoted to "familiar" so future pings short-circuit.
+      expect(redis.client.set).toHaveBeenCalledWith(
+        expect.stringMatching(/^prox:familiar:/),
+        '1',
+        'EX',
+        expect.any(Number),
+      );
+    });
+
+    it('notifies once per zone for a fresh, non-habitual encounter', async () => {
       const { redis, prisma, notifications } = makeMocks();
       prisma.user.findUnique
         .mockResolvedValueOnce({ proximityAlerts: true, proximityRadius: 500, showOnMap: true })
@@ -185,19 +215,21 @@ describe('GeoService', () => {
       prisma.$queryRaw.mockResolvedValueOnce([
         { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.12 },
       ]);
-      // Fresh cooldown -> SET NX returns 'OK'.
-      redis.client.set.mockResolvedValueOnce('OK');
       const svc = new GeoService(prisma as never, redis as never, notifications as never);
 
-      await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
+      // Dedup key is directional + zone-scoped (geohash suffix varies).
       expect(redis.client.set).toHaveBeenCalledWith(
-        'prox:pinger:cand-1',
+        expect.stringMatching(/^prox:seen:pinger:cand-1:/),
         '1',
         'EX',
-        300,
+        8 * 60 * 60,
         'NX',
       );
+      // 0.12 km = 120 m → bucketed up to the 500 m tier.
+      expect(result.matches).toHaveLength(1);
+      expect(result.matches[0]).toMatchObject({ userId: 'cand-1', distance: 500 });
       expect(notifications.create).toHaveBeenCalledTimes(1);
       expect(notifications.create).toHaveBeenCalledWith(
         expect.objectContaining({

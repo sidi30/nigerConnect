@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { authApi } from '@/services/authApi';
@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ token?: string }>();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const logout = useAuthStore((s) => s.logout);
@@ -17,6 +18,38 @@ export default function VerifyEmailScreen() {
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // If the screen was opened by the email activation link (universal link with
+  // ?token=...), consume the token automatically — no need to type the code.
+  useEffect(() => {
+    const token = typeof params.token === 'string' ? params.token : undefined;
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      setVerifying(true);
+      setError(null);
+      try {
+        const ok = await authApi.verifyEmailToken(token);
+        if (cancelled) return;
+        if (ok) {
+          const { user: fresh } = await authApi.me();
+          if (cancelled) return;
+          setUser(fresh);
+          router.replace('/(tabs)' as never);
+        } else {
+          setError('Lien invalide ou expiré. Saisis le code reçu par email.');
+        }
+      } catch {
+        if (!cancelled) setError('Lien invalide ou expiré. Saisis le code reçu par email.');
+      } finally {
+        if (!cancelled) setVerifying(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.token]);
 
   // The user types the 6-digit code from the email to activate the account.
   async function verifyCode() {

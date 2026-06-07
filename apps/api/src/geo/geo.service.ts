@@ -4,14 +4,26 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { NotificationService } from '../notification/notification.service';
 import { geocode, setWorldCitiesLookup } from '../common/geo/city-coords';
+import { geohashEncode } from '../common/geo/geohash';
 import { WorldCitiesService } from './world-cities';
 import type { BoundsDto, CitiesQueryDto, NearbyDto, ProximityPingDto } from './dto/geo.dto';
 
 const CLUSTER_TTL = 300;
-const PROXIMITY_COOLDOWN = 300;
 // Max users notified by a single ping — caps the notification fan-out in dense
 // areas (a crowd at an event must not trigger hundreds of pushes per ping).
 const PROXIMITY_MATCH_LIMIT = 50;
+
+// Proximity notification dedup tuning.
+//  - ZONE_TTL: one notification per (direction, geohash zone) within this
+//    window. Long enough that lingering in the same place stays silent, short
+//    enough that meeting the same person there again next day re-notifies.
+//  - HABITUAL_DAYS: distinct days a pair shares a zone before they're treated
+//    as familiar (roommates/family/colleagues) and muted entirely.
+//  - HABITUAL_WINDOW: rolling lifetime for both the day-counter and the
+//    resulting "familiar" mute, refreshed as the routine continues.
+const PROXIMITY_ZONE_TTL_SECONDS = 8 * 60 * 60; // 8h
+const HABITUAL_DAYS = 3;
+const HABITUAL_WINDOW_SECONDS = 14 * 24 * 60 * 60; // 14 days
 
 export interface ProximityMatch {
   userId: string;
@@ -178,11 +190,11 @@ export class GeoService implements OnModuleInit {
     // anonymously, matching the cluster semantics. Only individual markers and
     // proximity/direct disclosure honour show_on_map.
     const [total, countries] = await Promise.all([
-      this.prisma.user.count({ where: { status: 'active' } }),
+      this.prisma.user.count({ where: { status: 'active', emailVerified: true } }),
       this.prisma.$queryRaw<Array<{ country_code: string; count: bigint }>>`
         SELECT country_code, COUNT(*)::bigint AS count
         FROM users
-        WHERE status = 'active' AND country_code IS NOT NULL
+        WHERE status = 'active' AND email_verified = TRUE AND country_code IS NOT NULL
         GROUP BY country_code
         ORDER BY count DESC
       `,
@@ -229,6 +241,8 @@ export class GeoService implements OnModuleInit {
       FROM users
       WHERE show_on_map = TRUE
         AND status = 'active'
+        AND email_verified = TRUE
+        AND privacy_level <> 'private'
         AND latitude IS NOT NULL
         AND longitude IS NOT NULL
         AND id::text <> ${viewerId}
@@ -258,12 +272,25 @@ export class GeoService implements OnModuleInit {
   ): Promise<{ matches: ProximityMatch[] }> {
     const pinger = await this.prisma.user.findUnique({
       where: { id: viewerId },
-      select: { proximityAlerts: true, proximityRadius: true, showOnMap: true },
+      select: {
+        proximityAlerts: true,
+        proximityRadius: true,
+        showOnMap: true,
+        privacyLevel: true,
+      },
     });
     // Proximity is a map feature: a user must both opt into proximity AND be
     // map-visible to broadcast or receive. Opting into proximity while hidden
     // from the map must NOT turn it into a one-way live-location tracker.
-    if (!pinger || !pinger.proximityAlerts || !pinger.showOnMap) return { matches: [] };
+    // A 'private' profile is invisible in discovery, so it neither broadcasts
+    // (the notification would reveal the private pinger) nor receives.
+    if (
+      !pinger ||
+      !pinger.proximityAlerts ||
+      !pinger.showOnMap ||
+      pinger.privacyLevel === 'private'
+    )
+      return { matches: [] };
 
     // Persist the pinger's location — conditionally, so a user who flipped
     // either flag off between the read and the write is not written. We never
@@ -306,6 +333,8 @@ export class GeoService implements OnModuleInit {
       WHERE proximity_alerts = TRUE
         AND show_on_map = TRUE
         AND status = 'active'
+        AND email_verified = TRUE
+        AND privacy_level <> 'private'
         AND latitude IS NOT NULL
         AND longitude IS NOT NULL
         AND id::text <> ${viewerId}
@@ -317,29 +346,76 @@ export class GeoService implements OnModuleInit {
 
     const pingerName = await this.displayName(viewerId);
 
+    // Zone label for this encounter — same geohash cell ⇒ "same place". Computed
+    // from the pinger's position (candidates are within ≤1 km, so they share or
+    // border this cell). Re-meeting in a DIFFERENT cell yields a new zone key and
+    // a fresh notification; staying in the same cell stays silent.
+    const zone = geohashEncode(dto.lat, dto.lon);
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+
     const matches: ProximityMatch[] = [];
     for (const c of candidates) {
       // Bucket the distance instead of exposing meter-level position — a raw
       // meter count lets a recipient triangulate the pinger by moving around.
       const bucket = this.distanceBucket(c.distance * 1000);
+
+      // Undirected pair key: habitual-co-location learning is symmetric (if A
+      // lives with B, B lives with A). Directional dedup uses viewer→c so each
+      // side still gets told once about the other per zone.
+      const pair = viewerId < c.id ? `${viewerId}:${c.id}` : `${c.id}:${viewerId}`;
+
+      // The whole notify decision touches Redis; on any Redis error we fail
+      // CLOSED (skip the push) rather than risk a notification storm.
+      let shouldNotify = false;
+      try {
+        // 1) Habitual pair? Two people co-located in the same zone on ≥
+        //    HABITUAL_DAYS distinct days are roommates / family / colleagues —
+        //    mute them entirely (the feature is for discovering NEW people).
+        const familiarKey = `prox:familiar:${pair}`;
+        if (await this.redis.client.exists(familiarKey)) {
+          continue;
+        }
+
+        // 2) Learn the routine: record today against this (pair, zone). When the
+        //    distinct-day count crosses the threshold, promote to "familiar" and
+        //    stop notifying for this pair going forward.
+        const daysKey = `prox:days:${pair}:${zone}`;
+        const distinctDays = await this.redis.client.sadd(daysKey, today);
+        if (distinctDays > 0) {
+          // First sighting today in this zone — (re)arm the learning window.
+          await this.redis.client.expire(daysKey, HABITUAL_WINDOW_SECONDS);
+        }
+        const dayCount = await this.redis.client.scard(daysKey);
+        if (dayCount >= HABITUAL_DAYS) {
+          await this.redis.client.set(familiarKey, '1', 'EX', HABITUAL_WINDOW_SECONDS);
+          continue;
+        }
+
+        // 3) One notification per (direction, zone) within the dedup window.
+        //    SET NX returns null when the key already exists ⇒ already notified
+        //    in this zone recently ⇒ stay silent.
+        const dedupKey = `prox:seen:${viewerId}:${c.id}:${zone}`;
+        const fresh = await this.redis.client.set(
+          dedupKey,
+          '1',
+          'EX',
+          PROXIMITY_ZONE_TTL_SECONDS,
+          'NX',
+        );
+        shouldNotify = fresh !== null;
+      } catch {
+        continue;
+      }
+      if (!shouldNotify) continue;
+
+      // Only surface the match to the pinger when we actually notify the peer,
+      // so the pinger's courtesy local heads-up mirrors a real new encounter.
       matches.push({
         userId: c.id,
         name: c.display_name,
         avatarUrl: c.avatar_url,
         distance: bucket,
       });
-
-      // Ordered-pair cooldown: only notify if the key is newly set. If Redis is
-      // unavailable we fail CLOSED (skip the notification) rather than risk a
-      // notification storm with no cooldown guarantee.
-      let fresh: string | null = null;
-      try {
-        const key = `prox:${viewerId}:${c.id}`;
-        fresh = await this.redis.client.set(key, '1', 'EX', PROXIMITY_COOLDOWN, 'NX');
-      } catch {
-        continue;
-      }
-      if (!fresh) continue;
 
       await this.notifications.create({
         userId: c.id,
@@ -409,6 +485,7 @@ export class GeoService implements OnModuleInit {
              AVG(longitude)::float AS avg_lon
       FROM users
       WHERE status = 'active'
+        AND email_verified = TRUE
         AND country_code IS NOT NULL
         AND latitude IS NOT NULL
         AND longitude IS NOT NULL
@@ -445,6 +522,7 @@ export class GeoService implements OnModuleInit {
              AVG(longitude)::float AS avg_lon
       FROM users
       WHERE status = 'active'
+        AND email_verified = TRUE
         AND city IS NOT NULL
         AND country_code IS NOT NULL
         AND latitude BETWEEN ${dto.south} AND ${dto.north}
@@ -467,6 +545,12 @@ export class GeoService implements OnModuleInit {
       where: {
         showOnMap: true,
         status: 'active',
+        emailVerified: true,
+        // A 'private' profile is invisible in discovery (profile/search/photos
+        // already 404). It must not surface as an individual map pin either —
+        // the pin exposes name/avatar/city. Such users are still counted
+        // anonymously in the country/city clusters.
+        privacyLevel: { not: 'private' },
         latitude: { gte: dto.south, lte: dto.north },
         longitude: { gte: dto.west, lte: dto.east },
         id: blockedIds.length ? { notIn: blockedIds } : undefined,

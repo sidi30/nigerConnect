@@ -10,6 +10,7 @@ import {
   type SelfUser,
 } from '../common/prisma/user-select';
 import { BlockService } from '../social/block.service';
+import { MailerService } from '../common/mail/mailer.service';
 import { geocode } from '../common/geo/city-coords';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
 import type { CreatePhotoDto, SearchDto } from './dto/photo.dto';
@@ -23,7 +24,23 @@ export class ProfileService {
     private readonly redis: RedisService,
     private readonly s3: S3Service,
     private readonly blocks: BlockService,
+    private readonly mailer: MailerService,
   ) {}
+
+  /**
+   * Build the RGPD export and email it to the user as a JSON attachment.
+   * Returns the address it was sent to so the caller can confirm.
+   */
+  async emailDataExport(userId: string): Promise<{ email: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (!user?.email) throw new NotFoundException('No email on file for this account');
+    const dump = await this.exportUserData(userId);
+    await this.mailer.sendDataExport(user.email, JSON.stringify(dump, null, 2), user.firstName);
+    return { email: user.email };
+  }
 
   async getMe(userId: string): Promise<SelfUser> {
     const user = await this.prisma.user.findUnique({
@@ -333,6 +350,9 @@ export class ProfileService {
       AND: [
         { id: { not: viewerId } },
         { status: 'active' },
+        // Registration is only complete once the email is verified — hide users
+        // whose inscription is still pending from all discovery surfaces.
+        { emailVerified: true },
         { privacyLevel: { in: ['public', 'friends'] } },
       ],
     };

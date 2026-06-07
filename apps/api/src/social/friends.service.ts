@@ -342,6 +342,7 @@ export class FriendsService {
           (u.country_code = ${me?.countryCode ?? null}) AS same_country
         FROM users u
         WHERE u.status = 'active'
+          AND u.email_verified = true
           AND u.privacy_level <> 'private'
           AND u.id NOT IN (SELECT id FROM excluded)
       )

@@ -97,6 +97,18 @@ export class ProfileController {
     res.send(JSON.stringify(dump, null, 2));
   }
 
+  /**
+   * Same RGPD export, but delivered by email with the JSON attached — friendlier
+   * on mobile where a raw file download is awkward.
+   */
+  @Post('me/export/email')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Throttle({ short: { limit: 1, ttl: 60_000 }, long: { limit: 5, ttl: 86_400_000 } })
+  async emailMyData(@CurrentUser() user: JwtUserPayload): Promise<{ ok: true }> {
+    await this.profile.emailDataExport(user.sub);
+    return { ok: true };
+  }
+
   @Get('search')
   async search(
     @CurrentUser() user: JwtUserPayload,
