@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  type AlertButton,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -26,7 +28,8 @@ import { chatApi } from '@/services/chatApi';
 import { useAuthStore } from '@/stores/authStore';
 import { getChatSocket, useChatSocketInstance } from '@/hooks/useSocket';
 import type { MessageReadPayload } from '@/hooks/useSocket';
-import { pickAndUploadImage, UploadError } from '@/services/uploadService';
+import { pickImage, uploadLocalImage, UploadError, type PickedImage } from '@/services/uploadService';
+import { saveImageToGallery } from '@/services/mediaService';
 
 type MessagesPage = CursorPage<Message>;
 type PendingMessage = Message & { __pending?: boolean; __failed?: boolean };
@@ -35,6 +38,19 @@ type PendingMessage = Message & { __pending?: boolean; __failed?: boolean };
 // How long we wait after the user stops typing before emitting `typing:stop`.
 // 2500 ms matches typical chat UX (Telegram, WhatsApp both use ~2–3 s).
 const TYPING_IDLE_MS = 2500;
+
+// WhatsApp-style window: a sender can edit or delete-for-everyone only within
+// 15 min of sending. Kept in sync with the server (MESSAGE_MUTATION_WINDOW_MS).
+const MUTATION_WINDOW_MS = 15 * 60 * 1000;
+
+/** Pull a human-readable message off an axios/UploadError, else a fallback. */
+function errMessage(err: unknown, fallback: string): string {
+  if (err instanceof UploadError) return err.message;
+  const axiosMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+  if (typeof axiosMsg === 'string' && axiosMsg) return axiosMsg;
+  const msg = (err as Error)?.message;
+  return typeof msg === 'string' && msg ? msg : fallback;
+}
 
 function makeOptimisticMessage(args: {
   conversationId: string;
@@ -72,6 +88,7 @@ function makeOptimisticMessage(args: {
     messageType: args.messageType,
     replyToId: null,
     deletedAt: null,
+    editedAt: null,
     createdAt: new Date().toISOString(),
     __pending: true,
   };
@@ -87,8 +104,21 @@ export default function ChatScreen() {
   // never keep listeners bound to a dead socket.
   const chatSocket = useChatSocketInstance();
   const listRef = useRef<FlatList<PendingMessage>>(null);
+  const inputRef = useRef<TextInput>(null);
+  // Guards post-await side effects in handleSendPhoto so we never setState or
+  // alert after the screen has unmounted.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const [draft, setDraft] = useState('');
   const [uploading, setUploading] = useState(false);
+  // Id of the message currently being edited (composer switches to "edit" mode).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Picked-but-not-yet-sent image awaiting confirmation + optional caption.
+  const [preview, setPreview] = useState<PickedImage | null>(null);
+  const [caption, setCaption] = useState('');
+  // Full-screen image lightbox: the mediaUrl being viewed, or null.
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   // ── Read receipts ────────────────────────────────────────────────────────────
   // `peerLastReadAt` tracks how far the peer has read. We seed it from the
@@ -175,11 +205,17 @@ export default function ChatScreen() {
       if (!msg || msg.conversationId !== id) return;
       qc.setQueryData<MessagesPage>(messagesKey, (prev) => {
         if (!prev) return { items: [msg], nextCursor: null };
+        // Don't let a late message:new resurrect a message we've already
+        // tombstoned locally (e.g. delete echo races the original).
+        if (prev.items.find((m) => m.id === msg.id)?.deletedAt) return prev;
         // Replace any optimistic message from the same sender with same content
         // so we don't double-display while waiting for server echo.
         const items = prev.items.filter((m) => {
-          if (!('__pending' in m) || !(m as PendingMessage).__pending) return true;
+          const pm = m as PendingMessage;
+          if (!pm.__pending) return true;
           if (m.sender.id !== msg.sender.id) return true;
+          // image optimistic uses a local uri; server echo uses the S3 url — match by type+sender
+          if (m.messageType === 'image' && msg.messageType === 'image') return false;
           if (m.content !== msg.content) return true;
           if (m.mediaUrl !== msg.mediaUrl) return true;
           return false;
@@ -217,6 +253,35 @@ export default function ChatScreen() {
       });
     }
 
+    // ── Edit / delete listeners ──────────────────────────────────────────────
+    // Peer (or our other device) edited a message — swap the bubble content.
+    function handleMessageUpdated(payload: unknown): void {
+      const msg = payload as Message | undefined;
+      if (!msg || msg.conversationId !== id) return;
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev ? { ...prev, items: prev.items.map((m) => (m.id === msg.id ? msg : m)) } : prev,
+      );
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+    }
+
+    // A message was deleted for everyone — collapse it into a tombstone.
+    function handleMessageDeleted(payload: { conversationId: string; messageId: string }): void {
+      if (payload.conversationId !== id) return;
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((m) =>
+                m.id === payload.messageId
+                  ? { ...m, deletedAt: new Date().toISOString(), content: null, mediaUrl: null }
+                  : m,
+              ),
+            }
+          : prev,
+      );
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+    }
+
     // ── Typing indicator listeners ───────────────────────────────────────────
     function handleTypingStart(payload: { conversationId: string; userId: string }): void {
       if (payload.conversationId !== id) return;
@@ -244,6 +309,8 @@ export default function ChatScreen() {
 
     socket.on('message:new', handleNewMessage);
     socket.on('message:read', handleMessageRead);
+    socket.on('message:updated', handleMessageUpdated);
+    socket.on('message:deleted', handleMessageDeleted);
     socket.on('typing:start', handleTypingStart);
     socket.on('typing:stop', handleTypingStop);
     socket.on('connect', handleConnect);
@@ -251,6 +318,8 @@ export default function ChatScreen() {
     return () => {
       socket.off('message:new', handleNewMessage);
       socket.off('message:read', handleMessageRead);
+      socket.off('message:updated', handleMessageUpdated);
+      socket.off('message:deleted', handleMessageDeleted);
       socket.off('typing:start', handleTypingStart);
       socket.off('typing:stop', handleTypingStop);
       socket.off('connect', handleConnect);
@@ -348,6 +417,47 @@ export default function ChatScreen() {
     },
   });
 
+  // ── Edit / delete mutations ───────────────────────────────────────────────
+  const editMut = useMutation({
+    mutationFn: (vars: { messageId: string; content: string }) =>
+      chatApi.editMessage(vars.messageId, vars.content),
+    onSuccess: (updated) => {
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev ? { ...prev, items: prev.items.map((m) => (m.id === updated.id ? updated : m)) } : prev,
+      );
+      void qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (err: unknown, vars) => {
+      // Roll the optimistic edit back by refetching the thread.
+      void qc.invalidateQueries({ queryKey: messagesKey });
+      Alert.alert('Modification impossible', errMessage(err, 'Réessaie plus tard.'));
+      void vars;
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (messageId: string) => chatApi.deleteMessage(messageId),
+    onMutate: (messageId) => {
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((m) =>
+                m.id === messageId
+                  ? { ...m, deletedAt: new Date().toISOString(), content: null, mediaUrl: null }
+                  : m,
+              ),
+            }
+          : prev,
+      );
+    },
+    onError: (err: unknown) => {
+      void qc.invalidateQueries({ queryKey: messagesKey });
+      Alert.alert('Suppression impossible', errMessage(err, 'Réessaie plus tard.'));
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['conversations'] }),
+  });
+
   const conversation = conversationQuery.data;
   const peer = conversation?.members.find((m) => m.id !== me?.id) ?? conversation?.members[0];
 
@@ -356,6 +466,26 @@ export default function ChatScreen() {
   const handleSend = useCallback(() => {
     const text = draft.trim();
     if (!text || !id || !me) return;
+
+    // Edit mode: PATCH the message instead of creating a new one.
+    if (editingId) {
+      const eid = editingId;
+      setEditingId(null);
+      setDraft('');
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((m) =>
+                m.id === eid ? { ...m, content: text, editedAt: new Date().toISOString() } : m,
+              ),
+            }
+          : prev,
+      );
+      editMut.mutate({ messageId: eid, content: text });
+      return;
+    }
+
     setDraft('');
 
     // Stop typing indicator immediately when sending.
@@ -376,33 +506,166 @@ export default function ChatScreen() {
       prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
     );
     sendMut.mutate({ content: text, messageType: 'text', tempId: optimistic.id });
-  }, [draft, id, me, messagesKey, qc, sendMut]);
+  }, [draft, id, me, editingId, editMut, messagesKey, qc, sendMut]);
 
-  const handleAttachPhoto = useCallback(async () => {
-    if (!id || !me) return;
-    setUploading(true);
+  // Tap a failed TEXT bubble to retry it: flip it back to pending and re-send
+  // under the same tempId so onSuccess/onError can reconcile it as usual.
+  const handleRetry = useCallback(
+    (item: PendingMessage) => {
+      if (!item.__failed || item.messageType !== 'text' || !item.content) return;
+      const content = item.content;
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((m) =>
+                m.id === item.id
+                  ? ({ ...m, __pending: true, __failed: false } as PendingMessage)
+                  : m,
+              ),
+            }
+          : prev,
+      );
+      sendMut.mutate({ content, messageType: 'text', tempId: item.id });
+    },
+    [messagesKey, qc, sendMut],
+  );
+
+  // Step 1: pick an image (resized on-device) but DON'T send yet — open the
+  // confirmation sheet so the user can add a caption or cancel.
+  const handlePickPhoto = useCallback(async () => {
     try {
-      const url = await pickAndUploadImage('photo');
-      if (!url) return;
-      const optimistic = makeOptimisticMessage({
-        conversationId: id,
-        content: null,
+      const picked = await pickImage('photo');
+      if (!picked) return;
+      setCaption('');
+      setPreview(picked);
+    } catch (err) {
+      Alert.alert('Photo', errMessage(err, "Impossible d'ouvrir la galerie."));
+    }
+  }, []);
+
+  // Step 2: confirm — upload the picked image then send it (with caption).
+  const handleSendPhoto = useCallback(async () => {
+    if (!preview || !id || !me) return;
+    const picked = preview;
+    const cap = caption.trim();
+    setPreview(null);
+    setCaption('');
+    setUploading(true);
+
+    // Optimistic bubble using the LOCAL uri so it appears instantly; replaced
+    // by the server message (with the S3 url) once the upload + send resolve.
+    const optimistic = makeOptimisticMessage({
+      conversationId: id,
+      content: cap || null,
+      mediaUrl: picked.uri,
+      messageType: 'image',
+      me,
+    });
+    qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+      prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
+    );
+
+    try {
+      const url = await uploadLocalImage(picked, 'photo');
+      sendMut.mutate({
+        content: cap || undefined,
         mediaUrl: url,
         messageType: 'image',
-        me,
+        tempId: optimistic.id,
       });
-      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
-        prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
-      );
-      sendMut.mutate({ mediaUrl: url, messageType: 'image', tempId: optimistic.id });
     } catch (err) {
-      const message =
-        err instanceof UploadError ? err.message : (err as Error).message ?? "Echec de l'envoi de la photo";
-      Alert.alert('Photo non envoyee', message);
+      if (mountedRef.current) {
+        qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((m) =>
+                  m.id === optimistic.id
+                    ? ({ ...m, __failed: true, __pending: false } as PendingMessage)
+                    : m,
+                ),
+              }
+            : prev,
+        );
+        Alert.alert('Photo non envoyée', errMessage(err, "Échec de l'envoi de la photo."));
+      }
     } finally {
-      setUploading(false);
+      if (mountedRef.current) setUploading(false);
     }
-  }, [id, me, messagesKey, qc, sendMut]);
+  }, [preview, caption, id, me, messagesKey, qc, sendMut]);
+
+  // Enter edit mode for one of my text messages.
+  const startEdit = useCallback((msg: PendingMessage) => {
+    setEditingId(msg.id);
+    setDraft(msg.content ?? '');
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setDraft('');
+  }, []);
+
+  // Download an image message to the device gallery (needs a native build).
+  const handleDownload = useCallback(async (url: string) => {
+    setDownloading(true);
+    try {
+      await saveImageToGallery(url);
+      Alert.alert('Enregistré', 'Image ajoutée à ta galerie.');
+    } catch (err) {
+      Alert.alert('Téléchargement', errMessage(err, "Impossible d'enregistrer l'image."));
+    } finally {
+      setDownloading(false);
+    }
+  }, []);
+
+  // Long-press a message → contextual actions (download / edit / delete).
+  const handleLongPress = useCallback(
+    (item: PendingMessage) => {
+      if (item.deletedAt || item.__pending || item.__failed) return;
+      const isMe = item.sender.id === me?.id;
+      const isImage = item.messageType === 'image' && !!item.mediaUrl;
+      const withinWindow = Date.now() - Date.parse(item.createdAt) < MUTATION_WINDOW_MS;
+
+      const buttons: AlertButton[] = [];
+      if (isImage && item.mediaUrl) {
+        buttons.push({ text: 'Télécharger', onPress: () => void handleDownload(item.mediaUrl!) });
+      }
+      if (isMe && item.messageType === 'text' && withinWindow) {
+        buttons.push({ text: 'Modifier', onPress: () => startEdit(item) });
+      }
+      if (isMe && withinWindow) {
+        buttons.push({
+          text: 'Supprimer pour tous',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert(
+              'Supprimer ce message ?',
+              'Il sera supprimé pour tous les participants.',
+              [
+                { text: 'Annuler', style: 'cancel' },
+                {
+                  text: 'Supprimer',
+                  style: 'destructive',
+                  onPress: () => deleteMut.mutate(item.id),
+                },
+              ],
+            ),
+        });
+      } else if (isMe && !withinWindow) {
+        buttons.push({
+          text: 'Modification/suppression expirée (15 min)',
+          style: 'cancel',
+          onPress: () => undefined,
+        });
+      }
+      buttons.push({ text: 'Annuler', style: 'cancel' });
+      if (buttons.length === 1) return; // nothing actionable
+      Alert.alert('Message', undefined, buttons);
+    },
+    [me?.id, handleDownload, startEdit, deleteMut],
+  );
 
   if (!conversation || !peer) {
     return (
@@ -461,7 +724,8 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesContent}
           renderItem={({ item }) => {
             const isMe = item.sender.id === me?.id;
-            const isImage = item.messageType === 'image' && item.mediaUrl;
+            const deleted = !!item.deletedAt;
+            const isImage = !deleted && item.messageType === 'image' && !!item.mediaUrl;
             const pending = (item as PendingMessage).__pending;
             const failed = (item as PendingMessage).__failed;
 
@@ -477,9 +741,15 @@ export default function ChatScreen() {
               !failed &&
               peerLastReadAt !== null &&
               Date.parse(item.createdAt) <= Date.parse(peerLastReadAt);
+            const edited = !deleted && !!item.editedAt;
 
             return (
-              <View style={[styles.msgRow, { justifyContent: isMe ? 'flex-end' : 'flex-start' }]}>
+              <Pressable
+                onPress={() => { if (item.__failed) handleRetry(item); }}
+                onLongPress={() => handleLongPress(item)}
+                delayLongPress={300}
+                style={[styles.msgRow, { justifyContent: isMe ? 'flex-end' : 'flex-start' }]}
+              >
                 {!isMe && (
                   <Avatar
                     uri={item.sender.avatarUrl}
@@ -488,7 +758,16 @@ export default function ChatScreen() {
                     borderColor={colorForId(item.sender.id)}
                   />
                 )}
-                {isImage ? (
+                {deleted ? (
+                  <View style={[styles.bubble, isMe ? styles.bubbleMine : styles.bubbleTheirs]}>
+                    {isMe && (
+                      <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+                    )}
+                    <Text style={[styles.tombstone, isMe && { color: 'rgba(255,255,255,0.85)' }]}>
+                      🚫 Message supprimé
+                    </Text>
+                  </View>
+                ) : isImage ? (
                   <View
                     style={[
                       styles.imageBubble,
@@ -496,21 +775,32 @@ export default function ChatScreen() {
                       (pending || failed) && { opacity: failed ? 0.5 : 0.7 },
                     ]}
                   >
-                    <Image
-                      source={{ uri: item.mediaUrl! }}
-                      style={styles.imageContent}
-                      contentFit="cover"
-                    />
+                    <Pressable onPress={() => item.mediaUrl && setLightbox(item.mediaUrl)}>
+                      <Image
+                        source={{ uri: item.mediaUrl! }}
+                        style={styles.imageContent}
+                        contentFit="cover"
+                      />
+                    </Pressable>
                     {pending && (
                       <View style={styles.imageOverlay}>
                         <ActivityIndicator color={Colors.white} />
                       </View>
                     )}
-                    {/* Read receipt on image messages */}
-                    {isMe && !pending && (
-                      <Text style={styles.imageReadReceipt}>
-                        {isRead ? '✓✓' : '✓'}
-                      </Text>
+                    {item.content ? (
+                      <View style={styles.imageCaptionRow}>
+                        <Text style={styles.imageCaption}>{item.content}</Text>
+                        {isMe && !pending && (
+                          <Text style={[styles.readReceipt, isRead && styles.readReceiptRead]}>
+                            {isRead ? '✓✓' : '✓'}
+                          </Text>
+                        )}
+                      </View>
+                    ) : (
+                      isMe &&
+                      !pending && (
+                        <Text style={styles.imageReadReceipt}>{isRead ? '✓✓' : '✓'}</Text>
+                      )
                     )}
                   </View>
                 ) : (
@@ -531,16 +821,29 @@ export default function ChatScreen() {
                         ⚠️ Echec — touche pour reessayer
                       </Text>
                     )}
-                    {/* Read receipt tick — only on my sent (non-failed) messages.
-                        ✓ = delivered to server; ✓✓ (teal) = peer has read it. */}
-                    {isMe && !pending && !failed && (
-                      <Text style={[styles.readReceipt, isRead && styles.readReceiptRead]}>
-                        {isRead ? '✓✓' : '✓'}
-                      </Text>
+                    {/* Edited badge + read receipt. ✓ = delivered; ✓✓ (teal) = read. */}
+                    {(edited || (isMe && !pending && !failed)) && (
+                      <View style={styles.metaRow}>
+                        {edited && (
+                          <Text
+                            style={[
+                              styles.editedTag,
+                              isMe ? { color: 'rgba(255,255,255,0.7)' } : { color: Colors.tan400 },
+                            ]}
+                          >
+                            modifié
+                          </Text>
+                        )}
+                        {isMe && !pending && !failed && (
+                          <Text style={[styles.readReceipt, isRead && styles.readReceiptRead]}>
+                            {isRead ? '✓✓' : '✓'}
+                          </Text>
+                        )}
+                      </View>
                     )}
                   </View>
                 )}
-              </View>
+              </Pressable>
             );
           }}
           ListEmptyComponent={
@@ -561,18 +864,34 @@ export default function ChatScreen() {
           </View>
         )}
 
+        {/* Edit-mode banner above the composer. */}
+        {editingId && (
+          <View style={styles.editBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.editBannerTitle}>✏️ Modification du message</Text>
+              <Text style={styles.editBannerHint} numberOfLines={1}>
+                Modifie le texte puis appuie sur ➤
+              </Text>
+            </View>
+            <Pressable onPress={cancelEdit} hitSlop={8}>
+              <Text style={styles.editBannerCancel}>✕</Text>
+            </Pressable>
+          </View>
+        )}
+
         <View style={styles.composer}>
           <Pressable
-            style={[styles.photoBtn, uploading && { opacity: 0.5 }]}
+            style={[styles.photoBtn, (uploading || !!editingId) && { opacity: 0.5 }]}
             hitSlop={8}
-            onPress={handleAttachPhoto}
-            disabled={uploading}
+            onPress={handlePickPhoto}
+            disabled={uploading || !!editingId}
           >
             <Text style={styles.photoIcon}>{uploading ? '⏳' : '📷'}</Text>
           </Pressable>
           <TextInput
+            ref={inputRef}
             style={styles.input}
-            placeholder="Message…"
+            placeholder={editingId ? 'Modifier le message…' : 'Message…'}
             placeholderTextColor={Colors.tan400}
             value={draft}
             onChangeText={handleDraftChange}
@@ -586,10 +905,78 @@ export default function ChatScreen() {
             disabled={!draft.trim()}
           >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-            <Text style={styles.sendIcon}>➤</Text>
+            <Text style={styles.sendIcon}>{editingId ? '✓' : '➤'}</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      {/* ── Image confirmation sheet: preview + caption before sending ────── */}
+      <Modal
+        visible={!!preview}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPreview(null)}
+      >
+        <SafeAreaView style={styles.previewBackdrop} edges={['top', 'bottom']}>
+          <View style={styles.previewHeader}>
+            <Pressable onPress={() => setPreview(null)} hitSlop={10}>
+              <Text style={styles.previewCancel}>Annuler</Text>
+            </Pressable>
+            <Text style={styles.previewTitle}>Envoyer la photo</Text>
+            <View style={{ width: 60 }} />
+          </View>
+          {preview && (
+            <Image source={{ uri: preview.uri }} style={styles.previewImage} contentFit="contain" />
+          )}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.previewComposer}
+          >
+            <TextInput
+              style={styles.previewCaptionInput}
+              placeholder="Ajouter une légende…"
+              placeholderTextColor={Colors.tan400}
+              value={caption}
+              onChangeText={setCaption}
+              multiline
+              maxLength={2000}
+            />
+            <Pressable onPress={handleSendPhoto} style={styles.sendBtn} hitSlop={8}>
+              <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+              <Text style={styles.sendIcon}>➤</Text>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ── Full-screen image lightbox: enlarge + download ────────────────── */}
+      <Modal
+        visible={!!lightbox}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightbox(null)}
+      >
+        <View style={styles.lightboxBackdrop}>
+          <SafeAreaView style={styles.lightboxBar} edges={['top']}>
+            <Pressable onPress={() => setLightbox(null)} hitSlop={12} style={styles.lightboxBtn}>
+              <Text style={styles.lightboxBtnText}>✕</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => lightbox && handleDownload(lightbox)}
+              hitSlop={12}
+              style={styles.lightboxBtn}
+              disabled={downloading}
+            >
+              <Text style={styles.lightboxBtnText}>{downloading ? '⏳' : '⬇︎'}</Text>
+            </Pressable>
+          </SafeAreaView>
+          <Pressable style={styles.lightboxImageWrap} onPress={() => setLightbox(null)}>
+            {lightbox && (
+              <Image source={{ uri: lightbox }} style={styles.lightboxImage} contentFit="contain" />
+            )}
+          </Pressable>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -746,4 +1133,89 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   sendIcon: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+
+  // Tombstone for a deleted message.
+  tombstone: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontStyle: 'italic' },
+  // Row holding the "modifié" tag + read receipt under a text bubble.
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5, marginTop: 2 },
+  editedTag: { fontSize: 10, fontStyle: 'italic' },
+  // Caption under an image message.
+  imageCaptionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 6,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: Spacing.sm,
+  },
+  imageCaption: { flex: 1, fontSize: Typography.sizes.sm, color: Colors.brown, lineHeight: 19 },
+
+  // ── Edit banner ──────────────────────────────────────────────────────────
+  editBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.tan100,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.orange,
+  },
+  editBannerTitle: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.brown },
+  editBannerHint: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 1 },
+  editBannerCancel: { fontSize: 18, color: Colors.tan500, fontWeight: '700' },
+
+  // ── Image confirmation sheet ──────────────────────────────────────────────
+  previewBackdrop: { flex: 1, backgroundColor: Colors.cream },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.tan200,
+  },
+  previewCancel: { fontSize: Typography.sizes.md, color: Colors.orange, fontWeight: '600' },
+  previewTitle: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
+  previewImage: { flex: 1, width: '100%', backgroundColor: Colors.tan100 },
+  previewComposer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: Spacing.md,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.tan200,
+  },
+  previewCaptionInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: Colors.tan300,
+    borderRadius: Radii.xxl,
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: Spacing.sm + 2,
+    maxHeight: 100,
+    fontSize: Typography.sizes.md,
+    color: Colors.brown,
+    backgroundColor: Colors.white,
+  },
+
+  // ── Lightbox ──────────────────────────────────────────────────────────────
+  lightboxBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' },
+  lightboxBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+  },
+  lightboxBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxBtnText: { color: Colors.white, fontSize: 22, fontWeight: '700' },
+  lightboxImageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  lightboxImage: { width: '100%', height: '100%' },
 });

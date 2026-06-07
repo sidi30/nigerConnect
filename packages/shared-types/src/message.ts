@@ -43,5 +43,6 @@ export interface Message {
   mediaUrl: string | null;
   replyToId: string | null;
   deletedAt: string | null;
+  editedAt: string | null;
   createdAt: string;
 }

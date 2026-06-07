@@ -633,6 +633,7 @@ model Message {
   replyTo        Message?     @relation("MessageReplies", fields: [replyToId], references: [id])
   replies        Message[]    @relation("MessageReplies")
   deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+  editedAt       DateTime?    @map("edited_at") @db.Timestamptz
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([conversationId, createdAt(sort: Desc)])

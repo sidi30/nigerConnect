@@ -180,18 +180,7 @@ export default function PostScreen() {
                 }
                 currentUserId={me?.id}
               />
-              {(item.replies ?? []).map((r) => (
-                <CommentItem
-                  key={r.id}
-                  comment={r}
-                  depth={1}
-                  onDelete={handleDelete}
-                  onEdit={(commentId, content) =>
-                    editMut.mutateAsync({ commentId, content }).then(() => undefined)
-                  }
-                  currentUserId={me?.id}
-                />
-              ))}
+              {/* Nested replies (levels 2 & 3) are rendered recursively inside CommentItem. */}
             </View>
           )}
           ListEmptyComponent={

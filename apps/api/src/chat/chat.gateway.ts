@@ -271,6 +271,30 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     }
   }
 
+  /**
+   * Broadcast an edited message to the conversation room so every connected
+   * member swaps the old bubble for the new content + "modifié" badge live.
+   */
+  broadcastMessageUpdated(conversationId: string, message: unknown, memberIds: string[]): void {
+    this.server.to(`conv:${conversationId}`).emit('message:updated', message);
+    for (const id of memberIds) {
+      this.server.to(`user:${id}`).emit('conversation:updated', { conversationId });
+    }
+  }
+
+  /**
+   * Broadcast a "delete for everyone": clients replace the bubble with a
+   * tombstone. We only ship the id (content is already gone server-side).
+   */
+  broadcastMessageDeleted(conversationId: string, messageId: string, memberIds: string[]): void {
+    this.server
+      .to(`conv:${conversationId}`)
+      .emit('message:deleted', { conversationId, messageId });
+    for (const id of memberIds) {
+      this.server.to(`user:${id}`).emit('conversation:updated', { conversationId });
+    }
+  }
+
   private extractToken(client: Socket): string | null {
     const auth = client.handshake.auth as { token?: string } | undefined;
     if (auth?.token) return auth.token;

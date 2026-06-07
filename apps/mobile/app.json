@@ -189,6 +189,14 @@
         {
           "locationWhenInUsePermission": "NigerConnect utilise ta position uniquement quand tu l'actives, pour t'afficher sur la carte de la diaspora."
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "NigerConnect enregistre une photo dans ta galerie uniquement quand tu choisis de la télécharger depuis une conversation.",
+          "savePhotosPermission": "NigerConnect enregistre une photo dans ta galerie uniquement quand tu choisis de la télécharger depuis une conversation.",
+          "isAccessMediaLocationEnabled": false
+        }
       ]
     ],
     "experiments": {

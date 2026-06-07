@@ -146,8 +146,24 @@ export default defineConfig({
       },
     },
     {
+      name: 'api-chat-edit-delete',
+      testMatch: 'api/chat-edit-delete.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
       name: 'api-profile-and-map',
       testMatch: 'api/profile-and-map.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-feed-comments',
+      testMatch: 'api/feed-comments.spec.ts',
       use: {
         baseURL: API_BASE_URL,
         extraHTTPHeaders: { 'Content-Type': 'application/json' },

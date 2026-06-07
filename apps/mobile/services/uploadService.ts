@@ -172,20 +172,22 @@ async function putToS3(args: {
   }
 }
 
+/** A resized-on-device image ready to preview locally and upload on confirm. */
+export interface PickedImage {
+  /** Local file URI of the resized/compressed image (NOT yet uploaded). */
+  uri: string;
+  contentType: string;
+}
+
 /**
- * Pick an image from the library OR camera, request a presigned S3 upload URL,
- * resize+compress it, PUT the blob, return the public URL. Throws `UploadError`
- * on failure so callers can render a feedback banner.
+ * Pick + resize an image WITHOUT uploading it. Lets the caller show a
+ * confirmation/caption screen first (chat) and only upload on "send".
+ * Returns null if the user cancels the picker.
  */
-export async function pickAndUploadImage(
+export async function pickImage(
   kind: UploadKind,
   source: UploadSource = 'library',
-  options?: UploadOptions,
-): Promise<string | null> {
-  if (source === 'camera' && Platform.OS === 'web') {
-    return pickAndUploadImage(kind, 'library', options);
-  }
-
+): Promise<PickedImage | null> {
   const permissionFn =
     source === 'camera'
       ? ImagePicker.requestCameraPermissionsAsync
@@ -206,15 +208,24 @@ export async function pickAndUploadImage(
   if (result.canceled || result.assets.length === 0) return null;
 
   const asset = result.assets[0]!;
+  // Resize/compress on-device — turns 5–15 MB shots into 300–800 kB.
+  return resizeForUpload(asset, kind);
+}
 
-  // 1. Resize/compress on-device — turns 5–15 MB shots into 300–800 kB.
-  const { uri: resizedUri, contentType } = await resizeForUpload(asset, kind);
-
-  // 2. Ask the API for a presigned PUT URL with the right content-type.
+/**
+ * Upload a previously-picked local image to S3 and return its public URL.
+ * Throws `UploadError` on failure so callers can render a feedback banner.
+ */
+export async function uploadLocalImage(
+  picked: PickedImage,
+  kind: UploadKind,
+  options?: UploadOptions,
+): Promise<string> {
+  // 1. Ask the API for a presigned PUT URL with the right content-type.
   let presigned: PresignedUpload;
   try {
     const { data } = await api.post<PresignedUpload>('/profile/me/photos/presign', {
-      contentType,
+      contentType: picked.contentType,
       kind,
     });
     presigned = data;
@@ -225,13 +236,13 @@ export async function pickAndUploadImage(
     );
   }
 
-  // 3. Stream the resized file to the bucket. SSE header echoed only when
+  // 2. Stream the resized file to the bucket. SSE header echoed only when
   //    the backend says so (false on MinIO, true on real AWS S3).
   try {
     await putToS3({
       uploadUrl: presigned.uploadUrl,
-      fileUri: resizedUri,
-      contentType,
+      fileUri: picked.uri,
+      contentType: picked.contentType,
       sseRequired: presigned.sseRequired === true,
       onProgress: options?.onProgress,
     });
@@ -243,4 +254,22 @@ export async function pickAndUploadImage(
       'upload_failed',
     );
   }
+}
+
+/**
+ * Pick an image from the library OR camera, request a presigned S3 upload URL,
+ * resize+compress it, PUT the blob, return the public URL. Throws `UploadError`
+ * on failure so callers can render a feedback banner.
+ */
+export async function pickAndUploadImage(
+  kind: UploadKind,
+  source: UploadSource = 'library',
+  options?: UploadOptions,
+): Promise<string | null> {
+  if (source === 'camera' && Platform.OS === 'web') {
+    return pickAndUploadImage(kind, 'library', options);
+  }
+  const picked = await pickImage(kind, source);
+  if (!picked) return null;
+  return uploadLocalImage(picked, kind, options);
 }

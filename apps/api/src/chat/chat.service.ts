@@ -15,6 +15,12 @@ import { NotificationService } from '../notification/notification.service';
  */
 const MAX_MESSAGE_LENGTH = 4000;
 
+/**
+ * WhatsApp-style window: a sender may delete (for everyone) or edit a message
+ * only within 15 minutes of sending it. After that the action is refused.
+ */
+export const MESSAGE_MUTATION_WINDOW_MS = 15 * 60 * 1000;
+
 // Precompiled sanitizers built from unicode ranges rather than inline
 // literals, so the source file stays ASCII-safe and Edit-friendly.
 // eslint-disable-next-line no-control-regex
@@ -102,8 +108,11 @@ export class ChatService {
 
   async listMessages(userId: string, conversationId: string, cursor?: string, limit = 50) {
     await this.assertMember(userId, conversationId);
+    // Deleted messages are kept in the result set (content/mediaUrl nulled) so
+    // both sides render a "message supprimé" tombstone, WhatsApp-style, instead
+    // of the bubble silently vanishing.
     const messages = await this.prisma.message.findMany({
-      where: { conversationId, deletedAt: null },
+      where: { conversationId },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
@@ -311,13 +320,95 @@ export class ChatService {
     return now;
   }
 
+  /**
+   * Delete a message "for everyone" (both sides). Allowed only by the sender,
+   * only within {@link MESSAGE_MUTATION_WINDOW_MS} of sending. The row is kept
+   * (soft delete) with content/media nulled so peers see a tombstone.
+   * Returns conversationId + memberIds so the caller can broadcast `message:deleted`.
+   */
   async softDeleteMessage(userId: string, messageId: string) {
-    const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, senderId: true, conversationId: true, deletedAt: true, createdAt: true },
+    });
     if (!msg || msg.deletedAt) throw new NotFoundException('Message not found');
     if (msg.senderId !== userId) throw new ForbiddenException('Not your message');
-    return this.prisma.message.update({
+    if (Date.now() - msg.createdAt.getTime() > MESSAGE_MUTATION_WINDOW_MS) {
+      throw new ForbiddenException('Trop tard pour supprimer ce message (15 min max)');
+    }
+    const message = await this.prisma.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), content: null, mediaUrl: null },
+      include: { sender: { select: MEMBER_SELECT } },
+    });
+    await this.syncPreview(msg.conversationId);
+    const memberIds = await this.getMemberIds(msg.conversationId);
+    return { message, conversationId: msg.conversationId, memberIds };
+  }
+
+  /**
+   * Edit a text message in place. Sender-only, text-only, within the 15-min
+   * window. Sets `editedAt` so clients can show a "modifié" badge. Returns
+   * conversationId + memberIds for a `message:updated` broadcast.
+   */
+  async editMessage(userId: string, messageId: string, rawContent: string) {
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: {
+        id: true,
+        senderId: true,
+        conversationId: true,
+        deletedAt: true,
+        createdAt: true,
+        messageType: true,
+      },
+    });
+    if (!msg || msg.deletedAt) throw new NotFoundException('Message not found');
+    if (msg.senderId !== userId) throw new ForbiddenException('Not your message');
+    if (msg.messageType !== 'text') {
+      throw new BadRequestException('Seuls les messages texte peuvent être modifiés');
+    }
+    if (Date.now() - msg.createdAt.getTime() > MESSAGE_MUTATION_WINDOW_MS) {
+      throw new ForbiddenException('Trop tard pour modifier ce message (15 min max)');
+    }
+    const clean = this.normalizeContent(rawContent);
+    if (!clean || clean.length === 0) throw new BadRequestException('Message content is empty');
+    const message = await this.prisma.message.update({
+      where: { id: messageId },
+      data: { content: clean, editedAt: new Date() },
+      include: { sender: { select: MEMBER_SELECT } },
+    });
+    await this.syncPreview(msg.conversationId);
+    const memberIds = await this.getMemberIds(msg.conversationId);
+    return { message, conversationId: msg.conversationId, memberIds };
+  }
+
+  /**
+   * Recompute a conversation's `lastMessagePreview` from its newest live
+   * (non-deleted) message. Called after edit/delete so the conversations list
+   * preview stays in sync with what's actually shown in the thread.
+   */
+  private async syncPreview(conversationId: string): Promise<void> {
+    const latest = await this.prisma.message.findFirst({
+      where: { conversationId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true, messageType: true, createdAt: true },
+    });
+    const preview = !latest
+      ? '🚫 Message supprimé'
+      : latest.content
+        ? latest.content.slice(0, 140)
+        : latest.messageType === 'image'
+          ? '📷 Photo'
+          : '📎 Pièce jointe';
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastMessagePreview: preview,
+        // Keep the conversations-list ordering coherent with the preview: point
+        // lastMessageAt at the newest live message. If none remain, leave it as-is.
+        ...(latest ? { lastMessageAt: latest.createdAt } : {}),
+      },
     });
   }
 

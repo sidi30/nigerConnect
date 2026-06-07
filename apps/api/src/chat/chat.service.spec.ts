@@ -51,6 +51,64 @@ describe('ChatService', () => {
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('refuses to delete a message older than the 15-min window', async () => {
+    const old = new Date(Date.now() - 16 * 60 * 1000); // 16 min ago
+    const prisma = {
+      message: {
+        findUnique: jest.fn(async () => ({
+          id: 'm1',
+          senderId: 'me',
+          conversationId: 'c1',
+          deletedAt: null,
+          createdAt: old,
+        })),
+        update: jest.fn(),
+      },
+    };
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never);
+    await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.message.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to edit a non-text message', async () => {
+    const prisma = {
+      message: {
+        findUnique: jest.fn(async () => ({
+          id: 'm1',
+          senderId: 'me',
+          conversationId: 'c1',
+          deletedAt: null,
+          createdAt: new Date(),
+          messageType: 'image',
+        })),
+        update: jest.fn(),
+      },
+    };
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never);
+    await expect(svc.editMessage('me', 'm1', 'hi')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.message.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to edit a message older than the 15-min window', async () => {
+    const old = new Date(Date.now() - 20 * 60 * 1000);
+    const prisma = {
+      message: {
+        findUnique: jest.fn(async () => ({
+          id: 'm1',
+          senderId: 'me',
+          conversationId: 'c1',
+          deletedAt: null,
+          createdAt: old,
+          messageType: 'text',
+        })),
+        update: jest.fn(),
+      },
+    };
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never);
+    await expect(svc.editMessage('me', 'm1', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.message.update).not.toHaveBeenCalled();
+  });
+
   it('refuses to create conversation with nonexistent participants', async () => {
     const prisma = {
       user: { findMany: jest.fn(async () => []) },

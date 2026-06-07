@@ -40,6 +40,18 @@ export const chatApi = {
     return data;
   },
 
+  /** Edit a text message in place (sender-only, within 15 min server-side). */
+  async editMessage(messageId: string, content: string): Promise<Message> {
+    const { data } = await api.patch<Message>(`/messages/${messageId}`, { content });
+    return data;
+  },
+
+  /** Delete a message for everyone (sender-only, within 15 min server-side). */
+  async deleteMessage(messageId: string): Promise<Message> {
+    const { data } = await api.delete<Message>(`/messages/${messageId}`);
+    return data;
+  },
+
   async markRead(conversationId: string): Promise<void> {
     await api.post(`/conversations/${conversationId}/read`);
   },

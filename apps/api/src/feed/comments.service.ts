@@ -41,8 +41,21 @@ export class CommentsService {
       if (!parent || parent.postId !== postId) {
         throw new NotFoundException('Parent comment not found');
       }
-      if (parent.parentId) {
-        throw new BadRequestException('Only one level of nested replies is allowed');
+      // Allow up to 3 levels of nesting (root → reply → reply-to-reply). Walk
+      // the parent's ancestor chain: the parent must be at depth ≤ 2 so the new
+      // reply lands at depth ≤ 3.
+      let parentDepth = 1;
+      let ancestorId = parent.parentId;
+      while (ancestorId) {
+        parentDepth++;
+        const ancestor = await this.prisma.comment.findUnique({
+          where: { id: ancestorId },
+          select: { parentId: true },
+        });
+        ancestorId = ancestor?.parentId ?? null;
+      }
+      if (parentDepth >= 3) {
+        throw new BadRequestException('Maximum 3 niveaux de réponses');
       }
     }
 
@@ -108,10 +121,18 @@ export class CommentsService {
       orderBy: { createdAt: 'asc' },
       include: {
         author: { select: AUTHOR_SELECT },
+        // Level 2 replies, each with their level 3 replies nested (3 levels total).
         replies: {
           where: { deletedAt: null },
-          include: { author: { select: AUTHOR_SELECT } },
           orderBy: { createdAt: 'asc' },
+          include: {
+            author: { select: AUTHOR_SELECT },
+            replies: {
+              where: { deletedAt: null },
+              orderBy: { createdAt: 'asc' },
+              include: { author: { select: AUTHOR_SELECT } },
+            },
+          },
         },
       },
     });
@@ -142,14 +163,33 @@ export class CommentsService {
     const c = await this.prisma.comment.findUnique({ where: { id: commentId } });
     if (!c || c.deletedAt) throw new NotFoundException('Comment not found');
     if (c.authorId !== userId) throw new ForbiddenException('Not your comment');
+
+    // Cascade: deleting a comment removes its nested replies too (max 3 levels),
+    // otherwise live children would be orphaned (their root is filtered out of
+    // `list`) and commentCount would drift. Collect the whole live subtree.
+    const lvl2 = await this.prisma.comment.findMany({
+      where: { parentId: commentId, deletedAt: null },
+      select: { id: true },
+    });
+    const lvl2Ids = lvl2.map((r) => r.id);
+    const lvl3Ids = lvl2Ids.length
+      ? (
+          await this.prisma.comment.findMany({
+            where: { parentId: { in: lvl2Ids }, deletedAt: null },
+            select: { id: true },
+          })
+        ).map((r) => r.id)
+      : [];
+    const allIds = [commentId, ...lvl2Ids, ...lvl3Ids];
+
     const [, updatedPost] = await this.prisma.$transaction([
-      this.prisma.comment.update({
-        where: { id: commentId },
+      this.prisma.comment.updateMany({
+        where: { id: { in: allIds }, deletedAt: null },
         data: { deletedAt: new Date() },
       }),
       this.prisma.post.update({
         where: { id: c.postId },
-        data: { commentCount: { decrement: 1 } },
+        data: { commentCount: { decrement: allIds.length } },
         select: { authorId: true },
       }),
     ]);

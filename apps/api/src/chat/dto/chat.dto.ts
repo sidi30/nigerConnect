@@ -16,3 +16,8 @@ export const sendMessageSchema = z.object({
   { message: 'content or mediaUrl is required' },
 );
 export type SendMessageDto = z.infer<typeof sendMessageSchema>;
+
+export const editMessageSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+export type EditMessageDto = z.infer<typeof editMessageSchema>;
