@@ -227,6 +227,16 @@ services:
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-NigerConnect <no-reply@${WEB_HOST}>}
+      # SMTP (IONOS) — real email delivery. Values live in .env.prod.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      # DKIM signing (deliverability) — private key (base64 PEM) in .env.prod.
+      DKIM_DOMAIN: ${DKIM_DOMAIN:-}
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-}
+      DKIM_PRIVATE_KEY_B64: ${DKIM_PRIVATE_KEY_B64:-}
       FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
