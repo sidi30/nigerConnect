@@ -1,28 +1,29 @@
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '@/services/notificationApi';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { Loader } from '@/components/ui/Loader';
 import { relativeTime } from '@/constants/lookups';
 
-const TYPE_LABELS: Record<string, { emoji: string; color: string }> = {
-  friend_request: { emoji: '👋', color: Colors.orange },
-  friend_accepted: { emoji: '🤝', color: Colors.green },
-  like: { emoji: '❤️', color: Colors.danger },
-  comment: { emoji: '💬', color: Colors.info },
-  message: { emoji: '✉️', color: Colors.orange },
-  service_response: { emoji: '🤝', color: Colors.orange },
-  association_invite: { emoji: '🏛️', color: Colors.info },
-  association_join_request: { emoji: '🏛️', color: Colors.info },
-  association_join_approved: { emoji: '✓', color: Colors.green },
-  association_join_rejected: { emoji: '✕', color: Colors.danger },
-  identity_approved: { emoji: '✓', color: Colors.green },
-  identity_rejected: { emoji: '✕', color: Colors.danger },
-  proximity: { emoji: '📍', color: Colors.info },
-  page_follow: { emoji: '⭐', color: Colors.orange },
-  poll_new: { emoji: '📊', color: Colors.info },
-  review_received: { emoji: '⭐', color: Colors.orange },
-  system: { emoji: '📢', color: Colors.tan500 },
+const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: string }> = {
+  friend_request: { icon: 'user-plus', color: Colors.orange },
+  friend_accepted: { icon: 'user-check', color: Colors.green },
+  like: { icon: 'heart', color: Colors.danger },
+  comment: { icon: 'message-circle', color: Colors.info },
+  message: { icon: 'mail', color: Colors.orange },
+  service_response: { icon: 'briefcase', color: Colors.orange },
+  association_invite: { icon: 'home', color: Colors.info },
+  association_join_request: { icon: 'home', color: Colors.info },
+  association_join_approved: { icon: 'check-circle', color: Colors.green },
+  association_join_rejected: { icon: 'x-circle', color: Colors.danger },
+  identity_approved: { icon: 'check-circle', color: Colors.green },
+  identity_rejected: { icon: 'x-circle', color: Colors.danger },
+  proximity: { icon: 'map-pin', color: Colors.info },
+  page_follow: { icon: 'star', color: Colors.orange },
+  poll_new: { icon: 'bar-chart-2', color: Colors.info },
+  review_received: { icon: 'star', color: Colors.orange },
+  system: { icon: 'volume-2', color: Colors.tan500 },
 };
 
 export default function NotificationsScreen() {
@@ -85,7 +86,7 @@ export default function NotificationsScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         {notifs.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🔔</Text>
+            <Feather name="bell" size={44} color={Colors.tan400} style={styles.emptyEmoji} />
             <Text style={styles.emptyTitle}>Aucune notification</Text>
             <Text style={styles.emptyText}>Les nouvelles activités apparaîtront ici.</Text>
           </View>
@@ -99,7 +100,7 @@ export default function NotificationsScreen() {
                 style={[styles.item, !n.read && styles.itemUnread]}
               >
                 <View style={[styles.iconCircle, { backgroundColor: t.color + '22' }]}>
-                  <Text style={styles.icon}>{t.emoji}</Text>
+                  <Feather name={t.icon} size={18} color={t.color} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.title} numberOfLines={1}>
@@ -119,7 +120,7 @@ export default function NotificationsScreen() {
                   style={styles.deleteBtn}
                   accessibilityLabel="Supprimer la notification"
                 >
-                  <Text style={styles.deleteIcon}>✕</Text>
+                  <Feather name="x" size={14} color={Colors.tan600} />
                 </Pressable>
               </Pressable>
             );
@@ -155,7 +156,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.tan100,
     marginLeft: 4,
   },
-  deleteIcon: { fontSize: 13, color: Colors.tan600, fontWeight: '700' },
   ttlNote: {
     textAlign: 'center',
     color: Colors.tan400,
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   empty: { padding: Spacing.xxxl, alignItems: 'center' },
-  emptyEmoji: { fontSize: 48, marginBottom: Spacing.md },
+  emptyEmoji: { marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   emptyText: { fontSize: Typography.sizes.sm, color: Colors.tan500, marginTop: 4 },
   item: {
@@ -185,7 +185,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  icon: { fontSize: 18 },
   title: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.brown },
   body: { fontSize: Typography.sizes.xs + 1, color: Colors.tan600, marginTop: 2 },
   time: { fontSize: Typography.sizes.xxs, color: Colors.tan400, marginTop: 4 },

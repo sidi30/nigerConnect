@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReviewTargetType } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
@@ -138,7 +139,10 @@ export function ReviewsSection({ targetType, targetId, canReview }: Props) {
                 const pct = total > 0 ? starCount / total : 0;
                 return (
                   <View key={star} style={styles.barRow}>
-                    <Text style={styles.barLabel}>{star}★</Text>
+                    <View style={styles.barLabel}>
+                      <Text style={styles.barLabelText}>{star}</Text>
+                      <Feather name="star" size={10} color={Colors.tan500} />
+                    </View>
                     <View style={styles.barTrack}>
                       <View style={[styles.barFill, { flex: pct }]} />
                       <View style={{ flex: 1 - pct }} />
@@ -200,9 +204,11 @@ export function ReviewsSection({ targetType, targetId, canReview }: Props) {
                     style={styles.deleteBtn}
                     accessibilityLabel="Supprimer mon avis"
                   >
-                    <Text style={styles.deleteBtnLabel}>
-                      {removeMut.isPending ? '…' : '✕'}
-                    </Text>
+                    {removeMut.isPending ? (
+                      <Text style={styles.deleteBtnLabel}>…</Text>
+                    ) : (
+                      <Feather name="x" size={18} color={Colors.danger} />
+                    )}
                   </Pressable>
                 ) : null}
               </View>
@@ -216,9 +222,12 @@ export function ReviewsSection({ targetType, targetId, canReview }: Props) {
                   accessibilityLiveRegion="polite"
                   accessibilityRole="alert"
                 >
-                  <Text style={styles.feedbackIcon}>
-                    {feedback.kind === 'success' ? '✅' : '⚠️'}
-                  </Text>
+                  <Feather
+                    name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+                    size={15}
+                    color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+                    style={styles.feedbackIcon}
+                  />
                   <Text
                     style={[
                       styles.feedbackText,
@@ -321,10 +330,15 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   barLabel: {
+    width: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 2,
+  },
+  barLabelText: {
     fontSize: Typography.sizes.xs,
     color: Colors.tan500,
-    width: 20,
-    textAlign: 'right',
   },
   barTrack: {
     flex: 1,

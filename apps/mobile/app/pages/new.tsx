@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -28,12 +29,12 @@ import {
   Typography,
 } from '@/constants/theme';
 
-const KINDS: Array<{ id: PageKind; label: string; icon: string }> = [
-  { id: 'community', label: 'Communauté', icon: '🌐' },
-  { id: 'cause', label: 'Cause', icon: '❤️' },
-  { id: 'business', label: 'Business', icon: '💼' },
-  { id: 'official', label: 'Officiel', icon: '🏛️' },
-  { id: 'group', label: 'Groupe', icon: '👥' },
+const KINDS: Array<{ id: PageKind; label: string; icon: keyof typeof Feather.glyphMap }> = [
+  { id: 'community', label: 'Communauté', icon: 'globe' },
+  { id: 'cause', label: 'Cause', icon: 'heart' },
+  { id: 'business', label: 'Business', icon: 'briefcase' },
+  { id: 'official', label: 'Officiel', icon: 'award' },
+  { id: 'group', label: 'Groupe', icon: 'users' },
 ];
 
 const COUNTRY_CODES = Object.keys(Flags);
@@ -191,7 +192,11 @@ export default function NewPageScreen() {
                   onPress={() => setKind(k.id)}
                   style={[styles.chip, active && styles.chipActive]}
                 >
-                  <Text style={styles.chipIcon}>{k.icon}</Text>
+                  <Feather
+                    name={k.icon}
+                    size={15}
+                    color={active ? Colors.orange : Colors.tan600}
+                  />
                   <Text style={[styles.chipLabel, active && { color: Colors.orange }]}>
                     {k.label}
                   </Text>
@@ -263,7 +268,12 @@ export default function NewPageScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+              <Feather
+                name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+                size={16}
+                color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+                style={styles.feedbackIcon}
+              />
               <Text
                 style={[
                   styles.feedbackText,

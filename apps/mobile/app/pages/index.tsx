@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -28,21 +29,34 @@ import {
   Typography,
 } from '@/constants/theme';
 
-const KIND_FILTERS: Array<{ id: PageKind | null; label: string; icon: string }> = [
-  { id: null, label: 'Toutes', icon: '🔍' },
-  { id: 'community', label: 'Communauté', icon: '🌐' },
-  { id: 'cause', label: 'Cause', icon: '❤️' },
-  { id: 'business', label: 'Business', icon: '💼' },
-  { id: 'official', label: 'Officiel', icon: '🏛️' },
-  { id: 'group', label: 'Groupe', icon: '👥' },
+// Feather glyph for each page kind, shared by filter chips and card labels.
+const KIND_ICONS: Record<PageKind, keyof typeof Feather.glyphMap> = {
+  community: 'globe',
+  cause: 'heart',
+  business: 'briefcase',
+  official: 'award',
+  group: 'users',
+};
+
+const KIND_FILTERS: Array<{
+  id: PageKind | null;
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+}> = [
+  { id: null, label: 'Toutes', icon: 'search' },
+  { id: 'community', label: 'Communauté', icon: KIND_ICONS.community },
+  { id: 'cause', label: 'Cause', icon: KIND_ICONS.cause },
+  { id: 'business', label: 'Business', icon: KIND_ICONS.business },
+  { id: 'official', label: 'Officiel', icon: KIND_ICONS.official },
+  { id: 'group', label: 'Groupe', icon: KIND_ICONS.group },
 ];
 
 const KIND_LABELS: Record<PageKind, string> = {
-  community: '🌐 Communauté',
-  cause: '❤️ Cause',
-  business: '💼 Business',
-  official: '🏛️ Officiel',
-  group: '👥 Groupe',
+  community: 'Communauté',
+  cause: 'Cause',
+  business: 'Business',
+  official: 'Officiel',
+  group: 'Groupe',
 };
 
 export default function PagesIndexScreen() {
@@ -114,7 +128,11 @@ export default function PagesIndexScreen() {
                     onPress={() => setKindFilter(f.id)}
                     style={[styles.filterChip, active && styles.filterChipActive]}
                   >
-                    <Text style={styles.filterIcon}>{f.icon}</Text>
+                    <Feather
+                      name={f.icon}
+                      size={14}
+                      color={active ? Colors.orange : Colors.tan500}
+                    />
                     <Text style={[styles.filterLabel, active && { color: Colors.orange }]}>
                       {f.label}
                     </Text>
@@ -170,7 +188,7 @@ export default function PagesIndexScreen() {
         accessibilityLabel="Créer une page"
       >
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-        <Text style={styles.fabLabel}>＋</Text>
+        <Feather name="plus" size={26} color={Colors.white} />
       </Pressable>
     </SafeAreaView>
   );
@@ -191,13 +209,23 @@ function PageCard({ page, onPress }: { page: Page; onPress: () => void }) {
       <View style={styles.cardBody}>
         <Avatar uri={page.avatarUrl} name={page.name} size={44} border={false} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardName} numberOfLines={1}>
-            {page.name}
-            {page.isVerified ? ' ✓' : ''}
-          </Text>
-          <Text style={styles.cardKind}>{KIND_LABELS[page.kind]}</Text>
+          <View style={styles.cardNameRow}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {page.name}
+            </Text>
+            {page.isVerified ? (
+              <Feather name="check-circle" size={14} color={Colors.orange} />
+            ) : null}
+          </View>
+          <View style={styles.cardKindRow}>
+            <Feather name={KIND_ICONS[page.kind]} size={12} color={Colors.tan500} />
+            <Text style={styles.cardKind}>{KIND_LABELS[page.kind]}</Text>
+          </View>
           <View style={styles.cardMeta}>
-            <Text style={styles.metaText}>👥 {page.followerCount}</Text>
+            <View style={styles.metaItem}>
+              <Feather name="users" size={12} color={Colors.tan500} />
+              <Text style={styles.metaText}>{page.followerCount}</Text>
+            </View>
             {page.ratingCount > 0 ? (
               <StarRating value={page.ratingAvg} count={page.ratingCount} size={12} />
             ) : null}
@@ -265,7 +293,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   filterChipActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
-  filterIcon: { fontSize: 14 },
   filterLabel: { fontSize: Typography.sizes.sm, fontWeight: '600', color: Colors.brown },
   section: {
     paddingHorizontal: Spacing.lg,
@@ -315,21 +342,37 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     padding: Spacing.md,
   },
+  cardNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   cardName: {
     fontSize: Typography.sizes.md,
     fontWeight: '700',
     color: Colors.brown,
+    flexShrink: 1,
+  },
+  cardKindRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
   },
   cardKind: {
     fontSize: Typography.sizes.xs,
     color: Colors.tan500,
-    marginTop: 2,
   },
   cardMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     marginTop: 4,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   metaText: {
     fontSize: Typography.sizes.xs,
@@ -364,11 +407,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 12,
     elevation: 8,
-  },
-  fabLabel: {
-    color: Colors.white,
-    fontSize: 28,
-    fontWeight: '300',
-    lineHeight: 32,
   },
 });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { searchCities as searchCitiesLocal, frenchCityName } from '@/constants/cities';
 import { countryFlag, countryName, searchCountries } from '@/constants/countries';
@@ -214,7 +215,7 @@ export function CitySearchField({ city, countryCode, onChange, label }: Props) {
                 pressed && styles.optionPressed,
               ]}
             >
-              <Text style={styles.optionFlag}>📍</Text>
+              <Feather name="map-pin" size={18} color={Colors.orange} style={styles.optionIcon} />
               <Text style={styles.optionText}>
                 Utiliser &laquo;&nbsp;{trimmed}&nbsp;&raquo; comme ville
               </Text>
@@ -310,6 +311,7 @@ const styles = StyleSheet.create({
   optionPressed: { backgroundColor: Colors.peach50 },
   freeTextOption: { borderBottomWidth: 0, backgroundColor: Colors.tan50 },
   optionFlag: { fontSize: 20 },
+  optionIcon: { width: 20, textAlign: 'center' },
   optionText: { flex: 1, fontSize: Typography.sizes.md, color: Colors.brown, fontWeight: '500' },
   optionCountry: { color: Colors.tan500, fontWeight: '400' },
   countrySection: { marginTop: Spacing.md },

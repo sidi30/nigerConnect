@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,10 +24,10 @@ import { useAuthStore } from '@/stores/authStore';
 
 type Filter = 'all' | 'people' | 'associations';
 
-const FILTERS: Array<{ id: Filter; label: string; icon: string }> = [
-  { id: 'all', label: 'Tous', icon: '🌍' },
-  { id: 'people', label: 'Personnes', icon: '👤' },
-  { id: 'associations', label: 'Assos', icon: '🏛️' },
+const FILTERS: Array<{ id: Filter; label: string; icon: keyof typeof Feather.glyphMap }> = [
+  { id: 'all', label: 'Tous', icon: 'globe' },
+  { id: 'people', label: 'Personnes', icon: 'user' },
+  { id: 'associations', label: 'Assos', icon: 'users' },
 ];
 
 const INITIAL_BOUNDS = {
@@ -373,8 +374,13 @@ export default function MapTab() {
                 onPress={() => setFilter(f.id)}
                 style={[styles.filterPill, active && styles.filterPillActive]}
               >
+                <Feather
+                  name={f.icon}
+                  size={13}
+                  color={active ? Colors.white : Colors.tan600}
+                />
                 <Text style={[styles.filterLabel, active && { color: Colors.white }]}>
-                  {f.icon} {f.label}
+                  {f.label}
                 </Text>
               </Pressable>
             );
@@ -384,12 +390,12 @@ export default function MapTab() {
             style={[styles.searchPill, searchOpen && styles.filterPillActive]}
             hitSlop={6}
           >
-            <Text style={[styles.filterLabel, searchOpen && { color: Colors.white }]}>🔍</Text>
+            <Feather name="search" size={15} color={searchOpen ? Colors.white : Colors.tan600} />
           </Pressable>
         </View>
         {searchOpen && (
           <View style={styles.searchWrap}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Feather name="search" size={15} color={Colors.tan500} />
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -405,7 +411,7 @@ export default function MapTab() {
                 hitSlop={10}
                 style={styles.searchClose}
               >
-                <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+                <Feather name="x" size={16} color={Colors.tan500} />
               </Pressable>
             )}
           </View>
@@ -479,14 +485,15 @@ export default function MapTab() {
         {locating ? (
           <ActivityIndicator color={Colors.orange} size="small" />
         ) : (
-          <Text style={styles.recenterIcon}>{myLocation ? '📍' : '🧭'}</Text>
+          <Feather name={myLocation ? 'map-pin' : 'compass'} size={22} color={Colors.orange} />
         )}
       </Pressable>
 
       {statsQuery.data && (
         <View style={styles.statsBadge}>
+          <Feather name="globe" size={13} color={Colors.white} />
           <Text style={styles.statsText}>
-            🌍 {statsQuery.data.totalMembers} membres · {statsQuery.data.countryCounts.length} pays
+            {statsQuery.data.totalMembers} membres · {statsQuery.data.countryCounts.length} pays
           </Text>
         </View>
       )}
@@ -545,23 +552,28 @@ function SelectedSheet({
         <View style={styles.sheetHandle} />
         <View style={styles.sheetTop}>
           <View style={[styles.sheetIcon, { backgroundColor: Colors.info }]}>
-            <Text style={{ fontSize: 22 }}>🏛️</Text>
+            <Feather name="users" size={22} color={Colors.white} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sheetName}>
-              {marker.name}
-              {marker.isVerified ? ' ✓' : ''}
-            </Text>
+            <View style={styles.sheetNameRow}>
+              <Text style={styles.sheetName}>{marker.name}</Text>
+              {marker.isVerified ? (
+                <Feather name="check-circle" size={14} color={Colors.green} />
+              ) : null}
+            </View>
             <Text style={styles.sheetMeta}>
               {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
               {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
             </Text>
-            <Text style={styles.sheetMeta}>
-              👥 {marker.memberCount} {marker.memberCount > 1 ? 'membres' : 'membre'}
-            </Text>
+            <View style={styles.sheetMetaRow}>
+              <Feather name="users" size={13} color={Colors.tan500} />
+              <Text style={styles.sheetMeta}>
+                {marker.memberCount} {marker.memberCount > 1 ? 'membres' : 'membre'}
+              </Text>
+            </View>
           </View>
           <Pressable onPress={onClose} style={styles.sheetClose}>
-            <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+            <Feather name="x" size={16} color={Colors.tan500} />
           </Pressable>
         </View>
         <Pressable
@@ -595,7 +607,7 @@ function SelectedSheet({
           </Text>
         </View>
         <Pressable onPress={onClose} style={styles.sheetClose}>
-          <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+          <Feather name="x" size={16} color={Colors.tan500} />
         </Pressable>
       </View>
       <Pressable
@@ -634,14 +646,22 @@ function IndividualSheet({
   // self / blocked: no friend action. incoming routes to the profile where the
   // request can be accepted with its friendshipId.
   const showFriendBtn = rel !== 'self' && rel !== 'blocked';
+  const friendIcon: keyof typeof Feather.glyphMap =
+    rel === 'friends'
+      ? 'check'
+      : rel === 'outgoing'
+        ? 'clock'
+        : rel === 'incoming'
+          ? 'mail'
+          : 'user-plus';
   const friendLabel =
     rel === 'friends'
-      ? '✓ Amis'
+      ? 'Amis'
       : rel === 'outgoing'
-        ? '⌛ Demande envoyée'
+        ? 'Demande envoyée'
         : rel === 'incoming'
-          ? '📩 Accepter la demande'
-          : '👤 Ajouter en ami';
+          ? 'Accepter la demande'
+          : 'Ajouter en ami';
   const friendDisabled =
     rel === 'friends' || rel === 'outgoing' || sendRequestMut.isPending;
 
@@ -668,7 +688,7 @@ function IndividualSheet({
           </Text>
         </View>
         <Pressable onPress={onClose} style={styles.sheetClose}>
-          <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+          <Feather name="x" size={16} color={Colors.tan500} />
         </Pressable>
       </View>
       <Pressable onPress={() => onOpenProfile(marker.userId)} style={styles.sheetBtn}>
@@ -680,6 +700,7 @@ function IndividualSheet({
           disabled={friendDisabled}
           style={[styles.sheetBtnSecondary, friendDisabled && { opacity: 0.6 }]}
         >
+          <Feather name={friendIcon} size={16} color={Colors.orange} />
           <Text style={styles.sheetBtnSecondaryLabel}>{friendLabel}</Text>
         </Pressable>
       ) : null}
@@ -709,10 +730,12 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  searchIcon: { fontSize: 15 },
   searchInput: { flex: 1, fontSize: Typography.sizes.sm, color: Colors.brown, padding: 0 },
   filtersRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
     borderRadius: Radii.md,
@@ -785,11 +808,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 5,
   },
-  recenterIcon: { fontSize: 22 },
   statsBadge: {
     position: 'absolute',
     bottom: 100,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: 'rgba(26,15,10,0.85)',
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
@@ -829,8 +854,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sheetNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   sheetName: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   sheetMeta: { fontSize: Typography.sizes.sm, color: Colors.tan500, marginTop: 2 },
+  sheetMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   sheetClose: {
     width: 32,
     height: 32,
@@ -849,12 +876,15 @@ const styles = StyleSheet.create({
   sheetBtnLabel: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
   sheetBtnSecondary: {
     marginTop: Spacing.sm,
+    flexDirection: 'row',
+    gap: 6,
     backgroundColor: Colors.white,
     borderRadius: Radii.lg,
     borderWidth: 1.5,
     borderColor: Colors.orange,
     paddingVertical: Spacing.md + 2,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   sheetBtnSecondaryLabel: {
     color: Colors.orange,

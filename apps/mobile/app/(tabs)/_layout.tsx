@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { Tabs, usePathname } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
@@ -15,17 +16,19 @@ import { useAuthStore } from '@/stores/authStore';
 import type { Message } from '@nigerconnect/shared-types';
 
 function TabIcon({
-  emoji,
+  name,
+  color,
   focused,
   badge,
 }: {
-  emoji: string;
+  name: keyof typeof Feather.glyphMap;
+  color: string;
   focused: boolean;
   badge?: number;
 }) {
   return (
     <View style={styles.iconWrap}>
-      <Text style={[styles.emoji, !focused && { opacity: 0.45 }]}>{emoji}</Text>
+      <Feather name={name} size={23} color={color} style={!focused && { opacity: 0.9 }} />
       {badge && badge > 0 ? (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
@@ -182,29 +185,35 @@ export default function TabsLayout() {
           name="map"
           options={{
             title: 'Carte',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="🌍" focused={focused} />,
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon name="map" color={color} focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="index"
           options={{
             title: 'Fil',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="📰" focused={focused} />,
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon name="home" color={color} focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="services"
           options={{
             title: 'Services',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="🤝" focused={focused} />,
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon name="briefcase" color={color} focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="messages"
           options={{
             title: 'Messages',
-            tabBarIcon: ({ focused }) => (
-              <TabIcon emoji="💬" focused={focused} badge={unreadTotal} />
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon name="message-circle" color={color} focused={focused} badge={unreadTotal} />
             ),
           }}
         />
@@ -212,7 +221,9 @@ export default function TabsLayout() {
           name="profile"
           options={{
             title: 'Profil',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} />,
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon name="user" color={color} focused={focused} />
+            ),
           }}
         />
       </Tabs>
@@ -226,7 +237,6 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   iconWrap: { position: 'relative' },
-  emoji: { fontSize: 22 },
   badge: {
     position: 'absolute',
     top: -4,

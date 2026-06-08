@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
@@ -37,13 +38,16 @@ export default function MessagesTab() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>💬 Messages</Text>
+        <View style={styles.titleRow}>
+          <Feather name="message-circle" size={20} color={Colors.brown} />
+          <Text style={styles.title}>Messages</Text>
+        </View>
         <Pressable
           style={styles.composeBtn}
           hitSlop={8}
           onPress={() => router.push('/chat/new')}
         >
-          <Text style={styles.composeIcon}>✏️</Text>
+          <Feather name="edit-2" size={16} color={Colors.tan600} />
         </Pressable>
       </View>
 
@@ -173,6 +177,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     backgroundColor: 'rgba(253,251,247,0.96)',
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: {
     fontSize: Typography.sizes.xl,
     fontFamily: Typography.fontFamily.serifBold,
@@ -186,7 +191,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  composeIcon: { fontSize: 15 },
   onlineStrip: { borderBottomWidth: 1, borderBottomColor: Colors.tan200 },
   onlineStripContent: {
     paddingHorizontal: Spacing.lg,

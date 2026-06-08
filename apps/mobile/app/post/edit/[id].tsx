@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -84,8 +85,9 @@ export default function EditPostScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>‹ Annuler</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancelBtn}>
+          <Feather name="chevron-left" size={20} color={Colors.brown} />
+          <Text style={styles.cancel}>Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Modifier</Text>
         <Pressable
@@ -121,7 +123,12 @@ export default function EditPostScreen() {
                     visibility === v && { color: Colors.orange },
                   ]}
                 >
-                  {v === 'public' ? '🌍 Public' : '👥 Amis'}
+                  <Feather
+                    name={v === 'public' ? 'globe' : 'users'}
+                    size={13}
+                    color={visibility === v ? Colors.orange : Colors.brown}
+                  />{' '}
+                  {v === 'public' ? 'Public' : 'Amis'}
                 </Text>
               </Pressable>
             ))}
@@ -147,7 +154,12 @@ export default function EditPostScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+              <Feather
+                name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+                size={16}
+                color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+                style={styles.feedbackIcon}
+              />
               <Text
                 style={[
                   styles.feedbackText,
@@ -178,6 +190,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     gap: Spacing.md,
   },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center' },
   cancel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '600' },
   title: { flex: 1, textAlign: 'center', fontSize: Typography.sizes.md + 1, fontWeight: '700', color: Colors.brown },
   publish: {

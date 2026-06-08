@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { Colors, Spacing, Typography } from '@/constants/theme';
 
@@ -41,7 +42,8 @@ export function OfflineBanner() {
 
   return (
     <View style={styles.banner} accessibilityLiveRegion="polite" accessibilityRole="alert">
-      <Text style={styles.text}>📡  Hors ligne — les actions en cours seront synchronisées au retour.</Text>
+      <Feather name="wifi-off" size={13} color={Colors.white} />
+      <Text style={styles.text}>Hors ligne — les actions en cours seront synchronisées au retour.</Text>
     </View>
   );
 }
@@ -51,7 +53,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.brown,
     paddingHorizontal: Spacing.md,
     paddingVertical: 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   text: {
     color: Colors.white,

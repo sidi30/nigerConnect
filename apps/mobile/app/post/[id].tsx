@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -134,8 +135,8 @@ export default function PostScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={15}>
-          <Text style={styles.back}>←</Text>
+        <Pressable onPress={() => router.back()} hitSlop={15} style={styles.back}>
+          <Feather name="arrow-left" size={26} color={Colors.brown} />
         </Pressable>
         <Text style={styles.title}>Publication</Text>
         <View style={{ width: 34 }} />
@@ -208,7 +209,7 @@ export default function PostScreen() {
               Réponse à <Text style={styles.replyHintName}>{replyTo.author}</Text>
             </Text>
             <Pressable onPress={() => setReplyTo(null)} hitSlop={10}>
-              <Text style={styles.replyHintClose}>✕</Text>
+              <Feather name="x" size={16} color={Colors.tan500} />
             </Pressable>
           </View>
         ) : null}
@@ -236,7 +237,7 @@ export default function PostScreen() {
             {commentMut.isPending ? (
               <ActivityIndicator size="small" color={Colors.white} />
             ) : (
-              <Text style={styles.sendIcon}>➤</Text>
+              <Feather name="send" size={16} color={Colors.white} />
             )}
           </Pressable>
         </View>
@@ -257,7 +258,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     backgroundColor: Colors.cream,
   },
-  back: { fontSize: 26, color: Colors.brown, width: 34 },
+  back: { width: 34 },
   title: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   loading: { padding: Spacing.xl, textAlign: 'center', color: Colors.tan500 },
   commentsHeader: {
@@ -281,7 +282,6 @@ const styles = StyleSheet.create({
   },
   replyHintText: { flex: 1, fontSize: Typography.sizes.xs + 1, color: Colors.tan600 },
   replyHintName: { color: Colors.orange, fontWeight: '700' },
-  replyHintClose: { fontSize: 16, color: Colors.tan500 },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -311,5 +311,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  sendIcon: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 });

@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -161,9 +162,14 @@ export default function EditProfileScreen() {
             }}
             style={[styles.changePhotoBtn, avatarUploading && { opacity: 0.5 }]}
           >
-            <Text style={styles.changePhotoLabel}>
-              {avatarUploading ? 'Envoi…' : '📷 Changer la photo'}
-            </Text>
+            {avatarUploading ? (
+              <Text style={styles.changePhotoLabel}>Envoi…</Text>
+            ) : (
+              <>
+                <Feather name="camera" size={15} color={Colors.orange} />
+                <Text style={styles.changePhotoLabel}>Changer la photo</Text>
+              </>
+            )}
           </Pressable>
         </View>
 
@@ -213,22 +219,31 @@ export default function EditProfileScreen() {
 
         <Text style={styles.section}>Qui peut voir mon profil</Text>
         <View style={styles.privacyRow}>
-          {(['public', 'friends', 'private'] as const).map((p) => (
-            <Pressable
-              key={p}
-              onPress={() => setPrivacyLevel(p)}
-              style={[styles.privacyPill, privacyLevel === p && styles.privacyPillActive]}
-            >
-              <Text
-                style={[
-                  styles.privacyLabel,
-                  privacyLevel === p && { color: Colors.white },
-                ]}
+          {(
+            [
+              { id: 'public', icon: 'globe', label: 'Public' },
+              { id: 'friends', icon: 'users', label: 'Amis' },
+              { id: 'private', icon: 'lock', label: 'Privé' },
+            ] as const
+          ).map((p) => {
+            const active = privacyLevel === p.id;
+            return (
+              <Pressable
+                key={p.id}
+                onPress={() => setPrivacyLevel(p.id)}
+                style={[styles.privacyPill, active && styles.privacyPillActive]}
               >
-                {p === 'public' ? '🌍 Public' : p === 'friends' ? '👥 Amis' : '🔒 Privé'}
-              </Text>
-            </Pressable>
-          ))}
+                <Feather
+                  name={p.icon}
+                  size={15}
+                  color={active ? Colors.white : Colors.tan600}
+                />
+                <Text style={[styles.privacyLabel, active && { color: Colors.white }]}>
+                  {p.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         {feedback ? (
@@ -240,9 +255,12 @@ export default function EditProfileScreen() {
             accessibilityLiveRegion="polite"
             accessibilityRole="alert"
           >
-            <Text style={styles.feedbackIcon}>
-              {feedback.kind === 'success' ? '✅' : '⚠️'}
-            </Text>
+            <Feather
+              name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+              size={16}
+              color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+              style={styles.feedbackIcon}
+            />
             <Text
               style={[
                 styles.feedbackText,
@@ -330,11 +348,14 @@ const styles = StyleSheet.create({
   privacyRow: { flexDirection: 'row', gap: 8 },
   privacyPill: {
     flex: 1,
+    flexDirection: 'row',
+    gap: 6,
     padding: Spacing.md,
     borderRadius: Radii.lg,
     borderWidth: 1.5,
     borderColor: Colors.tan300,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.white,
   },
   privacyPillActive: { backgroundColor: Colors.orange, borderColor: Colors.orange },
@@ -354,6 +375,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   changePhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: Spacing.md + 2,
     paddingVertical: 8,
     borderRadius: Radii.md,

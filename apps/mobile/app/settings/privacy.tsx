@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
@@ -72,9 +73,9 @@ export default function PrivacyScreen() {
       <View style={styles.group}>
         {(
           [
-            { id: 'public' as const, emoji: '🌍', label: 'Public', desc: 'Tout le monde peut voir mon profil' },
-            { id: 'friends' as const, emoji: '👥', label: 'Amis', desc: 'Seuls mes amis peuvent voir mon profil' },
-            { id: 'private' as const, emoji: '🔒', label: 'Privé', desc: 'Personne ne peut voir mon profil' },
+            { id: 'public' as const, icon: 'globe', label: 'Public', desc: 'Tout le monde peut voir mon profil' },
+            { id: 'friends' as const, icon: 'users', label: 'Amis', desc: 'Seuls mes amis peuvent voir mon profil' },
+            { id: 'private' as const, icon: 'lock', label: 'Privé', desc: 'Personne ne peut voir mon profil' },
           ] as const
         ).map((opt) => {
           const active = privacyLevel === opt.id;
@@ -84,14 +85,19 @@ export default function PrivacyScreen() {
               onPress={() => savePrivacy(opt.id, showOnMap)}
               style={[styles.option, active && styles.optionActive]}
             >
-              <Text style={styles.optionEmoji}>{opt.emoji}</Text>
+              <Feather
+                name={opt.icon}
+                size={22}
+                color={active ? Colors.orange : Colors.tan500}
+                style={styles.optionEmoji}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.optionLabel, active && { color: Colors.orange }]}>
                   {opt.label}
                 </Text>
                 <Text style={styles.optionDesc}>{opt.desc}</Text>
               </View>
-              {active && <Text style={styles.check}>✓</Text>}
+              {active && <Feather name="check" size={18} color={Colors.orange} />}
             </Pressable>
           );
         })}
@@ -134,8 +140,9 @@ export default function PrivacyScreen() {
 
       {proximityAlerts && !showOnMap ? (
         <View style={styles.hintCard}>
+          <Feather name="alert-triangle" size={16} color={Colors.brown} style={styles.hintIcon} />
           <Text style={styles.hintText}>
-            ⚠️ Pour que les alertes de proximité fonctionnent, tu dois être visible sur la
+            Pour que les alertes de proximité fonctionnent, tu dois être visible sur la
             carte. Active « Afficher mon avatar » ci-dessus.
           </Text>
         </View>
@@ -188,7 +195,7 @@ export default function PrivacyScreen() {
         }}
         style={styles.exportBtn}
       >
-        <Text style={styles.exportEmoji}>📦</Text>
+        <Feather name="package" size={22} color={Colors.brown} style={styles.exportEmoji} />
         <View style={{ flex: 1 }}>
           <Text style={styles.exportLabel}>Exporter mes données</Text>
           <Text style={styles.exportDesc}>
@@ -282,13 +289,17 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: Typography.sizes.md, fontWeight: '600', color: Colors.brown },
   switchHint: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
   hintCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
     padding: Spacing.md,
     backgroundColor: Colors.peach50,
     borderRadius: Radii.lg,
     borderWidth: 1,
     borderColor: Colors.orange,
   },
-  hintText: { fontSize: Typography.sizes.xs + 1, color: Colors.brown, lineHeight: 18 },
+  hintIcon: { marginTop: 1 },
+  hintText: { flex: 1, fontSize: Typography.sizes.xs + 1, color: Colors.brown, lineHeight: 18 },
   radiusRow: { flexDirection: 'row', gap: 8 },
   radiusPill: {
     flex: 1,

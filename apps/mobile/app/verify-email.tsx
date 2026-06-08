@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -96,7 +97,7 @@ export default function VerifyEmailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.emoji}>📧</Text>
+        <Feather name="mail" size={48} color={Colors.orange} style={styles.emoji} />
         <Text style={styles.title}>Active ton compte</Text>
         <Text style={styles.subtitle}>
           Nous avons envoyé un code à{' '}
@@ -132,7 +133,7 @@ export default function VerifyEmailScreen() {
 
         {sent ? (
           <View style={styles.successBanner}>
-            <Text style={styles.successIcon}>✅</Text>
+            <Feather name="check-circle" size={18} color={Colors.successDark} style={styles.successIcon} />
             <Text style={styles.successText}>
               Nouveau code envoyé. Pense à vérifier tes spams.
             </Text>
@@ -141,7 +142,7 @@ export default function VerifyEmailScreen() {
 
         {error ? (
           <View style={styles.errorBanner}>
-            <Text style={styles.errorIcon}>⚠️</Text>
+            <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
@@ -183,7 +184,7 @@ export default function VerifyEmailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   scroll: { flexGrow: 1, padding: Spacing.xl },
-  emoji: { fontSize: 56, textAlign: 'center', marginVertical: Spacing.lg },
+  emoji: { alignSelf: 'center', marginVertical: Spacing.lg },
   title: {
     fontSize: Typography.sizes.display,
     fontFamily: Typography.fontFamily.serifBold,

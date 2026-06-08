@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors, Typography } from '@/constants/theme';
 
 interface Props {
@@ -23,7 +24,8 @@ export function StarRating({ value, size = 16, onChange, count }: Props) {
     <View style={styles.row}>
       {stars.map((star) => {
         const filled = star <= Math.round(value);
-        const label = filled ? '★' : '☆';
+        const color = filled ? Colors.orange : Colors.tan300;
+        const icon = <Feather name="star" size={size} color={color} />;
         if (onChange) {
           return (
             <Pressable
@@ -33,28 +35,11 @@ export function StarRating({ value, size = 16, onChange, count }: Props) {
               accessibilityLabel={`${star} étoile${star > 1 ? 's' : ''}`}
               accessibilityRole="button"
             >
-              <Text
-                style={[
-                  styles.star,
-                  { fontSize: size, color: filled ? Colors.orange : Colors.tan300 },
-                ]}
-              >
-                {label}
-              </Text>
+              {icon}
             </Pressable>
           );
         }
-        return (
-          <Text
-            key={star}
-            style={[
-              styles.star,
-              { fontSize: size, color: filled ? Colors.orange : Colors.tan300 },
-            ]}
-          >
-            {label}
-          </Text>
-        );
+        return <View key={star}>{icon}</View>;
       })}
       {showMeta ? (
         <Text style={[styles.meta, { fontSize: size * 0.75 }]}>
@@ -67,7 +52,6 @@ export function StarRating({ value, size = 16, onChange, count }: Props) {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  star: { lineHeight: undefined },
   meta: {
     color: Colors.tan500,
     fontWeight: '600',

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -25,9 +26,14 @@ import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme
 
 type Visibility = 'public' | 'friends' | 'association';
 
-const VISIBILITY_OPTIONS: Array<{ id: Visibility; icon: string; label: string; desc: string }> = [
-  { id: 'public', icon: '🌍', label: 'Public', desc: 'Tout le monde peut voir' },
-  { id: 'friends', icon: '👥', label: 'Amis', desc: 'Seulement mes amis' },
+const VISIBILITY_OPTIONS: Array<{
+  id: Visibility;
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  desc: string;
+}> = [
+  { id: 'public', icon: 'globe', label: 'Public', desc: 'Tout le monde peut voir' },
+  { id: 'friends', icon: 'users', label: 'Amis', desc: 'Seulement mes amis' },
 ];
 
 const MAX_CHARS = 5000;
@@ -84,8 +90,9 @@ export default function NewPostScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>‹ Annuler</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancelBtn}>
+          <Feather name="chevron-left" size={20} color={Colors.brown} />
+          <Text style={styles.cancel}>Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouvelle publication</Text>
         <Pressable
@@ -128,7 +135,12 @@ export default function NewPostScreen() {
                       <Text
                         style={[styles.visLabel, active && { color: Colors.white }]}
                       >
-                        {v.icon} {v.label}
+                        <Feather
+                          name={v.icon}
+                          size={12}
+                          color={active ? Colors.white : Colors.tan600}
+                        />{' '}
+                        {v.label}
                       </Text>
                     </Pressable>
                   );
@@ -160,7 +172,7 @@ export default function NewPostScreen() {
                     onPress={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
                     style={styles.photoRemove}
                   >
-                    <Text style={styles.photoRemoveLabel}>✕</Text>
+                    <Feather name="x" size={14} color={Colors.white} />
                   </Pressable>
                 </View>
               ))}
@@ -173,7 +185,7 @@ export default function NewPostScreen() {
               disabled={uploading}
               style={[styles.actionBtn, uploading && { opacity: 0.5 }]}
             >
-              <Text style={styles.actionEmoji}>🖼️</Text>
+              <Feather name="image" size={18} color={Colors.tan600} />
               <Text style={styles.actionLabel}>
                 {uploading
                   ? `Envoi… ${Math.round(uploadProgress * 100)}%`
@@ -185,11 +197,11 @@ export default function NewPostScreen() {
               disabled={uploading}
               style={[styles.actionBtn, uploading && { opacity: 0.5 }]}
             >
-              <Text style={styles.actionEmoji}>📸</Text>
+              <Feather name="camera" size={18} color={Colors.tan600} />
               <Text style={styles.actionLabel}>Caméra</Text>
             </Pressable>
             <Pressable style={[styles.actionBtn, { opacity: 0.4 }]}>
-              <Text style={styles.actionEmoji}>🏛️</Text>
+              <Feather name="home" size={18} color={Colors.tan600} />
               <Text style={styles.actionLabel}>Asso</Text>
             </Pressable>
           </View>
@@ -210,6 +222,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.tan200,
   },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center' },
   cancel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '600' },
   title: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   publish: {
@@ -267,7 +280,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoRemoveLabel: { color: Colors.white, fontSize: 12, fontWeight: '800' },
   actions: {
     flexDirection: 'row',
     gap: Spacing.md,
@@ -285,6 +297,5 @@ const styles = StyleSheet.create({
     borderRadius: Radii.md,
     backgroundColor: Colors.peach50,
   },
-  actionEmoji: { fontSize: 18 },
   actionLabel: { fontSize: Typography.sizes.sm, color: Colors.tan600, fontWeight: '700' },
 });

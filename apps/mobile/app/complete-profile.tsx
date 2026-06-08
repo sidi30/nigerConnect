@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -65,7 +66,7 @@ export default function CompleteProfileScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={styles.emoji}>📍</Text>
+          <Feather name="map-pin" size={48} color={Colors.orange} style={styles.emoji} />
           <Text style={styles.title}>Complète ton profil</Text>
           <Text style={styles.subtitle}>
             {user?.firstName ? `Bienvenue ${user.firstName} ! ` : ''}Dernière étape : indique ta
@@ -74,7 +75,7 @@ export default function CompleteProfileScreen() {
 
           {error ? (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorIcon}>⚠️</Text>
+              <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
@@ -111,7 +112,7 @@ export default function CompleteProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   scroll: { flexGrow: 1, padding: Spacing.xl },
-  emoji: { fontSize: 56, textAlign: 'center', marginVertical: Spacing.lg },
+  emoji: { alignSelf: 'center', marginVertical: Spacing.lg },
   title: {
     fontSize: Typography.sizes.display,
     fontFamily: Typography.fontFamily.serifBold,

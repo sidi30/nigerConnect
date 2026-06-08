@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { Post, SharedPost } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
@@ -95,8 +96,14 @@ function PostCardImpl({
           </Text>
         </Pressable>
         <View>
-          <Pressable hitSlop={10} onPress={() => setMenuOpen((v) => !v)}>
-            <Text style={styles.more}>⋯</Text>
+          <Pressable
+            hitSlop={10}
+            onPress={() => setMenuOpen((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="Options de la publication"
+            style={styles.moreBtn}
+          >
+            <Feather name="more-horizontal" size={20} color={Colors.tan400} />
           </Pressable>
           {menuOpen ? (
             <>
@@ -115,7 +122,8 @@ function PostCardImpl({
                         onEdit?.(post.id);
                       }}
                     >
-                      <Text style={styles.menuText}>✏️  Modifier</Text>
+                      <Feather name="edit-2" size={16} color={Colors.brown} />
+                      <Text style={styles.menuText}>Modifier</Text>
                     </Pressable>
                     <Pressable
                       style={styles.menuItem}
@@ -124,7 +132,8 @@ function PostCardImpl({
                         onDelete?.(post.id);
                       }}
                     >
-                      <Text style={[styles.menuText, { color: Colors.danger }]}>🗑️  Supprimer</Text>
+                      <Feather name="trash-2" size={16} color={Colors.danger} />
+                      <Text style={[styles.menuText, { color: Colors.danger }]}>Supprimer</Text>
                     </Pressable>
                   </>
                 ) : (
@@ -135,7 +144,8 @@ function PostCardImpl({
                       onReport?.(post.id);
                     }}
                   >
-                    <Text style={styles.menuText}>🚩  Signaler</Text>
+                    <Feather name="flag" size={16} color={Colors.brown} />
+                    <Text style={styles.menuText}>Signaler</Text>
                   </Pressable>
                 )}
               </View>
@@ -163,22 +173,25 @@ function PostCardImpl({
 
       <View style={styles.actions}>
         <ActionButton
-          icon={liked ? '❤️' : '🤍'}
+          name="heart"
           label={String(likeCount)}
           active={liked}
+          accessibilityLabel={liked ? "Je n'aime plus" : "J'aime"}
           onPress={handleLike}
         />
         <ActionButton
-          icon="💬"
+          name="message-circle"
           label={String(post.commentCount)}
+          accessibilityLabel="Commenter"
           onPress={() => onComment?.(post.id)}
         />
         <ActionButton
-          icon="🔄"
+          name="repeat"
           label={String(post.shareCount)}
+          accessibilityLabel="Repartager"
           onPress={() => onShare?.(post.id)}
         />
-        <ActionButton icon="📤" />
+        <ActionButton name="share-2" accessibilityLabel="Partager" />
       </View>
     </View>
   );
@@ -249,20 +262,30 @@ function PhotoGallery({
 }
 
 function ActionButton({
-  icon,
+  name,
   label,
   active,
+  accessibilityLabel,
   onPress,
 }: {
-  icon: string;
+  name: keyof typeof Feather.glyphMap;
   label?: string;
   active?: boolean;
+  accessibilityLabel?: string;
   onPress?: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.action} hitSlop={8}>
-      <Text style={[styles.actionIcon, active && { color: Colors.orange }]}>{icon}</Text>
-      {label ? <Text style={styles.actionLabel}>{label}</Text> : null}
+    <Pressable
+      onPress={onPress}
+      style={styles.action}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <Feather name={name} size={19} color={active ? Colors.orange : Colors.tan500} />
+      {label ? (
+        <Text style={[styles.actionLabel, active && { color: Colors.orange }]}>{label}</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -287,7 +310,12 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   name: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   meta: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 2 },
-  more: { fontSize: 18, color: Colors.tan400, paddingHorizontal: Spacing.xs },
+  moreBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   content: {
     fontSize: Typography.sizes.md,
     lineHeight: 21,
@@ -344,7 +372,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: Spacing.sm,
   },
-  actionIcon: { fontSize: 18 },
   actionLabel: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontWeight: '600' },
   menuBackdrop: {
     position: 'absolute',
@@ -372,8 +399,11 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.md + 2,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
   menuText: {
     fontSize: Typography.sizes.sm,

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -58,8 +59,9 @@ export default function NewStoryScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>‹ Annuler</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancelBtn}>
+          <Feather name="chevron-left" size={20} color="rgba(255,255,255,0.9)" />
+          <Text style={styles.cancel}>Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouvelle story</Text>
         <Pressable
@@ -87,7 +89,7 @@ export default function NewStoryScreen() {
               />
             </View>
             <Pressable onPress={() => setMediaUrl(null)} style={styles.removeBtn}>
-              <Text style={styles.removeLabel}>✕</Text>
+              <Feather name="x" size={18} color={Colors.white} />
             </Pressable>
           </>
         ) : (
@@ -102,7 +104,7 @@ export default function NewStoryScreen() {
             disabled={uploading}
             style={styles.placeholder}
           >
-            <Text style={styles.placeholderEmoji}>📷</Text>
+            <Feather name="camera" size={48} color="rgba(255,255,255,0.9)" />
             <Text style={styles.placeholderText}>Touche pour choisir une image</Text>
             <Text style={styles.placeholderHint}>
               Ta story sera visible par tes amis pendant 24h
@@ -123,6 +125,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
   },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center' },
   cancel: { color: 'rgba(255,255,255,0.9)', fontSize: Typography.sizes.md, fontWeight: '600' },
   title: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.white },
   publish: {
@@ -166,7 +169,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  removeLabel: { color: Colors.white, fontSize: 18, fontWeight: '700' },
   placeholder: {
     flex: 1,
     alignItems: 'center',
@@ -174,7 +176,6 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: Spacing.xl,
   },
-  placeholderEmoji: { fontSize: 56 },
   placeholderText: {
     color: 'rgba(255,255,255,0.9)',
     fontSize: Typography.sizes.lg,

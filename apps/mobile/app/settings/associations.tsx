@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -29,7 +30,7 @@ export default function MyAssociationsScreen() {
   if (assocs.length === 0) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyEmoji}>🏛️</Text>
+        <Feather name="home" size={44} color={Colors.tan400} style={styles.emptyEmoji} />
         <Text style={styles.emptyTitle}>Aucune association</Text>
         <Text style={styles.emptyText}>
           Rejoins une association depuis la carte ou crée la tienne.
@@ -39,7 +40,8 @@ export default function MyAssociationsScreen() {
           onPress={() => router.push('/associations/new')}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-          <Text style={styles.createLabel}>✨  Créer une association</Text>
+          <Feather name="plus" size={17} color={Colors.white} />
+          <Text style={styles.createLabel}>Créer une association</Text>
         </Pressable>
         <Pressable style={styles.browseBtn} onPress={() => router.replace('/(tabs)/map')}>
           <Text style={styles.browseLabel}>Parcourir les associations →</Text>
@@ -63,14 +65,18 @@ export default function MyAssociationsScreen() {
                 {a.logoUrl ? (
                   <Image source={{ uri: a.logoUrl }} style={styles.logo} contentFit="cover" />
                 ) : (
-                  <Text style={styles.logoEmoji}>🏛️</Text>
+                  <Feather name="home" size={26} color={Colors.white} />
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.name} numberOfLines={1}>
-                  {a.name}
-                  {a.isVerified ? ' ✓' : ''}
-                </Text>
+                <View style={styles.nameRow}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                  {a.isVerified ? (
+                    <Feather name="check-circle" size={14} color={Colors.info} />
+                  ) : null}
+                </View>
                 <Text style={styles.meta} numberOfLines={1}>
                   {Flags[a.countryCode ?? ''] ?? '🌍'} {a.city ?? ''}
                   {a.countryCode
@@ -78,7 +84,10 @@ export default function MyAssociationsScreen() {
                     : ''}
                 </Text>
                 <View style={styles.metaRow}>
-                  <Text style={styles.members}>👥 {a.memberCount} membres</Text>
+                  <View style={styles.membersRow}>
+                    <Feather name="users" size={13} color={Colors.tan600} />
+                    <Text style={styles.members}>{a.memberCount} membres</Text>
+                  </View>
                   <View style={[styles.roleBadge, { backgroundColor: role.bg }]}>
                     <Text style={[styles.roleLabel, { color: role.color }]}>{role.label}</Text>
                   </View>
@@ -90,7 +99,8 @@ export default function MyAssociationsScreen() {
       </ScrollView>
       <Pressable style={styles.fab} onPress={() => router.push('/associations/new')}>
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-        <Text style={styles.fabLabel}>✨  Créer</Text>
+        <Feather name="plus" size={16} color={Colors.white} />
+        <Text style={styles.fabLabel}>Créer</Text>
       </Pressable>
     </View>
   );
@@ -99,7 +109,7 @@ export default function MyAssociationsScreen() {
 const styles = StyleSheet.create({
   scroll: { padding: Spacing.lg, gap: Spacing.md },
   empty: { flex: 1, padding: Spacing.xxxl, alignItems: 'center', justifyContent: 'center' },
-  emptyEmoji: { fontSize: 48, marginBottom: Spacing.md },
+  emptyEmoji: { marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   emptyText: {
     fontSize: Typography.sizes.sm,
@@ -113,6 +123,8 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: Spacing.xl,
     borderRadius: Radii.lg,
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -127,6 +139,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderRadius: Radii.full,
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
     overflow: 'hidden',
     shadowColor: Colors.orange,
     shadowOffset: { width: 0, height: 4 },
@@ -154,8 +169,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   logo: { width: '100%', height: '100%' },
-  logoEmoji: { fontSize: 26 },
-  name: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  name: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown, flexShrink: 1 },
   meta: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
   metaRow: {
     flexDirection: 'row',
@@ -163,6 +178,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 6,
   },
+  membersRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   members: { fontSize: Typography.sizes.xs, color: Colors.tan600, fontWeight: '600' },
   roleBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   roleLabel: { fontSize: Typography.sizes.xxs, fontWeight: '700' },

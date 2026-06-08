@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -65,7 +66,7 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.topRow}>
             <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
-              <Text style={styles.backIcon}>←</Text>
+              <Feather name="arrow-left" size={22} color={Colors.brown} />
             </Pressable>
           </View>
 
@@ -121,7 +122,11 @@ export default function LoginScreen() {
                   }
                   accessibilityRole="button"
                 >
-                  <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+                  <Feather
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color={Colors.tan500}
+                  />
                 </Pressable>
               </View>
             </View>
@@ -136,7 +141,7 @@ export default function LoginScreen() {
 
           {errorMessage ? (
             <View style={styles.errorBanner} accessibilityLiveRegion="polite" accessibilityRole="alert">
-              <Text style={styles.errorIcon}>⚠️</Text>
+              <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
@@ -186,7 +191,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backIcon: { fontSize: 22, color: Colors.brown },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.xxl },
   flag: { fontSize: 24 },
   brand: {
@@ -234,7 +238,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eyeIcon: { fontSize: 20 },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',

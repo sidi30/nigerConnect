@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Post } from '@nigerconnect/shared-types';
@@ -192,7 +193,7 @@ export default function FeedTab() {
             hitSlop={8}
             onPress={() => router.push('/settings/notifications' as never)}
           >
-            <Text style={styles.iconText}>🔔</Text>
+            <Feather name="bell" size={18} color={Colors.brown} />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
                 <Text style={styles.notifBadgeText}>
@@ -214,7 +215,7 @@ export default function FeedTab() {
 
       <Pressable style={[styles.fab, { bottom: fabBottom }]} onPress={() => router.push('/post/new')}>
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-        <Text style={styles.fabIcon}>✍️</Text>
+        <Feather name="edit-2" size={22} color={Colors.white} />
       </Pressable>
 
       <FlatList
@@ -254,14 +255,14 @@ export default function FeedTab() {
                 onPress={() => router.push('/verify-email' as never)}
                 style={styles.verifyBanner}
               >
-                <Text style={styles.verifyIcon}>📧</Text>
+                <Feather name="mail" size={20} color={Colors.orange} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.verifyTitle}>Vérifie ton email</Text>
                   <Text style={styles.verifyText} numberOfLines={2}>
                     Confirme {user.email} pour profiter de toutes les fonctionnalités.
                   </Text>
                 </View>
-                <Text style={styles.verifyChevron}>›</Text>
+                <Feather name="chevron-right" size={22} color={Colors.orange} />
               </Pressable>
             ) : null}
             <StoriesRow
@@ -350,7 +351,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  iconText: { fontSize: 16 },
   notifBadge: {
     position: 'absolute',
     top: -3,
@@ -396,7 +396,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 10,
   },
-  fabIcon: { fontSize: 22 },
   verifyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -409,7 +408,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F4D8A8',
   },
-  verifyIcon: { fontSize: 22 },
   verifyTitle: {
     fontSize: Typography.sizes.sm,
     fontWeight: '700',

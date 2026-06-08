@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -147,7 +148,7 @@ export default function RegisterScreen() {
           style={styles.back}
           hitSlop={12}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <Feather name="arrow-left" size={20} color={Colors.brown} />
         </Pressable>
         <Text style={styles.headerTitle}>Inscription</Text>
         <Text style={styles.stepCounter}>{step}/3</Text>
@@ -172,7 +173,10 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 1 && (
             <View>
-              <Text style={styles.title}>👤 Ton profil</Text>
+              <View style={registerExtras.titleRow}>
+                <Feather name="user" size={26} color={Colors.brown} />
+                <Text style={styles.title}>Ton profil</Text>
+              </View>
               <Text style={styles.subtitle}>
                 Commençons par les infos de base — tu pourras tout modifier plus tard.
               </Text>
@@ -228,7 +232,11 @@ export default function RegisterScreen() {
                     }
                     accessibilityRole="button"
                   >
-                    <Text style={registerExtras.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+                    <Feather
+                      name={showPassword ? 'eye-off' : 'eye'}
+                      size={20}
+                      color={Colors.tan500}
+                    />
                   </Pressable>
                 </View>
               </View>
@@ -244,7 +252,10 @@ export default function RegisterScreen() {
 
           {step === 2 && (
             <View>
-              <Text style={styles.title}>🌍 Ta ville</Text>
+              <View style={registerExtras.titleRow}>
+                <Feather name="globe" size={26} color={Colors.brown} />
+                <Text style={styles.title}>Ta ville</Text>
+              </View>
               <Text style={styles.subtitle}>Où vis-tu actuellement ?</Text>
               <CitySearchField
                 label="Ville"
@@ -266,7 +277,10 @@ export default function RegisterScreen() {
 
           {step === 3 && (
             <View>
-              <Text style={styles.title}>✅ Vérification</Text>
+              <View style={registerExtras.titleRow}>
+                <Feather name="check-circle" size={26} color={Colors.brown} />
+                <Text style={styles.title}>Vérification</Text>
+              </View>
               <Text style={styles.subtitle}>
                 La vérification d&apos;identité est facultative pour commencer. Tu pourras
                 l&apos;ajouter plus tard pour obtenir le badge ✓ et créer une association.
@@ -283,7 +297,10 @@ export default function RegisterScreen() {
                 {data.bio ? <RecapLine label="Bio" value={data.bio} /> : null}
               </View>
               <View style={styles.infoCard}>
-                <Text style={styles.infoTitle}>🎉 Prêt à rejoindre NigerConnect</Text>
+                <View style={registerExtras.infoTitleRow}>
+                  <Feather name="award" size={16} color={Colors.successDark} />
+                  <Text style={styles.infoTitle}>Prêt à rejoindre NigerConnect</Text>
+                </View>
                 <Text style={styles.infoText}>
                   Après inscription, tu pourras vérifier ton identité dans Paramètres pour obtenir
                   le badge de diaspora certifiée.
@@ -298,7 +315,12 @@ export default function RegisterScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={registerExtras.errorIcon}>⚠️</Text>
+              <Feather
+                name="alert-triangle"
+                size={16}
+                color={palette.errorText}
+                style={registerExtras.errorIcon}
+              />
               <Text style={registerExtras.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
@@ -310,7 +332,10 @@ export default function RegisterScreen() {
                 style={({ pressed }) => [styles.primary, pressed && { opacity: 0.9 }]}
               >
                 <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-                <Text style={styles.primaryLabel}>Continuer →</Text>
+                <View style={registerExtras.primaryRow}>
+                  <Text style={styles.primaryLabel}>Continuer</Text>
+                  <Feather name="arrow-right" size={18} color={Colors.white} />
+                </View>
               </Pressable>
             ) : (
               <Pressable
@@ -406,7 +431,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backIcon: { fontSize: 20, color: Colors.brown },
   headerTitle: { flex: 1, fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   stepCounter: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontWeight: '600' },
   progressWrap: {
@@ -508,7 +532,14 @@ const registerExtras = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eyeIcon: { fontSize: 20 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.sm,
+  },
+  infoTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  primaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',

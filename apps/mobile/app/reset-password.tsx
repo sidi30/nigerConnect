@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -78,7 +79,12 @@ export default function ResetPasswordScreen() {
 
           {done ? (
             <View style={styles.successCard}>
-              <Text style={styles.successEmoji}>✅</Text>
+              <Feather
+                name="check-circle"
+                size={48}
+                color={Colors.successDark}
+                style={styles.successEmoji}
+              />
               <Text style={styles.successTitle}>Mot de passe modifié</Text>
               <Text style={styles.successText}>
                 Tu peux maintenant te connecter avec ton nouveau mot de passe.
@@ -89,7 +95,7 @@ export default function ResetPasswordScreen() {
             </View>
           ) : !token ? (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorIcon}>⚠️</Text>
+              <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
               <Text style={styles.errorText}>
                 Lien invalide. Ouvre le lien reçu par email, ou redemande une réinitialisation.
               </Text>
@@ -102,7 +108,7 @@ export default function ResetPasswordScreen() {
 
               {error ? (
                 <View style={styles.errorBanner}>
-                  <Text style={styles.errorIcon}>⚠️</Text>
+                  <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
                   <Text style={styles.errorText}>{error}</Text>
                 </View>
               ) : null}

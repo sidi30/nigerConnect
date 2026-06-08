@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
@@ -44,7 +45,7 @@ export default function ForgotPasswordScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.topRow}>
             <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
-              <Text style={styles.backIcon}>←</Text>
+              <Feather name="arrow-left" size={22} color={Colors.brown} />
             </Pressable>
           </View>
 
@@ -55,7 +56,12 @@ export default function ForgotPasswordScreen() {
 
           {sent ? (
             <View style={styles.successCard}>
-              <Text style={styles.successEmoji}>📬</Text>
+              <Feather
+                name="mail"
+                size={48}
+                color={Colors.successDark}
+                style={styles.successEmoji}
+              />
               <Text style={styles.successTitle}>Email envoyé</Text>
               <Text style={styles.successText}>
                 Si un compte existe pour cette adresse, tu recevras un lien de réinitialisation
@@ -118,7 +124,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backIcon: { fontSize: 22, color: Colors.brown },
   title: {
     fontSize: Typography.sizes.display,
     fontFamily: Typography.fontFamily.serifBold,

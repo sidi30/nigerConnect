@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -144,7 +145,7 @@ export default function AssociationDetailScreen() {
           </Pressable>
         </View>
         <View style={styles.errorBox}>
-          <Text style={styles.errorEmoji}>🏛️</Text>
+          <Feather name="home" size={40} color={Colors.tan300} style={styles.errorIcon} />
           <Text style={styles.errorTitle}>
             {notFound ? 'Association introuvable' : 'Association indisponible'}
           </Text>
@@ -189,18 +190,23 @@ export default function AssociationDetailScreen() {
               {a.logoUrl ? (
                 <Image source={{ uri: a.logoUrl }} style={styles.logo} contentFit="cover" />
               ) : (
-                <Text style={styles.logoEmoji}>🏛️</Text>
+                <Feather name="home" size={40} color={Colors.tan400} />
               )}
             </View>
-            <Text style={styles.name}>
-              {a.name}
-              {a.isVerified ? ' ✓' : ''}
-            </Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.name}>{a.name}</Text>
+              {a.isVerified ? (
+                <Feather name="check-circle" size={18} color={Colors.white} />
+              ) : null}
+            </View>
             <Text style={styles.location}>
               {Flags[a.countryCode ?? ''] ?? '🌍'} {a.city ?? ''}
               {a.countryCode ? `, ${CountryNames[a.countryCode] ?? a.countryCode}` : ''}
             </Text>
-            <Text style={styles.members}>👥 {a.memberCount} membres</Text>
+            <View style={styles.membersRow}>
+              <Feather name="users" size={14} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.members}>{a.memberCount} membres</Text>
+            </View>
           </View>
         </View>
 
@@ -231,9 +237,14 @@ export default function AssociationDetailScreen() {
               style={({ pressed }) => [styles.joinBtn, pressed && { opacity: 0.9 }]}
             >
               <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-              <Text style={styles.joinLabel}>
-                {joinMut.isPending ? '…' : '＋ Rejoindre'}
-              </Text>
+              {joinMut.isPending ? (
+                <Text style={styles.joinLabel}>…</Text>
+              ) : (
+                <View style={styles.btnContent}>
+                  <Feather name="plus" size={16} color={Colors.white} />
+                  <Text style={styles.joinLabel}>Rejoindre</Text>
+                </View>
+              )}
             </Pressable>
           )}
         </View>
@@ -247,8 +258,18 @@ export default function AssociationDetailScreen() {
 
         {a.website || a.contactEmail ? (
           <View style={styles.section}>
-            {a.website ? <Text style={styles.contactLine}>🌐 {a.website}</Text> : null}
-            {a.contactEmail ? <Text style={styles.contactLine}>✉️ {a.contactEmail}</Text> : null}
+            {a.website ? (
+              <View style={styles.contactRow}>
+                <Feather name="globe" size={14} color={Colors.brownSoft} />
+                <Text style={styles.contactLine}>{a.website}</Text>
+              </View>
+            ) : null}
+            {a.contactEmail ? (
+              <View style={styles.contactRow}>
+                <Feather name="mail" size={14} color={Colors.brownSoft} />
+                <Text style={styles.contactLine}>{a.contactEmail}</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -260,10 +281,19 @@ export default function AssociationDetailScreen() {
                 <Text style={styles.eventTitle} numberOfLines={1}>
                   {e.title}
                 </Text>
-                <Text style={styles.eventMeta}>
-                  📅 {relativeTime(e.eventDate)}
-                  {e.location ? ` · 📍 ${e.location}` : ''}
-                </Text>
+                <View style={styles.eventMetaRow}>
+                  <Feather name="calendar" size={12} color={Colors.tan500} />
+                  <Text style={styles.eventMeta}>{relativeTime(e.eventDate)}</Text>
+                  {e.location ? (
+                    <>
+                      <Text style={styles.eventMeta}>·</Text>
+                      <Feather name="map-pin" size={12} color={Colors.tan500} />
+                      <Text style={styles.eventMeta} numberOfLines={1}>
+                        {e.location}
+                      </Text>
+                    </>
+                  ) : null}
+                </View>
                 {e.description ? (
                   <Text style={styles.eventDesc} numberOfLines={2}>
                     {e.description}
@@ -356,16 +386,21 @@ const styles = StyleSheet.create({
     borderColor: Colors.white,
   },
   logo: { width: '100%', height: '100%' },
-  logoEmoji: { fontSize: 40 },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
+  },
   name: {
     fontSize: Typography.sizes.xxl,
     fontFamily: Typography.fontFamily.serifBold,
     color: Colors.white,
-    marginTop: Spacing.md,
     textAlign: 'center',
   },
   location: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.85)', marginTop: 4 },
-  members: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.85)', marginTop: 4, fontWeight: '600' },
+  membersRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  members: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
   actions: {
     paddingHorizontal: Spacing.lg,
     marginTop: Spacing.lg,
@@ -383,6 +418,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   joinLabel: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
+  btnContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   leaveBtn: {
     width: '100%',
     height: 52,
@@ -406,7 +442,8 @@ const styles = StyleSheet.create({
   },
   sectionHint: { fontSize: Typography.sizes.sm, color: Colors.tan500 },
   description: { fontSize: Typography.sizes.md, color: Colors.brownSoft, lineHeight: 22 },
-  contactLine: { fontSize: Typography.sizes.sm, color: Colors.brownSoft, marginBottom: 4 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  contactLine: { fontSize: Typography.sizes.sm, color: Colors.brownSoft, flexShrink: 1 },
   eventCard: {
     padding: Spacing.md,
     backgroundColor: Colors.white,
@@ -416,7 +453,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   eventTitle: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
-  eventMeta: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
+  eventMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  eventMeta: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500 },
   eventDesc: { fontSize: Typography.sizes.sm, color: Colors.brownSoft, marginTop: 6, lineHeight: 19 },
   memberChip: { alignItems: 'center', width: 68, gap: 4 },
   memberName: {
@@ -434,7 +472,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  errorEmoji: { fontSize: 40 },
+  errorIcon: { marginBottom: 4 },
   errorTitle: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   errorHint: { fontSize: Typography.sizes.sm, color: Colors.tan500, textAlign: 'center' },
   retryBtn: {

@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
@@ -28,24 +29,29 @@ interface Photo {
   thumbnailUrl: string | null;
 }
 
-const MENU_ITEMS: Array<{ icon: string; label: string; href: Href; badgeKey?: string }> = [
-  { icon: '✏️', label: 'Modifier profil', href: '/settings/edit-profile' as Href },
-  { icon: '📷', label: 'Mes photos', href: '/settings/photos' as Href },
-  { icon: '✓', label: 'Vérification identité', href: '/settings/identity' as Href },
-  { icon: '👥', label: 'Amis & Communauté', href: '/friends' as Href },
-  { icon: '🏛️', label: 'Mes associations', href: '/settings/associations' as Href },
-  { icon: '📄', label: 'Pages', href: '/pages' as Href },
-  { icon: '🤝', label: 'Mes demandes', href: '/settings/requests' as Href },
+const MENU_ITEMS: Array<{
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  href: Href;
+  badgeKey?: string;
+}> = [
+  { icon: 'edit-2', label: 'Modifier profil', href: '/settings/edit-profile' as Href },
+  { icon: 'camera', label: 'Mes photos', href: '/settings/photos' as Href },
+  { icon: 'check-circle', label: 'Vérification identité', href: '/settings/identity' as Href },
+  { icon: 'users', label: 'Amis & Communauté', href: '/friends' as Href },
+  { icon: 'home', label: 'Mes associations', href: '/settings/associations' as Href },
+  { icon: 'file-text', label: 'Pages', href: '/pages' as Href },
+  { icon: 'briefcase', label: 'Mes demandes', href: '/settings/requests' as Href },
   {
-    icon: '🔔',
+    icon: 'bell',
     label: 'Notifications',
     href: '/settings/notifications' as Href,
     badgeKey: 'notifs',
   },
-  { icon: '🔒', label: 'Confidentialité', href: '/settings/privacy' as Href },
-  { icon: '🌍', label: 'Langue', href: '/settings/language' as Href },
-  { icon: '📄', label: 'Conditions & confidentialité', href: '/legal' as Href },
-  { icon: '🗑️', label: 'Supprimer mon compte', href: '/settings/delete-account' as Href },
+  { icon: 'lock', label: 'Confidentialité', href: '/settings/privacy' as Href },
+  { icon: 'globe', label: 'Langue', href: '/settings/language' as Href },
+  { icon: 'file-text', label: 'Conditions & confidentialité', href: '/legal' as Href },
+  { icon: 'trash-2', label: 'Supprimer mon compte', href: '/settings/delete-account' as Href },
 ];
 
 export default function ProfileTab() {
@@ -155,7 +161,10 @@ export default function ProfileTab() {
             onPress={() => router.push('/settings/photos')}
             hitSlop={8}
           >
-            <Text style={styles.sectionTitle}>📸 Mes photos</Text>
+            <View style={styles.sectionTitleRow}>
+              <Feather name="camera" size={17} color={Colors.brown} />
+              <Text style={styles.sectionTitle}>Mes photos</Text>
+            </View>
             <Text style={styles.seeAll}>
               {photos.length > 0 ? 'Gérer' : 'Ajouter'} ›
             </Text>
@@ -181,7 +190,7 @@ export default function ProfileTab() {
               onPress={() => router.push('/settings/photos')}
               style={styles.photoEmpty}
             >
-              <Text style={styles.photoEmptyIcon}>📷</Text>
+              <Feather name="camera" size={26} color={Colors.tan500} />
               <Text style={styles.photoEmptyLabel}>Ajoute ta première photo</Text>
             </Pressable>
           )}
@@ -190,7 +199,7 @@ export default function ProfileTab() {
         {verified ? (
           <Pressable style={styles.verifiedCard} onPress={() => router.push('/settings/identity')}>
             <View style={styles.verifiedIcon}>
-              <Text style={{ color: Colors.white, fontSize: 16, fontWeight: '700' }}>✓</Text>
+              <Feather name="check" size={18} color={Colors.white} />
             </View>
             <View>
               <Text style={styles.verifiedTitle}>Identité vérifiée</Text>
@@ -228,7 +237,7 @@ export default function ProfileTab() {
               onPress={() => router.push(item.href)}
             >
               <View style={styles.menuIcon}>
-                <Text style={{ fontSize: 16 }}>{item.icon}</Text>
+                <Feather name={item.icon} size={18} color={Colors.orange} />
               </View>
               <Text style={styles.menuLabel}>{item.label}</Text>
               {item.badgeKey === 'notifs' && unreadNotifs > 0 ? (
@@ -289,6 +298,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.sm + 2,
   },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   sectionTitle: { fontSize: Typography.sizes.md + 1, fontWeight: '700', color: Colors.brown },
   seeAll: { color: Colors.orange, fontSize: Typography.sizes.sm, fontWeight: '600' },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
@@ -309,7 +319,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  photoEmptyIcon: { fontSize: 28 },
   photoEmptyLabel: {
     fontSize: Typography.sizes.sm,
     color: Colors.tan500,

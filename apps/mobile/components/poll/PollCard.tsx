@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Poll } from '@nigerconnect/shared-types';
 import { pollsApi } from '@/services/pollsApi';
@@ -118,7 +119,11 @@ export function PollCard({ poll, isPageAdmin = false, onChanged }: Props) {
             style={styles.deleteBtn}
             accessibilityLabel="Supprimer le sondage"
           >
-            <Text style={styles.deleteBtnLabel}>{removeMut.isPending ? '…' : '✕'}</Text>
+            {removeMut.isPending ? (
+              <Text style={styles.deleteBtnLabel}>…</Text>
+            ) : (
+              <Feather name="x" size={16} color={Colors.danger} />
+            )}
           </Pressable>
         ) : null}
       </View>
@@ -138,8 +143,15 @@ export function PollCard({ poll, isPageAdmin = false, onChanged }: Props) {
                 <View style={styles.resultContent}>
                   <Text style={[styles.optionLabel, isMine && styles.optionLabelMine]}>
                     {opt.label}
-                    {isMine ? ' ✓' : ''}
                   </Text>
+                  {isMine ? (
+                    <Feather
+                      name="check"
+                      size={14}
+                      color={Colors.orange}
+                      style={styles.resultCheck}
+                    />
+                  ) : null}
                   <Text style={styles.optionPct}>{pctPretty}%</Text>
                 </View>
               </View>
@@ -160,7 +172,7 @@ export function PollCard({ poll, isPageAdmin = false, onChanged }: Props) {
                     isSelectedLocal && styles.checkboxChecked,
                   ]}
                 >
-                  {isSelectedLocal ? <Text style={styles.checkmark}>✓</Text> : null}
+                  {isSelectedLocal ? <Feather name="check" size={13} color={Colors.white} /> : null}
                 </View>
                 <Text style={[styles.optionLabel, isSelectedLocal && { color: Colors.orange }]}>
                   {opt.label}
@@ -288,7 +300,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.orange,
     backgroundColor: Colors.orange,
   },
-  checkmark: { color: Colors.white, fontSize: 12, fontWeight: '700' },
+  resultCheck: { marginRight: 4 },
   // Results
   resultRow: {
     height: 38,

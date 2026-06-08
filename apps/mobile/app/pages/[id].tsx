@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -49,11 +50,19 @@ function describeError(err: unknown): string {
 }
 
 const KIND_LABELS: Record<string, string> = {
-  community: '🌐 Communauté',
-  cause: '❤️ Cause',
-  business: '💼 Business',
-  official: '🏛️ Officiel',
-  group: '👥 Groupe',
+  community: 'Communauté',
+  cause: 'Cause',
+  business: 'Business',
+  official: 'Officiel',
+  group: 'Groupe',
+};
+
+const KIND_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
+  community: 'globe',
+  cause: 'heart',
+  business: 'briefcase',
+  official: 'award',
+  group: 'users',
 };
 
 export default function PageDetailScreen() {
@@ -140,7 +149,7 @@ export default function PageDetailScreen() {
           </Pressable>
         </View>
         <View style={styles.errorBox}>
-          <Text style={styles.errorEmoji}>📄</Text>
+          <Feather name="file-text" size={40} color={Colors.tan300} style={styles.errorIcon} />
           <Text style={styles.errorTitle}>
             {notFound ? 'Page introuvable' : 'Page indisponible'}
           </Text>
@@ -204,21 +213,31 @@ export default function PageDetailScreen() {
               {p.avatarUrl ? (
                 <Image source={{ uri: p.avatarUrl }} style={styles.logo} contentFit="cover" />
               ) : (
-                <Text style={styles.logoEmoji}>📄</Text>
+                <Feather name="file-text" size={40} color={Colors.tan400} />
               )}
             </View>
-            <Text style={styles.pageName}>
-              {p.name}
-              {p.isVerified ? ' ✓' : ''}
-            </Text>
-            <Text style={styles.pageKind}>{KIND_LABELS[p.kind] ?? p.kind}</Text>
+            <View style={styles.pageNameRow}>
+              <Text style={styles.pageName}>{p.name}</Text>
+              {p.isVerified ? (
+                <Feather name="check-circle" size={18} color={Colors.white} />
+              ) : null}
+            </View>
+            <View style={styles.pageKindRow}>
+              {KIND_ICONS[p.kind] ? (
+                <Feather name={KIND_ICONS[p.kind]} size={13} color="rgba(255,255,255,0.75)" />
+              ) : null}
+              <Text style={styles.pageKind}>{KIND_LABELS[p.kind] ?? p.kind}</Text>
+            </View>
             {(p.city || p.countryCode) ? (
               <Text style={styles.location}>
                 {Flags[p.countryCode ?? ''] ?? '🌍'} {p.city ?? ''}
                 {p.countryCode ? `, ${CountryNames[p.countryCode] ?? p.countryCode}` : ''}
               </Text>
             ) : null}
-            <Text style={styles.followers}>👥 {p.followerCount} abonnés</Text>
+            <View style={styles.followersRow}>
+              <Feather name="users" size={14} color="rgba(255,255,255,0.85)" />
+              <Text style={styles.followers}>{p.followerCount} abonnés</Text>
+            </View>
             {p.ratingCount > 0 ? (
               <View style={styles.ratingWrap}>
                 <StarRating value={p.ratingAvg} count={p.ratingCount} size={14} />
@@ -235,9 +254,14 @@ export default function PageDetailScreen() {
               disabled={unfollowMut.isPending}
               style={({ pressed }) => [styles.unfollowBtn, pressed && { opacity: 0.9 }]}
             >
-              <Text style={styles.unfollowLabel}>
-                {unfollowMut.isPending ? '…' : '✓ Abonné · Se désabonner'}
-              </Text>
+              {unfollowMut.isPending ? (
+                <Text style={styles.unfollowLabel}>…</Text>
+              ) : (
+                <View style={styles.btnContent}>
+                  <Feather name="check" size={16} color={Colors.tan600} />
+                  <Text style={styles.unfollowLabel}>Abonné · Se désabonner</Text>
+                </View>
+              )}
             </Pressable>
           ) : (
             <Pressable
@@ -246,9 +270,14 @@ export default function PageDetailScreen() {
               style={({ pressed }) => [styles.followBtn, pressed && { opacity: 0.9 }]}
             >
               <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-              <Text style={styles.followLabel}>
-                {followMut.isPending ? '…' : '＋ Suivre'}
-              </Text>
+              {followMut.isPending ? (
+                <Text style={styles.followLabel}>…</Text>
+              ) : (
+                <View style={styles.btnContent}>
+                  <Feather name="plus" size={16} color={Colors.white} />
+                  <Text style={styles.followLabel}>Suivre</Text>
+                </View>
+              )}
             </Pressable>
           )}
         </View>
@@ -265,8 +294,18 @@ export default function PageDetailScreen() {
         {p.website || p.contactEmail ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Contact</Text>
-            {p.website ? <Text style={styles.contactLine}>🌐 {p.website}</Text> : null}
-            {p.contactEmail ? <Text style={styles.contactLine}>✉️ {p.contactEmail}</Text> : null}
+            {p.website ? (
+              <View style={styles.contactRow}>
+                <Feather name="globe" size={14} color={Colors.brownSoft} />
+                <Text style={styles.contactLine}>{p.website}</Text>
+              </View>
+            ) : null}
+            {p.contactEmail ? (
+              <View style={styles.contactRow}>
+                <Feather name="mail" size={14} color={Colors.brownSoft} />
+                <Text style={styles.contactLine}>{p.contactEmail}</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -277,9 +316,16 @@ export default function PageDetailScreen() {
               onPress={() => setShowCreatePoll((v) => !v)}
               style={styles.createPollToggle}
             >
-              <Text style={styles.createPollToggleLabel}>
-                {showCreatePoll ? '✕ Annuler' : '＋ Créer un sondage'}
-              </Text>
+              <View style={styles.btnContent}>
+                <Feather
+                  name={showCreatePoll ? 'x' : 'plus'}
+                  size={15}
+                  color={Colors.orange}
+                />
+                <Text style={styles.createPollToggleLabel}>
+                  {showCreatePoll ? 'Annuler' : 'Créer un sondage'}
+                </Text>
+              </View>
             </Pressable>
             {showCreatePoll ? (
               <CreatePollCard
@@ -384,24 +430,38 @@ const styles = StyleSheet.create({
     borderColor: Colors.white,
   },
   logo: { width: '100%', height: '100%' },
-  logoEmoji: { fontSize: 40 },
+  pageNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
+  },
   pageName: {
     fontSize: Typography.sizes.xxl,
     fontFamily: Typography.fontFamily.serifBold,
     color: Colors.white,
-    marginTop: Spacing.md,
     textAlign: 'center',
+  },
+  pageKindRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
   },
   pageKind: {
     fontSize: Typography.sizes.sm,
     color: 'rgba(255,255,255,0.75)',
-    marginTop: 4,
   },
   location: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
+  followersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
   followers: {
     fontSize: Typography.sizes.sm,
     color: 'rgba(255,255,255,0.85)',
-    marginTop: 4,
     fontWeight: '600',
   },
   ratingWrap: { marginTop: 6 },
@@ -419,6 +479,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   followLabel: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
+  btnContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   unfollowBtn: {
     width: '100%',
     height: 52,
@@ -439,7 +500,8 @@ const styles = StyleSheet.create({
   },
   sectionHint: { fontSize: Typography.sizes.sm, color: Colors.tan500 },
   description: { fontSize: Typography.sizes.md, color: Colors.brownSoft, lineHeight: 22 },
-  contactLine: { fontSize: Typography.sizes.sm, color: Colors.brownSoft, marginBottom: 4 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  contactLine: { fontSize: Typography.sizes.sm, color: Colors.brownSoft, flexShrink: 1 },
   createPollToggle: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.md,
@@ -464,7 +526,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  errorEmoji: { fontSize: 40 },
+  errorIcon: { marginBottom: 4 },
   errorTitle: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   errorHint: { fontSize: Typography.sizes.sm, color: Colors.tan500, textAlign: 'center' },
   retryBtn: {

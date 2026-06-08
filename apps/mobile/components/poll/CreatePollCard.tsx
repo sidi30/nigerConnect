@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { pollsApi } from '@/services/pollsApi';
 import {
@@ -132,7 +133,7 @@ export function CreatePollCard({ pageId, onCreated }: Props) {
               style={styles.removeBtn}
               accessibilityLabel={`Supprimer l'option ${i + 1}`}
             >
-              <Text style={styles.removeBtnLabel}>✕</Text>
+              <Feather name="x" size={15} color={Colors.danger} />
             </Pressable>
           ) : null}
         </View>
@@ -140,7 +141,8 @@ export function CreatePollCard({ pageId, onCreated }: Props) {
 
       {options.length < 6 ? (
         <Pressable onPress={addOption} style={styles.addOptionBtn}>
-          <Text style={styles.addOptionLabel}>＋ Ajouter une option</Text>
+          <Feather name="plus" size={15} color={Colors.orange} />
+          <Text style={styles.addOptionLabel}>Ajouter une option</Text>
         </Pressable>
       ) : null}
 
@@ -186,7 +188,12 @@ export function CreatePollCard({ pageId, onCreated }: Props) {
           accessibilityLiveRegion="polite"
           accessibilityRole="alert"
         >
-          <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+          <Feather
+            name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+            size={15}
+            color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+            style={styles.feedbackIcon}
+          />
           <Text
             style={[
               styles.feedbackText,
@@ -269,10 +276,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  removeBtnLabel: { color: Colors.danger, fontSize: 14, fontWeight: '700' },
   addOptionBtn: {
+    flexDirection: 'row',
     paddingVertical: Spacing.sm,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     borderWidth: 1,
     borderStyle: 'dashed',
     borderColor: Colors.tan300,

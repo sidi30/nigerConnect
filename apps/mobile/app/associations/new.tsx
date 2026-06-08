@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -33,15 +34,19 @@ import {
   Typography,
 } from '@/constants/theme';
 
-const CATEGORIES: Array<{ id: AssociationCategory; label: string; icon: string }> = [
-  { id: 'generaliste', label: 'Généraliste', icon: '🌍' },
-  { id: 'etudiants', label: 'Étudiants', icon: '🎓' },
-  { id: 'femmes', label: 'Femmes', icon: '👩' },
-  { id: 'jeunesse', label: 'Jeunesse', icon: '✨' },
-  { id: 'culture', label: 'Culture', icon: '🎨' },
-  { id: 'business', label: 'Business', icon: '💼' },
-  { id: 'sport', label: 'Sport', icon: '⚽' },
-  { id: 'religieux', label: 'Religieux', icon: '🕌' },
+const CATEGORIES: Array<{
+  id: AssociationCategory;
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+}> = [
+  { id: 'generaliste', label: 'Généraliste', icon: 'globe' },
+  { id: 'etudiants', label: 'Étudiants', icon: 'book-open' },
+  { id: 'femmes', label: 'Femmes', icon: 'user' },
+  { id: 'jeunesse', label: 'Jeunesse', icon: 'star' },
+  { id: 'culture', label: 'Culture', icon: 'feather' },
+  { id: 'business', label: 'Business', icon: 'briefcase' },
+  { id: 'sport', label: 'Sport', icon: 'activity' },
+  { id: 'religieux', label: 'Religieux', icon: 'moon' },
 ];
 
 const COUNTRY_CODES = Object.keys(Flags);
@@ -197,7 +202,11 @@ export default function NewAssociationScreen() {
                   onPress={() => setCategory(c.id)}
                   style={[styles.chip, active && styles.chipActive]}
                 >
-                  <Text style={styles.chipIcon}>{c.icon}</Text>
+                  <Feather
+                    name={c.icon}
+                    size={15}
+                    color={active ? Colors.orange : Colors.tan600}
+                  />
                   <Text style={[styles.chipLabel, active && { color: Colors.orange }]}>
                     {c.label}
                   </Text>
@@ -280,7 +289,12 @@ export default function NewAssociationScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+              <Feather
+                name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+                size={16}
+                color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+                style={styles.feedbackIcon}
+              />
               <Text
                 style={[
                   styles.feedbackText,
