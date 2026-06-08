@@ -23,7 +23,7 @@ COPY . .
 # NEXT_PUBLIC_* are inlined at build time by Next — they must be present here,
 # not just at runtime. The admin console + verify-email page call the API via
 # NEXT_PUBLIC_API_URL; default to the prod API host when not overridden.
-ARG NEXT_PUBLIC_API_URL=https://api-nigerconnect.sahabiguide.com
+ARG NEXT_PUBLIC_API_URL=https://api-nigerconnect.sahabiguide.com/api
 ARG NEXT_PUBLIC_APP_URL=https://nigerconnect.sahabiguide.com
 ENV NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
