@@ -14,6 +14,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import type { Post } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { FeedSkeletonList } from '@/components/ui/Skeleton';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FriendRequestsBanner } from '@/components/feed/FriendRequestsBanner';
 import { PostCard } from '@/components/feed/PostCard';
@@ -24,6 +25,7 @@ import { feedApi } from '@/services/feedApi';
 import { friendsApi } from '@/services/friendsApi';
 import { notificationApi } from '@/services/notificationApi';
 import { useAuthStore } from '@/stores/authStore';
+import { toast } from '@/stores/toastStore';
 
 // Tab bar content height (kept in sync with `(tabs)/_layout.tsx`).
 const TAB_BAR_CONTENT_HEIGHT = 60;
@@ -66,12 +68,12 @@ export default function FeedTab() {
     mutationFn: (postId: string) => feedApi.share(postId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['feed'] });
-      Alert.alert('Repartagé', 'Le post a été partagé avec tes amis.');
+      toast.success('Repartagé avec tes amis ✨');
     },
     onError: (e) => {
       const msg = (e as { response?: { data?: { message?: string } }; message?: string })
         ?.response?.data?.message ?? (e as Error).message ?? 'Impossible de partager';
-      Alert.alert('Échec du partage', msg);
+      toast.error(msg);
     },
   });
 
@@ -154,11 +156,16 @@ export default function FeedTab() {
 
   const acceptMut = useMutation({
     mutationFn: (friendshipId: string) => friendsApi.accept(friendshipId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['friends'] });
+      toast.success('Demande acceptée 🎉');
+    },
+    onError: () => toast.error('Action impossible, réessaie'),
   });
   const declineMut = useMutation({
     mutationFn: (friendshipId: string) => friendsApi.decline(friendshipId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onError: () => toast.error('Action impossible, réessaie'),
   });
 
   const posts: Post[] = feedQuery.data?.pages.flatMap((p) => p.items) ?? [];
@@ -271,9 +278,7 @@ export default function FeedTab() {
         }
         ListEmptyComponent={
           feedQuery.isLoading ? (
-            <View style={styles.loader}>
-              <Loader style={{ marginTop: 0 }} />
-            </View>
+            <FeedSkeletonList count={3} />
           ) : (
             <View style={styles.empty}>
               <Text style={styles.emptyEmoji}>📰</Text>
@@ -286,6 +291,13 @@ export default function FeedTab() {
         }
         onEndReached={() => feedQuery.hasNextPage && feedQuery.fetchNextPage()}
         onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          feedQuery.isFetchingNextPage ? (
+            <View style={styles.footerLoader}>
+              <Loader size="small" style={{ marginTop: 0 }} />
+            </View>
+          ) : null
+        }
         refreshControl={
           <RefreshControl
             refreshing={feedQuery.isRefetching}
@@ -358,7 +370,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
-  loader: { padding: Spacing.xxl, alignItems: 'center' },
+  footerLoader: { paddingVertical: Spacing.lg, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
   emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },

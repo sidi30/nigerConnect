@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
-import { Loader } from '@/components/ui/Loader';
+import { ConversationSkeletonList } from '@/components/ui/Skeleton';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
@@ -88,9 +88,7 @@ export default function MessagesTab() {
         )}
 
         {convoQuery.isLoading ? (
-          <View style={styles.loader}>
-            <Loader style={{ marginTop: 0 }} />
-          </View>
+          <ConversationSkeletonList count={8} />
         ) : conversations.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>💬</Text>
@@ -227,7 +225,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: { color: Colors.white, fontSize: Typography.sizes.xs, fontWeight: '800' },
-  loader: { padding: Spacing.xxl, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
   emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },

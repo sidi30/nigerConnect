@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { ThemeProvider } from '@/constants/theme-provider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { Toast } from '@/components/ui/Toast';
 import { captureRenderError, initSentry } from '@/services/sentry';
 
 // Boot Sentry as early as possible — before any React render — so the very
@@ -121,6 +122,7 @@ export default function RootLayout() {
                   of the screen and overlap the system clock/battery row. */}
               <StatusBar style="dark" translucent backgroundColor="transparent" />
               <OfflineBanner />
+              <Toast />
               <AuthGate />
               <NotificationDeepLink />
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }}>

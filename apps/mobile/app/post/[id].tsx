@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -17,10 +18,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Comment, CursorPage } from '@nigerconnect/shared-types';
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentItem } from '@/components/feed/CommentItem';
-import { Loader } from '@/components/ui/Loader';
+import { FeedCardSkeleton, CommentSkeletonList } from '@/components/ui/Skeleton';
 import { feedApi } from '@/services/feedApi';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { toast } from '@/stores/toastStore';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 
 export default function PostScreen() {
@@ -54,6 +56,7 @@ export default function PostScreen() {
       void qc.invalidateQueries({ queryKey: ['post', id] });
       void qc.invalidateQueries({ queryKey: ['feed'] });
     },
+    onError: () => toast.error('Commentaire non envoyé, réessaie'),
   });
 
   const deleteMut = useMutation({
@@ -78,6 +81,7 @@ export default function PostScreen() {
     },
     onError: (_e, _commentId, ctx) => {
       if (ctx?.prev) qc.setQueryData(['post', id, 'comments'], ctx.prev);
+      toast.error('Suppression impossible');
     },
     // Re-sync with the server: list, post comment counter, and the feed card counter.
     onSettled: () => {
@@ -95,6 +99,7 @@ export default function PostScreen() {
       void qc.invalidateQueries({ queryKey: ['post', id] });
       void qc.invalidateQueries({ queryKey: ['feed'] });
     },
+    onError: () => toast.error('Modification non enregistrée'),
   });
 
   const likeMut = useMutation({
@@ -145,7 +150,10 @@ export default function PostScreen() {
           keyExtractor={(c) => c.id}
           ListHeaderComponent={
             postQuery.isLoading ? (
-              <Loader />
+              <View>
+                <FeedCardSkeleton />
+                <CommentSkeletonList count={3} />
+              </View>
             ) : postQuery.data ? (
               <View>
                 <PostCard
@@ -225,7 +233,11 @@ export default function PostScreen() {
             ]}
           >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-            <Text style={styles.sendIcon}>➤</Text>
+            {commentMut.isPending ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Text style={styles.sendIcon}>➤</Text>
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>

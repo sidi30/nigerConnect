@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -45,6 +46,7 @@ export default function EditProfileScreen() {
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(
     null,
   );
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -127,10 +129,19 @@ export default function EditProfileScreen() {
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.avatarRow}>
-          <Avatar uri={user.avatarUrl} name={user.displayName ?? ''} size={80} border={false} />
+          <View>
+            <Avatar uri={user.avatarUrl} name={user.displayName ?? ''} size={80} border={false} />
+            {avatarUploading && (
+              <View style={styles.avatarOverlay}>
+                <ActivityIndicator color={Colors.white} />
+              </View>
+            )}
+          </View>
           <Pressable
+            disabled={avatarUploading}
             onPress={async () => {
               setFeedback(null);
+              setAvatarUploading(true);
               try {
                 const url = await pickAndUploadImage('avatar');
                 if (!url) return;
@@ -144,11 +155,15 @@ export default function EditProfileScreen() {
                     ? error.message
                     : (error as Error).message ?? "Échec de l'envoi de l'avatar.";
                 setFeedback({ kind: 'error', message });
+              } finally {
+                setAvatarUploading(false);
               }
             }}
-            style={styles.changePhotoBtn}
+            style={[styles.changePhotoBtn, avatarUploading && { opacity: 0.5 }]}
           >
-            <Text style={styles.changePhotoLabel}>📷 Changer la photo</Text>
+            <Text style={styles.changePhotoLabel}>
+              {avatarUploading ? 'Envoi…' : '📷 Changer la photo'}
+            </Text>
           </Pressable>
         </View>
 
@@ -248,9 +263,11 @@ export default function EditProfileScreen() {
           ]}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-          <Text style={styles.saveLabel}>
-            {mut.isPending ? 'Enregistrement…' : 'Enregistrer'}
-          </Text>
+          {mut.isPending ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={styles.saveLabel}>Enregistrer</Text>
+          )}
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -341,6 +358,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: Radii.md,
     backgroundColor: Colors.peach50,
+  },
+  avatarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   changePhotoLabel: { color: Colors.orange, fontSize: Typography.sizes.sm, fontWeight: '700' },
   feedbackBanner: {

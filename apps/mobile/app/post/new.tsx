@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -19,6 +20,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { feedApi } from '@/services/feedApi';
 import { pickAndUploadImage } from '@/services/uploadService';
 import { useAuthStore } from '@/stores/authStore';
+import { toast } from '@/stores/toastStore';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 
 type Visibility = 'public' | 'friends' | 'association';
@@ -50,11 +52,12 @@ export default function NewPostScreen() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['feed'] });
+      toast.success('Publication envoyée ✨');
       router.back();
     },
     onError: (e) => {
       const err = e as { response?: { data?: { message?: string } } };
-      Alert.alert('Erreur', err.response?.data?.message ?? 'Impossible de publier');
+      toast.error(err.response?.data?.message ?? 'Impossible de publier');
     },
   });
 
@@ -91,9 +94,11 @@ export default function NewPostScreen() {
           style={[styles.publish, !canPublish && { opacity: 0.4 }]}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-          <Text style={styles.publishLabel}>
-            {publishMut.isPending ? '…' : 'Publier'}
-          </Text>
+          {publishMut.isPending ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <Text style={styles.publishLabel}>Publier</Text>
+          )}
         </Pressable>
       </View>
 
