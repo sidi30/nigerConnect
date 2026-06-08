@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma, MessageType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
 import { NotificationService } from '../notification/notification.service';
 
@@ -63,6 +64,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
+    private readonly s3: S3Service,
   ) {}
 
   async listConversations(userId: string, cursor?: string, limit = 30) {
@@ -237,6 +239,23 @@ export class ChatService {
       throw new BadRequestException('Message content is empty');
     }
 
+    // Never trust a client-supplied mediaUrl. The Zod schema only proves it's a
+    // well-formed URL — without binding it to OUR public bucket + the sender's
+    // own key prefix, a caller could attach an arbitrary off-platform URL
+    // (tracking pixel / SSRF beacon auto-loaded by every recipient's client) or
+    // reference another user's uploaded object. Mirror the posts/stories guard:
+    // resolve to the canonical CDN URL or reject. Only media-bearing message
+    // types carry a mediaUrl.
+    let cleanMediaUrl: string | undefined;
+    if (payload.mediaUrl !== undefined) {
+      if (messageType === 'text') {
+        throw new BadRequestException('A text message cannot carry media');
+      }
+      cleanMediaUrl = await this.s3.assertOwnedPublicImage(payload.mediaUrl, userId);
+    } else if (messageType !== 'text') {
+      throw new BadRequestException('mediaUrl is required for media messages');
+    }
+
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
@@ -244,7 +263,7 @@ export class ChatService {
           senderId: userId,
           content: cleanContent ?? null,
           messageType,
-          mediaUrl: payload.mediaUrl ?? null,
+          mediaUrl: cleanMediaUrl ?? null,
           replyToId: payload.replyToId ?? null,
         },
         include: { sender: { select: MEMBER_SELECT } },
