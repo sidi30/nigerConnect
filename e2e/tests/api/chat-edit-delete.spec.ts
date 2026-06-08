@@ -313,34 +313,46 @@ test.describe('DELETE /api/messages/:id — soft-delete / tombstone', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. Edit a non-text (image) message → 400
+// 4. Media binding (security): an image message's mediaUrl must point to one of
+//    the SENDER's own uploaded objects. A foreign/off-platform URL is rejected
+//    (OWASP A01/A10, CWE-639) — a tracking/SSRF beacon must never be persisted
+//    and auto-loaded by recipients' clients. Regression guard for the chat
+//    mediaUrl-binding fix. (No MinIO upload available in CI, so we assert the
+//    rejection path; the happy path is exercised by the mobile upload flow.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-test.describe('PATCH /api/messages/:id — type restrictions', () => {
+test.describe('POST /api/conversations/:id/messages — media binding', () => {
 
-  test('4. editing a non-text (image) message → 400', async ({ request }) => {
+  test('4a. sending an image with a foreign mediaUrl → 400 (not bound to sender)', async ({ request }) => {
     const { alice, convoId } = await setupDmConvo(request);
 
-    // Send an image message (no content, mediaUrl present)
     const sendRes = await request.post(`${BASE_URL}/api/conversations/${convoId}/messages`, {
       data: {
         messageType: 'image',
-        mediaUrl: 'https://cdn.nigerconnect.test/e2e/test-image.jpg',
+        mediaUrl: 'https://attacker.example.com/beacon.jpg',
       },
       headers: authHeaders(alice.tokens.accessToken),
     });
-    expect(sendRes.status(), `send image message: ${await sendRes.text()}`).toBe(201);
-    const imageMsg = await sendRes.json() as MessageShape;
-    expect(imageMsg.messageType, 'sanity check: message type must be image').toBe('image');
+    expect(
+      sendRes.status(),
+      `foreign mediaUrl must be rejected, got ${sendRes.status()}: ${await sendRes.text()}`,
+    ).toBe(400);
+  });
 
-    // Attempt to edit the image message — must be rejected
-    const patchRes = await request.patch(`${BASE_URL}/api/messages/${imageMsg.id}`, {
-      data: { content: 'Trying to add text to an image message' },
+  test('4b. a text message carrying a mediaUrl → 400', async ({ request }) => {
+    const { alice, convoId } = await setupDmConvo(request);
+
+    const sendRes = await request.post(`${BASE_URL}/api/conversations/${convoId}/messages`, {
+      data: {
+        content: 'hello',
+        messageType: 'text',
+        mediaUrl: 'https://attacker.example.com/beacon.jpg',
+      },
       headers: authHeaders(alice.tokens.accessToken),
     });
     expect(
-      patchRes.status(),
-      `editing image message must return 400, got ${patchRes.status()}: ${await patchRes.text()}`,
+      sendRes.status(),
+      `text message must not carry media, got ${sendRes.status()}: ${await sendRes.text()}`,
     ).toBe(400);
   });
 
