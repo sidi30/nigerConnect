@@ -117,17 +117,17 @@ export default function EditPostScreen() {
                 onPress={() => setVisibility(v)}
                 style={[styles.visChip, visibility === v && styles.visChipActive]}
               >
+                <Feather
+                  name={v === 'public' ? 'globe' : 'users'}
+                  size={13}
+                  color={visibility === v ? Colors.orange : Colors.brown}
+                />
                 <Text
                   style={[
                     styles.visLabel,
                     visibility === v && { color: Colors.orange },
                   ]}
                 >
-                  <Feather
-                    name={v === 'public' ? 'globe' : 'users'}
-                    size={13}
-                    color={visibility === v ? Colors.orange : Colors.brown}
-                  />{' '}
                   {v === 'public' ? 'Public' : 'Amis'}
                 </Text>
               </Pressable>
@@ -217,6 +217,9 @@ const styles = StyleSheet.create({
   },
   visRow: { flexDirection: 'row', gap: 8, marginBottom: Spacing.md },
   visChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: Spacing.md + 2,
     paddingVertical: Spacing.sm + 2,
     borderRadius: Radii.lg,

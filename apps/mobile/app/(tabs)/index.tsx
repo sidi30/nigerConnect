@@ -282,7 +282,7 @@ export default function FeedTab() {
             <FeedSkeletonList count={3} />
           ) : (
             <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>📰</Text>
+              <Feather name="home" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
               <Text style={styles.emptyTitle}>Fil vide</Text>
               <Text style={styles.emptyText}>
                 Ajoute des amis pour voir leurs publications ici.

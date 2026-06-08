@@ -132,14 +132,12 @@ export default function NewPostScreen() {
                       onPress={() => setVisibility(v.id)}
                       style={[styles.visPill, active && styles.visPillActive]}
                     >
-                      <Text
-                        style={[styles.visLabel, active && { color: Colors.white }]}
-                      >
-                        <Feather
-                          name={v.icon}
-                          size={12}
-                          color={active ? Colors.white : Colors.tan600}
-                        />{' '}
+                      <Feather
+                        name={v.icon}
+                        size={13}
+                        color={active ? Colors.white : Colors.tan600}
+                      />
+                      <Text style={[styles.visLabel, active && { color: Colors.white }]}>
                         {v.label}
                       </Text>
                     </Pressable>
@@ -237,8 +235,11 @@ const styles = StyleSheet.create({
   userName: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   visibilityRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
   visPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: Radii.md,
     borderWidth: 1,
     borderColor: Colors.tan300,

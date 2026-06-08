@@ -208,7 +208,7 @@ export default function ServicesTab() {
           </View>
         ) : services.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🤝</Text>
+            <Feather name="users" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
             <Text style={styles.emptyTitle}>Aucune demande</Text>
             <Text style={styles.emptyText}>
               {hasFilters

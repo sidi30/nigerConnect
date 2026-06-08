@@ -95,7 +95,7 @@ export default function MessagesTab() {
           <ConversationSkeletonList count={8} />
         ) : conversations.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>💬</Text>
+            <Feather name="message-circle" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
             <Text style={styles.emptyTitle}>Aucune conversation</Text>
             <Text style={styles.emptyText}>
               Ouvre le profil d&apos;un ami et envoie-lui le premier message.
