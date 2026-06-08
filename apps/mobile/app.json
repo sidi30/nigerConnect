@@ -2,7 +2,7 @@
   "expo": {
     "name": "NigerConnect",
     "slug": "nigerconnect",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "orientation": "portrait",
     "scheme": "nigerconnect",
     "userInterfaceStyle": "automatic",
@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nigerconnect.app",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "usesAppleSignIn": true,
       "associatedDomains": [
         "applinks:nigerconnect.sahabiguide.com",
@@ -117,7 +117,7 @@
     },
     "android": {
       "package": "com.nigerconnect.app",
-      "versionCode": 1,
+      "versionCode": 2,
       "edgeToEdgeEnabled": true,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
