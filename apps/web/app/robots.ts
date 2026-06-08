@@ -12,7 +12,7 @@ export default function robots(): MetadataRoute.Robots {
         // carries a token (verify-email, reset-password) or the only purpose is
         // a destructive action (account-deletion). Keeping them out of the
         // SERPs avoids users landing on a stale token URL via Google.
-        disallow: ["/verify-email", "/reset-password", "/account-deletion"],
+        disallow: ["/verify-email", "/reset-password", "/account-deletion", "/admin"],
       },
     ],
     sitemap: `${base}/sitemap.xml`,

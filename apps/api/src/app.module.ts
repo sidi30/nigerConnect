@@ -23,6 +23,7 @@ import { ModerationModule } from './moderation/moderation.module';
 import { PageModule } from './page/page.module';
 import { PollModule } from './poll/poll.module';
 import { ReviewModule } from './review/review.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { ReviewModule } from './review/review.module';
     PageModule,
     PollModule,
     ReviewModule,
+    AdminModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
