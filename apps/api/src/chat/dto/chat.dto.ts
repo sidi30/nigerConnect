@@ -18,6 +18,8 @@ export const sendMessageSchema = z.object({
 export type SendMessageDto = z.infer<typeof sendMessageSchema>;
 
 export const editMessageSchema = z.object({
-  content: z.string().min(1).max(5000),
+  // Empty allowed so an image caption can be cleared; the service still rejects
+  // an empty edit on a text message (text must keep content).
+  content: z.string().max(5000),
 });
 export type EditMessageDto = z.infer<typeof editMessageSchema>;

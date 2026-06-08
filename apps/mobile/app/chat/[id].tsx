@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -463,13 +464,22 @@ export default function ChatScreen() {
 
   const messages = (messagesQuery.data?.items ?? []) as PendingMessage[];
 
+  // When editing an image's caption, an empty input is valid (clears caption);
+  // otherwise the composer needs some text to send.
+  const editingMessage = editingId ? messages.find((m) => m.id === editingId) : undefined;
+  const canSend = !!draft.trim() || (!!editingId && editingMessage?.messageType === 'image');
+
   const handleSend = useCallback(() => {
     const text = draft.trim();
-    if (!text || !id || !me) return;
+    if (!id || !me) return;
 
     // Edit mode: PATCH the message instead of creating a new one.
     if (editingId) {
       const eid = editingId;
+      const editing = messages.find((m) => m.id === eid);
+      const isImageEdit = editing?.messageType === 'image';
+      // A text message must keep content; an image caption may be cleared.
+      if (!text && !isImageEdit) return;
       setEditingId(null);
       setDraft('');
       qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
@@ -477,7 +487,9 @@ export default function ChatScreen() {
           ? {
               ...prev,
               items: prev.items.map((m) =>
-                m.id === eid ? { ...m, content: text, editedAt: new Date().toISOString() } : m,
+                m.id === eid
+                  ? { ...m, content: text || null, editedAt: new Date().toISOString() }
+                  : m,
               ),
             }
           : prev,
@@ -486,6 +498,7 @@ export default function ChatScreen() {
       return;
     }
 
+    if (!text) return;
     setDraft('');
 
     // Stop typing indicator immediately when sending.
@@ -506,7 +519,7 @@ export default function ChatScreen() {
       prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
     );
     sendMut.mutate({ content: text, messageType: 'text', tempId: optimistic.id });
-  }, [draft, id, me, editingId, editMut, messagesKey, qc, sendMut]);
+  }, [draft, id, me, editingId, editMut, messages, messagesKey, qc, sendMut]);
 
   // Tap a failed TEXT bubble to retry it: flip it back to pending and re-send
   // under the same tempId so onSuccess/onError can reconcile it as usual.
@@ -632,8 +645,13 @@ export default function ChatScreen() {
       if (isImage && item.mediaUrl) {
         buttons.push({ text: 'Télécharger', onPress: () => void handleDownload(item.mediaUrl!) });
       }
-      if (isMe && item.messageType === 'text' && withinWindow) {
-        buttons.push({ text: 'Modifier', onPress: () => startEdit(item) });
+      // Edit within the 15-min window: text bubbles and image captions alike
+      // (editing an image edits its caption).
+      if (isMe && withinWindow && (item.messageType === 'text' || item.messageType === 'image')) {
+        buttons.push({
+          text: isImage ? 'Modifier la légende' : 'Modifier',
+          onPress: () => startEdit(item),
+        });
       }
       if (isMe && withinWindow) {
         buttons.push({
@@ -682,7 +700,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Text style={styles.backIcon}>←</Text>
+          <Feather name="chevron-left" size={28} color={Colors.brown} />
         </Pressable>
         <Pressable
           onPress={() => router.push(`/user/${peer.id}`)}
@@ -708,7 +726,7 @@ export default function ChatScreen() {
           </View>
         </Pressable>
         <Pressable style={styles.callBtn} hitSlop={8}>
-          <Text style={styles.callIcon}>📞</Text>
+          <Feather name="phone" size={17} color={Colors.brown} />
         </Pressable>
       </View>
 
@@ -763,9 +781,16 @@ export default function ChatScreen() {
                     {isMe && (
                       <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
                     )}
-                    <Text style={[styles.tombstone, isMe && { color: 'rgba(255,255,255,0.85)' }]}>
-                      🚫 Message supprimé
-                    </Text>
+                    <View style={styles.tombstoneRow}>
+                      <Feather
+                        name="slash"
+                        size={13}
+                        color={isMe ? 'rgba(255,255,255,0.85)' : Colors.tan500}
+                      />
+                      <Text style={[styles.tombstone, isMe && { color: 'rgba(255,255,255,0.85)' }]}>
+                        Message supprimé
+                      </Text>
+                    </View>
                   </View>
                 ) : isImage ? (
                   <View
@@ -867,14 +892,17 @@ export default function ChatScreen() {
         {/* Edit-mode banner above the composer. */}
         {editingId && (
           <View style={styles.editBanner}>
+            <Feather name="edit-2" size={15} color={Colors.orange} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.editBannerTitle}>✏️ Modification du message</Text>
+              <Text style={styles.editBannerTitle}>Modification du message</Text>
               <Text style={styles.editBannerHint} numberOfLines={1}>
-                Modifie le texte puis appuie sur ➤
+                {editingMessage?.messageType === 'image'
+                  ? 'Modifie la légende puis valide'
+                  : 'Modifie le texte puis valide'}
               </Text>
             </View>
             <Pressable onPress={cancelEdit} hitSlop={8}>
-              <Text style={styles.editBannerCancel}>✕</Text>
+              <Feather name="x" size={18} color={Colors.tan500} />
             </Pressable>
           </View>
         )}
@@ -886,7 +914,11 @@ export default function ChatScreen() {
             onPress={handlePickPhoto}
             disabled={uploading || !!editingId}
           >
-            <Text style={styles.photoIcon}>{uploading ? '⏳' : '📷'}</Text>
+            {uploading ? (
+              <ActivityIndicator size="small" color={Colors.tan500} />
+            ) : (
+              <Feather name="image" size={20} color={Colors.tan600} />
+            )}
           </Pressable>
           <TextInput
             ref={inputRef}
@@ -900,12 +932,12 @@ export default function ChatScreen() {
           />
           <Pressable
             onPress={handleSend}
-            style={[styles.sendBtn, !draft.trim() && { opacity: 0.4 }]}
+            style={[styles.sendBtn, !canSend && { opacity: 0.4 }]}
             hitSlop={8}
-            disabled={!draft.trim()}
+            disabled={!canSend}
           >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-            <Text style={styles.sendIcon}>{editingId ? '✓' : '➤'}</Text>
+            <Feather name={editingId ? 'check' : 'send'} size={18} color={Colors.white} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -917,36 +949,52 @@ export default function ChatScreen() {
         animationType="slide"
         onRequestClose={() => setPreview(null)}
       >
-        <SafeAreaView style={styles.previewBackdrop} edges={['top', 'bottom']}>
-          <View style={styles.previewHeader}>
-            <Pressable onPress={() => setPreview(null)} hitSlop={10}>
-              <Text style={styles.previewCancel}>Annuler</Text>
-            </Pressable>
-            <Text style={styles.previewTitle}>Envoyer la photo</Text>
-            <View style={{ width: 60 }} />
-          </View>
-          {preview && (
-            <Image source={{ uri: preview.uri }} style={styles.previewImage} contentFit="contain" />
-          )}
+        <View style={styles.previewBackdrop}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.previewComposer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
           >
-            <TextInput
-              style={styles.previewCaptionInput}
-              placeholder="Ajouter une légende…"
-              placeholderTextColor={Colors.tan400}
-              value={caption}
-              onChangeText={setCaption}
-              multiline
-              maxLength={2000}
-            />
-            <Pressable onPress={handleSendPhoto} style={styles.sendBtn} hitSlop={8}>
-              <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-              <Text style={styles.sendIcon}>➤</Text>
-            </Pressable>
+            <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+              <View style={styles.previewHeader}>
+                <Pressable
+                  onPress={() => setPreview(null)}
+                  hitSlop={10}
+                  style={styles.previewIconBtn}
+                >
+                  <Feather name="x" size={24} color={Colors.white} />
+                </Pressable>
+                <Text style={styles.previewTitle}>Envoyer la photo</Text>
+                <View style={{ width: 40 }} />
+              </View>
+
+              <View style={styles.previewImageWrap}>
+                {preview && (
+                  <Image
+                    source={{ uri: preview.uri }}
+                    style={styles.previewImage}
+                    contentFit="contain"
+                  />
+                )}
+              </View>
+
+              <View style={styles.previewComposer}>
+                <TextInput
+                  style={styles.previewCaptionInput}
+                  placeholder="Ajouter une légende…"
+                  placeholderTextColor={Colors.tan400}
+                  value={caption}
+                  onChangeText={setCaption}
+                  multiline
+                  maxLength={2000}
+                />
+                <Pressable onPress={handleSendPhoto} style={styles.sendBtnLg} hitSlop={8}>
+                  <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+                  <Feather name="send" size={20} color={Colors.white} />
+                </Pressable>
+              </View>
+            </SafeAreaView>
           </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* ── Full-screen image lightbox: enlarge + download ────────────────── */}
@@ -957,17 +1005,9 @@ export default function ChatScreen() {
         onRequestClose={() => setLightbox(null)}
       >
         <View style={styles.lightboxBackdrop}>
-          <SafeAreaView style={styles.lightboxBar} edges={['top']}>
-            <Pressable onPress={() => setLightbox(null)} hitSlop={12} style={styles.lightboxBtn}>
-              <Text style={styles.lightboxBtnText}>✕</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => lightbox && handleDownload(lightbox)}
-              hitSlop={12}
-              style={styles.lightboxBtn}
-              disabled={downloading}
-            >
-              <Text style={styles.lightboxBtnText}>{downloading ? '⏳' : '⬇︎'}</Text>
+          <SafeAreaView style={styles.lightboxTopBar} edges={['top']}>
+            <Pressable onPress={() => setLightbox(null)} hitSlop={12} style={styles.lightboxIconBtn}>
+              <Feather name="x" size={24} color={Colors.white} />
             </Pressable>
           </SafeAreaView>
           <Pressable style={styles.lightboxImageWrap} onPress={() => setLightbox(null)}>
@@ -975,6 +1015,22 @@ export default function ChatScreen() {
               <Image source={{ uri: lightbox }} style={styles.lightboxImage} contentFit="contain" />
             )}
           </Pressable>
+          <SafeAreaView style={styles.lightboxBottomBar} edges={['bottom']}>
+            <Pressable
+              onPress={() => lightbox && handleDownload(lightbox)}
+              disabled={downloading}
+              style={[styles.downloadPill, downloading && { opacity: 0.7 }]}
+            >
+              {downloading ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <Feather name="download" size={18} color={Colors.white} />
+              )}
+              <Text style={styles.downloadPillText}>
+                {downloading ? 'Enregistrement…' : 'Enregistrer'}
+              </Text>
+            </Pressable>
+          </SafeAreaView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -994,7 +1050,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(253,251,247,0.96)',
   },
   backBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  backIcon: { fontSize: 24, color: Colors.brown },
   peerHeaderBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   peerRow: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 1 },
   peerName: { fontSize: Typography.sizes.md + 1, fontWeight: '700', color: Colors.brown },
@@ -1007,7 +1062,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  callIcon: { fontSize: 15 },
   messagesContent: { paddingVertical: Spacing.md, paddingHorizontal: Spacing.md, gap: Spacing.sm },
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   bubble: {
@@ -1111,7 +1165,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoIcon: { fontSize: 17 },
   input: {
     flex: 1,
     borderWidth: 1.5,
@@ -1132,9 +1185,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  sendIcon: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 
   // Tombstone for a deleted message.
+  tombstoneRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   tombstone: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontStyle: 'italic' },
   // Row holding the "modifié" tag + read receipt under a text bubble.
   metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5, marginTop: 2 },
@@ -1166,56 +1219,92 @@ const styles = StyleSheet.create({
   editBannerCancel: { fontSize: 18, color: Colors.tan500, fontWeight: '700' },
 
   // ── Image confirmation sheet ──────────────────────────────────────────────
-  previewBackdrop: { flex: 1, backgroundColor: Colors.cream },
+  previewBackdrop: { flex: 1, backgroundColor: '#0B0B0D' },
   previewHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.tan200,
+    paddingVertical: Spacing.sm,
   },
-  previewCancel: { fontSize: Typography.sizes.md, color: Colors.orange, fontWeight: '600' },
-  previewTitle: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
-  previewImage: { flex: 1, width: '100%', backgroundColor: Colors.tan100 },
+  previewIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  previewTitle: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.white },
+  previewImageWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  previewImage: { width: '100%', height: '100%' },
   previewComposer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 8,
-    padding: Spacing.md,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.tan200,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
   },
   previewCaptionInput: {
     flex: 1,
-    borderWidth: 1.5,
-    borderColor: Colors.tan300,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
     borderRadius: Radii.xxl,
     paddingHorizontal: Spacing.md + 2,
-    paddingVertical: Spacing.sm + 2,
-    maxHeight: 100,
+    paddingVertical: Spacing.sm + 4,
+    maxHeight: 110,
     fontSize: Typography.sizes.md,
-    color: Colors.brown,
-    backgroundColor: Colors.white,
+    color: Colors.white,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  // Larger send button used on the dark preview sheet.
+  sendBtnLg: {
+    width: 46,
+    height: 46,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
-  lightboxBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' },
-  lightboxBar: {
+  lightboxBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.97)' },
+  lightboxTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
   },
-  lightboxBtn: {
+  lightboxIconBtn: {
     width: 44,
     height: 44,
+    borderRadius: Radii.full,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  lightboxBtnText: { color: Colors.white, fontSize: 22, fontWeight: '700' },
   lightboxImageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   lightboxImage: { width: '100%', height: '100%' },
+  lightboxBottomBar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.lg,
+  },
+  downloadPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: Radii.full,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  downloadPillText: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
 });

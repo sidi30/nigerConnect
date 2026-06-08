@@ -347,9 +347,10 @@ export class ChatService {
   }
 
   /**
-   * Edit a text message in place. Sender-only, text-only, within the 15-min
-   * window. Sets `editedAt` so clients can show a "modifié" badge. Returns
-   * conversationId + memberIds for a `message:updated` broadcast.
+   * Edit a message in place. Sender-only, within the 15-min window. Works for
+   * text bubbles (edit the text) and image messages (edit the caption — which
+   * may be cleared). Sets `editedAt` so clients can show a "modifié" badge.
+   * Returns conversationId + memberIds for a `message:updated` broadcast.
    */
   async editMessage(userId: string, messageId: string, rawContent: string) {
     const msg = await this.prisma.message.findUnique({
@@ -365,17 +366,20 @@ export class ChatService {
     });
     if (!msg || msg.deletedAt) throw new NotFoundException('Message not found');
     if (msg.senderId !== userId) throw new ForbiddenException('Not your message');
-    if (msg.messageType !== 'text') {
-      throw new BadRequestException('Seuls les messages texte peuvent être modifiés');
+    if (msg.messageType !== 'text' && msg.messageType !== 'image') {
+      throw new BadRequestException('Ce type de message ne peut pas être modifié');
     }
     if (Date.now() - msg.createdAt.getTime() > MESSAGE_MUTATION_WINDOW_MS) {
       throw new ForbiddenException('Trop tard pour modifier ce message (15 min max)');
     }
     const clean = this.normalizeContent(rawContent);
-    if (!clean || clean.length === 0) throw new BadRequestException('Message content is empty');
+    // A text message must keep some content; an image caption can be emptied.
+    if (msg.messageType === 'text' && (!clean || clean.length === 0)) {
+      throw new BadRequestException('Message content is empty');
+    }
     const message = await this.prisma.message.update({
       where: { id: messageId },
-      data: { content: clean, editedAt: new Date() },
+      data: { content: clean && clean.length > 0 ? clean : null, editedAt: new Date() },
       include: { sender: { select: MEMBER_SELECT } },
     });
     await this.syncPreview(msg.conversationId);
