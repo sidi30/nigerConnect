@@ -273,6 +273,11 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # NEXT_PUBLIC_* are inlined at build time; needed for the admin console
+        # + verify-email page to reach the API. Override via .env.prod if hosts differ.
+        NEXT_PUBLIC_API_URL: ${API_PUBLIC_URL:-https://api-nigerconnect.sahabiguide.com}
+        NEXT_PUBLIC_APP_URL: ${WEB_PUBLIC_URL:-https://nigerconnect.sahabiguide.com}
     image: nigerconnect-web:latest
     container_name: nigerconnect-web
     <<: *security-defaults
