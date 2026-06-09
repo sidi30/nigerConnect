@@ -120,6 +120,24 @@ export default function AssociationDetailScreen() {
     ]);
   }
 
+  const removeMut = useMutation({
+    mutationFn: () => associationsApi.remove(id!),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['associations'] });
+      void qc.invalidateQueries({ queryKey: ['associations', 'mine'] });
+      void qc.invalidateQueries({ queryKey: ['geo'] });
+      router.back();
+    },
+    onError: (e) => Alert.alert('Impossible de supprimer', describeError(e)),
+  });
+
+  function confirmDelete() {
+    Alert.alert('Supprimer l’association', 'Cette action est irréversible.', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: () => removeMut.mutate() },
+    ]);
+  }
+
   if (assocQuery.isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -175,6 +193,18 @@ export default function AssociationDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
           <Text style={styles.backIcon}>←</Text>
         </Pressable>
+        {membership?.role === 'admin' ? (
+          <Pressable
+            onPress={confirmDelete}
+            disabled={removeMut.isPending}
+            style={[styles.deleteBtn, removeMut.isPending && { opacity: 0.5 }]}
+          >
+            <Feather name="trash-2" size={14} color={Colors.danger} />
+            <Text style={styles.deleteBtnLabel}>
+              {removeMut.isPending ? '…' : 'Supprimer'}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: Spacing.xxxl }}>
@@ -353,8 +383,21 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: Spacing.md,
   },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.dangerSoft,
+    borderWidth: 1,
+    borderColor: Colors.dangerMuted,
+  },
+  deleteBtnLabel: { color: Colors.danger, fontSize: Typography.sizes.sm, fontWeight: '700' },
   back: {
     width: 40,
     height: 40,

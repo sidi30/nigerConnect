@@ -27,8 +27,18 @@ type Filter = 'all' | 'people' | 'associations';
 const FILTERS: Array<{ id: Filter; label: string; icon: keyof typeof Feather.glyphMap }> = [
   { id: 'all', label: 'Tous', icon: 'globe' },
   { id: 'people', label: 'Personnes', icon: 'user' },
-  { id: 'associations', label: 'Assos', icon: 'users' },
+  { id: 'associations', label: 'Assos & pages', icon: 'users' },
 ];
+
+// Emoji shown inside a page's map marker, by page kind. Mirrors the icon set in
+// pages/new.tsx (community/cause/business/official/group).
+const PAGE_KIND_EMOJI: Record<string, string> = {
+  community: '🌍',
+  cause: '❤️',
+  business: '💼',
+  official: '🏅',
+  group: '👥',
+};
 
 const INITIAL_BOUNDS = {
   north: 70,
@@ -59,6 +69,8 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .marker-ind-initials{display:flex;align-items:center;justify-content:center;background:#E05206;color:#fff;font-weight:800;font-size:16px;font-family:system-ui}
   .marker-assoc{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#1565C0;border:3px solid #fff;box-shadow:0 3px 10px rgba(21,101,192,.5);font-size:22px;position:relative}
   .marker-assoc .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+  .marker-page{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#E05206;border:3px solid #fff;box-shadow:0 3px 10px rgba(224,82,6,.5);font-size:22px;position:relative}
+  .marker-page .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
   .marker-me{width:22px;height:22px;border-radius:50%;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3),0 2px 6px rgba(0,0,0,.4)}
   .leaflet-marker-icon{background:none;border:none}
   .leaflet-container{background:#E8F4F8}
@@ -158,6 +170,13 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
       } else if (m.kind === 'association') {
         const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
         const html = '<div class="marker-assoc">🏛️' + verif + '</div>';
+        const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
+        const mk = L.marker([m.lat, m.lon], { icon });
+        mk.on('click', () => post({ type:'select', marker: m }));
+        mk.addTo(markerLayer);
+      } else if (m.kind === 'page') {
+        const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
+        const html = '<div class="marker-page">' + (m.emoji || '📣') + verif + '</div>';
         const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
         const mk = L.marker([m.lat, m.lon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
@@ -309,7 +328,7 @@ export default function MapTab() {
               const country = m.countryCode ? CountryNames[m.countryCode] : null;
               return matches(m.name, m.city, m.countryCode, country);
             }
-            if (m.kind === 'association') {
+            if (m.kind === 'association' || m.kind === 'page') {
               const country = m.countryCode ? CountryNames[m.countryCode] : null;
               return matches(m.name, m.city, m.countryCode, country);
             }
@@ -325,7 +344,9 @@ export default function MapTab() {
       const payload = filtered.map((m) =>
         m.kind === 'country' || m.kind === 'city'
           ? { ...m, flag: Flags[m.countryCode] ?? '🌍' }
-          : m,
+          : m.kind === 'page'
+            ? { ...m, emoji: PAGE_KIND_EMOJI[m.pageKind] ?? '📣' }
+            : m,
       );
       webRef.current.injectJavaScript(
         `window.renderMarkers(${JSON.stringify(payload)}); true;`,
@@ -512,6 +533,10 @@ export default function MapTab() {
             // typed route exists.
             router.push(`/associations/${id}` as never);
           }}
+          onOpenPage={(id) => {
+            setSelected(null);
+            router.push(`/pages/${id}` as never);
+          }}
           onZoomToCluster={(lat, lon, zoom) => {
             setSelected(null);
             webRef.current?.injectJavaScript(
@@ -529,12 +554,14 @@ function SelectedSheet({
   onClose,
   onOpenProfile,
   onOpenAssociation,
+  onOpenPage,
   onZoomToCluster,
 }: {
   marker: MapMarker;
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
   onOpenAssociation: (associationId: string) => void;
+  onOpenPage: (pageId: string) => void;
   onZoomToCluster: (lat: number, lon: number, zoom: number) => void;
 }) {
   // SelectedSheet branches by marker.kind with early returns, so any hooks must
@@ -581,6 +608,43 @@ function SelectedSheet({
           style={styles.sheetBtn}
         >
           <Text style={styles.sheetBtnLabel}>Voir l&apos;association</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (marker.kind === 'page') {
+    return (
+      <View style={styles.sheet}>
+        <View style={styles.sheetHandle} />
+        <View style={styles.sheetTop}>
+          <View style={[styles.sheetIcon, { backgroundColor: Colors.orange }]}>
+            <Feather name="flag" size={22} color={Colors.white} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.sheetNameRow}>
+              <Text style={styles.sheetName}>{marker.name}</Text>
+              {marker.isVerified ? (
+                <Feather name="check-circle" size={14} color={Colors.green} />
+              ) : null}
+            </View>
+            <Text style={styles.sheetMeta}>
+              {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+              {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
+            </Text>
+            <View style={styles.sheetMetaRow}>
+              <Feather name="users" size={13} color={Colors.tan500} />
+              <Text style={styles.sheetMeta}>
+                {marker.followerCount} {marker.followerCount > 1 ? 'abonnés' : 'abonné'}
+              </Text>
+            </View>
+          </View>
+          <Pressable onPress={onClose} style={styles.sheetClose}>
+            <Feather name="x" size={16} color={Colors.tan500} />
+          </Pressable>
+        </View>
+        <Pressable onPress={() => onOpenPage(marker.pageId)} style={styles.sheetBtn}>
+          <Text style={styles.sheetBtnLabel}>Voir la page</Text>
         </Pressable>
       </View>
     );

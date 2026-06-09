@@ -37,6 +37,19 @@ export type MapMarker =
       isVerified: boolean;
       lat: number;
       lon: number;
+    }
+  | {
+      kind: 'page';
+      pageId: string;
+      name: string;
+      pageKind: string;
+      avatarUrl: string | null;
+      city: string | null;
+      countryCode: string | null;
+      followerCount: number;
+      isVerified: boolean;
+      lat: number;
+      lon: number;
     };
 
 export interface GeoStats {

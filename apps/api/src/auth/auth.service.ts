@@ -571,6 +571,29 @@ export class AuthService {
         data: { identityStatus: decision },
       }),
     ]);
+
+    // Tell the user the good news (fire-and-forget — a mail failure must not
+    // fail the review that already committed). Only on approval.
+    if (decision === 'approved') this.sendIdentityApprovedEmail(targetUserId);
+  }
+
+  /**
+   * Notify a user their identity was verified. Fire-and-forget, never throws
+   * into the review flow.
+   */
+  private sendIdentityApprovedEmail(userId: string): void {
+    void (async () => {
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, firstName: true },
+        });
+        if (!user?.email) return;
+        await this.mailer.sendIdentityApproved(user.email, user.firstName);
+      } catch (e) {
+        this.logger.warn(`Failed to send identity-approved email: ${String(e)}`);
+      }
+    })();
   }
 
   // ── helpers ────────────────────────────────────────────────

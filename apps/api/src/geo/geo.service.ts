@@ -69,7 +69,25 @@ export interface AssociationMarker {
   lat: number;
   lon: number;
 }
-export type MapMarker = CountryCluster | CityCluster | IndividualMarker | AssociationMarker;
+export interface PageMarker {
+  kind: 'page';
+  pageId: string;
+  name: string;
+  pageKind: string;
+  avatarUrl: string | null;
+  city: string | null;
+  countryCode: string | null;
+  followerCount: number;
+  isVerified: boolean;
+  lat: number;
+  lon: number;
+}
+export type MapMarker =
+  | CountryCluster
+  | CityCluster
+  | IndividualMarker
+  | AssociationMarker
+  | PageMarker;
 
 @Injectable()
 export class GeoService implements OnModuleInit {
@@ -123,6 +141,9 @@ export class GeoService implements OnModuleInit {
     const markers: MapMarker[] = [];
 
     const includePeople = dto.type === 'all' || dto.type === 'people';
+    // Pages and associations are both "organisations" — the Assos filter (and
+    // the default All view) surfaces both so a freshly created page/asso is
+    // visible right away.
     const includeAssocs = dto.type === 'all' || dto.type === 'associations';
 
     if (includePeople) {
@@ -142,9 +163,75 @@ export class GeoService implements OnModuleInit {
 
     if (includeAssocs) {
       markers.push(...(await this.associations(dto)));
+      markers.push(...(await this.pages(dto)));
     }
 
     await this.redis.client.set(cacheKey, JSON.stringify(markers), 'EX', CLUSTER_TTL);
+    return markers;
+  }
+
+  /**
+   * Drop every cached marker tile. Called when a page/association is created or
+   * deleted so the change shows up on the next map fetch instead of waiting out
+   * the CLUSTER_TTL. Best-effort: a SCAN failure must never break the create.
+   */
+  async invalidateMarkerCache(): Promise<void> {
+    try {
+      const stream = this.redis.client.scanStream({ match: 'geo:*', count: 200 });
+      const pipeline = this.redis.client.pipeline();
+      let queued = 0;
+      for await (const keys of stream as AsyncIterable<string[]>) {
+        for (const key of keys) {
+          pipeline.del(key);
+          queued++;
+        }
+      }
+      if (queued > 0) await pipeline.exec();
+    } catch {
+      /* cache invalidation is best-effort — the TTL will catch up regardless */
+    }
+  }
+
+  private async pages(dto: BoundsDto): Promise<PageMarker[]> {
+    const pages = await this.prisma.page.findMany({
+      where: { countryCode: { not: null } },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        avatarUrl: true,
+        city: true,
+        countryCode: true,
+        followerCount: true,
+        isVerified: true,
+      },
+      take: 200,
+    });
+    const markers: PageMarker[] = [];
+    for (const p of pages) {
+      const coords = geocode(p.city, p.countryCode);
+      if (!coords) continue;
+      if (
+        coords.lat < dto.south ||
+        coords.lat > dto.north ||
+        coords.lon < dto.west ||
+        coords.lon > dto.east
+      )
+        continue;
+      markers.push({
+        kind: 'page',
+        pageId: p.id,
+        name: p.name,
+        pageKind: p.kind,
+        avatarUrl: p.avatarUrl,
+        city: p.city,
+        countryCode: p.countryCode,
+        followerCount: p.followerCount,
+        isVerified: p.isVerified,
+        lat: coords.lat,
+        lon: coords.lon,
+      });
+    }
     return markers;
   }
 

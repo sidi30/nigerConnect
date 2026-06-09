@@ -10,7 +10,9 @@ import { WorldCitiesService } from './world-cities';
   // the world-city geocoder fallback into the auth flow.
   providers: [GeoService, WorldCitiesService],
   // Export WorldCitiesService so other modules (e.g. a future profile module)
-  // can inject it without re-importing the raw dataset.
-  exports: [WorldCitiesService],
+  // can inject it without re-importing the raw dataset. GeoService is exported
+  // so the Page/Association modules can invalidate the map marker cache when an
+  // org is created or deleted.
+  exports: [WorldCitiesService, GeoService],
 })
 export class GeoModule {}

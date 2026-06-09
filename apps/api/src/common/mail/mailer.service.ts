@@ -371,6 +371,43 @@ export class MailerService implements OnModuleInit {
   }
 
   /**
+   * Identity-verification CONFIRMED email — sent once, right after a moderator
+   * approves a user's identity document. Celebrates the new "verified" status
+   * and points at the two capabilities it unlocks (creating a page / an
+   * association). Reuses the shared branded layout.
+   */
+  async sendIdentityApproved(to: string, firstName?: string | null): Promise<void> {
+    const b = MailerService.BRAND;
+    const safeName = this.esc(firstName);
+    const greeting = safeName ? `Bonjour ${safeName},` : 'Bonjour,';
+    const bodyHtml = `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 8px;">
+        <tr><td align="center" style="width:64px;height:64px;background:${b.tan100};border-radius:50%;
+            font-size:32px;line-height:64px;text-align:center;">✅</td></tr>
+      </table>
+      <h1 style="margin:8px 0 16px;font-size:24px;font-weight:800;color:${b.brown};text-align:center;">Identité vérifiée 🎉</h1>
+      <p style="margin:0 0 12px;">${greeting}</p>
+      <p style="margin:0 0 12px;">Bonne nouvelle : ton identité a été <strong>vérifiée</strong> par notre équipe. Ton badge de confiance est désormais actif sur ton profil. ✔️</p>
+      <p style="margin:0 0 22px;font-weight:700;color:${b.brown};">Tu peux maintenant :</p>
+      ${this.featureRow('📣', 'Créer une page', 'Communauté, cause, business ou officielle — fédère ton audience.')}
+      ${this.featureRow('🏛️', 'Créer une association', 'Lance ta structure et accueille des membres de la diaspora.')}
+      <div style="margin:24px 0 4px;">${this.button(this.webUrl, 'Ouvrir NigerConnect')}</div>
+      <p style="margin:24px 0 0;font-size:13px;color:${b.tan500};">Merci de contribuer à une communauté de confiance. 🇳🇪</p>`;
+    const text =
+      `NigerConnect — Identité vérifiée\n\n${greeting}\n` +
+      `Ton identité a été vérifiée par notre équipe. Ton badge de confiance est actif.\n\n` +
+      `Tu peux maintenant :\n` +
+      `- Créer une page (communauté, cause, business, officielle)\n` +
+      `- Créer une association et accueillir des membres\n\n` +
+      `Ouvre NigerConnect : ${this.webUrl}`;
+    const html = this.layout({
+      preheader: 'Ton identité est vérifiée — tu peux créer pages et associations.',
+      bodyHtml,
+    });
+    await this.send({ to, subject: 'NigerConnect — Ton identité est vérifiée ✅', html, text });
+  }
+
+  /**
    * RGPD data export delivered by email, with the full JSON dump attached.
    * `json` is the already-serialized export payload.
    */

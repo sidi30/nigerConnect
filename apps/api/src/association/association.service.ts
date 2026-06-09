@@ -8,6 +8,7 @@ import {
 import type { AssociationRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { GeoService } from '../geo/geo.service';
 import type {
   ChangeRoleDto,
   CreateAssociationDto,
@@ -29,6 +30,7 @@ export class AssociationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly geo: GeoService,
   ) {}
 
   async create(creatorId: string, dto: CreateAssociationDto) {
@@ -40,7 +42,7 @@ export class AssociationService {
       throw new ForbiddenException('Identity verification required to create an association');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const assoc = await tx.association.create({
         data: {
           name: dto.name,
@@ -62,6 +64,20 @@ export class AssociationService {
       });
       return assoc;
     });
+
+    // Surface the new association on the map immediately (bypass the TTL).
+    await this.geo.invalidateMarkerCache();
+    return created;
+  }
+
+  /**
+   * Delete an association. Only an admin (the founding creator is one) may do
+   * this; the cascade in the schema removes members/events. Mirrors PageService.
+   */
+  async remove(userId: string, id: string): Promise<void> {
+    await this.assertRole(userId, id, ['admin']);
+    await this.prisma.association.delete({ where: { id } });
+    await this.geo.invalidateMarkerCache();
   }
 
   async list(dto: ListAssociationsDto) {

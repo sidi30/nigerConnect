@@ -23,16 +23,8 @@ import {
 } from '@/services/associationsApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { useAuthStore } from '@/stores/authStore';
-import {
-  Colors,
-  CountryNames,
-  Flags,
-  Gradients,
-  palette,
-  Radii,
-  Spacing,
-  Typography,
-} from '@/constants/theme';
+import { CitySearchField } from '@/components/ui/CitySearchField';
+import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
 
 const CATEGORIES: Array<{
   id: AssociationCategory;
@@ -48,8 +40,6 @@ const CATEGORIES: Array<{
   { id: 'sport', label: 'Sport', icon: 'activity' },
   { id: 'religieux', label: 'Religieux', icon: 'moon' },
 ];
-
-const COUNTRY_CODES = Object.keys(Flags);
 
 export default function NewAssociationScreen() {
   const router = useRouter();
@@ -75,6 +65,7 @@ export default function NewAssociationScreen() {
     mutationFn: (input: CreateAssociationInput) => associationsApi.create(input),
     onSuccess: (assoc) => {
       void qc.invalidateQueries({ queryKey: ['associations'] });
+      void qc.invalidateQueries({ queryKey: ['geo'] });
       setFeedback({ kind: 'success', message: 'Association créée ✓' });
       setTimeout(() => router.replace(`/associations/${assoc.id}`), 800);
     },
@@ -223,31 +214,19 @@ export default function NewAssociationScreen() {
             multiline
           />
 
-          <Text style={styles.label}>Pays</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            {COUNTRY_CODES.map((code) => {
-              const active = countryCode === code;
-              return (
-                <Pressable
-                  key={code}
-                  onPress={() => setCountryCode(active ? '' : code)}
-                  style={[styles.countryChip, active && styles.countryChipActive]}
-                >
-                  <Text style={styles.chipIcon}>{Flags[code]}</Text>
-                  <Text
-                    style={[
-                      styles.countryName,
-                      active && { color: Colors.orange, fontWeight: '700' },
-                    ]}
-                  >
-                    {CountryNames[code] ?? code}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          <Field label="Ville" value={city} onChangeText={setCity} placeholder="Ex : Niamey" />
+          <Text style={styles.label}>Ville</Text>
+          <Text style={styles.fieldHint}>
+            Choisis la ville — le pays est défini automatiquement. L&apos;association apparaît alors
+            sur la carte.
+          </Text>
+          <CitySearchField
+            city={city}
+            countryCode={countryCode}
+            onChange={(c, cc) => {
+              setCity(c);
+              setCountryCode(cc);
+            }}
+          />
           <Field
             label="Site web"
             value={website}
@@ -408,6 +387,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.md,
     backgroundColor: Colors.white,
     color: Colors.brown,
+  },
+  fieldHint: {
+    fontSize: Typography.sizes.xs + 1,
+    color: Colors.tan500,
+    marginBottom: Spacing.sm,
+    lineHeight: 16,
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.md },
   chip: {

@@ -8,6 +8,7 @@ import {
 import type { PageRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { GeoService } from '../geo/geo.service';
 import { USER_PUBLIC_SELECT } from '../common/prisma/user-select';
 import type {
   ChangePageRoleDto,
@@ -21,6 +22,7 @@ export class PageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly geo: GeoService,
   ) {}
 
   async create(creatorId: string, dto: CreatePageDto) {
@@ -32,8 +34,8 @@ export class PageService {
       throw new ForbiddenException('Identity verification required to create a page');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const page = await tx.page.create({
+    const page = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.page.create({
         data: {
           name: dto.name,
           description: dto.description ?? null,
@@ -50,13 +52,17 @@ export class PageService {
       });
       // Creator is the founding admin and an implicit follower.
       await tx.pageAdmin.create({
-        data: { pageId: page.id, userId: creatorId, role: 'admin' },
+        data: { pageId: created.id, userId: creatorId, role: 'admin' },
       });
       await tx.pageFollower.create({
-        data: { pageId: page.id, userId: creatorId },
+        data: { pageId: created.id, userId: creatorId },
       });
-      return page;
+      return created;
     });
+
+    // Surface the new page on the map immediately (bypass the marker TTL).
+    await this.geo.invalidateMarkerCache();
+    return page;
   }
 
   async list(dto: ListPagesDto) {
@@ -120,6 +126,7 @@ export class PageService {
   async remove(userId: string, id: string): Promise<void> {
     await this.assertRole(userId, id, ['admin']);
     await this.prisma.page.delete({ where: { id } });
+    await this.geo.invalidateMarkerCache();
   }
 
   async follow(userId: string, id: string) {

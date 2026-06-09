@@ -18,16 +18,8 @@ import { Image } from 'expo-image';
 import { pagesApi, type CreatePageInput, type PageKind } from '@/services/pagesApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { useAuthStore } from '@/stores/authStore';
-import {
-  Colors,
-  CountryNames,
-  Flags,
-  Gradients,
-  palette,
-  Radii,
-  Spacing,
-  Typography,
-} from '@/constants/theme';
+import { CitySearchField } from '@/components/ui/CitySearchField';
+import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
 
 const KINDS: Array<{ id: PageKind; label: string; icon: keyof typeof Feather.glyphMap }> = [
   { id: 'community', label: 'Communauté', icon: 'globe' },
@@ -36,8 +28,6 @@ const KINDS: Array<{ id: PageKind; label: string; icon: keyof typeof Feather.gly
   { id: 'official', label: 'Officiel', icon: 'award' },
   { id: 'group', label: 'Groupe', icon: 'users' },
 ];
-
-const COUNTRY_CODES = Object.keys(Flags);
 
 export default function NewPageScreen() {
   const router = useRouter();
@@ -62,6 +52,7 @@ export default function NewPageScreen() {
     mutationFn: (input: CreatePageInput) => pagesApi.create(input),
     onSuccess: (page) => {
       void qc.invalidateQueries({ queryKey: ['pages'] });
+      void qc.invalidateQueries({ queryKey: ['geo'] });
       setFeedback({ kind: 'success', message: 'Page créée ✓' });
       setTimeout(() => router.replace(`/pages/${page.id}`), 800);
     },
@@ -213,35 +204,19 @@ export default function NewPageScreen() {
             multiline
           />
 
-          <Text style={styles.label}>Pays</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 6 }}
-          >
-            {COUNTRY_CODES.map((code) => {
-              const active = countryCode === code;
-              return (
-                <Pressable
-                  key={code}
-                  onPress={() => setCountryCode(active ? '' : code)}
-                  style={[styles.countryChip, active && styles.countryChipActive]}
-                >
-                  <Text style={styles.chipIcon}>{Flags[code]}</Text>
-                  <Text
-                    style={[
-                      styles.countryName,
-                      active && { color: Colors.orange, fontWeight: '700' },
-                    ]}
-                  >
-                    {CountryNames[code] ?? code}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          <Field label="Ville" value={city} onChangeText={setCity} placeholder="Ex : Niamey" />
+          <Text style={styles.label}>Ville</Text>
+          <Text style={styles.fieldHint}>
+            Choisis la ville — le pays est défini automatiquement. La page apparaît alors sur la
+            carte.
+          </Text>
+          <CitySearchField
+            city={city}
+            countryCode={countryCode}
+            onChange={(c, cc) => {
+              setCity(c);
+              setCountryCode(cc);
+            }}
+          />
           <Field
             label="Site web"
             value={website}
@@ -404,6 +379,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.md,
     backgroundColor: Colors.white,
     color: Colors.brown,
+  },
+  fieldHint: {
+    fontSize: Typography.sizes.xs + 1,
+    color: Colors.tan500,
+    marginBottom: Spacing.sm,
+    lineHeight: 16,
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.md },
   chip: {

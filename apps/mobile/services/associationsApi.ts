@@ -63,6 +63,9 @@ export const associationsApi = {
     const { data } = await api.patch<Association>(`/associations/${id}`, input);
     return data;
   },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/associations/${id}`);
+  },
   async join(id: string): Promise<{ pending: boolean }> {
     const { data } = await api.post<{ pending: boolean }>(`/associations/${id}/join`);
     return data;
