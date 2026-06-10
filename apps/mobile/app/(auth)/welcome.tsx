@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -197,9 +198,16 @@ export default function WelcomeScreen() {
                 probe.ok ? styles.devProbeOk : styles.devProbeKo,
               ]}
             >
-              <Text style={styles.devProbeTitle}>
-                {probe.ok ? '✓ API joignable' : '✗ API injoignable'}
-              </Text>
+              <View style={styles.devProbeTitleRow}>
+                <Feather
+                  name={probe.ok ? 'check' : 'x'}
+                  size={12}
+                  color={Colors.white}
+                />
+                <Text style={styles.devProbeTitle}>
+                  {probe.ok ? 'API joignable' : 'API injoignable'}
+                </Text>
+              </View>
               <Text style={styles.devProbeText} numberOfLines={2}>
                 {probe.baseUrl}
               </Text>
@@ -335,12 +343,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(192,57,43,0.18)',
     borderColor: 'rgba(192,57,43,0.5)',
   },
+  devProbeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
   devProbeTitle: {
     color: Colors.white,
     fontSize: Typography.sizes.xs,
     fontWeight: '800',
     letterSpacing: 1,
-    marginBottom: 4,
   },
   devProbeText: {
     color: 'rgba(255,255,255,0.85)',

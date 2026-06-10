@@ -4,7 +4,7 @@ import { authApi } from '@/services/authApi';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
-import { registerLogoutHandler } from '@/services/api';
+import { registerEmailUnverifiedHandler, registerLogoutHandler } from '@/services/api';
 import { registerForPushNotifications } from '@/services/pushService';
 import { prefetchImages } from '@/services/imagePrefetch';
 
@@ -49,6 +49,11 @@ interface AuthState {
     countryCode?: string;
     bio?: string;
     avatarUrl?: string;
+    /** WGS-84 latitude from the city autocomplete; forwarded to POST /auth/register
+     *  so the server stores precise map coordinates without a second geocode. */
+    latitude?: number;
+    /** WGS-84 longitude from the city autocomplete. */
+    longitude?: number;
   }) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -119,4 +124,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 registerLogoutHandler(() => {
   useAuthStore.getState().setUser(null);
+});
+
+// When the API reports the email as unverified, flip the cached user so
+// AuthGate redirects to /verify-email on the next render.
+registerEmailUnverifiedHandler(() => {
+  const current = useAuthStore.getState().user;
+  if (current && current.emailVerified) {
+    useAuthStore.getState().setUser({ ...current, emailVerified: false });
+  }
 });

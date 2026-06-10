@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   moderationApi,
@@ -137,13 +138,13 @@ export function ReportSheet({ visible, onClose, targetType, targetId, onReported
               {submitted ? 'Signalement envoyé' : 'Signaler'}
             </Text>
             <Pressable onPress={handleClose} hitSlop={10}>
-              <Text style={styles.close}>✕</Text>
+              <Feather name="x" size={20} color={Colors.tan500} />
             </Pressable>
           </View>
 
           {submitted ? (
             <View style={styles.successBox}>
-              <Text style={styles.successEmoji}>✅</Text>
+              <Feather name="check-circle" size={56} color={Colors.green} style={styles.successEmoji} />
               <Text style={styles.successTitle}>Merci pour ton signalement</Text>
               <Text style={styles.successText}>
                 Notre équipe l’examinera sous 24 h ouvrées. Tu restes anonyme vis-à-vis de la
@@ -180,7 +181,7 @@ export function ReportSheet({ visible, onClose, targetType, targetId, onReported
                         <Text style={styles.reasonLabel}>{r.label}</Text>
                         <Text style={styles.reasonDesc}>{r.desc}</Text>
                       </View>
-                      {active ? <Text style={styles.check}>✓</Text> : null}
+                      {active ? <Feather name="check" size={20} color={Colors.orange} /> : null}
                     </Pressable>
                   );
                 })}
@@ -203,7 +204,7 @@ export function ReportSheet({ visible, onClose, targetType, targetId, onReported
 
               {error ? (
                 <View style={styles.errorBanner} accessibilityRole="alert">
-                  <Text style={styles.errorIcon}>⚠️</Text>
+                  <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
                   <Text style={styles.errorText}>{error}</Text>
                 </View>
               ) : null}
@@ -257,7 +258,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   title: { fontSize: Typography.sizes.lg, fontWeight: '800', color: Colors.brown },
-  close: { fontSize: 20, color: Colors.tan500 },
   scroll: { padding: Spacing.lg, gap: Spacing.md },
   intro: { fontSize: Typography.sizes.sm, color: Colors.tan500, lineHeight: 20 },
   reasons: { gap: 8 },
@@ -275,7 +275,6 @@ const styles = StyleSheet.create({
   reasonEmoji: { fontSize: 22 },
   reasonLabel: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   reasonDesc: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
-  check: { color: Colors.orange, fontSize: 20, fontWeight: '800' },
   label: {
     fontSize: Typography.sizes.xs + 1,
     fontWeight: '800',

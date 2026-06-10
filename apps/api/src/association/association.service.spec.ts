@@ -10,12 +10,16 @@ function makeNotifsStub() {
   return { create: jest.fn(async () => ({ id: 'n1' })) };
 }
 
+function makeGeoStub() {
+  return { invalidateMarkerCache: jest.fn(async () => undefined) };
+}
+
 describe('AssociationService', () => {
   it('requires identity verification to create an association', async () => {
     const prisma = {
       user: { findUnique: jest.fn(async () => ({ identityStatus: 'not_submitted' })) },
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
     await expect(
       svc.create('u1', {
         name: 'A',
@@ -30,7 +34,7 @@ describe('AssociationService', () => {
         findUnique: jest.fn(async () => ({ userId: 'u1', status: 'approved' })),
       },
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
     await expect(svc.join('u1', 'a1')).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -40,7 +44,7 @@ describe('AssociationService', () => {
         findUnique: jest.fn(async () => ({ userId: 'u1', status: 'pending' })),
       },
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
     await expect(svc.join('u1', 'a1')).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -64,7 +68,7 @@ describe('AssociationService', () => {
         findUnique: jest.fn(async () => ({ displayName: 'Aïcha', firstName: 'Aïcha' })),
       },
     };
-    const svc = new AssociationService(prisma as never, notifs as never);
+    const svc = new AssociationService(prisma as never, notifs as never, makeGeoStub() as never);
     const result = (await svc.join('u1', 'a1')) as { pending: boolean };
     expect(result.pending).toBe(true);
     expect(create).toHaveBeenCalledWith(
@@ -83,13 +87,13 @@ describe('AssociationService', () => {
       association: { update: jest.fn() },
       $transaction: jest.fn(),
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
     await expect(svc.leave('u1', 'a1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('throws NotFound on unknown association', async () => {
     const prisma = { association: { findUnique: jest.fn(async () => null) } };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
     await expect(svc.getById('x')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

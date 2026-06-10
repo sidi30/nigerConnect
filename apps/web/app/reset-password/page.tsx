@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -10,6 +10,17 @@ import Link from "next/link";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
+// `useSearchParams()` opts a client component out of static prerender unless it
+// sits under a Suspense boundary (Next 15+ requirement). The page export below
+// provides that boundary so `next build` can statically render the shell.
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<Wrapper><div className="text-[#5A4634]">Chargement…</div></Wrapper>}>
+      <ResetPasswordForm />
+    </Suspense>
+  );
+}
+
 const PASSWORD_REQUIREMENTS = [
   { id: "length", label: "12 caractères minimum", check: (s: string) => s.length >= 12 },
   { id: "upper", label: "Une majuscule", check: (s: string) => /[A-Z]/.test(s) },
@@ -17,7 +28,7 @@ const PASSWORD_REQUIREMENTS = [
   { id: "special", label: "Un caractère spécial", check: (s: string) => /[^A-Za-z0-9]/.test(s) },
 ];
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const router = useRouter();
   const params = useSearchParams();
   const token = params.get("token");

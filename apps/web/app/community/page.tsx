@@ -20,7 +20,7 @@ export default function CommunityPage() {
       lastUpdated={LEGAL_LAST_UPDATED}
       intro={COMMUNITY_INTRO}
       sections={COMMUNITY_SECTIONS}
-      contact="Contester une décision de modération : appeals@nigerconnect.ne. Réponse sous 72 heures."
+      contact="Contester une décision de modération : contact@sahabiguide.com. Réponse sous 72 heures."
     />
   );
 }

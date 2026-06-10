@@ -1,8 +1,10 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { api } from '@/services/api';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
+import { Loader } from '@/components/ui/Loader';
 import { relativeTime } from '@/constants/lookups';
 
 interface MyService {
@@ -37,7 +39,7 @@ export default function MyRequestsScreen() {
   });
 
   if (isLoading) {
-    return <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />;
+    return <Loader />;
   }
 
   const requests = data ?? [];
@@ -45,7 +47,7 @@ export default function MyRequestsScreen() {
   if (requests.length === 0) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyEmoji}>🤝</Text>
+        <Feather name="briefcase" size={44} color={Colors.tan400} style={styles.emptyEmoji} />
         <Text style={styles.emptyTitle}>Aucune demande</Text>
         <Text style={styles.emptyText}>
           Publie une demande d&apos;entraide depuis l&apos;onglet Services.
@@ -76,7 +78,12 @@ export default function MyRequestsScreen() {
             ) : null}
             <View style={styles.footer}>
               <Text style={styles.footerText}>{r.category}</Text>
-              {r.urgency === 'urgent' && <Text style={styles.urgent}>🔴 Urgent</Text>}
+              {r.urgency === 'urgent' && (
+                <View style={styles.urgentRow}>
+                  <Feather name="alert-circle" size={12} color={Colors.warningDark} />
+                  <Text style={styles.urgent}>Urgent</Text>
+                </View>
+              )}
               <View style={{ flex: 1 }} />
               <Text style={styles.footerText}>
                 {r.responseCount} {r.responseCount === 1 ? 'réponse' : 'réponses'}
@@ -93,7 +100,7 @@ export default function MyRequestsScreen() {
 const styles = StyleSheet.create({
   scroll: { padding: Spacing.lg, gap: Spacing.md },
   empty: { flex: 1, padding: Spacing.xxxl, alignItems: 'center', justifyContent: 'center' },
-  emptyEmoji: { fontSize: 48, marginBottom: Spacing.md },
+  emptyEmoji: { marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   emptyText: {
     fontSize: Typography.sizes.sm,
@@ -134,5 +141,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   footerText: { fontSize: Typography.sizes.xs, color: Colors.tan500 },
+  urgentRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   urgent: { fontSize: Typography.sizes.xs, color: Colors.warningDark, fontWeight: '700' },
 });

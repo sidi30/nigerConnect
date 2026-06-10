@@ -63,6 +63,15 @@ export class AssociationController {
     return this.assoc.update(me.sub, id, dto);
   }
 
+  @Delete('associations/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    await this.assoc.remove(me.sub, id);
+  }
+
   @Post('associations/:id/join')
   join(
     @CurrentUser() me: JwtUserPayload,

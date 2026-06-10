@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma, MessageType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
 import { NotificationService } from '../notification/notification.service';
 
@@ -14,6 +15,12 @@ import { NotificationService } from '../notification/notification.service';
  * the raw Gateway path that bypasses Zod pipes.
  */
 const MAX_MESSAGE_LENGTH = 4000;
+
+/**
+ * WhatsApp-style window: a sender may delete (for everyone) or edit a message
+ * only within 15 minutes of sending it. After that the action is refused.
+ */
+export const MESSAGE_MUTATION_WINDOW_MS = 15 * 60 * 1000;
 
 // Precompiled sanitizers built from unicode ranges rather than inline
 // literals, so the source file stays ASCII-safe and Edit-friendly.
@@ -57,6 +64,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
+    private readonly s3: S3Service,
   ) {}
 
   async listConversations(userId: string, cursor?: string, limit = 30) {
@@ -102,8 +110,11 @@ export class ChatService {
 
   async listMessages(userId: string, conversationId: string, cursor?: string, limit = 50) {
     await this.assertMember(userId, conversationId);
+    // Deleted messages are kept in the result set (content/mediaUrl nulled) so
+    // both sides render a "message supprimé" tombstone, WhatsApp-style, instead
+    // of the bubble silently vanishing.
     const messages = await this.prisma.message.findMany({
-      where: { conversationId, deletedAt: null },
+      where: { conversationId },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
@@ -205,6 +216,19 @@ export class ChatService {
       }
     }
 
+    // A reply must point at a live message in THIS conversation. Without this
+    // check a caller could thread a message onto an arbitrary message id from
+    // another conversation (or a soft-deleted one), leaking its existence.
+    if (payload.replyToId) {
+      const replyTo = await this.prisma.message.findUnique({
+        where: { id: payload.replyToId },
+        select: { conversationId: true, deletedAt: true },
+      });
+      if (!replyTo || replyTo.conversationId !== conversationId || replyTo.deletedAt !== null) {
+        throw new BadRequestException('Invalid replyToId');
+      }
+    }
+
     // Sanitize + length-cap the text content BEFORE touching the DB.
     // Applies to both REST and Gateway paths.
     const cleanContent = payload.content !== undefined
@@ -215,6 +239,23 @@ export class ChatService {
       throw new BadRequestException('Message content is empty');
     }
 
+    // Never trust a client-supplied mediaUrl. The Zod schema only proves it's a
+    // well-formed URL — without binding it to OUR public bucket + the sender's
+    // own key prefix, a caller could attach an arbitrary off-platform URL
+    // (tracking pixel / SSRF beacon auto-loaded by every recipient's client) or
+    // reference another user's uploaded object. Mirror the posts/stories guard:
+    // resolve to the canonical CDN URL or reject. Only media-bearing message
+    // types carry a mediaUrl.
+    let cleanMediaUrl: string | undefined;
+    if (payload.mediaUrl !== undefined) {
+      if (messageType === 'text') {
+        throw new BadRequestException('A text message cannot carry media');
+      }
+      cleanMediaUrl = await this.s3.assertOwnedPublicImage(payload.mediaUrl, userId);
+    } else if (messageType !== 'text') {
+      throw new BadRequestException('mediaUrl is required for media messages');
+    }
+
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
@@ -222,7 +263,7 @@ export class ChatService {
           senderId: userId,
           content: cleanContent ?? null,
           messageType,
-          mediaUrl: payload.mediaUrl ?? null,
+          mediaUrl: cleanMediaUrl ?? null,
           replyToId: payload.replyToId ?? null,
         },
         include: { sender: { select: MEMBER_SELECT } },
@@ -244,7 +285,7 @@ export class ChatService {
 
     const members = await this.prisma.conversationMember.findMany({
       where: { conversationId },
-      select: { userId: true },
+      select: { userId: true, muted: true },
     });
 
     // Notify every other member — fire-and-forget so the HTTP response stays
@@ -262,6 +303,9 @@ export class ChatService {
         : '📎 Pièce jointe';
     for (const m of members) {
       if (m.userId === userId) continue;
+      // Muted members still get the live socket message (they're in memberIds
+      // below) but no notification row and no push.
+      if (m.muted) continue;
       void this.notifications
         .create({
           userId: m.userId,
@@ -279,21 +323,115 @@ export class ChatService {
     return { message, memberIds: members.map((m) => m.userId) };
   }
 
-  async markAsRead(userId: string, conversationId: string): Promise<void> {
+  /**
+   * Mark all messages in a conversation as read for `userId`.
+   * Returns the updated lastReadAt timestamp so the gateway can broadcast
+   * it alongside the `message:read` event — clients use it to compute which
+   * of *their* messages are now ✓✓ without a separate fetch.
+   */
+  async markAsRead(userId: string, conversationId: string): Promise<Date> {
     await this.assertMember(userId, conversationId);
+    const now = new Date();
     await this.prisma.conversationMember.update({
       where: { conversationId_userId: { conversationId, userId } },
-      data: { unreadCount: 0, lastReadAt: new Date() },
+      data: { unreadCount: 0, lastReadAt: now },
     });
+    return now;
   }
 
+  /**
+   * Delete a message "for everyone" (both sides). Allowed only by the sender,
+   * only within {@link MESSAGE_MUTATION_WINDOW_MS} of sending. The row is kept
+   * (soft delete) with content/media nulled so peers see a tombstone.
+   * Returns conversationId + memberIds so the caller can broadcast `message:deleted`.
+   */
   async softDeleteMessage(userId: string, messageId: string) {
-    const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, senderId: true, conversationId: true, deletedAt: true, createdAt: true },
+    });
     if (!msg || msg.deletedAt) throw new NotFoundException('Message not found');
     if (msg.senderId !== userId) throw new ForbiddenException('Not your message');
-    return this.prisma.message.update({
+    if (Date.now() - msg.createdAt.getTime() > MESSAGE_MUTATION_WINDOW_MS) {
+      throw new ForbiddenException('Trop tard pour supprimer ce message (15 min max)');
+    }
+    const message = await this.prisma.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), content: null, mediaUrl: null },
+      include: { sender: { select: MEMBER_SELECT } },
+    });
+    await this.syncPreview(msg.conversationId);
+    const memberIds = await this.getMemberIds(msg.conversationId);
+    return { message, conversationId: msg.conversationId, memberIds };
+  }
+
+  /**
+   * Edit a message in place. Sender-only, within the 15-min window. Works for
+   * text bubbles (edit the text) and image messages (edit the caption — which
+   * may be cleared). Sets `editedAt` so clients can show a "modifié" badge.
+   * Returns conversationId + memberIds for a `message:updated` broadcast.
+   */
+  async editMessage(userId: string, messageId: string, rawContent: string) {
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: {
+        id: true,
+        senderId: true,
+        conversationId: true,
+        deletedAt: true,
+        createdAt: true,
+        messageType: true,
+      },
+    });
+    if (!msg || msg.deletedAt) throw new NotFoundException('Message not found');
+    if (msg.senderId !== userId) throw new ForbiddenException('Not your message');
+    if (msg.messageType !== 'text' && msg.messageType !== 'image') {
+      throw new BadRequestException('Ce type de message ne peut pas être modifié');
+    }
+    if (Date.now() - msg.createdAt.getTime() > MESSAGE_MUTATION_WINDOW_MS) {
+      throw new ForbiddenException('Trop tard pour modifier ce message (15 min max)');
+    }
+    const clean = this.normalizeContent(rawContent);
+    // A text message must keep some content; an image caption can be emptied.
+    if (msg.messageType === 'text' && (!clean || clean.length === 0)) {
+      throw new BadRequestException('Message content is empty');
+    }
+    const message = await this.prisma.message.update({
+      where: { id: messageId },
+      data: { content: clean && clean.length > 0 ? clean : null, editedAt: new Date() },
+      include: { sender: { select: MEMBER_SELECT } },
+    });
+    await this.syncPreview(msg.conversationId);
+    const memberIds = await this.getMemberIds(msg.conversationId);
+    return { message, conversationId: msg.conversationId, memberIds };
+  }
+
+  /**
+   * Recompute a conversation's `lastMessagePreview` from its newest live
+   * (non-deleted) message. Called after edit/delete so the conversations list
+   * preview stays in sync with what's actually shown in the thread.
+   */
+  private async syncPreview(conversationId: string): Promise<void> {
+    const latest = await this.prisma.message.findFirst({
+      where: { conversationId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true, messageType: true, createdAt: true },
+    });
+    const preview = !latest
+      ? '🚫 Message supprimé'
+      : latest.content
+        ? latest.content.slice(0, 140)
+        : latest.messageType === 'image'
+          ? '📷 Photo'
+          : '📎 Pièce jointe';
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastMessagePreview: preview,
+        // Keep the conversations-list ordering coherent with the preview: point
+        // lastMessageAt at the newest live message. If none remain, leave it as-is.
+        ...(latest ? { lastMessageAt: latest.createdAt } : {}),
+      },
     });
   }
 
@@ -333,6 +471,7 @@ export class ChatService {
       members: Array<{
         userId: string;
         unreadCount: number;
+        lastReadAt: Date | null;
         user: { id: string; displayName: string | null; avatarUrl: string | null };
       }>;
     },
@@ -349,6 +488,18 @@ export class ChatService {
       lastMessagePreview: c.lastMessagePreview,
       unreadCount: me?.unreadCount ?? 0,
       members: c.members.map((m) => m.user),
+      /**
+       * Per-member read metadata, index-aligned with `members`.
+       * The chat screen derives ✓✓ by checking whether a peer's lastReadAt
+       * is >= the message's createdAt — no per-message read column needed.
+       * Both the sender (me) and all peers are included so group chats can
+       * eventually show individual per-member receipts too.
+       */
+      membersMeta: c.members.map((m) => ({
+        userId: m.userId,
+        lastReadAt: m.lastReadAt?.toISOString() ?? null,
+        unreadCount: m.unreadCount,
+      })),
       createdAt: c.createdAt,
     };
   }

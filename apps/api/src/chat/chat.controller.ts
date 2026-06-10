@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -16,8 +17,10 @@ import { ChatService } from './chat.service';
 import { ChatGateway } from './chat.gateway';
 import {
   createConversationSchema,
+  editMessageSchema,
   sendMessageSchema,
   type CreateConversationDto,
+  type EditMessageDto,
   type SendMessageDto,
 } from './dto/chat.dto';
 
@@ -85,11 +88,28 @@ export class ChatController {
     await this.chat.markAsRead(me.sub, id);
   }
 
+  @Patch('messages/:id')
+  async editMessage(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(editMessageSchema)) dto: EditMessageDto,
+  ) {
+    const { message, conversationId, memberIds } = await this.chat.editMessage(
+      me.sub,
+      id,
+      dto.content,
+    );
+    this.gateway.broadcastMessageUpdated(conversationId, message, memberIds);
+    return message;
+  }
+
   @Delete('messages/:id')
   async deleteMessage(
     @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
-    return this.chat.softDeleteMessage(me.sub, id);
+    const { message, conversationId, memberIds } = await this.chat.softDeleteMessage(me.sub, id);
+    this.gateway.broadcastMessageDeleted(conversationId, id, memberIds);
+    return message;
   }
 }

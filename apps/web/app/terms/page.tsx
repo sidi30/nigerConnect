@@ -20,7 +20,7 @@ export default function TermsPage() {
       lastUpdated={LEGAL_LAST_UPDATED}
       intro={TERMS_INTRO}
       sections={TERMS_SECTIONS}
-      contact="Questions légales : legal@nigerconnect.ne — l’équipe répond sous 5 jours ouvrés."
+      contact="Questions légales : contact@sahabiguide.com — l’équipe répond sous 5 jours ouvrés."
     />
   );
 }

@@ -108,7 +108,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: "Tes droits (RGPD)",
     bullets: [
-      "Accès : tu peux demander un export complet de tes données à privacy@nigerconnect.ne.",
+      "Accès : tu peux demander un export complet de tes données à contact@sahabiguide.com.",
       "Rectification : modifier ton profil à tout moment depuis l’app.",
       "Effacement : in-app (Paramètres → Supprimer mon compte) ou via /account-deletion.",
       "Portabilité : export au format JSON sur demande.",
@@ -186,7 +186,7 @@ export const COMMUNITY_SECTIONS: LegalSection[] = [
   {
     heading: "Si tu vois un contenu qui pose problème",
     body:
-      "Utilise le bouton 🚩 Signaler sur la publication, le commentaire ou le profil concerné. L’équipe de modération examine chaque signalement sous 24h ouvrées. Pour une urgence (mineur en danger, menace physique), écris-nous directement à safety@nigerconnect.ne.",
+      "Utilise le bouton 🚩 Signaler sur la publication, le commentaire ou le profil concerné. L’équipe de modération examine chaque signalement sous 24h ouvrées. Pour une urgence (mineur en danger, menace physique), écris-nous directement à contact@sahabiguide.com.",
   },
   {
     heading: "Conséquences en cas de violation",

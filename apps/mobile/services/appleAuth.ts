@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import * as AppleAuth from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import { api } from './api';
 import { tokenStore } from './secureStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -47,11 +48,21 @@ export function useAppleAuth(): AppleAuthHookResult {
     setError(null);
     setIsLoading(true);
     try {
+      // Anti-replay nonce: we send Apple the SHA-256 of a random raw value, and
+      // forward the raw value to our API. The server hashes it and asserts it
+      // equals the token's `nonce` claim, so a stolen identityToken can't be
+      // replayed.
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
       const credential = await AppleAuth.signInAsync({
         requestedScopes: [
           AppleAuth.AppleAuthenticationScope.FULL_NAME,
           AppleAuth.AppleAuthenticationScope.EMAIL,
         ],
+        nonce: hashedNonce,
       });
       if (!credential.identityToken) {
         throw new Error('Apple ID token manquant');
@@ -62,6 +73,7 @@ export function useAppleAuth(): AppleAuthHookResult {
       }>('/auth/apple', {
         identityToken: credential.identityToken,
         authorizationCode: credential.authorizationCode ?? undefined,
+        rawNonce,
         // Only sent on first sign-in — Apple doesn't repeat them.
         fullName:
           credential.fullName && (credential.fullName.givenName || credential.fullName.familyName)
@@ -72,7 +84,14 @@ export function useAppleAuth(): AppleAuthHookResult {
             : undefined,
         email: credential.email ?? undefined,
       });
-      await tokenStore.save(data.tokens.accessToken, data.tokens.refreshToken);
+      // Server auth succeeded — a Keychain write failure here must not surface as
+      // the generic "Connexion Apple impossible". Give a specific, actionable msg.
+      try {
+        await tokenStore.save(data.tokens.accessToken, data.tokens.refreshToken);
+      } catch {
+        setError('Connexion réussie mais impossible d’enregistrer la session sur cet appareil. Réessaie.');
+        return;
+      }
       setUser(data.user);
     } catch (e) {
       const err = e as {

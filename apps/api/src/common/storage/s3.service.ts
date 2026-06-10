@@ -1,9 +1,10 @@
 import { randomUUID } from 'crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -161,6 +162,82 @@ export class S3Service {
   publicUrl(key: string): string {
     if (this.cdnUrl) return `${this.cdnUrl.replace(/\/$/, '')}/${key}`;
     return `s3://${this.publicBucket}/${key}`;
+  }
+
+  /** Max bytes accepted for a public image attached to a profile/post. */
+  static readonly MAX_PUBLIC_IMAGE_BYTES = 15 * 1024 * 1024;
+  private static readonly ALLOWED_IMAGE_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+  ]);
+
+  /**
+   * Extract the bucket key from a URL the client claims to have uploaded.
+   * Accepts only URLs that point at THIS deployment's public surface:
+   *   - `${CDN_URL}/<key>`         (prod / proxied MinIO)
+   *   - `s3://${publicBucket}/<key>` (dev fallback when no CDN_URL)
+   * Anything else (foreign host, private bucket, path traversal) → null.
+   */
+  parsePublicKey(url: string): string | null {
+    if (typeof url !== 'string' || url.length === 0 || url.length > 1024) return null;
+    let key: string | null = null;
+    if (this.cdnUrl) {
+      const base = `${this.cdnUrl.replace(/\/$/, '')}/`;
+      if (url.startsWith(base)) key = url.slice(base.length);
+    }
+    if (key === null) {
+      const s3Prefix = `s3://${this.publicBucket}/`;
+      if (url.startsWith(s3Prefix)) key = url.slice(s3Prefix.length);
+    }
+    if (key === null) return null;
+    // Strip any query string / fragment, then reject traversal or empties.
+    key = key.split(/[?#]/)[0]!;
+    if (!key || key.startsWith('/') || key.includes('..') || key.includes('//')) return null;
+    return key;
+  }
+
+  /**
+   * Attach-time guard for client-supplied media URLs. The client uploads via a
+   * presigned PUT, then sends us the resulting URL. We never trust that URL
+   * blindly: we confirm it points at our own public bucket, HEAD the object to
+   * prove it exists, and enforce content-type (image/*) and size caps the
+   * presigned PUT itself cannot. Returns the canonical CDN URL to persist.
+   *
+   * @param ownerId when set, requires the key to live under `users/<ownerId>/`
+   *        so a user cannot attach another user's (or a guessed) object.
+   * @throws BadRequestException on any failure — caller maps to 400.
+   */
+  async assertOwnedPublicImage(url: string, ownerId?: string): Promise<string> {
+    const key = this.parsePublicKey(url);
+    if (!key) {
+      throw new BadRequestException('Media URL must point to an uploaded file on this platform');
+    }
+    if (ownerId && !key.startsWith(`users/${ownerId}/`)) {
+      throw new BadRequestException('Media does not belong to you');
+    }
+    let head;
+    try {
+      head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.publicBucket, Key: key }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `assertOwnedPublicImage HEAD failed for ${this.publicBucket}/${key}: ${String(error)}`,
+      );
+      throw new BadRequestException(
+        'Uploaded file not found — upload it before attaching',
+      );
+    }
+    const contentType = (head.ContentType ?? '').toLowerCase();
+    if (!S3Service.ALLOWED_IMAGE_TYPES.has(contentType)) {
+      throw new BadRequestException(`Unsupported media type: ${contentType || 'unknown'}`);
+    }
+    if ((head.ContentLength ?? 0) > S3Service.MAX_PUBLIC_IMAGE_BYTES) {
+      throw new BadRequestException('Uploaded file is too large');
+    }
+    return this.publicUrl(key);
   }
 
   async deleteObject(key: string, bucket: string = this.publicBucket): Promise<void> {

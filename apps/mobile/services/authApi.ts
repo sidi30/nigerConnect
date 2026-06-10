@@ -17,6 +17,10 @@ export const authApi = {
     countryCode?: string;
     bio?: string;
     avatarUrl?: string;
+    // Precise coordinates from the /geo/cities autocomplete. Sent so the server
+    // pins the user exactly instead of geocoding from the city name.
+    latitude?: number;
+    longitude?: number;
   }): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/register', input);
     return data;
@@ -27,8 +31,12 @@ export const authApi = {
     return data;
   },
 
-  async loginWithGoogle(idToken: string, deviceName?: string): Promise<AuthResponse> {
-    const { data } = await api.post<AuthResponse>('/auth/google', { idToken, deviceName });
+  async loginWithGoogle(
+    idToken: string,
+    deviceName?: string,
+    nonce?: string,
+  ): Promise<AuthResponse> {
+    const { data } = await api.post<AuthResponse>('/auth/google', { idToken, deviceName, nonce });
     return data;
   },
 
@@ -51,5 +59,19 @@ export const authApi = {
 
   async resendVerification(): Promise<void> {
     await api.post('/auth/verify-email/send');
+  },
+
+  async verifyEmailCode(code: string): Promise<void> {
+    await api.post('/auth/verify-email/code', { code });
+  },
+
+  // Consume the long token carried by the email's activation link (universal
+  // link opens the app on /verify-email?token=...). Returns true if verified.
+  async verifyEmailToken(token: string): Promise<boolean> {
+    const { data } = await api.get<{ ok: boolean }>('/auth/verify-email', {
+      params: { token },
+      headers: { Accept: 'application/json' },
+    });
+    return data.ok === true;
   },
 };

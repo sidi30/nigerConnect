@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -9,10 +8,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PublicUser } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
@@ -78,15 +79,16 @@ export default function NewChatScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>‹ Annuler</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancelBtn}>
+          <Feather name="chevron-left" size={20} color={Colors.brown} />
+          <Text style={styles.cancel}>Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouveau message</Text>
         <View style={{ width: 60 }} />
       </View>
 
       <View style={styles.searchWrap}>
-        <Text style={styles.searchIcon}>🔍</Text>
+        <Feather name="search" size={15} color={Colors.tan500} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -98,18 +100,18 @@ export default function NewChatScreen() {
         />
         {search.length > 0 && (
           <Pressable onPress={() => setSearch('')} hitSlop={10}>
-            <Text style={{ fontSize: 14, color: Colors.tan500 }}>✕</Text>
+            <Feather name="x" size={16} color={Colors.tan500} />
           </Pressable>
         )}
       </View>
 
       {friendsQuery.isLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={Colors.orange} />
+          <Loader style={{ marginTop: 0 }} />
         </View>
       ) : friends.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyEmoji}>👥</Text>
+          <Feather name="users" size={40} color={Colors.tan400} style={styles.emptyEmoji} />
           <Text style={styles.emptyTitle}>Pas encore d&apos;amis</Text>
           <Text style={styles.emptyText}>
             Ajoute des amis pour pouvoir leur envoyer un message.
@@ -117,7 +119,7 @@ export default function NewChatScreen() {
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyEmoji}>🔎</Text>
+          <Feather name="search" size={40} color={Colors.tan400} style={styles.emptyEmoji} />
           <Text style={styles.emptyTitle}>Aucun résultat</Text>
           <Text style={styles.emptyText}>Essaie un autre nom.</Text>
         </View>
@@ -133,7 +135,7 @@ export default function NewChatScreen() {
 
       {createMut.isPending && (
         <View style={styles.overlay}>
-          <ActivityIndicator color={Colors.orange} />
+          <Loader style={{ marginTop: 0 }} />
         </View>
       )}
     </SafeAreaView>
@@ -151,7 +153,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.tan200,
   },
-  cancel: { fontSize: Typography.sizes.md, color: Colors.brown, width: 80, fontWeight: '600' },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center', width: 80 },
+  cancel: { fontSize: Typography.sizes.md, color: Colors.brown, fontWeight: '600' },
   title: {
     fontSize: Typography.sizes.lg,
     fontWeight: '700',
@@ -169,7 +172,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.tan200,
   },
-  searchIcon: { fontSize: 15 },
   searchInput: { flex: 1, fontSize: Typography.sizes.sm, color: Colors.brown, padding: 0 },
   row: {
     flexDirection: 'row',

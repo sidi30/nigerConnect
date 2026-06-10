@@ -4,3 +4,6 @@
 
 expo-env.d.ts
 # @end expo-cli
+# Generated native projects (expo prebuild / CNG)
+/android
+/ios

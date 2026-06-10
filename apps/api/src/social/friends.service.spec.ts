@@ -77,6 +77,43 @@ describe('FriendsService', () => {
     await expect(svc.accept('me', 'f1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('relationship hides a private non-friend target as "none"', async () => {
+    const prisma = {
+      friendship: {
+        findFirst: jest.fn(async () => ({ id: 'f1', status: 'pending', requesterId: 'me' })),
+      },
+      user: { findUnique: jest.fn(async () => ({ privacyLevel: 'private' })) },
+    };
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never);
+    const result = await svc.relationship('me', 'other');
+    expect(result).toEqual({ status: 'none', friendshipId: null });
+  });
+
+  it('relationship still reveals an accepted friendship with a private target', async () => {
+    const prisma = {
+      friendship: {
+        findFirst: jest.fn(async () => ({ id: 'f1', status: 'accepted', requesterId: 'me' })),
+      },
+      user: { findUnique: jest.fn(async () => ({ privacyLevel: 'private' })) },
+    };
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never);
+    const result = await svc.relationship('me', 'other');
+    expect(result).toEqual({ status: 'friends', friendshipId: 'f1' });
+  });
+
+  it('mutualFriends returns empty for a private non-friend target', async () => {
+    const queryRaw = jest.fn(async () => []);
+    const prisma = {
+      friendship: { findFirst: jest.fn(async () => null) },
+      user: { findUnique: jest.fn(async () => ({ privacyLevel: 'private' })) },
+      $queryRaw: queryRaw,
+    };
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never);
+    const result = await svc.mutualFriends('me', 'other');
+    expect(result).toEqual([]);
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
   it('accept marks friendship as accepted', async () => {
     const prisma = {
       friendship: {

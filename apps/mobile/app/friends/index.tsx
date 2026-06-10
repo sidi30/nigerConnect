@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -9,9 +8,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
@@ -156,9 +157,9 @@ export default function FriendsScreen() {
           )}
           ListEmptyComponent={
             friendsQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
-              <Empty emoji="👥" title="Aucun ami" subtitle="Accepte les demandes ou envoie-en." />
+              <Empty icon="users" title="Aucun ami" subtitle="Accepte les demandes ou envoie-en." />
             )
           }
         />
@@ -199,16 +200,16 @@ export default function FriendsScreen() {
                   style={styles.secondaryBtn}
                   onPress={() => declineMut.mutate(item.id)}
                 >
-                  <Text style={styles.secondaryLabel}>✕</Text>
+                  <Feather name="x" size={18} color={Colors.tan600} />
                 </Pressable>
               </View>
             );
           }}
           ListEmptyComponent={
             incomingQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
-              <Empty emoji="📬" title="Aucune demande" subtitle="Tu n'as pas de demande en attente." />
+              <Empty icon="inbox" title="Aucune demande" subtitle="Tu n'as pas de demande en attente." />
             )
           }
         />
@@ -241,9 +242,9 @@ export default function FriendsScreen() {
           }}
           ListEmptyComponent={
             outgoingQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
-              <Empty emoji="📤" title="Aucune demande envoyée" />
+              <Empty icon="send" title="Aucune demande envoyée" />
             )
           }
         />
@@ -252,7 +253,7 @@ export default function FriendsScreen() {
       {tab === 'search' && (
         <View style={{ flex: 1 }}>
           <View style={styles.searchWrap}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Feather name="search" size={16} color={Colors.tan400} />
             <TextInput
               value={searchQ}
               onChangeText={setSearchQ}
@@ -265,18 +266,18 @@ export default function FriendsScreen() {
             />
             {searchQ.length > 0 && (
               <Pressable onPress={() => setSearchQ('')} hitSlop={10}>
-                <Text style={{ fontSize: 14, color: Colors.tan500 }}>✕</Text>
+                <Feather name="x" size={16} color={Colors.tan500} />
               </Pressable>
             )}
           </View>
           {debouncedQ.length < 2 ? (
             <Empty
-              emoji="🔎"
+              icon="search"
               title="Tape au moins 2 lettres"
               subtitle="Cherche par prénom, nom ou pseudo."
             />
           ) : searchQuery.isLoading ? (
-            <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+            <Loader />
           ) : (
             <FlatList
               data={searchQuery.data?.items ?? []}
@@ -316,7 +317,7 @@ export default function FriendsScreen() {
                 </View>
               )}
               ListEmptyComponent={
-                <Empty emoji="🤷" title="Aucun résultat" subtitle="Essaie un autre nom." />
+                <Empty icon="user-x" title="Aucun résultat" subtitle="Essaie un autre nom." />
               }
             />
           )}
@@ -360,9 +361,9 @@ export default function FriendsScreen() {
           }}
           ListEmptyComponent={
             suggestionsQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <Loader />
             ) : (
-              <Empty emoji="✨" title="Pas de suggestions" subtitle="Reviens plus tard." />
+              <Empty icon="star" title="Pas de suggestions" subtitle="Reviens plus tard." />
             )
           }
         />
@@ -381,17 +382,17 @@ function useDebouncedValue<T>(value: T, delay: number): T {
 }
 
 function Empty({
-  emoji,
+  icon,
   title,
   subtitle,
 }: {
-  emoji: string;
+  icon: keyof typeof Feather.glyphMap;
   title: string;
   subtitle?: string;
 }) {
   return (
     <View style={styles.empty}>
-      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      <Feather name={icon} size={48} color={Colors.tan300} style={styles.emptyIcon} />
       <Text style={styles.emptyTitle}>{title}</Text>
       {subtitle && <Text style={styles.emptyText}>{subtitle}</Text>}
     </View>
@@ -458,7 +459,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.tan300,
   },
-  secondaryLabel: { color: Colors.tan600, fontSize: Typography.sizes.sm },
   ghostBtn: {
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
@@ -480,14 +480,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.tan200,
   },
-  searchIcon: { fontSize: 15 },
   searchInput: {
     flex: 1,
     fontSize: Typography.sizes.sm,
     color: Colors.brown,
     padding: 0,
   },
-  emptyEmoji: { fontSize: 48, marginBottom: Spacing.md },
+  emptyIcon: { marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   emptyText: {
     fontSize: Typography.sizes.sm,

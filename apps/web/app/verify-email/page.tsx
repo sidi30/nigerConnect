@@ -48,8 +48,8 @@ export default async function VerifyEmailPage({
           </p>
         ) : (
           <p className="text-sm text-[#8A6B4D]">
-            Ouvre l&apos;app, va dans <strong>Paramètres → Vérifier mon email</strong>
-            {" "}pour recevoir un nouveau lien.
+            Ouvre l&apos;app NigerConnect et saisis le <strong>code à 6 chiffres</strong>
+            {" "}reçu par email. Tu peux en demander un nouveau depuis l&apos;app.
           </p>
         )}
         <Link

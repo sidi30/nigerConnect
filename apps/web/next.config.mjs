@@ -19,8 +19,17 @@ const nextConfig = {
      * Tailwind hash classes, our own API for the deletion/reset/verify forms).
      * Tighten further if we ever add 3rd-party scripts.
      */
-    const apiOrigin =
+    const apiUrl =
       process.env.NEXT_PUBLIC_API_URL ?? "https://api-nigerconnect.sahabiguide.com";
+    // CSP connect-src must be an ORIGIN (no path): a source with a path that
+    // doesn't end in "/" matches that exact path only, so a value like
+    // ".../api" would block ".../api/auth/login". Strip to the origin.
+    let apiConnect = apiUrl;
+    try {
+      apiConnect = new URL(apiUrl).origin;
+    } catch {
+      // keep apiUrl as-is if it's not a parseable absolute URL
+    }
 
     const csp = [
       "default-src 'self'",
@@ -28,7 +37,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https:",
-      `connect-src 'self' ${apiOrigin}`,
+      `connect-src 'self' ${apiConnect}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

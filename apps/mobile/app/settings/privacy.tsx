@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -9,8 +8,10 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { blocksApi } from '@/services/blocksApi';
 import { profileApi } from '@/services/profileApi';
 import { useAuthStore } from '@/stores/authStore';
@@ -23,6 +24,8 @@ export default function PrivacyScreen() {
   const qc = useQueryClient();
   const [privacyLevel, setPrivacyLevel] = useState(user?.privacyLevel ?? 'friends');
   const [showOnMap, setShowOnMap] = useState(user?.showOnMap ?? true);
+  const [proximityAlerts, setProximityAlerts] = useState(user?.proximityAlerts ?? false);
+  const [proximityRadius, setProximityRadius] = useState(user?.proximityRadius ?? 500);
 
   const blocksQuery = useQuery({
     queryKey: ['blocks'],
@@ -32,6 +35,14 @@ export default function PrivacyScreen() {
   const savePrivacyMut = useMutation({
     mutationFn: (input: { privacyLevel: 'public' | 'friends' | 'private'; showOnMap: boolean }) =>
       profileApi.updateMe(input as never),
+    onSuccess: (updated) => {
+      setUser(updated);
+    },
+  });
+
+  const saveProximityMut = useMutation({
+    mutationFn: (input: { proximityAlerts: boolean; proximityRadius: number }) =>
+      profileApi.updateMe(input),
     onSuccess: (updated) => {
       setUser(updated);
     },
@@ -48,6 +59,12 @@ export default function PrivacyScreen() {
     savePrivacyMut.mutate({ privacyLevel: level, showOnMap: mapVisible });
   }
 
+  function saveProximity(alerts: boolean, radius: number) {
+    setProximityAlerts(alerts);
+    setProximityRadius(radius);
+    saveProximityMut.mutate({ proximityAlerts: alerts, proximityRadius: radius });
+  }
+
   if (!user) return null;
 
   return (
@@ -56,9 +73,9 @@ export default function PrivacyScreen() {
       <View style={styles.group}>
         {(
           [
-            { id: 'public' as const, emoji: '🌍', label: 'Public', desc: 'Tout le monde peut voir mon profil' },
-            { id: 'friends' as const, emoji: '👥', label: 'Amis', desc: 'Seuls mes amis peuvent voir mon profil' },
-            { id: 'private' as const, emoji: '🔒', label: 'Privé', desc: 'Personne ne peut voir mon profil' },
+            { id: 'public' as const, icon: 'globe', label: 'Public', desc: 'Tout le monde peut voir mon profil' },
+            { id: 'friends' as const, icon: 'users', label: 'Amis', desc: 'Seuls mes amis peuvent voir mon profil' },
+            { id: 'private' as const, icon: 'lock', label: 'Privé', desc: 'Personne ne peut voir mon profil' },
           ] as const
         ).map((opt) => {
           const active = privacyLevel === opt.id;
@@ -68,14 +85,19 @@ export default function PrivacyScreen() {
               onPress={() => savePrivacy(opt.id, showOnMap)}
               style={[styles.option, active && styles.optionActive]}
             >
-              <Text style={styles.optionEmoji}>{opt.emoji}</Text>
+              <Feather
+                name={opt.icon}
+                size={22}
+                color={active ? Colors.orange : Colors.tan500}
+                style={styles.optionEmoji}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.optionLabel, active && { color: Colors.orange }]}>
                   {opt.label}
                 </Text>
                 <Text style={styles.optionDesc}>{opt.desc}</Text>
               </View>
-              {active && <Text style={styles.check}>✓</Text>}
+              {active && <Feather name="check" size={18} color={Colors.orange} />}
             </Pressable>
           );
         })}
@@ -91,10 +113,68 @@ export default function PrivacyScreen() {
         </View>
         <Switch
           value={showOnMap}
+          disabled={savePrivacyMut.isPending}
           onValueChange={(v) => savePrivacy(privacyLevel as 'public' | 'friends' | 'private', v)}
           trackColor={{ false: Colors.tan300, true: Colors.orange }}
           thumbColor={Colors.white}
         />
+      </View>
+
+      <Text style={styles.section}>Alertes de proximité</Text>
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.switchLabel}>Activer les alertes</Text>
+          <Text style={styles.switchHint}>
+            Fonctionne uniquement quand l&apos;application est ouverte. Tu es notifié
+            lorsqu&apos;un autre membre se trouve dans le rayon que tu as choisi.
+          </Text>
+        </View>
+        <Switch
+          value={proximityAlerts}
+          disabled={saveProximityMut.isPending}
+          onValueChange={(v) => saveProximity(v, proximityRadius)}
+          trackColor={{ false: Colors.tan300, true: Colors.orange }}
+          thumbColor={Colors.white}
+        />
+      </View>
+
+      {proximityAlerts && !showOnMap ? (
+        <View style={styles.hintCard}>
+          <Feather name="alert-triangle" size={16} color={Colors.brown} style={styles.hintIcon} />
+          <Text style={styles.hintText}>
+            Pour que les alertes de proximité fonctionnent, tu dois être visible sur la
+            carte. Active « Afficher mon avatar » ci-dessus.
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.radiusRow}>
+        {([50, 100, 500, 1000] as const).map((r) => {
+          const active = proximityRadius === r;
+          const label = r >= 1000 ? `${r / 1000} km` : `${r} m`;
+          return (
+            <Pressable
+              key={r}
+              disabled={!proximityAlerts}
+              onPress={() => saveProximity(proximityAlerts, r)}
+              style={[
+                styles.radiusPill,
+                active && styles.radiusPillActive,
+                !proximityAlerts && styles.radiusPillDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.radiusPillLabel,
+                  active && styles.radiusPillLabelActive,
+                  !proximityAlerts && styles.radiusPillLabelDisabled,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <Text style={styles.section}>Mes données (RGPD)</Text>
@@ -106,7 +186,7 @@ export default function PrivacyScreen() {
             const sizeKb = Math.round(new TextEncoder().encode(json).length / 1024);
             Alert.alert(
               'Export prêt',
-              `Tes données ont été récupérées (${sizeKb} Ko). Une copie a été envoyée à ton adresse email pour archivage.\n\nTu peux aussi écrire à privacy@nigerconnect.ne pour recevoir un export hors-ligne.`,
+              `Tes données ont été récupérées (${sizeKb} Ko). Une copie a été envoyée à ton adresse email pour archivage.\n\nTu peux aussi écrire à contact@sahabiguide.com pour recevoir un export hors-ligne.`,
             );
           } catch (e) {
             const msg = (e as Error).message ?? "Échec de l'export";
@@ -115,7 +195,7 @@ export default function PrivacyScreen() {
         }}
         style={styles.exportBtn}
       >
-        <Text style={styles.exportEmoji}>📦</Text>
+        <Feather name="package" size={22} color={Colors.brown} style={styles.exportEmoji} />
         <View style={{ flex: 1 }}>
           <Text style={styles.exportLabel}>Exporter mes données</Text>
           <Text style={styles.exportDesc}>
@@ -127,7 +207,7 @@ export default function PrivacyScreen() {
 
       <Text style={styles.section}>Utilisateurs bloqués</Text>
       {blocksQuery.isLoading ? (
-        <ActivityIndicator color={Colors.orange} />
+        <Loader style={{ marginTop: 0 }} />
       ) : (blocksQuery.data ?? []).length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>Aucun utilisateur bloqué.</Text>
@@ -208,6 +288,33 @@ const styles = StyleSheet.create({
   },
   switchLabel: { fontSize: Typography.sizes.md, fontWeight: '600', color: Colors.brown },
   switchHint: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 2 },
+  hintCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: Spacing.md,
+    backgroundColor: Colors.peach50,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.orange,
+  },
+  hintIcon: { marginTop: 1 },
+  hintText: { flex: 1, fontSize: Typography.sizes.xs + 1, color: Colors.brown, lineHeight: 18 },
+  radiusRow: { flexDirection: 'row', gap: 8 },
+  radiusPill: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.tan200,
+  },
+  radiusPillActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
+  radiusPillDisabled: { opacity: 0.5 },
+  radiusPillLabel: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.brown },
+  radiusPillLabelActive: { color: Colors.orange },
+  radiusPillLabelDisabled: { color: Colors.tan500 },
   emptyCard: {
     padding: Spacing.lg,
     backgroundColor: Colors.white,

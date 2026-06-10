@@ -1,14 +1,20 @@
-import { FlatCompat } from "@eslint/eslintrc";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import nextPlugin from "@next/eslint-plugin-next";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
+// Native ESLint 9 flat config. We load @next/eslint-plugin-next directly instead
+// of going through FlatCompat + the legacy eslintrc shareable configs: under
+// ESLint 9.39 the eslintrc config-validator chokes on eslint-plugin-react's
+// self-referential flat configs ("Converting circular structure to JSON"),
+// which crashed `next lint` entirely. Type correctness is covered separately by
+// the `tsc --noEmit` typecheck step, so this config focuses on Next.js rules.
 export default [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     ignores: [".next/**", "node_modules/**", "out/**"],
+  },
+  {
+    plugins: { "@next/next": nextPlugin },
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs["core-web-vitals"].rules,
+    },
   },
 ];

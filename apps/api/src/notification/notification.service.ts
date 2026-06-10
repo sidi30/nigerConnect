@@ -3,6 +3,9 @@ import type { NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PushService } from './push.service';
 
+/** Notification history retention (Feature: 24h history). */
+const DEFAULT_TTL_HOURS = 24;
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -19,8 +22,12 @@ export class NotificationService {
     body?: string;
     data?: Prisma.InputJsonValue;
     actorId?: string;
+    /** Override the 24h default. Pass 0 / null for a non-expiring notification. */
+    expiresInHours?: number | null;
   }) {
     if (params.actorId === params.userId) return null;
+    const ttl = params.expiresInHours === undefined ? DEFAULT_TTL_HOURS : params.expiresInHours;
+    const expiresAt = ttl ? new Date(Date.now() + ttl * 3_600_000) : null;
     const notification = await this.prisma.notification.create({
       data: {
         userId: params.userId,
@@ -29,6 +36,7 @@ export class NotificationService {
         body: params.body ?? null,
         data: params.data ?? {},
         actorId: params.actorId ?? null,
+        expiresAt,
       },
     });
 
@@ -55,8 +63,13 @@ export class NotificationService {
   }
 
   async list(userId: string, cursor?: string, limit = 30) {
+    // Opportunistic GLOBAL purge: each time anyone opens their history we drop
+    // every expired row (indexed on expiresAt). No cron dependency — the read
+    // path keeps the whole table bounded even for users who only check badges.
+    await this.purgeExpired();
+
     const items = await this.prisma.notification.findMany({
-      where: { userId },
+      where: { userId, ...this.notExpired() },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
@@ -86,7 +99,30 @@ export class NotificationService {
   }
 
   async unreadCount(userId: string): Promise<number> {
-    return this.prisma.notification.count({ where: { userId, read: false } });
+    return this.prisma.notification.count({
+      where: { userId, read: false, ...this.notExpired() },
+    });
+  }
+
+  /** Delete a single notification owned by the user. */
+  async remove(userId: string, id: string): Promise<void> {
+    await this.prisma.notification.deleteMany({ where: { id, userId } });
+  }
+
+  /** Clear the user's entire notification history. */
+  async clearAll(userId: string): Promise<void> {
+    await this.prisma.notification.deleteMany({ where: { userId } });
+  }
+
+  private async purgeExpired(): Promise<void> {
+    await this.prisma.notification.deleteMany({
+      where: { expiresAt: { not: null, lte: new Date() } },
+    });
+  }
+
+  /** Where-clause fragment matching rows that have NOT expired. */
+  private notExpired(): Prisma.NotificationWhereInput {
+    return { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
   }
 
   async registerPushToken(userId: string, token: string, platform: 'ios' | 'android' | 'web') {

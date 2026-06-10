@@ -10,20 +10,22 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Colors,
-  CountryNames,
-  Flags,
   Gradients,
   palette,
   Radii,
   Spacing,
   Typography,
 } from '@/constants/theme';
+import { countryName } from '@/constants/countries';
 import { useAuthStore } from '@/stores/authStore';
 import { GoogleButton } from '@/components/ui/GoogleButton';
+import { AppleButton } from '@/components/ui/AppleButton';
+import { CitySearchField } from '@/components/ui/CitySearchField';
 
 interface RegisterData {
   firstName: string;
@@ -33,9 +35,12 @@ interface RegisterData {
   city: string;
   bio: string;
   countryCode: string;
+  /** WGS-84 latitude from the /geo/cities autocomplete. Undefined when the
+   *  user typed a free-text city without selecting an API suggestion. */
+  latitude: number | undefined;
+  /** WGS-84 longitude from the /geo/cities autocomplete. */
+  longitude: number | undefined;
 }
-
-const COUNTRY_OPTIONS = Object.keys(Flags).filter((k) => k !== 'NE');
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -52,6 +57,8 @@ export default function RegisterScreen() {
     city: '',
     bio: '',
     countryCode: '',
+    latitude: undefined,
+    longitude: undefined,
   });
 
   function update<K extends keyof RegisterData>(key: K, value: RegisterData[K]) {
@@ -89,6 +96,13 @@ export default function RegisterScreen() {
 
   async function submit() {
     setErrorMessage(null);
+    // Defense-in-depth: never persist a password account without a countryCode
+    // (the map + the OAuth-onboarding gate both rely on it being set here).
+    if (!data.countryCode) {
+      setStep(2);
+      setErrorMessage('Sélectionne ta ville et ton pays.');
+      return;
+    }
     setLoading(true);
     try {
       await register({
@@ -99,6 +113,11 @@ export default function RegisterScreen() {
         city: data.city.trim() || undefined,
         countryCode: data.countryCode || undefined,
         bio: data.bio.trim() || undefined,
+        // Forward the coordinates from the city autocomplete so the server
+        // can place the user precisely on the map without a second geocode
+        // lookup. The server still applies jitter before storing.
+        latitude: data.latitude,
+        longitude: data.longitude,
       });
     } catch (error) {
       const err = error as {
@@ -129,7 +148,7 @@ export default function RegisterScreen() {
           style={styles.back}
           hitSlop={12}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <Feather name="arrow-left" size={20} color={Colors.brown} />
         </Pressable>
         <Text style={styles.headerTitle}>Inscription</Text>
         <Text style={styles.stepCounter}>{step}/3</Text>
@@ -154,12 +173,16 @@ export default function RegisterScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 1 && (
             <View>
-              <Text style={styles.title}>👤 Ton profil</Text>
+              <View style={registerExtras.titleRow}>
+                <Feather name="user" size={26} color={Colors.brown} />
+                <Text style={styles.title}>Ton profil</Text>
+              </View>
               <Text style={styles.subtitle}>
                 Commençons par les infos de base — tu pourras tout modifier plus tard.
               </Text>
 
-              <View style={{ marginBottom: Spacing.lg }}>
+              <View style={{ marginBottom: Spacing.lg, gap: Spacing.sm }}>
+                <AppleButton mode="signUp" />
                 <GoogleButton label="S'inscrire avec Google" />
               </View>
               <View style={registerExtras.divider}>
@@ -209,7 +232,11 @@ export default function RegisterScreen() {
                     }
                     accessibilityRole="button"
                   >
-                    <Text style={registerExtras.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
+                    <Feather
+                      name={showPassword ? 'eye-off' : 'eye'}
+                      size={20}
+                      color={Colors.tan500}
+                    />
                   </Pressable>
                 </View>
               </View>
@@ -225,36 +252,35 @@ export default function RegisterScreen() {
 
           {step === 2 && (
             <View>
-              <Text style={styles.title}>🌍 Ton pays</Text>
-              <Text style={styles.subtitle}>Où vis-tu actuellement ?</Text>
-              <Field
-                label="Ville"
-                value={data.city}
-                onChangeText={(v) => update('city', v)}
-                placeholder="Ex : Paris"
-              />
-              <Text style={styles.label}>Pays</Text>
-              <View style={styles.countryGrid}>
-                {COUNTRY_OPTIONS.map((code) => {
-                  const active = data.countryCode === code;
-                  return (
-                    <Pressable
-                      key={code}
-                      onPress={() => update('countryCode', code)}
-                      style={[styles.countryCard, active && styles.countryCardActive]}
-                    >
-                      <Text style={styles.countryFlag}>{Flags[code]}</Text>
-                      <Text style={styles.countryName}>{CountryNames[code]}</Text>
-                    </Pressable>
-                  );
-                })}
+              <View style={registerExtras.titleRow}>
+                <Feather name="globe" size={26} color={Colors.brown} />
+                <Text style={styles.title}>Ta ville</Text>
               </View>
+              <Text style={styles.subtitle}>Où vis-tu actuellement ?</Text>
+              <CitySearchField
+                label="Ville"
+                city={data.city}
+                countryCode={data.countryCode}
+                onChange={(city, countryCode, lat, lng) => {
+                  setData((prev) => ({
+                    ...prev,
+                    city,
+                    countryCode,
+                    latitude: lat,
+                    longitude: lng,
+                  }));
+                  if (errorMessage) setErrorMessage(null);
+                }}
+              />
             </View>
           )}
 
           {step === 3 && (
             <View>
-              <Text style={styles.title}>✅ Vérification</Text>
+              <View style={registerExtras.titleRow}>
+                <Feather name="check-circle" size={26} color={Colors.brown} />
+                <Text style={styles.title}>Vérification</Text>
+              </View>
               <Text style={styles.subtitle}>
                 La vérification d&apos;identité est facultative pour commencer. Tu pourras
                 l&apos;ajouter plus tard pour obtenir le badge ✓ et créer une association.
@@ -265,13 +291,16 @@ export default function RegisterScreen() {
                 <RecapLine
                   label="Localisation"
                   value={`${data.city || '—'}${
-                    data.countryCode ? `, ${CountryNames[data.countryCode]}` : ''
+                    data.countryCode ? `, ${countryName(data.countryCode)}` : ''
                   }`}
                 />
                 {data.bio ? <RecapLine label="Bio" value={data.bio} /> : null}
               </View>
               <View style={styles.infoCard}>
-                <Text style={styles.infoTitle}>🎉 Prêt à rejoindre NigerConnect</Text>
+                <View style={registerExtras.infoTitleRow}>
+                  <Feather name="award" size={16} color={Colors.successDark} />
+                  <Text style={styles.infoTitle}>Prêt à rejoindre NigerConnect</Text>
+                </View>
                 <Text style={styles.infoText}>
                   Après inscription, tu pourras vérifier ton identité dans Paramètres pour obtenir
                   le badge de diaspora certifiée.
@@ -286,7 +315,12 @@ export default function RegisterScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={registerExtras.errorIcon}>⚠️</Text>
+              <Feather
+                name="alert-triangle"
+                size={16}
+                color={palette.errorText}
+                style={registerExtras.errorIcon}
+              />
               <Text style={registerExtras.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
@@ -298,7 +332,10 @@ export default function RegisterScreen() {
                 style={({ pressed }) => [styles.primary, pressed && { opacity: 0.9 }]}
               >
                 <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-                <Text style={styles.primaryLabel}>Continuer →</Text>
+                <View style={registerExtras.primaryRow}>
+                  <Text style={styles.primaryLabel}>Continuer</Text>
+                  <Feather name="arrow-right" size={18} color={Colors.white} />
+                </View>
               </Pressable>
             ) : (
               <Pressable
@@ -394,7 +431,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backIcon: { fontSize: 20, color: Colors.brown },
   headerTitle: { flex: 1, fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   stepCounter: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontWeight: '600' },
   progressWrap: {
@@ -435,19 +471,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     color: Colors.brown,
   },
-  countryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  countryCard: {
-    flexBasis: '48%',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    borderRadius: Radii.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.tan300,
-    backgroundColor: Colors.white,
-  },
-  countryCardActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
-  countryFlag: { fontSize: 22, marginBottom: 4 },
-  countryName: { fontSize: Typography.sizes.sm, fontWeight: '600', color: Colors.brown },
   recap: {
     backgroundColor: Colors.white,
     borderRadius: Radii.lg,
@@ -509,7 +532,14 @@ const registerExtras = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eyeIcon: { fontSize: 20 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.sm,
+  },
+  infoTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  primaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',

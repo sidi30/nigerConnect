@@ -15,9 +15,21 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"      },
+        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+      }
+    },
+    "preview-sim": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
+        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+      },
       "ios": {
         "simulator": true
       }
@@ -26,16 +38,17 @@
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"      },
+        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+      },
       "autoIncrement": true
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "your-apple-id@example.com",
-        "ascAppId": "REPLACE_WITH_APPSTORE_CONNECT_APP_ID",
-        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+        "appleId": "rsidiibrahim@gmail.com",
+        "appleTeamId": "4SRJRX4N45",
+        "ascAppId": "6775895189"
       },
       "android": {
         "serviceAccountKeyPath": "./play-service-account.json",

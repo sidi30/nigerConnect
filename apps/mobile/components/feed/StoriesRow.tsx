@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
@@ -24,7 +25,7 @@ export function StoriesRow({ storyGroups = [], onCreate, onOpen }: Props) {
     >
       <Pressable onPress={onCreate} style={styles.item}>
         <View style={styles.myStory}>
-          <Text style={styles.plus}>+</Text>
+          <Feather name="plus" size={24} color={Colors.orange} />
         </View>
         <Text style={styles.label}>Ma story</Text>
       </Pressable>
@@ -73,7 +74,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  plus: { fontSize: 24, color: Colors.orange, fontWeight: '700' },
   storyRing: { width: 60, height: 60, borderRadius: Radii.xl, padding: 2.5 },
   storyImg: {
     width: '100%',

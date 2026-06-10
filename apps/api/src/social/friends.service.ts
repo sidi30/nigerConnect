@@ -202,6 +202,12 @@ export class FriendsService {
         ],
       },
     });
+    // Mirror the profile privacy gate: a private target is invisible to anyone
+    // who is not already an accepted friend — don't even disclose whether a
+    // (pending/declined) relationship exists.
+    if (await this.isHiddenByPrivacy(viewerId, targetId, f?.status)) {
+      return { status: 'none', friendshipId: null };
+    }
     if (!f) return { status: 'none', friendshipId: null };
     if (f.status === 'accepted') return { status: 'friends', friendshipId: f.id };
     if (f.status === 'pending') {
@@ -213,7 +219,39 @@ export class FriendsService {
     return { status: 'none', friendshipId: f.id };
   }
 
+  /**
+   * True when `targetId` is private and `viewerId` is not an accepted friend.
+   * Used to keep relationship/mutual-friends surfaces consistent with the
+   * profile privacy gate in ProfileService.getById.
+   */
+  private async isHiddenByPrivacy(
+    viewerId: string,
+    targetId: string,
+    friendshipStatus?: string,
+  ): Promise<boolean> {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { privacyLevel: true },
+    });
+    if (!target || target.privacyLevel !== 'private') return false;
+    return friendshipStatus !== 'accepted';
+  }
+
   async mutualFriends(userId: string, targetId: string) {
+    // Private targets only reveal mutuals to accepted friends.
+    const f = await this.prisma.friendship.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { requesterId: userId, addresseeId: targetId },
+          { requesterId: targetId, addresseeId: userId },
+        ],
+      },
+      select: { status: true },
+    });
+    if (await this.isHiddenByPrivacy(userId, targetId, f?.status)) {
+      return [];
+    }
     return this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -304,6 +342,8 @@ export class FriendsService {
           (u.country_code = ${me?.countryCode ?? null}) AS same_country
         FROM users u
         WHERE u.status = 'active'
+          AND u.email_verified = true
+          AND u.privacy_level <> 'private'
           AND u.id NOT IN (SELECT id FROM excluded)
       )
       SELECT *

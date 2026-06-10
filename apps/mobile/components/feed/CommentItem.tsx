@@ -16,6 +16,9 @@ interface Props {
 }
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000;
+// 3 indentation levels: root (0) → reply (1) → reply-to-reply (2). Replying is
+// offered up to MAX_DEPTH-1 so a new reply never exceeds level 3.
+const MAX_DEPTH = 2;
 
 export function CommentItem({
   comment,
@@ -53,7 +56,10 @@ export function CommentItem({
     }
   }
 
+  const replies = comment.replies ?? [];
+
   return (
+    <View>
     <View style={[styles.wrap, depth > 0 && styles.reply]}>
       <Pressable onPress={goToAuthor} hitSlop={4}>
         <Avatar
@@ -107,7 +113,7 @@ export function CommentItem({
             </>
           ) : (
             <>
-              {depth === 0 && onReply ? (
+              {depth < MAX_DEPTH && onReply ? (
                 <Pressable onPress={() => onReply(comment.id)} hitSlop={8}>
                   <Text style={styles.actionBtn}>Répondre</Text>
                 </Pressable>
@@ -127,6 +133,22 @@ export function CommentItem({
         </View>
       </View>
     </View>
+    {replies.length > 0 ? (
+      <View style={styles.repliesContainer}>
+        {replies.map((r) => (
+          <CommentItem
+            key={r.id}
+            comment={r}
+            depth={depth + 1}
+            onReply={onReply}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            currentUserId={currentUserId}
+          />
+        ))}
+      </View>
+    ) : null}
+    </View>
   );
 }
 
@@ -137,8 +159,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   reply: {
-    marginLeft: Spacing.xxl + 6,
     paddingVertical: Spacing.xs + 2,
+  },
+  // Indents each nesting level; compounds through recursion (levels 2 and 3).
+  // A left rail hints the thread without eating too much width on a phone.
+  repliesContainer: {
+    marginLeft: 22,
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.tan200,
+    paddingLeft: Spacing.sm,
   },
   bubble: {
     backgroundColor: Colors.tan100,

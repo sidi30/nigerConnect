@@ -20,6 +20,10 @@ import { MarketplaceModule } from './marketplace/marketplace.module';
 import { AssociationModule } from './association/association.module';
 import { NotificationModule } from './notification/notification.module';
 import { ModerationModule } from './moderation/moderation.module';
+import { PageModule } from './page/page.module';
+import { PollModule } from './poll/poll.module';
+import { ReviewModule } from './review/review.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -41,6 +45,10 @@ import { ModerationModule } from './moderation/moderation.module';
     AssociationModule,
     NotificationModule,
     ModerationModule,
+    PageModule,
+    PollModule,
+    ReviewModule,
+    AdminModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

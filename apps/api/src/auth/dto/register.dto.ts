@@ -23,6 +23,17 @@ export const registerSchema = z.object({
     .optional(),
   bio: z.string().max(1000).optional(),
   avatarUrl: z.string().url().max(500).optional(),
-});
+  // Client-provided coordinates from the city search endpoint. When present
+  // these are used directly (with jitter) instead of running geocode(), so
+  // a city that has no entry in the hardcoded diaspora map still gets correct
+  // map placement. Values are validated to legal WGS-84 ranges.
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+}).refine(
+  // A coordinate is only meaningful as a (lat, lng) pair. Reject a half-supplied
+  // pair so the register() coords branch never runs with one axis undefined.
+  (d) => (d.latitude === undefined) === (d.longitude === undefined),
+  { message: 'latitude and longitude must be provided together', path: ['latitude'] },
+);
 
 export type RegisterDto = z.infer<typeof registerSchema>;

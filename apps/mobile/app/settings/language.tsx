@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 
 const LANGUAGES = [
@@ -26,14 +27,17 @@ export default function LanguageScreen() {
             >
               <Text style={styles.flag}>{l.flag}</Text>
               <Text style={[styles.name, active && { color: Colors.orange }]}>{l.name}</Text>
-              {active && <Text style={styles.check}>✓</Text>}
+              {active && <Feather name="check" size={18} color={Colors.orange} />}
             </Pressable>
           );
         })}
       </View>
-      <Text style={styles.hint}>
-        🚧 La traduction complète arrive bientôt. L&apos;app est actuellement en français.
-      </Text>
+      <View style={styles.hintRow}>
+        <Feather name="tool" size={14} color={Colors.tan500} />
+        <Text style={styles.hint}>
+          La traduction complète arrive bientôt. L&apos;app est actuellement en français.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -62,12 +66,17 @@ const styles = StyleSheet.create({
   optionActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
   flag: { fontSize: 26 },
   name: { flex: 1, fontSize: Typography.sizes.md, fontWeight: '600', color: Colors.brown },
-  check: { color: Colors.orange, fontSize: 18, fontWeight: '900' },
+  hintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: Spacing.lg,
+  },
   hint: {
+    flex: 1,
     fontSize: Typography.sizes.xs + 1,
     color: Colors.tan500,
-    textAlign: 'center',
-    marginTop: Spacing.lg,
     lineHeight: 19,
   },
 });

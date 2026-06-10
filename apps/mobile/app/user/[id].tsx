@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -9,11 +8,15 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CursorPage, Post, PublicUser, User } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
+import { StarRating } from '@/components/ui/StarRating';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
 import { profileApi } from '@/services/profileApi';
@@ -58,11 +61,20 @@ function describeProfileError(err: unknown): string {
 
 const RELATION_COPY: Record<Relationship, string> = {
   self: '',
-  friends: '✓ Amis',
-  outgoing: '⌛ Demande envoyée',
-  incoming: '📩 Accepter la demande',
-  blocked: '🚫 Bloqué',
-  none: '👤 Ajouter en ami',
+  friends: 'Amis',
+  outgoing: 'Demande envoyée',
+  incoming: 'Accepter la demande',
+  blocked: 'Bloqué',
+  none: 'Ajouter en ami',
+};
+
+const RELATION_ICONS: Record<Relationship, keyof typeof Feather.glyphMap | null> = {
+  self: null,
+  friends: 'check',
+  outgoing: 'clock',
+  incoming: 'user-check',
+  blocked: 'slash',
+  none: 'user-plus',
 };
 
 export default function UserScreen() {
@@ -213,7 +225,7 @@ export default function UserScreen() {
             ) : null}
           </View>
         ) : (
-          <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+          <Loader />
         )}
       </SafeAreaView>
     );
@@ -243,7 +255,7 @@ export default function UserScreen() {
               style={styles.back}
               accessibilityLabel="Plus d'options"
             >
-              <Text style={styles.backIcon}>⋯</Text>
+              <Feather name="more-horizontal" size={22} color={Colors.brown} />
             </Pressable>
             {menuOpen ? (
               <>
@@ -259,16 +271,22 @@ export default function UserScreen() {
                       setReporting(true);
                     }}
                   >
-                    <Text style={styles.menuText}>🚩  Signaler ce profil</Text>
+                    <View style={styles.menuRow}>
+                      <Feather name="flag" size={16} color={Colors.brown} />
+                      <Text style={styles.menuText}>Signaler ce profil</Text>
+                    </View>
                   </Pressable>
                   <Pressable
                     style={styles.menuItem}
                     onPress={() => blockMut.mutate()}
                     disabled={blockMut.isPending}
                   >
-                    <Text style={[styles.menuText, { color: '#D32F2F' }]}>
-                      🚫  {blockMut.isPending ? 'Blocage…' : 'Bloquer cet utilisateur'}
-                    </Text>
+                    <View style={styles.menuRow}>
+                      <Feather name="slash" size={16} color="#D32F2F" />
+                      <Text style={[styles.menuText, { color: '#D32F2F' }]}>
+                        {blockMut.isPending ? 'Blocage…' : 'Bloquer cet utilisateur'}
+                      </Text>
+                    </View>
                   </Pressable>
                 </View>
               </>
@@ -316,6 +334,11 @@ export default function UserScreen() {
                   {u.countryCode ? Flags[u.countryCode] ?? '🌍' : '🌍'} {u.city ?? ''}
                   {u.countryCode ? `, ${CountryNames[u.countryCode] ?? u.countryCode}` : ''}
                 </Text>
+                {'ratingCount' in u && u.ratingCount > 0 ? (
+                  <View style={styles.heroRatingWrap}>
+                    <StarRating value={u.ratingAvg} count={u.ratingCount} size={14} />
+                  </View>
+                ) : null}
                 {'bio' in u && u.bio ? <Text style={styles.bio}>{u.bio}</Text> : null}
               </View>
             </View>
@@ -328,7 +351,10 @@ export default function UserScreen() {
                   style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}
                 >
                   <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-                  <Text style={styles.primaryLabel}>💬 Envoyer un message</Text>
+                  <View style={styles.primaryContent}>
+                    <Feather name="message-circle" size={18} color={Colors.white} />
+                    <Text style={styles.primaryLabel}>Envoyer un message</Text>
+                  </View>
                 </Pressable>
                 <Pressable
                   onPress={handleRelationAction}
@@ -344,14 +370,23 @@ export default function UserScreen() {
                     pressed && { opacity: 0.9 },
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.secondaryLabel,
-                      rel === 'friends' && { color: Colors.green },
-                    ]}
-                  >
-                    {relLabel}
-                  </Text>
+                  <View style={styles.secondaryContent}>
+                    {RELATION_ICONS[rel] ? (
+                      <Feather
+                        name={RELATION_ICONS[rel]!}
+                        size={16}
+                        color={rel === 'friends' ? Colors.green : Colors.orange}
+                      />
+                    ) : null}
+                    <Text
+                      style={[
+                        styles.secondaryLabel,
+                        rel === 'friends' && { color: Colors.green },
+                      ]}
+                    >
+                      {relLabel}
+                    </Text>
+                  </View>
                 </Pressable>
               </View>
             ) : null}
@@ -359,9 +394,12 @@ export default function UserScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Amis</Text>
               {friendsError ? (
-                <Text style={styles.sectionHint}>
-                  🔒 Liste d&apos;amis non visible (profil privé ou amis uniquement)
-                </Text>
+                <View style={styles.hintRow}>
+                  <Feather name="lock" size={13} color={Colors.tan500} />
+                  <Text style={styles.sectionHint}>
+                    Liste d&apos;amis non visible (profil privé ou amis uniquement)
+                  </Text>
+                </View>
               ) : friends.length === 0 ? (
                 <Text style={styles.sectionHint}>Aucun ami visible</Text>
               ) : (
@@ -392,23 +430,34 @@ export default function UserScreen() {
               )}
             </View>
 
+            <ReviewsSection
+              targetType="user"
+              targetId={id!}
+              canReview={rel !== 'self' && rel !== 'blocked'}
+            />
+
             <View style={[styles.section, { paddingHorizontal: 0 }]}>
               <Text style={[styles.sectionTitle, { paddingHorizontal: Spacing.md }]}>
                 Publications
               </Text>
               {postsError ? (
-                <Text style={styles.sectionHint}>
-                  🔒 Publications non visibles (profil privé ou amis uniquement)
-                </Text>
+                <View style={[styles.hintRow, { paddingHorizontal: Spacing.md }]}>
+                  <Feather name="lock" size={13} color={Colors.tan500} />
+                  <Text style={styles.sectionHint}>
+                    Publications non visibles (profil privé ou amis uniquement)
+                  </Text>
+                </View>
               ) : posts.length === 0 && !postsQuery.isLoading ? (
-                <Text style={styles.sectionHint}>Aucune publication visible.</Text>
+                <Text style={[styles.sectionHint, { paddingHorizontal: Spacing.md }]}>
+                  Aucune publication visible.
+                </Text>
               ) : null}
             </View>
           </View>
         }
         ListEmptyComponent={
           postsQuery.isLoading ? (
-            <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xl }} />
+            <Loader style={{ marginTop: Spacing.xl }} />
           ) : null
         }
         contentContainerStyle={{ paddingBottom: Spacing.xxxl }}
@@ -454,6 +503,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md + 2,
     paddingVertical: 10,
   },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   menuText: {
     fontSize: Typography.sizes.sm,
     color: Colors.brown,
@@ -483,6 +533,7 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
   location: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
+  heroRatingWrap: { marginTop: 6 },
   bio: {
     fontSize: Typography.sizes.sm,
     color: 'rgba(255,255,255,0.6)',
@@ -498,7 +549,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primaryContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   primaryLabel: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
+  secondaryContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   secondaryBtn: {
     height: 52,
     borderRadius: Radii.lg,
@@ -524,6 +577,12 @@ const styles = StyleSheet.create({
   sectionHint: {
     fontSize: Typography.sizes.sm,
     color: Colors.tan500,
+    flexShrink: 1,
+  },
+  hintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: Spacing.md,
   },
   friendChip: {

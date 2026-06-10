@@ -43,7 +43,7 @@ export default function CommunityRulesScreen() {
         },
         {
           heading: 'Si tu vois un contenu qui pose problème',
-          body: 'Utilise le bouton 🚩 Signaler sur la publication, le commentaire ou le profil concerné. L’équipe de modération examine chaque signalement sous 24h ouvrées. Pour une urgence (mineur en danger, menace physique), écris-nous directement à safety@nigerconnect.ne.',
+          body: 'Utilise le bouton 🚩 Signaler sur la publication, le commentaire ou le profil concerné. L’équipe de modération examine chaque signalement sous 24h ouvrées. Pour une urgence (mineur en danger, menace physique), écris-nous directement à contact@sahabiguide.com.',
         },
         {
           heading: 'Conséquences en cas de violation',
@@ -55,7 +55,7 @@ export default function CommunityRulesScreen() {
           ],
         },
       ]}
-      contact="Contester une décision de modération : appeals@nigerconnect.ne. Réponse sous 72 heures."
+      contact="Contester une décision de modération : contact@sahabiguide.com. Réponse sous 72 heures."
     />
   );
 }

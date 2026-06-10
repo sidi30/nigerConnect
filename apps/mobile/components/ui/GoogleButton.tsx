@@ -29,6 +29,20 @@ export function GoogleButton({ label = 'Continuer avec Google' }: Props) {
       ?.appleSignInEnabled ?? process.env.EXPO_PUBLIC_APPLE_SIGNIN_ENABLED === 'true',
   );
   if (!__DEV__ && Platform.OS === 'ios' && !appleEnabled) return null;
+
+  // iOS production native Google flow REQUIRES a dedicated iOS OAuth client.
+  // With an empty `googleClientIdIos`, the button would fail at runtime in a
+  // standalone build — App Store reviewers tap it and reject under Guideline
+  // 2.1 (app completeness). Hide it on iOS prod until the iOS client is wired;
+  // Sign in with Apple stays available and satisfies Guideline 4.8. The button
+  // reappears automatically once `extra.googleClientIdIos` is set.
+  // Dev / Expo Go keep it visible (web-proxy fallback works there) for testing.
+  const iosGoogleConfigured = Boolean(
+    (Constants.expoConfig?.extra as { googleClientIdIos?: string } | undefined)?.googleClientIdIos?.trim() ||
+      process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS?.trim(),
+  );
+  if (!__DEV__ && Platform.OS === 'ios' && !iosGoogleConfigured) return null;
+
   if (!isConfigured) return null;
 
   return (

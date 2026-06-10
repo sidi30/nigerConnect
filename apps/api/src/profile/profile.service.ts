@@ -10,6 +10,8 @@ import {
   type SelfUser,
 } from '../common/prisma/user-select';
 import { BlockService } from '../social/block.service';
+import { MailerService } from '../common/mail/mailer.service';
+import { geocode } from '../common/geo/city-coords';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
 import type { CreatePhotoDto, SearchDto } from './dto/photo.dto';
 
@@ -22,7 +24,23 @@ export class ProfileService {
     private readonly redis: RedisService,
     private readonly s3: S3Service,
     private readonly blocks: BlockService,
+    private readonly mailer: MailerService,
   ) {}
+
+  /**
+   * Build the RGPD export and email it to the user as a JSON attachment.
+   * Returns the address it was sent to so the caller can confirm.
+   */
+  async emailDataExport(userId: string): Promise<{ email: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (!user?.email) throw new NotFoundException('No email on file for this account');
+    const dump = await this.exportUserData(userId);
+    await this.mailer.sendDataExport(user.email, JSON.stringify(dump, null, 2), user.firstName);
+    return { email: user.email };
+  }
 
   async getMe(userId: string): Promise<SelfUser> {
     const user = await this.prisma.user.findUnique({
@@ -44,8 +62,37 @@ export class ProfileService {
     if (dto.latitude !== undefined) data.latitude = dto.latitude;
     if (dto.longitude !== undefined) data.longitude = dto.longitude;
     if (dto.showOnMap !== undefined) data.showOnMap = dto.showOnMap;
+    if (dto.proximityAlerts !== undefined) data.proximityAlerts = dto.proximityAlerts;
+    if (dto.proximityRadius !== undefined) data.proximityRadius = dto.proximityRadius;
     if (dto.languages !== undefined) data.languages = dto.languages;
     if (dto.privacyLevel !== undefined) data.privacyLevel = dto.privacyLevel;
+
+    // When the user moves (city or country changes) but doesn't send explicit
+    // coordinates, recompute lat/lon from the resolved city/country — otherwise
+    // their pin on the map stays at the old location. We need the *effective*
+    // values: a field the DTO doesn't touch keeps its stored value, so fetch
+    // the current row when only one of the two is being updated.
+    const locationChanged =
+      (dto.city !== undefined || dto.countryCode !== undefined) &&
+      dto.latitude === undefined &&
+      dto.longitude === undefined;
+    if (locationChanged) {
+      const current =
+        dto.city !== undefined && dto.countryCode !== undefined
+          ? null
+          : await this.prisma.user.findUnique({
+              where: { id: userId },
+              select: { city: true, countryCode: true },
+            });
+      const city = dto.city !== undefined ? dto.city : current?.city ?? null;
+      const countryCode =
+        dto.countryCode !== undefined ? dto.countryCode : current?.countryCode ?? null;
+      const coords = geocode(city, countryCode);
+      if (coords) {
+        data.latitude = coords.lat;
+        data.longitude = coords.lon;
+      }
+    }
 
     const user = await this.prisma.user.update({
       where: { id: userId },
@@ -57,9 +104,13 @@ export class ProfileService {
   }
 
   async updateAvatar(userId: string, avatarUrl: string | null): Promise<SelfUser> {
+    // Never trust the client URL: it must point at an object this user uploaded
+    // to our public bucket (users/<id>/...). Returns the canonical CDN URL.
+    const canonicalUrl =
+      avatarUrl === null ? null : await this.s3.assertOwnedPublicImage(avatarUrl, userId);
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: { avatarUrl },
+      data: { avatarUrl: canonicalUrl },
       select: USER_SELF_SELECT,
     });
     await this.invalidateProfileCache(userId);
@@ -67,9 +118,11 @@ export class ProfileService {
   }
 
   async updateCover(userId: string, coverUrl: string | null): Promise<SelfUser> {
+    const canonicalUrl =
+      coverUrl === null ? null : await this.s3.assertOwnedPublicImage(coverUrl, userId);
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: { coverUrl },
+      data: { coverUrl: canonicalUrl },
       select: USER_SELF_SELECT,
     });
     await this.invalidateProfileCache(userId);
@@ -251,11 +304,17 @@ export class ProfileService {
   }
 
   async addPhoto(userId: string, dto: CreatePhotoDto) {
+    // Validate both the main image and (when present) the thumbnail point at
+    // objects this user uploaded to our public bucket; store canonical URLs.
+    const url = await this.s3.assertOwnedPublicImage(dto.url, userId);
+    const thumbnailUrl = dto.thumbnailUrl
+      ? await this.s3.assertOwnedPublicImage(dto.thumbnailUrl, userId)
+      : null;
     return this.prisma.userPhoto.create({
       data: {
         userId,
-        url: dto.url,
-        thumbnailUrl: dto.thumbnailUrl ?? null,
+        url,
+        thumbnailUrl,
         caption: dto.caption ?? null,
         sortOrder: dto.sortOrder ?? 0,
       },
@@ -291,6 +350,9 @@ export class ProfileService {
       AND: [
         { id: { not: viewerId } },
         { status: 'active' },
+        // Registration is only complete once the email is verified — hide users
+        // whose inscription is still pending from all discovery surfaces.
+        { emailVerified: true },
         { privacyLevel: { in: ['public', 'friends'] } },
       ],
     };
@@ -298,16 +360,14 @@ export class ProfileService {
       where.AND = [
         ...(where.AND as Prisma.UserWhereInput[]),
         {
+          // Match on names only. Matching `email` here let anyone confirm an
+          // address belongs to a registered user (and partial-match it),
+          // which is a user/email enumeration leak — email is never exposed
+          // in the search response, so it must not be searchable either.
           OR: [
             { firstName: { contains: dto.q, mode: 'insensitive' } },
             { lastName: { contains: dto.q, mode: 'insensitive' } },
             { displayName: { contains: dto.q, mode: 'insensitive' } },
-            // Allow lookup by email — useful when someone shared an address
-            // and we have no idea what they put as displayName. Email match
-            // is exposed only if the candidate's privacy already permits
-            // search visibility (`public` / `friends`), so we are not
-            // leaking new information.
-            { email: { contains: dto.q, mode: 'insensitive' } },
           ],
         },
       ];

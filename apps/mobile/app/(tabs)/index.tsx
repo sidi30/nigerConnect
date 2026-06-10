@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -10,10 +9,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Post } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
+import { FeedSkeletonList } from '@/components/ui/Skeleton';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FriendRequestsBanner } from '@/components/feed/FriendRequestsBanner';
 import { PostCard } from '@/components/feed/PostCard';
@@ -24,6 +26,7 @@ import { feedApi } from '@/services/feedApi';
 import { friendsApi } from '@/services/friendsApi';
 import { notificationApi } from '@/services/notificationApi';
 import { useAuthStore } from '@/stores/authStore';
+import { toast } from '@/stores/toastStore';
 
 // Tab bar content height (kept in sync with `(tabs)/_layout.tsx`).
 const TAB_BAR_CONTENT_HEIGHT = 60;
@@ -66,12 +69,12 @@ export default function FeedTab() {
     mutationFn: (postId: string) => feedApi.share(postId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['feed'] });
-      Alert.alert('Repartagé', 'Le post a été partagé avec tes amis.');
+      toast.success('Repartagé avec tes amis ✨');
     },
     onError: (e) => {
       const msg = (e as { response?: { data?: { message?: string } }; message?: string })
         ?.response?.data?.message ?? (e as Error).message ?? 'Impossible de partager';
-      Alert.alert('Échec du partage', msg);
+      toast.error(msg);
     },
   });
 
@@ -88,7 +91,32 @@ export default function FeedTab() {
 
   const deleteMut = useMutation({
     mutationFn: (postId: string) => feedApi.deletePost(postId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['feed'] }),
+    // Optimistic: drop the post from the cached feed pages immediately
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: ['feed'] });
+      const prev = qc.getQueryData(['feed']);
+      qc.setQueryData(['feed'], (old: unknown) => {
+        const typed = old as { pages: Array<{ items: Post[] }> } | undefined;
+        if (!typed) return old;
+        return {
+          ...typed,
+          pages: typed.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((p) => p.id !== postId),
+          })),
+        };
+      });
+      return { prev };
+    },
+    onError: (_e, _postId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['feed'], ctx.prev);
+    },
+    // Re-sync with the server so the feed, profile counts and post cache match DB truth.
+    onSettled: (_data, _err, postId) => {
+      void qc.invalidateQueries({ queryKey: ['feed'] });
+      void qc.invalidateQueries({ queryKey: ['user'] });
+      void qc.invalidateQueries({ queryKey: ['post', postId] });
+    },
   });
 
   const likeMut = useMutation({
@@ -129,11 +157,16 @@ export default function FeedTab() {
 
   const acceptMut = useMutation({
     mutationFn: (friendshipId: string) => friendsApi.accept(friendshipId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['friends'] });
+      toast.success('Demande acceptée 🎉');
+    },
+    onError: () => toast.error('Action impossible, réessaie'),
   });
   const declineMut = useMutation({
     mutationFn: (friendshipId: string) => friendsApi.decline(friendshipId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onError: () => toast.error('Action impossible, réessaie'),
   });
 
   const posts: Post[] = feedQuery.data?.pages.flatMap((p) => p.items) ?? [];
@@ -160,7 +193,7 @@ export default function FeedTab() {
             hitSlop={8}
             onPress={() => router.push('/settings/notifications' as never)}
           >
-            <Text style={styles.iconText}>🔔</Text>
+            <Feather name="bell" size={18} color={Colors.brown} />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
                 <Text style={styles.notifBadgeText}>
@@ -182,7 +215,7 @@ export default function FeedTab() {
 
       <Pressable style={[styles.fab, { bottom: fabBottom }]} onPress={() => router.push('/post/new')}>
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-        <Text style={styles.fabIcon}>✍️</Text>
+        <Feather name="edit-2" size={22} color={Colors.white} />
       </Pressable>
 
       <FlatList
@@ -222,14 +255,14 @@ export default function FeedTab() {
                 onPress={() => router.push('/verify-email' as never)}
                 style={styles.verifyBanner}
               >
-                <Text style={styles.verifyIcon}>📧</Text>
+                <Feather name="mail" size={20} color={Colors.orange} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.verifyTitle}>Vérifie ton email</Text>
                   <Text style={styles.verifyText} numberOfLines={2}>
                     Confirme {user.email} pour profiter de toutes les fonctionnalités.
                   </Text>
                 </View>
-                <Text style={styles.verifyChevron}>›</Text>
+                <Feather name="chevron-right" size={22} color={Colors.orange} />
               </Pressable>
             ) : null}
             <StoriesRow
@@ -246,12 +279,10 @@ export default function FeedTab() {
         }
         ListEmptyComponent={
           feedQuery.isLoading ? (
-            <View style={styles.loader}>
-              <ActivityIndicator color={Colors.orange} />
-            </View>
+            <FeedSkeletonList count={3} />
           ) : (
             <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>📰</Text>
+              <Feather name="home" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
               <Text style={styles.emptyTitle}>Fil vide</Text>
               <Text style={styles.emptyText}>
                 Ajoute des amis pour voir leurs publications ici.
@@ -261,6 +292,13 @@ export default function FeedTab() {
         }
         onEndReached={() => feedQuery.hasNextPage && feedQuery.fetchNextPage()}
         onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          feedQuery.isFetchingNextPage ? (
+            <View style={styles.footerLoader}>
+              <Loader size="small" style={{ marginTop: 0 }} />
+            </View>
+          ) : null
+        }
         refreshControl={
           <RefreshControl
             refreshing={feedQuery.isRefetching}
@@ -313,7 +351,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  iconText: { fontSize: 16 },
   notifBadge: {
     position: 'absolute',
     top: -3,
@@ -333,7 +370,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
   },
-  loader: { padding: Spacing.xxl, alignItems: 'center' },
+  footerLoader: { paddingVertical: Spacing.lg, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
   emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
@@ -359,7 +396,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 10,
   },
-  fabIcon: { fontSize: 22 },
   verifyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -372,7 +408,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F4D8A8',
   },
-  verifyIcon: { fontSize: 22 },
   verifyTitle: {
     fontSize: Typography.sizes.sm,
     fontWeight: '700',

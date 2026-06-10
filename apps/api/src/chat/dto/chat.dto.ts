@@ -16,3 +16,10 @@ export const sendMessageSchema = z.object({
   { message: 'content or mediaUrl is required' },
 );
 export type SendMessageDto = z.infer<typeof sendMessageSchema>;
+
+export const editMessageSchema = z.object({
+  // Empty allowed so an image caption can be cleared; the service still rejects
+  // an empty edit on a text message (text must keep content).
+  content: z.string().max(5000),
+});
+export type EditMessageDto = z.infer<typeof editMessageSchema>;

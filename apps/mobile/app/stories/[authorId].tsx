@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -163,11 +164,11 @@ export default function StoryViewerScreen() {
               style={styles.trashBtn}
               accessibilityLabel="Supprimer cette story"
             >
-              <Text style={styles.trash}>🗑️</Text>
+              <Feather name="trash-2" size={16} color={Colors.white} />
             </Pressable>
           ) : null}
-          <Pressable onPress={() => router.back()} hitSlop={15}>
-            <Text style={styles.close}>✕</Text>
+          <Pressable onPress={() => router.back()} hitSlop={15} style={styles.close}>
+            <Feather name="x" size={22} color={Colors.white} />
           </Pressable>
         </View>
       </SafeAreaView>
@@ -245,7 +246,7 @@ const styles = StyleSheet.create({
   authorBlock: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm + 2 },
   authorName: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.white },
   time: { fontSize: Typography.sizes.xs, color: 'rgba(255,255,255,0.7)' },
-  close: { fontSize: 22, color: Colors.white, padding: Spacing.xs },
+  close: { padding: Spacing.xs },
   tapLeft: {
     position: 'absolute',
     top: 80,
@@ -269,7 +270,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 6,
   },
-  trash: { fontSize: 16 },
   confirmOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: palette.overlayDark,

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -17,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { servicesApi } from '@/services/servicesApi';
 import { chatApi } from '@/services/chatApi';
@@ -89,7 +89,7 @@ export default function ServiceDetailScreen() {
   if (svcQuery.isLoading || !svc) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+        <Loader />
       </SafeAreaView>
     );
   }
@@ -171,7 +171,7 @@ export default function ServiceDetailScreen() {
               Réponses reçues ({responsesQuery.data?.length ?? 0})
             </Text>
             {responsesQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} />
+              <Loader style={{ marginTop: 0 }} />
             ) : (responsesQuery.data ?? []).length === 0 ? (
               <Text style={styles.emptyResponses}>Aucune réponse encore.</Text>
             ) : (

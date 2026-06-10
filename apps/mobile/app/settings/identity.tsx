@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,41 +7,46 @@ import {
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Loader } from '@/components/ui/Loader';
 import { identityApi } from '@/services/identityApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
 
 type DocType = 'passport' | 'id_card' | 'driver_license' | 'residence_permit';
 
-const DOC_TYPES: Array<{ id: DocType; icon: string; label: string }> = [
-  { id: 'passport', icon: '🛂', label: 'Passeport' },
-  { id: 'id_card', icon: '🪪', label: "Carte d'identité" },
-  { id: 'driver_license', icon: '🚗', label: 'Permis' },
-  { id: 'residence_permit', icon: '🏛️', label: 'Carte consulaire' },
+const DOC_TYPES: Array<{ id: DocType; icon: keyof typeof Feather.glyphMap; label: string }> = [
+  { id: 'passport', icon: 'book', label: 'Passeport' },
+  { id: 'id_card', icon: 'credit-card', label: "Carte d'identité" },
+  { id: 'driver_license', icon: 'truck', label: 'Permis' },
+  { id: 'residence_permit', icon: 'home', label: 'Carte consulaire' },
 ];
 
-const STATUS_LABELS: Record<string, { emoji: string; title: string; desc: string; color: string }> = {
+const STATUS_LABELS: Record<
+  string,
+  { icon: keyof typeof Feather.glyphMap; title: string; desc: string; color: string }
+> = {
   not_submitted: {
-    emoji: '📤',
+    icon: 'upload',
     title: 'Non soumis',
     desc: 'Prouve ton identité nigérienne pour obtenir le badge ✓ et débloquer toutes les fonctionnalités',
     color: Colors.tan500,
   },
   pending: {
-    emoji: '⏳',
+    icon: 'clock',
     title: 'En cours de vérification',
     desc: 'Tes documents sont en cours d\u2019examen par notre équipe (48-72h).',
     color: Colors.warningDark,
   },
   approved: {
-    emoji: '✓',
+    icon: 'check',
     title: 'Identité vérifiée',
     desc: 'Tu es un membre certifié de la diaspora nigérienne.',
     color: Colors.green,
   },
   rejected: {
-    emoji: '✕',
+    icon: 'x',
     title: 'Refusé',
     desc: 'Ta soumission n\u2019a pas été validée. Tu peux réessayer.',
     color: Colors.danger,
@@ -101,7 +105,7 @@ export default function IdentityScreen() {
   }
 
   if (isLoading) {
-    return <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />;
+    return <Loader />;
   }
 
   const state = STATUS_LABELS[data?.status ?? 'not_submitted']!;
@@ -110,7 +114,7 @@ export default function IdentityScreen() {
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={[styles.card, { borderColor: state.color + '40' }]}>
         <View style={[styles.emojiCircle, { backgroundColor: state.color }]}>
-          <Text style={styles.emoji}>{state.emoji}</Text>
+          <Feather name={state.icon} size={30} color={Colors.white} />
         </View>
         <Text style={[styles.title, { color: state.color }]}>{state.title}</Text>
         <Text style={styles.desc}>{state.desc}</Text>
@@ -131,7 +135,12 @@ export default function IdentityScreen() {
           accessibilityLiveRegion="polite"
           accessibilityRole="alert"
         >
-          <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+          <Feather
+            name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+            size={16}
+            color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+            style={styles.feedbackIcon}
+          />
           <Text
             style={[
               styles.feedbackText,
@@ -155,7 +164,11 @@ export default function IdentityScreen() {
                   onPress={() => setSelectedType(d.id)}
                   style={[styles.docType, active && styles.docTypeActive]}
                 >
-                  <Text style={styles.docIcon}>{d.icon}</Text>
+                  <Feather
+                    name={d.icon}
+                    size={22}
+                    color={active ? Colors.orange : Colors.tan600}
+                  />
                   <Text style={[styles.docLabel, active && { color: Colors.orange }]}>
                     {d.label}
                   </Text>
@@ -173,8 +186,9 @@ export default function IdentityScreen() {
             ]}
           >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+            <Feather name="upload" size={16} color={Colors.white} />
             <Text style={styles.submitLabel}>
-              {uploading ? '📤 Envoi…' : '📤 Soumettre un document'}
+              {uploading ? 'Envoi…' : 'Soumettre un document'}
             </Text>
           </Pressable>
           <Text style={styles.hint}>
@@ -204,7 +218,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
-  emoji: { fontSize: 32, color: Colors.white },
   title: { fontSize: Typography.sizes.xl, fontWeight: '800', marginBottom: 4 },
   desc: {
     fontSize: Typography.sizes.sm,
@@ -245,12 +258,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   docTypeActive: { borderColor: Colors.orange, backgroundColor: Colors.peach50 },
-  docIcon: { fontSize: 24 },
   docLabel: { fontSize: Typography.sizes.xs + 1, fontWeight: '600', color: Colors.brown, marginTop: 4 },
   submitBtn: {
     height: 54,
     borderRadius: Radii.xl,
     overflow: 'hidden',
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

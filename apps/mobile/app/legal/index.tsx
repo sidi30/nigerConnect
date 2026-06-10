@@ -1,25 +1,26 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 
 const WEB_BASE = 'https://nigerconnect.sahabiguide.com';
 
-const ITEMS: Array<{ icon: string; title: string; desc: string; href: Href }> = [
+const ITEMS: Array<{ icon: keyof typeof Feather.glyphMap; title: string; desc: string; href: Href }> = [
   {
-    icon: '📜',
+    icon: 'file-text',
     title: 'Conditions d’utilisation',
     desc: 'Ce que tu acceptes en utilisant NigerConnect.',
     href: '/legal/terms' as Href,
   },
   {
-    icon: '🔐',
+    icon: 'shield',
     title: 'Politique de confidentialité',
     desc: 'Quelles données on collecte et pourquoi.',
     href: '/legal/privacy' as Href,
   },
   {
-    icon: '🤝',
+    icon: 'users',
     title: 'Règles de la communauté',
     desc: 'Comportement attendu, tolérance zéro sur certains contenus.',
     href: '/legal/community' as Href,
@@ -32,7 +33,7 @@ export default function LegalIndex() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
-          <Text style={styles.backIcon}>←</Text>
+          <Feather name="arrow-left" size={22} color={Colors.brown} />
         </Pressable>
         <Text style={styles.title}>Informations légales</Text>
         <View style={{ width: 40 }} />
@@ -40,12 +41,12 @@ export default function LegalIndex() {
       <ScrollView contentContainerStyle={styles.scroll}>
         {ITEMS.map((item) => (
           <Pressable key={item.title} style={styles.card} onPress={() => router.push(item.href)}>
-            <Text style={styles.icon}>{item.icon}</Text>
+            <Feather name={item.icon} size={24} color={Colors.orange} style={styles.icon} />
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>{item.title}</Text>
               <Text style={styles.cardDesc}>{item.desc}</Text>
             </View>
-            <Text style={styles.chevron}>›</Text>
+            <Feather name="chevron-right" size={22} color={Colors.tan400} />
           </Pressable>
         ))}
         <View style={styles.webLinks}>

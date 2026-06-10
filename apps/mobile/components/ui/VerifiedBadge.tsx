@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 
 interface Props {
@@ -13,9 +14,7 @@ export function VerifiedBadge({ size = 14 }: Props) {
         { width: size, height: size, borderRadius: size / 2 },
       ]}
     >
-      <Text style={{ fontSize: size * 0.6, color: Colors.white, fontWeight: '900', lineHeight: size }}>
-        ✓
-      </Text>
+      <Feather name="check" size={size * 0.7} color={Colors.white} />
     </View>
   );
 }

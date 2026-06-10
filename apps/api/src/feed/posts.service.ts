@@ -7,6 +7,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
 import type { CreatePostDto, CreateStoryDto, UpdatePostDto } from './dto/post.dto';
 
@@ -43,12 +44,36 @@ export class PostsService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly blocks: BlockService,
+    private readonly s3: S3Service,
   ) {}
 
   async create(authorId: string, dto: CreatePostDto) {
     if (dto.visibility === 'association' && !dto.associationId) {
       throw new BadRequestException('associationId required for association posts');
     }
+    if (dto.visibility === 'association') {
+      const isMember = await this.prisma.associationMember.count({
+        where: { userId: authorId, associationId: dto.associationId, status: 'approved' },
+      });
+      if (!isMember) throw new ForbiddenException('Not a member of this association');
+    }
+
+    // Client-supplied media URLs are only validated as well-formed URLs by the
+    // DTO. Bind each one to our own public bucket and confirm it exists / is an
+    // image within size caps; persist the canonical URL the helper returns.
+    const media = dto.media
+      ? await Promise.all(
+          dto.media.map(async (m, i) => ({
+            mediaUrl: await this.s3.assertOwnedPublicImage(m.mediaUrl, authorId),
+            thumbnailUrl: m.thumbnailUrl ?? null,
+            mediaType: m.mediaType,
+            width: m.width ?? null,
+            height: m.height ?? null,
+            blurhash: m.blurhash ?? null,
+            sortOrder: m.sortOrder ?? i,
+          })),
+        )
+      : undefined;
 
     const post = await this.prisma.post.create({
       data: {
@@ -56,19 +81,7 @@ export class PostsService {
         content: dto.content ?? null,
         visibility: dto.visibility,
         associationId: dto.associationId ?? null,
-        media: dto.media
-          ? {
-              create: dto.media.map((m, i) => ({
-                mediaUrl: m.mediaUrl,
-                thumbnailUrl: m.thumbnailUrl ?? null,
-                mediaType: m.mediaType,
-                width: m.width ?? null,
-                height: m.height ?? null,
-                blurhash: m.blurhash ?? null,
-                sortOrder: m.sortOrder ?? i,
-              })),
-            }
-          : undefined,
+        media: media ? { create: media } : undefined,
       },
       include: {
         media: true,
@@ -83,6 +96,8 @@ export class PostsService {
 
   async createStory(authorId: string, dto: CreateStoryDto) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Same host-binding guard as posts — never persist an unvalidated URL.
+    const mediaUrl = await this.s3.assertOwnedPublicImage(dto.media.mediaUrl, authorId);
     return this.prisma.post.create({
       data: {
         authorId,
@@ -92,7 +107,7 @@ export class PostsService {
         storyExpiresAt: expiresAt,
         media: {
           create: {
-            mediaUrl: dto.media.mediaUrl,
+            mediaUrl,
             thumbnailUrl: dto.media.thumbnailUrl ?? null,
             mediaType: dto.media.mediaType,
             width: dto.media.width ?? null,
@@ -126,26 +141,40 @@ export class PostsService {
   ): Promise<{ id: string; authorId: string; visibility: string; associationId: string | null }> {
     const post = await this.prisma.post.findFirst({
       where: { id: postId, deletedAt: null },
-      select: { id: true, authorId: true, visibility: true, associationId: true },
+      select: {
+        id: true,
+        authorId: true,
+        visibility: true,
+        associationId: true,
+        author: { select: { privacyLevel: true } },
+      },
     });
     if (!post) throw new NotFoundException('Post not found');
     if (post.authorId === viewerId) return post;
     if (await this.blocks.isBlocked(viewerId, post.authorId)) {
       throw new NotFoundException('Post not found');
     }
-    if (post.visibility === 'public') return post;
+    const isFriend = async (): Promise<boolean> =>
+      (await this.prisma.friendship.count({
+        where: {
+          status: 'accepted',
+          OR: [
+            { requesterId: viewerId, addresseeId: post.authorId },
+            { requesterId: post.authorId, addresseeId: viewerId },
+          ],
+        },
+      })) > 0;
+    if (post.visibility === 'public') {
+      // Mirror the feed rule: a private profile's public posts are NOT visible
+      // to strangers via the single-post / comments / share side channels —
+      // only the owner (handled above) and accepted friends may read them.
+      if (post.author?.privacyLevel === 'private' && !(await isFriend())) {
+        throw new NotFoundException('Post not found');
+      }
+      return post;
+    }
     if (post.visibility === 'friends') {
-      const isFriend =
-        (await this.prisma.friendship.count({
-          where: {
-            status: 'accepted',
-            OR: [
-              { requesterId: viewerId, addresseeId: post.authorId },
-              { requesterId: post.authorId, addresseeId: viewerId },
-            ],
-          },
-        })) > 0;
-      if (!isFriend) throw new NotFoundException('Post not found');
+      if (!(await isFriend())) throw new NotFoundException('Post not found');
       return post;
     }
     if (post.visibility === 'association') {
@@ -230,7 +259,14 @@ export class PostsService {
   async share(sharerId: string, postId: string, content?: string) {
     // Same visibility rules as viewing — you can't share something you
     // shouldn't be able to see in the first place.
-    await this.assertCanViewPost(sharerId, postId);
+    const original = await this.assertCanViewPost(sharerId, postId);
+    // The shared post is embedded for the sharer's (friends) audience without
+    // re-checking each viewer against the original's visibility. Restrict
+    // sharing to public posts so a friends-only/association post can never be
+    // re-exposed to people who couldn't see the original.
+    if (original.visibility !== 'public') {
+      throw new ForbiddenException('Only public posts can be shared');
+    }
 
     const [share] = await this.prisma.$transaction([
       this.prisma.post.create({
@@ -304,10 +340,14 @@ export class PostsService {
             OR: [
               // Self always sees their own posts regardless of visibility.
               { authorId: userId },
-              // Public: visible to anyone (subject to the block filter above).
-              { visibility: 'public' },
-              // Friends-only: only when the author is actually a friend.
-              { visibility: 'friends', authorId: { in: friendIds } },
+              // Public posts surface in the global feed ONLY from non-private
+              // profiles. A private profile's content stays restricted to the
+              // owner + their friends (handled by the friends branch below) —
+              // it never leaks to strangers via the public feed.
+              { visibility: 'public', author: { privacyLevel: { not: 'private' } } },
+              // Friends see a friend's public AND friends-only posts (incl. when
+              // that friend keeps a private profile).
+              { authorId: { in: friendIds }, visibility: { in: ['public', 'friends'] } },
               // Association: only when viewer is an approved member of the
               // post's association — friendship with the author is irrelevant.
               ...(memberAssocIds.length > 0
@@ -368,6 +408,16 @@ export class PostsService {
             },
           })
         ) > 0;
+
+    // Private profile: only the owner and accepted friends may read the wall.
+    // Strangers get nothing (the profile chose not to be public).
+    if (!isOwn && !isFriend) {
+      const author = await this.prisma.user.findUnique({
+        where: { id: authorId },
+        select: { privacyLevel: true },
+      });
+      if (author?.privacyLevel === 'private') return { items: [], nextCursor: null };
+    }
 
     // Association-scoped posts must additionally be gated on viewer membership
     // of post.associationId — being a friend of the author is not enough.

@@ -53,7 +53,12 @@ export class GoogleOAuthService {
     return this.audiences.length > 0;
   }
 
-  async verifyIdToken(idToken: string): Promise<GoogleProfile> {
+  /**
+   * @param expectedNonce Raw nonce the client requested. When provided, the
+   *   token's `nonce` claim (Google echoes it verbatim) must match — anti-replay.
+   *   Omitted by older clients → no nonce check.
+   */
+  async verifyIdToken(idToken: string, expectedNonce?: string): Promise<GoogleProfile> {
     if (!this.isConfigured()) {
       throw new UnauthorizedException('Google sign-in is not configured on this server');
     }
@@ -71,6 +76,14 @@ export class GoogleOAuthService {
 
     if (!payload || !payload.sub) {
       throw new UnauthorizedException('Invalid Google ID token');
+    }
+
+    if (expectedNonce !== undefined) {
+      const tokenNonce = typeof payload.nonce === 'string' ? payload.nonce : '';
+      if (!tokenNonce || tokenNonce !== expectedNonce) {
+        this.logger.warn('Google ID token nonce mismatch — possible replay');
+        throw new UnauthorizedException('Google ID token nonce mismatch');
+      }
     }
 
     return {

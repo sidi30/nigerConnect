@@ -85,6 +85,11 @@ const envSchema = z
     SMTP_SECURE: z.string().optional(),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+    // DKIM signing (deliverability). Public key must be published at
+    // <selector>._domainkey.<domain>. Private key is base64-encoded PEM.
+    DKIM_DOMAIN: z.string().optional(),
+    DKIM_SELECTOR: z.string().optional(),
+    DKIM_PRIVATE_KEY_B64: z.string().optional(),
     APP_WEB_URL: z.string().url().optional(),
 
     SENTRY_DSN: z.string().optional(),

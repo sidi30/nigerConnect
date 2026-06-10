@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,12 +7,14 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CursorPage } from '@nigerconnect/shared-types';
 import { api } from '@/services/api';
+import { Loader } from '@/components/ui/Loader';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { profileApi } from '@/services/profileApi';
 import { useAuthStore } from '@/stores/authStore';
@@ -150,7 +151,7 @@ export default function PhotosScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.back}>
-          <Text style={styles.backIcon}>←</Text>
+          <Feather name="arrow-left" size={22} color={Colors.brown} />
         </Pressable>
         <Text style={styles.title}>Mes photos</Text>
         <View style={{ width: 40 }} />
@@ -167,7 +168,7 @@ export default function PhotosScreen() {
             disabled={isBusy}
             style={({ pressed }) => [styles.action, pressed && { opacity: 0.85 }]}
           >
-            <Text style={styles.actionIcon}>🖼️</Text>
+            <Feather name="image" size={22} color={Colors.brown} />
             <Text style={styles.actionLabel}>
               {working === 'library' ? 'Envoi…' : 'Galerie'}
             </Text>
@@ -177,7 +178,7 @@ export default function PhotosScreen() {
             disabled={isBusy}
             style={({ pressed }) => [styles.action, pressed && { opacity: 0.85 }]}
           >
-            <Text style={styles.actionIcon}>📸</Text>
+            <Feather name="camera" size={22} color={Colors.brown} />
             <Text style={styles.actionLabel}>
               {working === 'camera' ? 'Envoi…' : 'Prendre'}
             </Text>
@@ -188,7 +189,7 @@ export default function PhotosScreen() {
             style={({ pressed }) => [styles.actionPrimary, pressed && { opacity: 0.9 }]}
           >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-            <Text style={styles.actionPrimaryIcon}>✨</Text>
+            <Feather name="star" size={22} color={Colors.white} />
             <Text style={styles.actionPrimaryLabel}>Avatar direct</Text>
           </Pressable>
         </View>
@@ -202,7 +203,12 @@ export default function PhotosScreen() {
             accessibilityLiveRegion="polite"
             accessibilityRole="alert"
           >
-            <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+            <Feather
+              name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+              size={16}
+              color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+              style={styles.feedbackIcon}
+            />
             <Text
               style={[
                 styles.feedbackText,
@@ -217,10 +223,10 @@ export default function PhotosScreen() {
         ) : null}
 
         {photosQuery.isLoading ? (
-          <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xl }} />
+          <Loader style={{ marginTop: Spacing.xl }} />
         ) : photos.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📷</Text>
+            <Feather name="camera" size={44} color={Colors.tan400} style={styles.emptyIcon} />
             <Text style={styles.emptyTitle}>Aucune photo</Text>
             <Text style={styles.emptyText}>
               Ajoute ta première photo depuis la galerie ou prends-la en direct.
@@ -275,10 +281,13 @@ export default function PhotosScreen() {
                 ]}
               >
                 <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+                <Feather
+                  name={user?.avatarUrl === selected.url ? 'check' : 'star'}
+                  size={16}
+                  color={Colors.white}
+                />
                 <Text style={styles.sheetPrimaryLabel}>
-                  {user?.avatarUrl === selected.url
-                    ? '✓ Avatar actuel'
-                    : '✨ Définir comme avatar'}
+                  {user?.avatarUrl === selected.url ? 'Avatar actuel' : 'Définir comme avatar'}
                 </Text>
               </Pressable>
               <Pressable
@@ -290,9 +299,14 @@ export default function PhotosScreen() {
                   (pressed || deleteMut.isPending) && { opacity: 0.85 },
                 ]}
               >
-                <Text style={styles.sheetDangerLabel}>
-                  {deleteMut.isPending ? 'Suppression…' : '🗑️  Supprimer'}
-                </Text>
+                {deleteMut.isPending ? (
+                  <Text style={styles.sheetDangerLabel}>Suppression…</Text>
+                ) : (
+                  <>
+                    <Feather name="trash-2" size={16} color={Colors.danger} />
+                    <Text style={styles.sheetDangerLabel}>Supprimer</Text>
+                  </>
+                )}
               </Pressable>
               <Pressable
                 onPress={() => setSelected(null)}
@@ -326,7 +340,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backIcon: { fontSize: 22, color: Colors.brown },
   title: {
     flex: 1,
     textAlign: 'center',
@@ -351,7 +364,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  actionIcon: { fontSize: 22 },
   actionLabel: { fontSize: Typography.sizes.xs + 1, fontWeight: '600', color: Colors.brown },
   actionPrimary: {
     flex: 1,
@@ -361,7 +373,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  actionPrimaryIcon: { fontSize: 22 },
   actionPrimaryLabel: { color: Colors.white, fontSize: Typography.sizes.xs + 1, fontWeight: '700' },
   feedbackBanner: {
     flexDirection: 'row',
@@ -381,7 +392,7 @@ const styles = StyleSheet.create({
     padding: Spacing.xxl,
     marginTop: Spacing.md,
   },
-  emptyIcon: { fontSize: 48, marginBottom: Spacing.sm },
+  emptyIcon: { marginBottom: Spacing.sm },
   emptyTitle: {
     fontSize: Typography.sizes.lg,
     fontWeight: '700',
@@ -443,6 +454,8 @@ const styles = StyleSheet.create({
   sheetBtn: {
     height: 50,
     borderRadius: Radii.lg,
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',

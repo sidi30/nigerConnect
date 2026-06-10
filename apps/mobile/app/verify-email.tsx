@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { authApi } from '@/services/authApi';
@@ -9,10 +10,68 @@ import { useAuthStore } from '@/stores/authStore';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ token?: string }>();
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const logout = useAuthStore((s) => s.logout);
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // If the screen was opened by the email activation link (universal link with
+  // ?token=...), consume the token automatically — no need to type the code.
+  useEffect(() => {
+    const token = typeof params.token === 'string' ? params.token : undefined;
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      setVerifying(true);
+      setError(null);
+      try {
+        const ok = await authApi.verifyEmailToken(token);
+        if (cancelled) return;
+        if (ok) {
+          const { user: fresh } = await authApi.me();
+          if (cancelled) return;
+          setUser(fresh);
+          router.replace('/(tabs)' as never);
+        } else {
+          setError('Lien invalide ou expiré. Saisis le code reçu par email.');
+        }
+      } catch {
+        if (!cancelled) setError('Lien invalide ou expiré. Saisis le code reçu par email.');
+      } finally {
+        if (!cancelled) setVerifying(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.token]);
+
+  // The user types the 6-digit code from the email to activate the account.
+  async function verifyCode() {
+    if (code.length !== 6) {
+      setError('Entre les 6 chiffres du code reçu par email.');
+      return;
+    }
+    setVerifying(true);
+    setError(null);
+    try {
+      await authApi.verifyEmailCode(code);
+      const { user: fresh } = await authApi.me();
+      setUser(fresh);
+      router.replace('/(tabs)' as never);
+    } catch (e) {
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      setError(err.response?.data?.message ?? err.message ?? 'Code invalide. Réessaie.');
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   async function resend() {
     setLoading(true);
@@ -30,60 +89,92 @@ export default function VerifyEmailScreen() {
     }
   }
 
+  async function signOut() {
+    await logout();
+    router.replace('/(auth)/welcome' as never);
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.topRow}>
-          <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
-            <Text style={styles.backIcon}>←</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.emoji}>📧</Text>
-        <Text style={styles.title}>Vérifie ton email</Text>
+        <Feather name="mail" size={48} color={Colors.orange} style={styles.emoji} />
+        <Text style={styles.title}>Active ton compte</Text>
         <Text style={styles.subtitle}>
-          Nous avons envoyé un lien à{' '}
-          <Text style={styles.email}>{user?.email ?? 'ton adresse'}</Text>. Clique dessus
-          pour confirmer ton compte.
+          Nous avons envoyé un code à{' '}
+          <Text style={styles.email}>{user?.email ?? 'ton adresse'}</Text>. Saisis-le
+          ci-dessous pour activer ton compte.
         </Text>
+
+        <TextInput
+          style={styles.codeInput}
+          value={code}
+          onChangeText={(t) => {
+            setCode(t.replace(/\D/g, '').slice(0, 6));
+            if (error) setError(null);
+            if (sent) setSent(false);
+          }}
+          keyboardType="number-pad"
+          maxLength={6}
+          placeholder="000000"
+          placeholderTextColor={Colors.tan400}
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          returnKeyType="done"
+          onSubmitEditing={verifyCode}
+        />
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Pas reçu ?</Text>
           <Text style={styles.cardText}>
-            Vérifie tes spams. Le lien expire dans 24h. Tu peux en demander un nouveau
+            Vérifie tes spams. Le code expire dans 24h. Tu peux en demander un nouveau
             ci-dessous.
           </Text>
         </View>
 
         {sent ? (
           <View style={styles.successBanner}>
-            <Text style={styles.successIcon}>✅</Text>
+            <Feather name="check-circle" size={18} color={Colors.successDark} style={styles.successIcon} />
             <Text style={styles.successText}>
-              Nouveau lien envoyé. Pense à vérifier tes spams.
+              Nouveau code envoyé. Pense à vérifier tes spams.
             </Text>
           </View>
         ) : null}
 
         {error ? (
           <View style={styles.errorBanner}>
-            <Text style={styles.errorIcon}>⚠️</Text>
+            <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
 
         <Pressable
-          onPress={resend}
-          disabled={loading}
-          style={({ pressed }) => [styles.primary, (loading || pressed) && { opacity: 0.85 }]}
+          onPress={verifyCode}
+          disabled={verifying || code.length !== 6}
+          style={({ pressed }) => [
+            styles.primary,
+            (verifying || pressed) && { opacity: 0.85 },
+            code.length !== 6 && { opacity: 0.5 },
+          ]}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
           <Text style={styles.primaryLabel}>
-            {loading ? 'Envoi…' : 'Renvoyer le lien'}
+            {verifying ? 'Vérification…' : 'Valider le code'}
           </Text>
         </Pressable>
 
-        <Pressable onPress={() => router.replace('/(tabs)' as never)} style={styles.skip} hitSlop={8}>
-          <Text style={styles.skipLabel}>Plus tard →</Text>
+        <Pressable
+          onPress={resend}
+          disabled={loading}
+          style={({ pressed }) => [styles.secondary, (loading || pressed) && { opacity: 0.85 }]}
+        >
+          <Text style={styles.secondaryLabel}>
+            {loading ? 'Envoi…' : 'Renvoyer le code'}
+          </Text>
+        </Pressable>
+
+
+        <Pressable onPress={signOut} style={styles.skip} hitSlop={8}>
+          <Text style={styles.skipLabel}>Se déconnecter</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -93,17 +184,7 @@ export default function VerifyEmailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.cream },
   scroll: { flexGrow: 1, padding: Spacing.xl },
-  topRow: { marginBottom: Spacing.lg },
-  back: {
-    width: 40,
-    height: 40,
-    borderRadius: Radii.lg,
-    backgroundColor: Colors.tan100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backIcon: { fontSize: 22, color: Colors.brown },
-  emoji: { fontSize: 56, textAlign: 'center', marginVertical: Spacing.lg },
+  emoji: { alignSelf: 'center', marginVertical: Spacing.lg },
   title: {
     fontSize: Typography.sizes.display,
     fontFamily: Typography.fontFamily.serifBold,
@@ -119,6 +200,19 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   email: { fontWeight: '700', color: Colors.brown },
+  codeInput: {
+    height: 64,
+    borderRadius: Radii.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+    color: Colors.brown,
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: 8,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
   card: {
     backgroundColor: Colors.white,
     borderRadius: Radii.lg,
@@ -176,6 +270,17 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   primaryLabel: { color: Colors.white, fontSize: Typography.sizes.lg, fontWeight: '700' },
+  secondary: {
+    height: 52,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+  },
+  secondaryLabel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '700' },
   skip: { alignItems: 'center', marginTop: Spacing.lg, padding: Spacing.md },
   skipLabel: { color: Colors.tan500, fontSize: Typography.sizes.sm, fontWeight: '600' },
 });

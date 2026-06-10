@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
@@ -50,8 +51,9 @@ export default function DeleteAccountScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>‹ Annuler</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancelRow}>
+          <Feather name="chevron-left" size={18} color={Colors.brown} />
+          <Text style={styles.cancel}>Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Supprimer le compte</Text>
         <View style={{ width: 60 }} />
@@ -63,7 +65,7 @@ export default function DeleteAccountScreen() {
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.warnCard}>
-            <Text style={styles.warnIcon}>⚠️</Text>
+            <Feather name="alert-triangle" size={38} color={palette.errorText} style={styles.warnIcon} />
             <Text style={styles.warnTitle}>Cette action est définitive</Text>
             <Text style={styles.warnText}>
               La suppression de ton compte <Text style={styles.email}>{user?.email}</Text> entraîne
@@ -83,7 +85,7 @@ export default function DeleteAccountScreen() {
               'Tes notifications et tokens d’appareil',
             ].map((item) => (
               <View key={item} style={styles.listRow}>
-                <Text style={styles.listBullet}>✕</Text>
+                <Feather name="x" size={15} color={Colors.danger} style={styles.listBullet} />
                 <Text style={styles.listItem}>{item}</Text>
               </View>
             ))}
@@ -93,7 +95,7 @@ export default function DeleteAccountScreen() {
             <Text style={styles.rgpdTitle}>Tes droits</Text>
             <Text style={styles.rgpdText}>
               Conformément au RGPD, tu peux exporter tes données avant suppression en nous
-              contactant à <Text style={styles.email}>privacy@nigerconnect.ne</Text>. Sans action
+              contactant à <Text style={styles.email}>contact@sahabiguide.com</Text>. Sans action
               de ta part, la suppression est immédiate et aucune copie n’est conservée après
               30 jours (logs serveur anonymisés).
             </Text>
@@ -118,7 +120,7 @@ export default function DeleteAccountScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={styles.errorIcon}>⚠️</Text>
+              <Feather name="alert-triangle" size={16} color={palette.errorText} style={styles.errorIcon} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
@@ -134,9 +136,14 @@ export default function DeleteAccountScreen() {
               pressed && canDelete && { opacity: 0.9 },
             ]}
           >
-            <Text style={styles.deleteLabel}>
-              {loading ? 'Suppression…' : '🗑️  Supprimer définitivement'}
-            </Text>
+            {loading ? (
+              <Text style={styles.deleteLabel}>Suppression…</Text>
+            ) : (
+              <>
+                <Feather name="trash-2" size={16} color={Colors.white} />
+                <Text style={styles.deleteLabel}>Supprimer définitivement</Text>
+              </>
+            )}
           </Pressable>
 
           <Pressable onPress={() => router.back()} style={styles.keepBtn}>
@@ -159,6 +166,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.tan200,
   },
+  cancelRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   cancel: { color: Colors.brown, fontSize: Typography.sizes.md, fontWeight: '600' },
   title: {
     fontSize: Typography.sizes.md + 1,
@@ -175,7 +183,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  warnIcon: { fontSize: 40 },
+  warnIcon: {},
   warnTitle: {
     fontSize: Typography.sizes.lg,
     fontWeight: '800',
@@ -200,10 +208,7 @@ const styles = StyleSheet.create({
   list: { gap: 6 },
   listRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   listBullet: {
-    color: Colors.danger,
-    fontSize: Typography.sizes.sm,
-    fontWeight: '800',
-    lineHeight: 20,
+    marginTop: 2,
   },
   listItem: { flex: 1, fontSize: Typography.sizes.sm, color: Colors.brown, lineHeight: 20 },
   rgpdBox: {
@@ -261,6 +266,8 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: Radii.lg,
     backgroundColor: Colors.danger,
+    flexDirection: 'row',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.md,

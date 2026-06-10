@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -22,29 +23,23 @@ import {
 } from '@/services/associationsApi';
 import { pickAndUploadImage, UploadError } from '@/services/uploadService';
 import { useAuthStore } from '@/stores/authStore';
-import {
-  Colors,
-  CountryNames,
-  Flags,
-  Gradients,
-  palette,
-  Radii,
-  Spacing,
-  Typography,
-} from '@/constants/theme';
+import { CitySearchField } from '@/components/ui/CitySearchField';
+import { Colors, Gradients, palette, Radii, Spacing, Typography } from '@/constants/theme';
 
-const CATEGORIES: Array<{ id: AssociationCategory; label: string; icon: string }> = [
-  { id: 'generaliste', label: 'Généraliste', icon: '🌍' },
-  { id: 'etudiants', label: 'Étudiants', icon: '🎓' },
-  { id: 'femmes', label: 'Femmes', icon: '👩' },
-  { id: 'jeunesse', label: 'Jeunesse', icon: '✨' },
-  { id: 'culture', label: 'Culture', icon: '🎨' },
-  { id: 'business', label: 'Business', icon: '💼' },
-  { id: 'sport', label: 'Sport', icon: '⚽' },
-  { id: 'religieux', label: 'Religieux', icon: '🕌' },
+const CATEGORIES: Array<{
+  id: AssociationCategory;
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+}> = [
+  { id: 'generaliste', label: 'Généraliste', icon: 'globe' },
+  { id: 'etudiants', label: 'Étudiants', icon: 'book-open' },
+  { id: 'femmes', label: 'Femmes', icon: 'user' },
+  { id: 'jeunesse', label: 'Jeunesse', icon: 'star' },
+  { id: 'culture', label: 'Culture', icon: 'feather' },
+  { id: 'business', label: 'Business', icon: 'briefcase' },
+  { id: 'sport', label: 'Sport', icon: 'activity' },
+  { id: 'religieux', label: 'Religieux', icon: 'moon' },
 ];
-
-const COUNTRY_CODES = Object.keys(Flags);
 
 export default function NewAssociationScreen() {
   const router = useRouter();
@@ -70,8 +65,9 @@ export default function NewAssociationScreen() {
     mutationFn: (input: CreateAssociationInput) => associationsApi.create(input),
     onSuccess: (assoc) => {
       void qc.invalidateQueries({ queryKey: ['associations'] });
+      void qc.invalidateQueries({ queryKey: ['geo'] });
       setFeedback({ kind: 'success', message: 'Association créée ✓' });
-      setTimeout(() => router.replace(`/associations/${assoc.id}` as never), 800);
+      setTimeout(() => router.replace(`/associations/${assoc.id}`), 800);
     },
     onError: (e) => {
       const err = e as {
@@ -197,7 +193,11 @@ export default function NewAssociationScreen() {
                   onPress={() => setCategory(c.id)}
                   style={[styles.chip, active && styles.chipActive]}
                 >
-                  <Text style={styles.chipIcon}>{c.icon}</Text>
+                  <Feather
+                    name={c.icon}
+                    size={15}
+                    color={active ? Colors.orange : Colors.tan600}
+                  />
                   <Text style={[styles.chipLabel, active && { color: Colors.orange }]}>
                     {c.label}
                   </Text>
@@ -214,31 +214,19 @@ export default function NewAssociationScreen() {
             multiline
           />
 
-          <Text style={styles.label}>Pays</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            {COUNTRY_CODES.map((code) => {
-              const active = countryCode === code;
-              return (
-                <Pressable
-                  key={code}
-                  onPress={() => setCountryCode(active ? '' : code)}
-                  style={[styles.countryChip, active && styles.countryChipActive]}
-                >
-                  <Text style={styles.chipIcon}>{Flags[code]}</Text>
-                  <Text
-                    style={[
-                      styles.countryName,
-                      active && { color: Colors.orange, fontWeight: '700' },
-                    ]}
-                  >
-                    {CountryNames[code] ?? code}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          <Field label="Ville" value={city} onChangeText={setCity} placeholder="Ex : Niamey" />
+          <Text style={styles.label}>Ville</Text>
+          <Text style={styles.fieldHint}>
+            Choisis la ville — le pays est défini automatiquement. L&apos;association apparaît alors
+            sur la carte.
+          </Text>
+          <CitySearchField
+            city={city}
+            countryCode={countryCode}
+            onChange={(c, cc) => {
+              setCity(c);
+              setCountryCode(cc);
+            }}
+          />
           <Field
             label="Site web"
             value={website}
@@ -280,7 +268,12 @@ export default function NewAssociationScreen() {
               accessibilityLiveRegion="polite"
               accessibilityRole="alert"
             >
-              <Text style={styles.feedbackIcon}>{feedback.kind === 'success' ? '✅' : '⚠️'}</Text>
+              <Feather
+                name={feedback.kind === 'success' ? 'check-circle' : 'alert-triangle'}
+                size={16}
+                color={feedback.kind === 'success' ? palette.successText : palette.errorText}
+                style={styles.feedbackIcon}
+              />
               <Text
                 style={[
                   styles.feedbackText,
@@ -394,6 +387,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.sizes.md,
     backgroundColor: Colors.white,
     color: Colors.brown,
+  },
+  fieldHint: {
+    fontSize: Typography.sizes.xs + 1,
+    color: Colors.tan500,
+    marginBottom: Spacing.sm,
+    lineHeight: 16,
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.md },
   chip: {

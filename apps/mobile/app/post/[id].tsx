@@ -12,15 +12,18 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Comment } from '@nigerconnect/shared-types';
+import type { Comment, CursorPage } from '@nigerconnect/shared-types';
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentItem } from '@/components/feed/CommentItem';
+import { FeedCardSkeleton, CommentSkeletonList } from '@/components/ui/Skeleton';
 import { feedApi } from '@/services/feedApi';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { toast } from '@/stores/toastStore';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 
 export default function PostScreen() {
@@ -54,15 +57,38 @@ export default function PostScreen() {
       void qc.invalidateQueries({ queryKey: ['post', id] });
       void qc.invalidateQueries({ queryKey: ['feed'] });
     },
+    onError: () => toast.error('Commentaire non envoyé, réessaie'),
   });
 
   const deleteMut = useMutation({
-    mutationFn: async (commentId: string) => {
-      await feedApi.deleteComment(commentId);
+    mutationFn: (commentId: string) => feedApi.deleteComment(commentId),
+    // Optimistic: drop the comment (and any nested reply) from the cached page immediately
+    onMutate: async (commentId) => {
+      await qc.cancelQueries({ queryKey: ['post', id, 'comments'] });
+      const prev = qc.getQueryData<CursorPage<Comment>>(['post', id, 'comments']);
+      qc.setQueryData<CursorPage<Comment>>(['post', id, 'comments'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          items: old.items
+            .filter((c) => c.id !== commentId)
+            .map((c) => ({
+              ...c,
+              replies: (c.replies ?? []).filter((r) => r.id !== commentId),
+            })),
+        };
+      });
+      return { prev };
     },
-    onSuccess: () => {
+    onError: (_e, _commentId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['post', id, 'comments'], ctx.prev);
+      toast.error('Suppression impossible');
+    },
+    // Re-sync with the server: list, post comment counter, and the feed card counter.
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['post', id, 'comments'] });
       void qc.invalidateQueries({ queryKey: ['post', id] });
+      void qc.invalidateQueries({ queryKey: ['feed'] });
     },
   });
 
@@ -71,7 +97,10 @@ export default function PostScreen() {
       feedApi.editComment(commentId, content),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['post', id, 'comments'] });
+      void qc.invalidateQueries({ queryKey: ['post', id] });
+      void qc.invalidateQueries({ queryKey: ['feed'] });
     },
+    onError: () => toast.error('Modification non enregistrée'),
   });
 
   const likeMut = useMutation({
@@ -106,8 +135,8 @@ export default function PostScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={15}>
-          <Text style={styles.back}>←</Text>
+        <Pressable onPress={() => router.back()} hitSlop={15} style={styles.back}>
+          <Feather name="arrow-left" size={26} color={Colors.brown} />
         </Pressable>
         <Text style={styles.title}>Publication</Text>
         <View style={{ width: 34 }} />
@@ -122,7 +151,10 @@ export default function PostScreen() {
           keyExtractor={(c) => c.id}
           ListHeaderComponent={
             postQuery.isLoading ? (
-              <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.xxl }} />
+              <View>
+                <FeedCardSkeleton />
+                <CommentSkeletonList count={3} />
+              </View>
             ) : postQuery.data ? (
               <View>
                 <PostCard
@@ -157,18 +189,7 @@ export default function PostScreen() {
                 }
                 currentUserId={me?.id}
               />
-              {(item.replies ?? []).map((r) => (
-                <CommentItem
-                  key={r.id}
-                  comment={r}
-                  depth={1}
-                  onDelete={handleDelete}
-                  onEdit={(commentId, content) =>
-                    editMut.mutateAsync({ commentId, content }).then(() => undefined)
-                  }
-                  currentUserId={me?.id}
-                />
-              ))}
+              {/* Nested replies (levels 2 & 3) are rendered recursively inside CommentItem. */}
             </View>
           )}
           ListEmptyComponent={
@@ -188,7 +209,7 @@ export default function PostScreen() {
               Réponse à <Text style={styles.replyHintName}>{replyTo.author}</Text>
             </Text>
             <Pressable onPress={() => setReplyTo(null)} hitSlop={10}>
-              <Text style={styles.replyHintClose}>✕</Text>
+              <Feather name="x" size={16} color={Colors.tan500} />
             </Pressable>
           </View>
         ) : null}
@@ -213,7 +234,11 @@ export default function PostScreen() {
             ]}
           >
             <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-            <Text style={styles.sendIcon}>➤</Text>
+            {commentMut.isPending ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Feather name="send" size={16} color={Colors.white} />
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -233,7 +258,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     backgroundColor: Colors.cream,
   },
-  back: { fontSize: 26, color: Colors.brown, width: 34 },
+  back: { width: 34 },
   title: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   loading: { padding: Spacing.xl, textAlign: 'center', color: Colors.tan500 },
   commentsHeader: {
@@ -257,7 +282,6 @@ const styles = StyleSheet.create({
   },
   replyHintText: { flex: 1, fontSize: Typography.sizes.xs + 1, color: Colors.tan600 },
   replyHintName: { color: Colors.orange, fontWeight: '700' },
-  replyHintClose: { fontSize: 16, color: Colors.tan500 },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -287,5 +311,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  sendIcon: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 });

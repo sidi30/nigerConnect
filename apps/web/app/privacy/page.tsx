@@ -20,7 +20,7 @@ export default function PrivacyPolicyPage() {
       lastUpdated={LEGAL_LAST_UPDATED}
       intro={PRIVACY_INTRO}
       sections={PRIVACY_SECTIONS}
-      contact="Délégué à la protection des données : privacy@nigerconnect.ne. Réclamation CNIL : cnil.fr."
+      contact="Délégué à la protection des données : contact@sahabiguide.com. Réclamation CNIL : cnil.fr."
     />
   );
 }

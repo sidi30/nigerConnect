@@ -12,6 +12,8 @@ export interface PublicUser {
   city: string | null;
   countryCode: string | null;
   identityStatus: IdentityStatus;
+  ratingAvg: number;
+  ratingCount: number;
 }
 
 export interface User extends PublicUser {
@@ -22,6 +24,8 @@ export interface User extends PublicUser {
   latitude: number | null;
   longitude: number | null;
   showOnMap: boolean;
+  proximityAlerts: boolean;
+  proximityRadius: number;
   languages: string[];
   privacyLevel: PrivacyLevel;
   emailVerified: boolean;

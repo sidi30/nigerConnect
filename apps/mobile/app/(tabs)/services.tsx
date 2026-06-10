@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,9 +9,11 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import {
   Colors,
   CountryNames,
@@ -72,11 +73,17 @@ export default function ServicesTab() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>🤝 Services & Entraide</Text>
+        <View style={styles.titleRow}>
+          <Feather name="users" size={20} color={Colors.brown} />
+          <Text style={styles.title}>Services & Entraide</Text>
+        </View>
         <Pressable style={styles.sortBtn} onPress={() => setSort(sort === 'recent' ? 'urgent_first' : 'recent')}>
-          <Text style={styles.sortLabel}>
-            {sort === 'recent' ? '🕐 Récent' : '🔴 Urgent'}
-          </Text>
+          <Feather
+            name={sort === 'recent' ? 'clock' : 'alert-circle'}
+            size={13}
+            color={sort === 'recent' ? Colors.tan600 : Colors.danger}
+          />
+          <Text style={styles.sortLabel}>{sort === 'recent' ? 'Récent' : 'Urgent'}</Text>
         </Pressable>
       </View>
 
@@ -98,7 +105,8 @@ export default function ServicesTab() {
         >
           {hasFilters ? (
             <Pressable onPress={resetFilters} style={styles.resetPill}>
-              <Text style={styles.resetLabel}>✕ Réinitialiser</Text>
+              <Feather name="x" size={13} color={Colors.danger} />
+              <Text style={styles.resetLabel}>Réinitialiser</Text>
             </Pressable>
           ) : null}
           {CATEGORIES.map((c) => {
@@ -129,14 +137,21 @@ export default function ServicesTab() {
               },
             ]}
           >
-            <Text
-              style={[
-                styles.subFilterLabel,
-                urgencyFilter === 'urgent' && { color: Colors.warningDark },
-              ]}
-            >
-              🔴 Urgent seulement
-            </Text>
+            <View style={styles.subFilterInner}>
+              <Feather
+                name="alert-circle"
+                size={13}
+                color={urgencyFilter === 'urgent' ? Colors.warningDark : Colors.tan600}
+              />
+              <Text
+                style={[
+                  styles.subFilterLabel,
+                  urgencyFilter === 'urgent' && { color: Colors.warningDark },
+                ]}
+              >
+                Urgent seulement
+              </Text>
+            </View>
           </Pressable>
           <Pressable
             onPress={() => setShowCountryPicker(!showCountryPicker)}
@@ -148,14 +163,19 @@ export default function ServicesTab() {
               },
             ]}
           >
-            <Text
-              style={[
-                styles.subFilterLabel,
-                countryFilter && { color: Colors.orange },
-              ]}
-            >
-              {countryFilter ? `${Flags[countryFilter]} ${CountryNames[countryFilter]}` : '🌍 Pays'}
-            </Text>
+            <View style={styles.subFilterInner}>
+              {countryFilter ? null : (
+                <Feather name="globe" size={13} color={Colors.tan600} />
+              )}
+              <Text
+                style={[
+                  styles.subFilterLabel,
+                  countryFilter && { color: Colors.orange },
+                ]}
+              >
+                {countryFilter ? `${Flags[countryFilter]} ${CountryNames[countryFilter]}` : 'Pays'}
+              </Text>
+            </View>
           </Pressable>
         </View>
 
@@ -184,11 +204,11 @@ export default function ServicesTab() {
 
         {servicesQuery.isLoading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.orange} />
+            <Loader style={{ marginTop: 0 }} />
           </View>
         ) : services.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🤝</Text>
+            <Feather name="users" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
             <Text style={styles.emptyTitle}>Aucune demande</Text>
             <Text style={styles.emptyText}>
               {hasFilters
@@ -224,7 +244,8 @@ export default function ServicesTab() {
                       </Text>
                       {svc.urgency === 'urgent' && (
                         <View style={styles.urgencyPill}>
-                          <Text style={styles.urgencyLabel}>🔴 Urgent</Text>
+                          <Feather name="alert-circle" size={11} color={Colors.warningDark} />
+                          <Text style={styles.urgencyLabel}>Urgent</Text>
                         </View>
                       )}
                     </View>
@@ -242,12 +263,20 @@ export default function ServicesTab() {
                       </Text>
                     ) : null}
                     <View style={styles.footer}>
-                      {svc.budget ? <Text style={styles.budget}>💰 {svc.budget}</Text> : null}
+                      {svc.budget ? (
+                        <View style={styles.footerItem}>
+                          <Feather name="dollar-sign" size={13} color={Colors.orange} />
+                          <Text style={styles.budget}>{svc.budget}</Text>
+                        </View>
+                      ) : null}
                       <View style={{ flex: 1 }} />
-                      <Text style={styles.responses}>
-                        💬 {svc.responseCount}{' '}
-                        {svc.responseCount === 1 ? 'réponse' : 'réponses'}
-                      </Text>
+                      <View style={styles.footerItem}>
+                        <Feather name="message-circle" size={13} color={Colors.tan500} />
+                        <Text style={styles.responses}>
+                          {svc.responseCount}{' '}
+                          {svc.responseCount === 1 ? 'réponse' : 'réponses'}
+                        </Text>
+                      </View>
                     </View>
                   </View>
                 </View>
@@ -276,13 +305,16 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     backgroundColor: 'rgba(253,251,247,0.96)',
   },
+  titleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: {
-    flex: 1,
     fontSize: Typography.sizes.xl,
     fontFamily: Typography.fontFamily.serifBold,
     color: Colors.brown,
   },
   sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
     borderRadius: Radii.md,
@@ -296,6 +328,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   resetPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: Spacing.md,
     paddingVertical: 8,
     borderRadius: Radii.md,
@@ -330,6 +365,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.tan200,
     backgroundColor: Colors.white,
   },
+  subFilterInner: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   subFilterLabel: { fontSize: Typography.sizes.xs + 1, fontWeight: '700', color: Colors.tan600 },
   countryPicker: {
     flexDirection: 'row',
@@ -372,6 +408,9 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   urgencyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 5,
@@ -397,6 +436,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     marginTop: 10,
   },
+  footerItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   budget: {
     fontSize: Typography.sizes.sm - 1,
     color: Colors.orange,

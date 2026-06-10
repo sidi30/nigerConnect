@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
@@ -14,7 +15,10 @@ export function FriendRequestsBanner({ requests, onAccept, onDecline }: Props) {
   if (requests.length === 0) return null;
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>👋 Demandes d&apos;amitié ({requests.length})</Text>
+      <View style={styles.titleRow}>
+        <Feather name="user-plus" size={15} color={Colors.orange} />
+        <Text style={styles.title}>Demandes d&apos;amitié ({requests.length})</Text>
+      </View>
       {requests.map((r) => {
         const p = r.requester;
         return (
@@ -44,7 +48,7 @@ export function FriendRequestsBanner({ requests, onAccept, onDecline }: Props) {
               onPress={() => onDecline?.(r.id)}
               style={({ pressed }) => [styles.decline, pressed && { opacity: 0.85 }]}
             >
-              <Text style={styles.declineLabel}>✕</Text>
+              <Feather name="x" size={16} color={Colors.tan500} />
             </Pressable>
           </View>
         );
@@ -63,11 +67,16 @@ const styles = StyleSheet.create({
     borderColor: Colors.peach100,
     padding: Spacing.md + 2,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: Spacing.md,
+  },
   title: {
     fontSize: Typography.sizes.sm,
     fontWeight: '700',
     color: Colors.orange,
-    marginBottom: Spacing.md,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md - 2, marginBottom: Spacing.sm },
   name: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.brown },
@@ -87,5 +96,4 @@ const styles = StyleSheet.create({
     borderColor: Colors.tan300,
     backgroundColor: Colors.white,
   },
-  declineLabel: { color: Colors.tan500, fontSize: Typography.sizes.sm },
 });

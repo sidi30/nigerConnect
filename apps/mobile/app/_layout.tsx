@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { ThemeProvider } from '@/constants/theme-provider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { Toast } from '@/components/ui/Toast';
 import { captureRenderError, initSentry } from '@/services/sentry';
 
 // Boot Sentry as early as possible — before any React render — so the very
@@ -121,6 +122,7 @@ export default function RootLayout() {
                   of the screen and overlap the system clock/battery row. */}
               <StatusBar style="dark" translucent backgroundColor="transparent" />
               <OfflineBanner />
+              <Toast />
               <AuthGate />
               <NotificationDeepLink />
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }}>
@@ -140,10 +142,16 @@ export default function RootLayout() {
                   name="photos/viewer"
                   options={{ presentation: 'fullScreenModal', animation: 'fade' }}
                 />
+                <Stack.Screen name="associations/[id]" />
                 <Stack.Screen name="associations/new" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="pages/index" />
+                <Stack.Screen name="pages/[id]" />
+                <Stack.Screen name="pages/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="friends" />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
+                <Stack.Screen name="reset-password" options={{ presentation: 'card' }} />
+                <Stack.Screen name="complete-profile" options={{ presentation: 'card', gestureEnabled: false }} />
                 <Stack.Screen name="legal" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/terms" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />
@@ -179,8 +187,22 @@ function NotificationDeepLink() {
     function handle(data: Record<string, unknown> | null | undefined): void {
       if (!data) return;
       const conversationId = typeof data.conversationId === 'string' ? data.conversationId : null;
+      const pageId = typeof data.pageId === 'string' ? data.pageId : null;
       const postId = typeof data.postId === 'string' ? data.postId : null;
+      // review_received carries { reviewTargetType: 'user'|'page', targetId }.
+      const reviewTargetType =
+        data.reviewTargetType === 'user' || data.reviewTargetType === 'page'
+          ? data.reviewTargetType
+          : null;
+      const reviewTargetId = typeof data.targetId === 'string' ? data.targetId : null;
       if (conversationId) router.push(`/chat/${conversationId}` as never);
+      else if (reviewTargetType && reviewTargetId) {
+        router.push(
+          (reviewTargetType === 'page'
+            ? `/pages/${reviewTargetId}`
+            : `/user/${reviewTargetId}`) as never,
+        );
+      } else if (pageId) router.push(`/pages/${pageId}` as never);
       else if (postId) router.push(`/post/${postId}` as never);
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
         router.push('/friends' as never);
@@ -207,6 +229,7 @@ function NotificationDeepLink() {
 function AuthGate() {
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
   const segments = useSegments();
   const router = useRouter();
   const navState = useRootNavigationState();
@@ -215,12 +238,29 @@ function AuthGate() {
     if (!navState?.key || !isHydrated) return;
     const first = segments[0];
     const inAuth = first === '(auth)';
-    if (!isAuthenticated && !inAuth) {
+    const onVerifyEmail = first === 'verify-email';
+    // Reset-password is reachable while logged-out (opened from the email
+    // link / universal link) — don't bounce it to the welcome screen.
+    const onResetPassword = first === 'reset-password';
+    const onCompleteProfile = first === 'complete-profile';
+    // OAuth (Google/Apple) signups are email-verified but arrive with no
+    // city/country (the provider doesn't give it) → no map presence. Password
+    // signups always set countryCode at registration, so a missing countryCode
+    // on a verified account means "OAuth, profile not completed yet".
+    const needsProfile = Boolean(isAuthenticated && user?.emailVerified && !user?.countryCode);
+    if (!isAuthenticated && !inAuth && !onResetPassword) {
       router.replace('/(auth)/welcome');
-    } else if (isAuthenticated && inAuth) {
+    } else if (isAuthenticated && user && !user.emailVerified && !onVerifyEmail) {
+      // Authenticated but email not confirmed → corral them onto the
+      // verify-email screen until they confirm (mirrors the API guard).
+      router.replace('/verify-email');
+    } else if (needsProfile && !onCompleteProfile) {
+      // Verified but no location yet (OAuth) → collect city before entering.
+      router.replace('/complete-profile');
+    } else if (isAuthenticated && user?.emailVerified && !needsProfile && inAuth) {
       router.replace('/(tabs)');
     }
-  }, [navState?.key, isHydrated, isAuthenticated, segments, router]);
+  }, [navState?.key, isHydrated, isAuthenticated, user, segments, router]);
 
   return null;
 }

@@ -10,20 +10,35 @@ import {
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { Loader } from '@/components/ui/Loader';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
+import { friendsApi } from '@/services/friendsApi';
 import { geoApi, type MapMarker } from '@/services/geoApi';
 import { profileApi } from '@/services/profileApi';
+import { useAuthStore } from '@/stores/authStore';
 
 type Filter = 'all' | 'people' | 'associations';
 
-const FILTERS: Array<{ id: Filter; label: string; icon: string }> = [
-  { id: 'all', label: 'Tous', icon: '🌍' },
-  { id: 'people', label: 'Personnes', icon: '👤' },
-  { id: 'associations', label: 'Assos', icon: '🏛️' },
+const FILTERS: Array<{ id: Filter; label: string; icon: keyof typeof Feather.glyphMap }> = [
+  { id: 'all', label: 'Tous', icon: 'globe' },
+  { id: 'people', label: 'Personnes', icon: 'user' },
+  { id: 'associations', label: 'Assos & pages', icon: 'users' },
 ];
+
+// Emoji shown inside a page's map marker, by page kind. Mirrors the icon set in
+// pages/new.tsx (community/cause/business/official/group).
+const PAGE_KIND_EMOJI: Record<string, string> = {
+  community: '🌍',
+  cause: '❤️',
+  business: '💼',
+  official: '🏅',
+  group: '👥',
+};
 
 const INITIAL_BOUNDS = {
   north: 70,
@@ -32,6 +47,13 @@ const INITIAL_BOUNDS = {
   west: -80,
   zoom: 3,
 };
+
+// Local-zone defaults: on first load we geolocate the user, draw a ~50km zone
+// circle around them and zoom to it so the map opens on "people near me" rather
+// than the whole world. ZONE_ZOOM lands between city-cluster (≥9) and the
+// individual-marker threshold so nearby people render as avatars right away.
+const ZONE_RADIUS_KM = 50;
+const ZONE_ZOOM = 11;
 
 const LEAFLET_HTML = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
@@ -43,9 +65,13 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .marker-cluster.country{width:60px;height:60px;flex-direction:column;font-size:14px}
   .marker-cluster.city{width:50px;height:50px;flex-direction:column;font-size:12px}
   .marker-cluster .flag{font-size:12px;margin-top:1px}
-  .marker-ind{width:48px;height:48px;border-radius:50%;border:3px solid #E05206;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  .marker-ind{width:48px;height:48px;border-radius:50%;border:3px solid #E05206;background-size:cover;background-position:center;box-shadow:0 2px 8px rgba(0,0,0,.35);background-color:#F5EDE0}
+  .marker-ind-initials{display:flex;align-items:center;justify-content:center;background:#E05206;color:#fff;font-weight:800;font-size:16px;font-family:system-ui}
   .marker-assoc{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#1565C0;border:3px solid #fff;box-shadow:0 3px 10px rgba(21,101,192,.5);font-size:22px;position:relative}
   .marker-assoc .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+  .marker-page{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#E05206;border:3px solid #fff;box-shadow:0 3px 10px rgba(224,82,6,.5);font-size:22px;position:relative}
+  .marker-page .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+  .marker-me{width:22px;height:22px;border-radius:50%;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3),0 2px 6px rgba(0,0,0,.4)}
   .leaflet-marker-icon{background:none;border:none}
   .leaflet-container{background:#E8F4F8}
 </style>
@@ -82,18 +108,75 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
     map.flyTo([lat, lon], zoom || 9, { duration: 0.8 });
   };
 
+  // "You are here" marker + the local zone circle (radius in km). Drawn in a
+  // dedicated layer so re-locating just replaces it without touching members.
+  var meLayer = L.layerGroup().addTo(map);
+  var meLat = null, meLon = null;
+  window.drawMe = function(lat, lon, radiusKm){
+    meLat = lat; meLon = lon;
+    meLayer.clearLayers();
+    L.circle([lat, lon], {
+      radius: (radiusKm || 50) * 1000,
+      color: '#1E88E5', weight: 1.5, fillColor: '#1E88E5', fillOpacity: 0.08,
+    }).addTo(meLayer);
+    var icon = L.divIcon({ html: '<div class="marker-me"></div>', className: '', iconSize: [22,22], iconAnchor: [11,11] });
+    L.marker([lat, lon], { icon: icon, zIndexOffset: 1000 }).addTo(meLayer);
+  };
+  window.recenterMe = function(zoom){
+    if (meLat !== null) map.flyTo([meLat, meLon], zoom || 11, { duration: 0.8 });
+  };
+
+  function initials(name){
+    if(!name) return '?';
+    var p = name.trim().split(/\\s+/);
+    return (((p[0]||'')[0]||'') + ((p[1]||'')[0]||'')).toUpperCase() || '?';
+  }
+
   window.renderMarkers = function(markers){
     markerLayer.clearLayers();
+
+    // Fan out individuals that share (almost) the same coordinates so they don't
+    // stack invisibly on top of one another. Group by ~11m grid, then place each
+    // member of a >1 group on a small ring around the shared point.
+    var groups = {};
+    for (var i=0;i<markers.length;i++){
+      var mm = markers[i];
+      if (mm.kind === 'individual'){
+        var key = mm.lat.toFixed(4) + ',' + mm.lon.toFixed(4);
+        (groups[key] = groups[key] || []).push(mm);
+      }
+    }
+    var offset = {};
+    Object.keys(groups).forEach(function(key){
+      var arr = groups[key];
+      if (arr.length < 2) return;
+      var R = 0.00022; // ~24m
+      for (var j=0;j<arr.length;j++){
+        var ang = (2*Math.PI*j)/arr.length;
+        offset[arr[j].userId] = { dLat: R*Math.sin(ang), dLon: R*Math.cos(ang) };
+      }
+    });
+
     for (const m of markers) {
       if (m.kind === 'individual') {
-        const html = '<div class="marker-ind" style="background-image:url(\\'' + (m.avatarUrl || '') + '\\')"></div>';
-        const icon = L.divIcon({ html: html, className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
-        const mk = L.marker([m.lat, m.lon], { icon });
+        const off = offset[m.userId] || { dLat:0, dLon:0 };
+        const inner = m.avatarUrl
+          ? '<div class="marker-ind" style="background-image:url(\\'' + m.avatarUrl + '\\')"></div>'
+          : '<div class="marker-ind marker-ind-initials">' + initials(m.name) + '</div>';
+        const icon = L.divIcon({ html: inner, className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
+        const mk = L.marker([m.lat + off.dLat, m.lon + off.dLon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
         mk.addTo(markerLayer);
       } else if (m.kind === 'association') {
         const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
         const html = '<div class="marker-assoc">🏛️' + verif + '</div>';
+        const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
+        const mk = L.marker([m.lat, m.lon], { icon });
+        mk.on('click', () => post({ type:'select', marker: m }));
+        mk.addTo(markerLayer);
+      } else if (m.kind === 'page') {
+        const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
+        const html = '<div class="marker-page">' + (m.emoji || '📣') + verif + '</div>';
         const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
         const mk = L.marker([m.lat, m.lon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
@@ -106,7 +189,9 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
         const icon = L.divIcon({ html: html, className: '', iconSize: [size,size], iconAnchor: [size/2,size/2] });
         const mk = L.marker([m.lat, m.lon], { icon });
         mk.on('click', () => {
-          if (m.kind === 'country') map.setView([m.lat, m.lon], 5);
+          // Country clusters jump straight to the individual-marker threshold
+          // (zoom 9) so members become tappable avatars; city goes one closer.
+          if (m.kind === 'country') map.setView([m.lat, m.lon], 9);
           else if (m.kind === 'city') map.setView([m.lat, m.lon], 10);
           post({ type:'select', marker: m });
         });
@@ -138,6 +223,81 @@ export default function MapTab() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selected, setSelected] = useState<MapMarker | null>(null);
   const [webReady, setWebReady] = useState(false);
+  const [myLocation, setMyLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [locating, setLocating] = useState(true);
+  const located = useRef(false);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  // Ask permission, get a fix, draw the "you are here" marker + zone circle and
+  // fly to it. Returns silently on denial/failure so the map just stays on the
+  // world view — geolocation is best-effort, never blocking.
+  const locateAndDraw = useRef<() => Promise<void>>(async () => {});
+  locateAndDraw.current = async () => {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      setMyLocation({ lat, lon });
+      webRef.current?.injectJavaScript(
+        `window.drawMe(${lat}, ${lon}, ${ZONE_RADIUS_KM}); window.flyTo(${lat}, ${lon}, ${ZONE_ZOOM}); true;`,
+      );
+      // Persist the fresh GPS position so this user shows up on other people's
+      // maps at their real spot — but only if they've opted into map visibility.
+      // Skipped silently when showOnMap is off (privacy) or the coords barely
+      // moved (avoid spamming the API on every recenter).
+      void persistMyPosition(lat, lon);
+    } catch {
+      /* location unavailable — fall back to world view */
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  async function persistMyPosition(lat: number, lon: number) {
+    if (!user || user.showOnMap === false) return;
+    // Don't let a transient GPS fix overwrite the map position of a user who has
+    // a stated city: their pin should sit at their declared home (city centroid),
+    // not wherever their phone happens to be. We only seed coordinates from GPS
+    // for users who never set a city (e.g. OAuth sign-ups) — otherwise the pin
+    // and the displayed city drift apart (e.g. "Barcelona" plotted in France).
+    if (user.city && user.city.trim()) return;
+    // ~100m threshold: skip the write if we're essentially where the server
+    // already has us (0.001° ≈ 111m).
+    const moved =
+      user.latitude == null ||
+      user.longitude == null ||
+      Math.abs(user.latitude - lat) > 0.001 ||
+      Math.abs(user.longitude - lon) > 0.001;
+    if (!moved) return;
+    try {
+      const updated = await profileApi.updateMe({ latitude: lat, longitude: lon });
+      setUser(updated);
+    } catch {
+      /* non-blocking — position will sync on a later open */
+    }
+  }
+
+  // On first WebView ready, auto-locate so the map opens on "people near me".
+  useEffect(() => {
+    if (!webReady || located.current) return;
+    located.current = true;
+    void locateAndDraw.current();
+  }, [webReady]);
+
+  // FAB: recenter on the existing fix, or (re)try locating if we have none yet.
+  function recenterOnMe() {
+    if (myLocation) {
+      webRef.current?.injectJavaScript(`window.recenterMe(${ZONE_ZOOM}); true;`);
+    } else {
+      void locateAndDraw.current();
+    }
+  }
 
   // Global name search via the API — runs only when the search bar is open
   // AND the user typed at least 2 characters. Hits /profile/search regardless
@@ -168,7 +328,7 @@ export default function MapTab() {
               const country = m.countryCode ? CountryNames[m.countryCode] : null;
               return matches(m.name, m.city, m.countryCode, country);
             }
-            if (m.kind === 'association') {
+            if (m.kind === 'association' || m.kind === 'page') {
               const country = m.countryCode ? CountryNames[m.countryCode] : null;
               return matches(m.name, m.city, m.countryCode, country);
             }
@@ -184,7 +344,9 @@ export default function MapTab() {
       const payload = filtered.map((m) =>
         m.kind === 'country' || m.kind === 'city'
           ? { ...m, flag: Flags[m.countryCode] ?? '🌍' }
-          : m,
+          : m.kind === 'page'
+            ? { ...m, emoji: PAGE_KIND_EMOJI[m.pageKind] ?? '📣' }
+            : m,
       );
       webRef.current.injectJavaScript(
         `window.renderMarkers(${JSON.stringify(payload)}); true;`,
@@ -233,8 +395,13 @@ export default function MapTab() {
                 onPress={() => setFilter(f.id)}
                 style={[styles.filterPill, active && styles.filterPillActive]}
               >
+                <Feather
+                  name={f.icon}
+                  size={13}
+                  color={active ? Colors.white : Colors.tan600}
+                />
                 <Text style={[styles.filterLabel, active && { color: Colors.white }]}>
-                  {f.icon} {f.label}
+                  {f.label}
                 </Text>
               </Pressable>
             );
@@ -244,12 +411,12 @@ export default function MapTab() {
             style={[styles.searchPill, searchOpen && styles.filterPillActive]}
             hitSlop={6}
           >
-            <Text style={[styles.filterLabel, searchOpen && { color: Colors.white }]}>🔍</Text>
+            <Feather name="search" size={15} color={searchOpen ? Colors.white : Colors.tan600} />
           </Pressable>
         </View>
         {searchOpen && (
           <View style={styles.searchWrap}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Feather name="search" size={15} color={Colors.tan500} />
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -265,7 +432,7 @@ export default function MapTab() {
                 hitSlop={10}
                 style={styles.searchClose}
               >
-                <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+                <Feather name="x" size={16} color={Colors.tan500} />
               </Pressable>
             )}
           </View>
@@ -274,7 +441,7 @@ export default function MapTab() {
           <View style={styles.resultsCard}>
             {globalSearch.isLoading ? (
               <View style={styles.resultsLoading}>
-                <ActivityIndicator color={Colors.orange} />
+                <Loader style={{ marginTop: 0 }} />
               </View>
             ) : (globalSearch.data?.items.length ?? 0) === 0 ? (
               <View style={styles.resultsLoading}>
@@ -327,14 +494,27 @@ export default function MapTab() {
 
       {markersQuery.isLoading && (
         <View style={styles.loader}>
-          <ActivityIndicator color={Colors.orange} />
+          <Loader style={{ marginTop: 0 }} />
         </View>
       )}
 
+      <Pressable
+        onPress={recenterOnMe}
+        style={[styles.recenterFab, { bottom: insets.bottom + 150 }]}
+        hitSlop={8}
+      >
+        {locating ? (
+          <ActivityIndicator color={Colors.orange} size="small" />
+        ) : (
+          <Feather name={myLocation ? 'map-pin' : 'compass'} size={22} color={Colors.orange} />
+        )}
+      </Pressable>
+
       {statsQuery.data && (
         <View style={styles.statsBadge}>
+          <Feather name="globe" size={13} color={Colors.white} />
           <Text style={styles.statsText}>
-            🌍 {statsQuery.data.totalMembers} membres · {statsQuery.data.countryCounts.length} pays
+            {statsQuery.data.totalMembers} membres · {statsQuery.data.countryCounts.length} pays
           </Text>
         </View>
       )}
@@ -347,6 +527,22 @@ export default function MapTab() {
             setSelected(null);
             router.push(`/user/${id}`);
           }}
+          onOpenAssociation={(id) => {
+            setSelected(null);
+            // associations/[id].tsx is being added in parallel; cast until the
+            // typed route exists.
+            router.push(`/associations/${id}` as never);
+          }}
+          onOpenPage={(id) => {
+            setSelected(null);
+            router.push(`/pages/${id}` as never);
+          }}
+          onZoomToCluster={(lat, lon, zoom) => {
+            setSelected(null);
+            webRef.current?.injectJavaScript(
+              `window.flyTo(${lat}, ${lon}, ${zoom}); true;`,
+            );
+          }}
         />
       )}
     </SafeAreaView>
@@ -357,37 +553,23 @@ function SelectedSheet({
   marker,
   onClose,
   onOpenProfile,
+  onOpenAssociation,
+  onOpenPage,
+  onZoomToCluster,
 }: {
   marker: MapMarker;
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
+  onOpenAssociation: (associationId: string) => void;
+  onOpenPage: (pageId: string) => void;
+  onZoomToCluster: (lat: number, lon: number, zoom: number) => void;
 }) {
+  // SelectedSheet branches by marker.kind with early returns, so any hooks must
+  // live in a child rendered only for the individual case. Otherwise the hook
+  // order would change between an individual and a cluster selection.
   if (marker.kind === 'individual') {
     return (
-      <View style={styles.sheet}>
-        <View style={styles.sheetHandle} />
-        <View style={styles.sheetTop}>
-          <Avatar
-            uri={marker.avatarUrl}
-            name={marker.name ?? '?'}
-            size={56}
-            borderColor={Colors.orange}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sheetName}>{marker.name}</Text>
-            <Text style={styles.sheetMeta}>
-              {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
-              {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
-            </Text>
-          </View>
-          <Pressable onPress={onClose} style={styles.sheetClose}>
-            <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
-          </Pressable>
-        </View>
-        <Pressable onPress={() => onOpenProfile(marker.userId)} style={styles.sheetBtn}>
-          <Text style={styles.sheetBtnLabel}>Voir le profil</Text>
-        </Pressable>
-      </View>
+      <IndividualSheet marker={marker} onClose={onClose} onOpenProfile={onOpenProfile} />
     );
   }
 
@@ -397,25 +579,73 @@ function SelectedSheet({
         <View style={styles.sheetHandle} />
         <View style={styles.sheetTop}>
           <View style={[styles.sheetIcon, { backgroundColor: Colors.info }]}>
-            <Text style={{ fontSize: 22 }}>🏛️</Text>
+            <Feather name="users" size={22} color={Colors.white} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.sheetName}>
-              {marker.name}
-              {marker.isVerified ? ' ✓' : ''}
-            </Text>
+            <View style={styles.sheetNameRow}>
+              <Text style={styles.sheetName}>{marker.name}</Text>
+              {marker.isVerified ? (
+                <Feather name="check-circle" size={14} color={Colors.green} />
+              ) : null}
+            </View>
             <Text style={styles.sheetMeta}>
               {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
               {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
             </Text>
-            <Text style={styles.sheetMeta}>
-              👥 {marker.memberCount} {marker.memberCount > 1 ? 'membres' : 'membre'}
-            </Text>
+            <View style={styles.sheetMetaRow}>
+              <Feather name="users" size={13} color={Colors.tan500} />
+              <Text style={styles.sheetMeta}>
+                {marker.memberCount} {marker.memberCount > 1 ? 'membres' : 'membre'}
+              </Text>
+            </View>
           </View>
           <Pressable onPress={onClose} style={styles.sheetClose}>
-            <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+            <Feather name="x" size={16} color={Colors.tan500} />
           </Pressable>
         </View>
+        <Pressable
+          onPress={() => onOpenAssociation(marker.associationId)}
+          style={styles.sheetBtn}
+        >
+          <Text style={styles.sheetBtnLabel}>Voir l&apos;association</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (marker.kind === 'page') {
+    return (
+      <View style={styles.sheet}>
+        <View style={styles.sheetHandle} />
+        <View style={styles.sheetTop}>
+          <View style={[styles.sheetIcon, { backgroundColor: Colors.orange }]}>
+            <Feather name="flag" size={22} color={Colors.white} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.sheetNameRow}>
+              <Text style={styles.sheetName}>{marker.name}</Text>
+              {marker.isVerified ? (
+                <Feather name="check-circle" size={14} color={Colors.green} />
+              ) : null}
+            </View>
+            <Text style={styles.sheetMeta}>
+              {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+              {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
+            </Text>
+            <View style={styles.sheetMetaRow}>
+              <Feather name="users" size={13} color={Colors.tan500} />
+              <Text style={styles.sheetMeta}>
+                {marker.followerCount} {marker.followerCount > 1 ? 'abonnés' : 'abonné'}
+              </Text>
+            </View>
+          </View>
+          <Pressable onPress={onClose} style={styles.sheetClose}>
+            <Feather name="x" size={16} color={Colors.tan500} />
+          </Pressable>
+        </View>
+        <Pressable onPress={() => onOpenPage(marker.pageId)} style={styles.sheetBtn}>
+          <Text style={styles.sheetBtnLabel}>Voir la page</Text>
+        </Pressable>
       </View>
     );
   }
@@ -424,6 +654,9 @@ function SelectedSheet({
     marker.kind === 'country'
       ? CountryNames[marker.countryCode] ?? marker.countryCode
       : marker.city;
+  // Country clusters zoom to the individual-marker threshold (9); city goes one
+  // closer (10) so members surface as tappable avatars.
+  const zoom = marker.kind === 'country' ? 9 : 10;
   return (
     <View style={styles.sheet}>
       <View style={styles.sheetHandle} />
@@ -433,12 +666,108 @@ function SelectedSheet({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.sheetName}>{title}</Text>
-          <Text style={styles.sheetMeta}>{marker.count} membres</Text>
+          <Text style={styles.sheetMeta}>
+            {marker.count} {marker.count > 1 ? 'membres' : 'membre'}
+          </Text>
         </View>
         <Pressable onPress={onClose} style={styles.sheetClose}>
-          <Text style={{ fontSize: 16, color: Colors.tan500 }}>✕</Text>
+          <Feather name="x" size={16} color={Colors.tan500} />
         </Pressable>
       </View>
+      <Pressable
+        onPress={() => onZoomToCluster(marker.lat, marker.lon, zoom)}
+        style={styles.sheetBtn}
+      >
+        <Text style={styles.sheetBtnLabel}>Voir les membres</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function IndividualSheet({
+  marker,
+  onClose,
+  onOpenProfile,
+}: {
+  marker: Extract<MapMarker, { kind: 'individual' }>;
+  onClose: () => void;
+  onOpenProfile: (userId: string) => void;
+}) {
+  const qc = useQueryClient();
+  const relationshipQuery = useQuery({
+    queryKey: ['user', marker.userId, 'relationship'],
+    queryFn: () => friendsApi.relationship(marker.userId),
+  });
+  const sendRequestMut = useMutation({
+    mutationFn: () => friendsApi.sendRequest(marker.userId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['user', marker.userId, 'relationship'] });
+      void qc.invalidateQueries({ queryKey: ['friends'] });
+    },
+  });
+
+  const rel = relationshipQuery.data?.status ?? 'none';
+  // self / blocked: no friend action. incoming routes to the profile where the
+  // request can be accepted with its friendshipId.
+  const showFriendBtn = rel !== 'self' && rel !== 'blocked';
+  const friendIcon: keyof typeof Feather.glyphMap =
+    rel === 'friends'
+      ? 'check'
+      : rel === 'outgoing'
+        ? 'clock'
+        : rel === 'incoming'
+          ? 'mail'
+          : 'user-plus';
+  const friendLabel =
+    rel === 'friends'
+      ? 'Amis'
+      : rel === 'outgoing'
+        ? 'Demande envoyée'
+        : rel === 'incoming'
+          ? 'Accepter la demande'
+          : 'Ajouter en ami';
+  const friendDisabled =
+    rel === 'friends' || rel === 'outgoing' || sendRequestMut.isPending;
+
+  function onFriendPress() {
+    if (rel === 'none') sendRequestMut.mutate();
+    else if (rel === 'incoming') onOpenProfile(marker.userId);
+  }
+
+  return (
+    <View style={styles.sheet}>
+      <View style={styles.sheetHandle} />
+      <View style={styles.sheetTop}>
+        <Avatar
+          uri={marker.avatarUrl}
+          name={marker.name ?? '?'}
+          size={56}
+          borderColor={Colors.orange}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sheetName}>{marker.name}</Text>
+          <Text style={styles.sheetMeta}>
+            {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+            {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
+          </Text>
+        </View>
+        <Pressable onPress={onClose} style={styles.sheetClose}>
+          <Feather name="x" size={16} color={Colors.tan500} />
+        </Pressable>
+      </View>
+      <Pressable onPress={() => onOpenProfile(marker.userId)} style={styles.sheetBtn}>
+        <Text style={styles.sheetBtnLabel}>Voir le profil</Text>
+      </Pressable>
+      {showFriendBtn ? (
+        <Pressable
+          onPress={onFriendPress}
+          disabled={friendDisabled}
+          style={[styles.sheetBtnSecondary, friendDisabled && { opacity: 0.6 }]}
+        >
+          <Feather name={friendIcon} size={16} color={Colors.orange} />
+          <Text style={styles.sheetBtnSecondaryLabel}>{friendLabel}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -465,10 +794,12 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  searchIcon: { fontSize: 15 },
   searchInput: { flex: 1, fontSize: Typography.sizes.sm, color: Colors.brown, padding: 0 },
   filtersRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
     borderRadius: Radii.md,
@@ -526,10 +857,28 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: Radii.full,
   },
+  recenterFab: {
+    position: 'absolute',
+    right: Spacing.md,
+    width: 48,
+    height: 48,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 5,
+  },
   statsBadge: {
     position: 'absolute',
     bottom: 100,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: 'rgba(26,15,10,0.85)',
     paddingHorizontal: Spacing.md,
     paddingVertical: 7,
@@ -569,8 +918,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sheetNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   sheetName: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   sheetMeta: { fontSize: Typography.sizes.sm, color: Colors.tan500, marginTop: 2 },
+  sheetMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   sheetClose: {
     width: 32,
     height: 32,
@@ -587,4 +938,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sheetBtnLabel: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '700' },
+  sheetBtnSecondary: {
+    marginTop: Spacing.sm,
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.orange,
+    paddingVertical: Spacing.md + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetBtnSecondaryLabel: {
+    color: Colors.orange,
+    fontSize: Typography.sizes.md,
+    fontWeight: '700',
+  },
 });

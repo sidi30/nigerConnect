@@ -213,15 +213,30 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://${WEB_HOST}}
       API_URL: https://${API_HOST}
       APP_WEB_URL: https://${WEB_HOST}
-      GOOGLE_CLIENT_ID_WEB: ${GOOGLE_CLIENT_ID_WEB:-}
-      GOOGLE_CLIENT_ID_ANDROID: ${GOOGLE_CLIENT_ID_ANDROID:-}
-      GOOGLE_CLIENT_ID_IOS: ${GOOGLE_CLIENT_ID_IOS:-}
-      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      # OAuth client IDs are PUBLIC identifiers (they ship inside the mobile app),
+      # not secrets — safe to bake as defaults so prod works out of the box.
+      # Still overridable via .env.prod. The API trusts a Google token whose
+      # `aud` matches ANY of these; list every platform that signs in.
+      GOOGLE_CLIENT_ID_WEB: ${GOOGLE_CLIENT_ID_WEB:-682162626945-mghtoue8lhutmbhbnncommncjgk0ci73.apps.googleusercontent.com}
+      GOOGLE_CLIENT_ID_ANDROID: ${GOOGLE_CLIENT_ID_ANDROID:-682162626945-opkbbi8ikl552tb7sk52fk7a80svfkmk.apps.googleusercontent.com}
+      GOOGLE_CLIENT_ID_IOS: ${GOOGLE_CLIENT_ID_IOS:-682162626945-3ue1vob70l5m0mbv58isko0pcdoc3071.apps.googleusercontent.com}
+      # Apple audience = the app bundle id (public). Required for Sign in with Apple to verify.
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-com.nigerconnect.app}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
       APPLE_KEY_ID: ${APPLE_KEY_ID:-}
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-NigerConnect <no-reply@${WEB_HOST}>}
+      # SMTP (IONOS) — real email delivery. Values live in .env.prod.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      # DKIM signing (deliverability) — private key (base64 PEM) in .env.prod.
+      DKIM_DOMAIN: ${DKIM_DOMAIN:-}
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-}
+      DKIM_PRIVATE_KEY_B64: ${DKIM_PRIVATE_KEY_B64:-}
       FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
@@ -258,6 +273,11 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # NEXT_PUBLIC_* are inlined at build time; needed for the admin console
+        # + verify-email page to reach the API. Override via .env.prod if hosts differ.
+        NEXT_PUBLIC_API_URL: ${API_PUBLIC_URL:-https://api-nigerconnect.sahabiguide.com/api}
+        NEXT_PUBLIC_APP_URL: ${WEB_PUBLIC_URL:-https://nigerconnect.sahabiguide.com}
     image: nigerconnect-web:latest
     container_name: nigerconnect-web
     <<: *security-defaults

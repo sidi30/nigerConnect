@@ -148,10 +148,24 @@ export class ServicesService {
     if (request.status !== 'resolved') {
       throw new ForbiddenException('Request must be resolved before rating');
     }
-    return this.prisma.serviceRating.create({
-      data: {
+
+    const response = await this.prisma.serviceResponse.findFirst({
+      where: { requestId, responderId: dto.ratedUserId },
+      select: { id: true },
+    });
+    if (!response) {
+      throw new ForbiddenException('User did not respond to this request');
+    }
+
+    return this.prisma.serviceRating.upsert({
+      where: { requestId_ratedUserId: { requestId, ratedUserId: dto.ratedUserId } },
+      create: {
         requestId,
         ratedUserId: dto.ratedUserId,
+        rating: dto.rating,
+        comment: dto.comment ?? null,
+      },
+      update: {
         rating: dto.rating,
         comment: dto.comment ?? null,
       },

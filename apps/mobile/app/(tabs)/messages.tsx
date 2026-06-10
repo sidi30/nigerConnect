@@ -1,5 +1,4 @@
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -8,9 +7,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { ConversationSkeletonList } from '@/components/ui/Skeleton';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
@@ -37,13 +38,16 @@ export default function MessagesTab() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>💬 Messages</Text>
+        <View style={styles.titleRow}>
+          <Feather name="message-circle" size={20} color={Colors.brown} />
+          <Text style={styles.title}>Messages</Text>
+        </View>
         <Pressable
           style={styles.composeBtn}
           hitSlop={8}
           onPress={() => router.push('/chat/new')}
         >
-          <Text style={styles.composeIcon}>✏️</Text>
+          <Feather name="edit-2" size={16} color={Colors.tan600} />
         </Pressable>
       </View>
 
@@ -88,12 +92,10 @@ export default function MessagesTab() {
         )}
 
         {convoQuery.isLoading ? (
-          <View style={styles.loader}>
-            <ActivityIndicator color={Colors.orange} />
-          </View>
+          <ConversationSkeletonList count={8} />
         ) : conversations.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>💬</Text>
+            <Feather name="message-circle" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
             <Text style={styles.emptyTitle}>Aucune conversation</Text>
             <Text style={styles.emptyText}>
               Ouvre le profil d&apos;un ami et envoie-lui le premier message.
@@ -175,6 +177,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.tan200,
     backgroundColor: 'rgba(253,251,247,0.96)',
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: {
     fontSize: Typography.sizes.xl,
     fontFamily: Typography.fontFamily.serifBold,
@@ -188,7 +191,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  composeIcon: { fontSize: 15 },
   onlineStrip: { borderBottomWidth: 1, borderBottomColor: Colors.tan200 },
   onlineStripContent: {
     paddingHorizontal: Spacing.lg,
@@ -227,7 +229,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: { color: Colors.white, fontSize: Typography.sizes.xs, fontWeight: '800' },
-  loader: { padding: Spacing.xxl, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
   emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },

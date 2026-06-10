@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 
 interface Props {
@@ -41,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.error) {
       return (
         <View style={styles.container}>
-          <Text style={styles.emoji}>😕</Text>
+          <Feather name="alert-triangle" size={56} color={Colors.tan400} style={styles.emoji} />
           <Text style={styles.title}>Oups, un problème est survenu</Text>
           <Text style={styles.subtitle}>
             Pas d&apos;inquiétude, l&apos;équipe NigerConnect est notifiée. Tu peux réessayer en

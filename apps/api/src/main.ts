@@ -24,13 +24,28 @@ async function bootstrap(): Promise<void> {
     Logger.log('Sentry initialized', 'Bootstrap');
   }
 
+  const isProd = process.env.NODE_ENV === 'production';
   const app = await NestFactory.create(AppModule, {
-    logger: ['log', 'error', 'warn', 'debug', 'verbose'],
+    logger: isProd
+      ? ['log', 'error', 'warn']
+      : ['log', 'error', 'warn', 'debug', 'verbose'],
   });
 
   const config = app.get(ConfigService<Env, true>);
 
-  const isProd = process.env.NODE_ENV === 'production';
+  // Trust the reverse proxy in front of us (prod: Traefik, itself behind
+  // Cloudflare) so Express derives `req.ip` / `X-Forwarded-For` from the real
+  // client instead of the proxy's address. Without this, every request appears
+  // to come from the proxy and all clients share one per-IP rate-limit bucket —
+  // defeating the OAuth/login throttles. The deploy has exactly one proxy hop
+  // reaching the container (Traefik → api), so a hop count of 1 is correct;
+  // override via TRUST_PROXY_HOPS if the topology changes.
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '1');
+  const expressInstance = app.getHttpAdapter().getInstance() as {
+    set(setting: string, val: unknown): void;
+  };
+  expressInstance.set('trust proxy', Number.isFinite(trustProxyHops) ? trustProxyHops : 1);
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -64,7 +79,9 @@ async function bootstrap(): Promise<void> {
   // huge bodies at the API.
   app.use(json({ limit: '256kb' }));
   app.use(urlencoded({ extended: false, limit: '256kb' }));
-  app.setGlobalPrefix('api', { exclude: ['health'] });
+  // Health endpoints stay unprefixed: Docker/Traefik healthchecks, the prod
+  // smoke script and the Playwright e2e runbook all probe /health[/live|/ready].
+  app.setGlobalPrefix('api', { exclude: ['health', 'health/live', 'health/ready'] });
 
   // Graceful shutdown — flush Sentry events
   if (sentryDsn) {
