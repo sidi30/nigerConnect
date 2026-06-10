@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Flag, LifeBuoy } from "lucide-react";
 import {
   fetchPendingReports,
   resolveReport,
@@ -14,10 +15,47 @@ import {
   EmptyState,
   ErrorBanner,
   formatDate,
-  GhostButton,
   PrimaryButton,
-  Spinner,
+  Skeleton,
+  StatusChip,
 } from "./ui";
+
+function SectionHeader({
+  title,
+  subtitle,
+  count,
+}: {
+  title: string;
+  subtitle: string;
+  count?: number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 mb-5">
+      <div>
+        <h2 className="text-xl font-bold text-[#1A0F0A]">{title}</h2>
+        <p className="text-sm text-[#8A6B4D] mt-0.5">{subtitle}</p>
+      </div>
+      {count !== undefined && count > 0 ? (
+        <StatusChip tone="amber">
+          <span className="tabular-nums">{count}</span> en attente
+        </StatusChip>
+      ) : null}
+    </div>
+  );
+}
+
+function CardSkeleton() {
+  return (
+    <Card className="p-5 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-5 w-24 rounded-full" />
+        <Skeleton className="h-3 w-28" />
+      </div>
+      <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-9 w-full" />
+    </Card>
+  );
+}
 
 const ACTIONS: { value: ReportAction; label: string }[] = [
   { value: "none", label: "Aucune action" },
@@ -57,11 +95,14 @@ function ReportCard({
     <Card className="p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="inline-block bg-[#FDF0E6] text-[#E05206] text-xs font-semibold px-2 py-0.5 rounded-full">
+          <StatusChip tone="brand" icon={Flag}>
             {report.reason}
-          </span>
+          </StatusChip>
           <div className="text-sm text-[#5A4634] mt-2">
-            Cible : <span className="text-[#1A0F0A]">{report.targetType}</span>{" "}
+            Cible :{" "}
+            <span className="font-medium text-[#1A0F0A]">
+              {report.targetType}
+            </span>{" "}
             <span className="text-[#8A6B4D]">#{report.targetId}</span>
           </div>
         </div>
@@ -165,19 +206,55 @@ export default function ReportsSection() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
+  const header = (
+    <SectionHeader
+      title="Support & Modération"
+      subtitle="Signalements en attente de traitement"
+      count={items.length}
+    />
+  );
+
   if (loading && items.length === 0)
-    return <Spinner label="Chargement des signalements…" />;
+    return (
+      <div>
+        {header}
+        <div className="space-y-4">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      </div>
+    );
   if (error && items.length === 0)
-    return <ErrorBanner message={error} onRetry={() => void load()} />;
+    return (
+      <div>
+        {header}
+        <ErrorBanner message={error} onRetry={() => void load()} />
+      </div>
+    );
   if (items.length === 0)
-    return <EmptyState>Aucun signalement en attente</EmptyState>;
+    return (
+      <div>
+        {header}
+        <EmptyState>
+          <div className="flex flex-col items-center gap-2 text-[#8A6B4D]">
+            <LifeBuoy size={28} strokeWidth={1.75} aria-hidden="true" />
+            <span>Aucun signalement en attente</span>
+          </div>
+        </EmptyState>
+      </div>
+    );
 
   return (
-    <div className="space-y-4">
-      {error ? <ErrorBanner message={error} onRetry={() => void load()} /> : null}
-      {items.map((report) => (
-        <ReportCard key={report.id} report={report} onResolved={removeItem} />
-      ))}
+    <div>
+      {header}
+      <div className="space-y-4">
+        {error ? (
+          <ErrorBanner message={error} onRetry={() => void load()} />
+        ) : null}
+        {items.map((report) => (
+          <ReportCard key={report.id} report={report} onResolved={removeItem} />
+        ))}
+      </div>
     </div>
   );
 }

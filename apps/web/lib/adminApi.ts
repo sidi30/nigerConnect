@@ -145,6 +145,10 @@ export interface AdminMetrics {
     identityApproved: number;
     signups24h: number;
     signups7d: number;
+    signups7dPrev: number;
+    active7d: number;
+    suspended: number;
+    banned: number;
   };
   identity: {
     pending: number;
@@ -153,11 +157,54 @@ export interface AdminMetrics {
   };
   content: {
     posts: number;
+    posts7d: number;
     messages24h: number;
     comments: number;
   };
   moderation: {
     reportsPending: number;
+    resolved7d: number;
+  };
+}
+
+// GET /admin/metrics/timeseries?days=30
+export interface TimeseriesPoint {
+  date: string; // YYYY-MM-DD
+  signups: number;
+  posts: number;
+  messages: number;
+  comments: number;
+  reports: number;
+}
+
+export interface MetricsTimeseries {
+  days: number;
+  series: TimeseriesPoint[];
+}
+
+// GET /admin/metrics/breakdowns
+export type UserStatus = "active" | "suspended" | "banned";
+export type UserRole = "user" | "moderator" | "admin";
+export type IdentityDistStatus =
+  | "not_submitted"
+  | "pending"
+  | "approved"
+  | "rejected";
+export type AuthMethod = "password" | "google" | "facebook" | "apple";
+
+export interface MetricsBreakdowns {
+  usersByCountry: Array<{ code: string; count: number }>; // code '' = unknown
+  usersByStatus: Array<{ status: UserStatus; count: number }>;
+  usersByRole: Array<{ role: UserRole; count: number }>;
+  identityDistribution: Array<{ status: IdentityDistStatus; count: number }>;
+  reportsByReason: Array<{ reason: string; count: number }>;
+  reportsByTarget: Array<{ targetType: string; count: number }>;
+  authMethods: Array<{ method: AuthMethod; count: number }>;
+  funnel: {
+    registered: number;
+    emailVerified: number;
+    identitySubmitted: number;
+    identityApproved: number;
   };
 }
 
@@ -251,6 +298,22 @@ export async function login(
 
 export function fetchMetrics(signal?: AbortSignal): Promise<AdminMetrics> {
   return adminFetch<AdminMetrics>("/admin/metrics", { signal });
+}
+
+export function fetchTimeseries(
+  days: number,
+  signal?: AbortSignal,
+): Promise<MetricsTimeseries> {
+  return adminFetch<MetricsTimeseries>(
+    `/admin/metrics/timeseries?days=${days}`,
+    { signal },
+  );
+}
+
+export function fetchBreakdowns(
+  signal?: AbortSignal,
+): Promise<MetricsBreakdowns> {
+  return adminFetch<MetricsBreakdowns>("/admin/metrics/breakdowns", { signal });
 }
 
 export function fetchPendingIdentity(

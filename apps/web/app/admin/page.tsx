@@ -1,52 +1,57 @@
 "use client";
 
-import { useState } from "react";
-import MetricsSection from "@/components/admin/MetricsSection";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { LayoutDashboard, LifeBuoy, ShieldCheck } from "lucide-react";
+import {
+  clearSession,
+  ROLE_KEY,
+  type AdminRole,
+} from "@/lib/adminApi";
+import OverviewSection from "@/components/admin/OverviewSection";
 import IdentitySection from "@/components/admin/IdentitySection";
 import ReportsSection from "@/components/admin/ReportsSection";
+import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
-type Tab = "metrics" | "identity" | "reports";
+type Tab = "overview" | "identity" | "reports";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "metrics", label: "Métriques" },
-  { id: "identity", label: "Vérification d'identité" },
-  { id: "reports", label: "Signalements" },
+const NAV: NavEntry[] = [
+  { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
+  { id: "identity", label: "Identité", icon: ShieldCheck },
+  { id: "reports", label: "Support & Modération", icon: LifeBuoy },
 ];
 
 export default function AdminDashboardPage() {
-  const [tab, setTab] = useState<Tab>("metrics");
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("overview");
+  const [role, setRole] = useState<AdminRole | null>(null);
+
+  // Role badge — read once from localStorage on mount (client-only).
+  useEffect(() => {
+    const r = window.localStorage.getItem(ROLE_KEY);
+    if (r === "admin" || r === "moderator" || r === "user") setRole(r);
+  }, []);
+
+  function logout() {
+    clearSession();
+    router.replace("/admin/login");
+  }
 
   return (
-    <div>
-      <div
-        role="tablist"
-        aria-label="Sections admin"
-        className="flex flex-wrap gap-2 mb-6 border-b border-[#E8DFD3]"
-      >
-        {TABS.map((t) => {
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              role="tab"
-              type="button"
-              aria-selected={active}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors ${
-                active
-                  ? "border-[#E05206] text-[#E05206]"
-                  : "border-transparent text-[#5A4634] hover:text-[#1A0F0A]"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+    <div className="lg:pl-64">
+      <Sidebar
+        items={NAV}
+        active={tab}
+        onSelect={(id) => setTab(id as Tab)}
+        role={role}
+        onLogout={logout}
+      />
 
-      {tab === "metrics" ? <MetricsSection /> : null}
-      {tab === "identity" ? <IdentitySection /> : null}
-      {tab === "reports" ? <ReportsSection /> : null}
+      <main className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1400px] mx-auto">
+        {tab === "overview" ? <OverviewSection /> : null}
+        {tab === "identity" ? <IdentitySection /> : null}
+        {tab === "reports" ? <ReportsSection /> : null}
+      </main>
     </div>
   );
 }

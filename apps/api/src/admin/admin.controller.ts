@@ -12,6 +12,11 @@ const listIdentitySchema = z.object({
 });
 type ListIdentityDto = z.infer<typeof listIdentitySchema>;
 
+const timeseriesSchema = z.object({
+  days: z.coerce.number().int().min(7).max(90).default(30),
+});
+type TimeseriesDto = z.infer<typeof timeseriesSchema>;
+
 /**
  * Internal admin/moderator console API. Every route is role-gated by RolesGuard;
  * the global JWT + email-verified guards already apply. Identity-document view
@@ -27,6 +32,18 @@ export class AdminController {
   @Get('metrics')
   metrics() {
     return this.admin.metrics();
+  }
+
+  /** Per-day time-series for signups / content / reports. Query: ?days=30 (7..90). */
+  @Get('metrics/timeseries')
+  timeseries(@Query(new ZodValidationPipe(timeseriesSchema)) dto: TimeseriesDto) {
+    return this.admin.timeseries(dto.days);
+  }
+
+  /** Distribution breakdowns for pie/bar charts (countries, statuses, funnel, etc.). */
+  @Get('metrics/breakdowns')
+  breakdowns() {
+    return this.admin.breakdowns();
   }
 
   @Get('identity')

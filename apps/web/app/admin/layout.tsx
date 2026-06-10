@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { clearSession, getToken } from "@/lib/adminApi";
+import { getToken } from "@/lib/adminApi";
 
 // Client guard for the whole /admin tree. On mount, if there's no admin token
 // in localStorage we redirect to the login page. The login page itself opts
@@ -32,11 +32,6 @@ export default function AdminLayout({
     setReady(true);
   }, [isLogin, router]);
 
-  function logout() {
-    clearSession();
-    router.replace("/admin/login");
-  }
-
   // The login page renders without the chrome (its own full-screen layout).
   if (isLogin) {
     return (
@@ -55,25 +50,13 @@ export default function AdminLayout({
     );
   }
 
+  // The dashboard shell (sidebar + content offset) is rendered by the page
+  // itself, since it owns the active-section state. The layout only enforces
+  // the auth guard, the noindex meta, and the warm app background.
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#1A0F0A]">
       <NoIndexMeta />
-      <header className="bg-white border-b border-[#E8DFD3] sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold">
-            <span className="text-[#E05206]">NigerConnect</span>
-            <span className="text-[#5A4634] font-medium">Admin</span>
-          </div>
-          <button
-            type="button"
-            onClick={logout}
-            className="text-sm font-semibold text-[#5A4634] border border-[#E8DFD3] rounded-lg px-3 py-1.5 hover:bg-[#FDFBF7] transition-colors"
-          >
-            Déconnexion
-          </button>
-        </div>
-      </header>
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6">{children}</main>
+      {children}
     </div>
   );
 }

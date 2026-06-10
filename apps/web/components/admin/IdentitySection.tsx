@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BadgeCheck, FileCheck2, MapPin } from "lucide-react";
 import {
   fetchPendingIdentity,
   reviewIdentity,
@@ -15,8 +16,55 @@ import {
   formatDate,
   GhostButton,
   PrimaryButton,
-  Spinner,
+  Skeleton,
+  StatusChip,
 } from "./ui";
+// Spinner replaced by skeleton placeholders for a smoother loading state.
+
+function SectionHeader({
+  title,
+  subtitle,
+  count,
+}: {
+  title: string;
+  subtitle: string;
+  count?: number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 mb-5">
+      <div>
+        <h2 className="text-xl font-bold text-[#1A0F0A]">{title}</h2>
+        <p className="text-sm text-[#8A6B4D] mt-0.5">{subtitle}</p>
+      </div>
+      {count !== undefined && count > 0 ? (
+        <StatusChip tone="amber">
+          <span className="tabular-nums">{count}</span> en attente
+        </StatusChip>
+      ) : null}
+    </div>
+  );
+}
+
+function CardSkeleton() {
+  return (
+    <Card className="p-5">
+      <div className="flex flex-col md:flex-row gap-5">
+        <div className="md:w-72 shrink-0 space-y-3">
+          <div className="flex items-center gap-3">
+            <Skeleton className="w-12 h-12 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+          </div>
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-3/4" />
+        </div>
+        <Skeleton className="flex-1 h-48 rounded-lg" />
+      </div>
+    </Card>
+  );
+}
 
 function fullName(u: IdentitySubmission["user"]): string {
   const name =
@@ -85,16 +133,24 @@ function IdentityCard({
               <div className="text-sm text-[#5A4634] truncate">{item.user.email}</div>
             </div>
           </div>
-          <dl className="mt-4 text-sm space-y-1">
+          <dl className="mt-4 text-sm space-y-2">
             {loc ? (
-              <div className="flex justify-between gap-4">
-                <dt className="text-[#8A6B4D]">Localisation</dt>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="flex items-center gap-1.5 text-[#8A6B4D]">
+                  <MapPin size={15} strokeWidth={2} aria-hidden="true" />
+                  Localisation
+                </dt>
                 <dd className="text-[#1A0F0A] text-right">{loc}</dd>
               </div>
             ) : null}
-            <div className="flex justify-between gap-4">
-              <dt className="text-[#8A6B4D]">Type de pièce</dt>
-              <dd className="text-[#1A0F0A] text-right">{item.documentType}</dd>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="flex items-center gap-1.5 text-[#8A6B4D]">
+                <FileCheck2 size={15} strokeWidth={2} aria-hidden="true" />
+                Type de pièce
+              </dt>
+              <dd className="text-right">
+                <StatusChip tone="blue">{item.documentType}</StatusChip>
+              </dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-[#8A6B4D]">Soumis le</dt>
@@ -222,19 +278,55 @@ export default function IdentitySection() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
+  const header = (
+    <SectionHeader
+      title="Vérification d'identité"
+      subtitle="Pièces en attente de validation"
+      count={items.length}
+    />
+  );
+
   if (loading && items.length === 0)
-    return <Spinner label="Chargement des pièces d'identité…" />;
+    return (
+      <div>
+        {header}
+        <div className="space-y-4">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      </div>
+    );
   if (error && items.length === 0)
-    return <ErrorBanner message={error} onRetry={() => void load()} />;
+    return (
+      <div>
+        {header}
+        <ErrorBanner message={error} onRetry={() => void load()} />
+      </div>
+    );
   if (items.length === 0)
-    return <EmptyState>Aucune pièce en attente</EmptyState>;
+    return (
+      <div>
+        {header}
+        <EmptyState>
+          <div className="flex flex-col items-center gap-2 text-[#8A6B4D]">
+            <BadgeCheck size={28} strokeWidth={1.75} aria-hidden="true" />
+            <span>Aucune pièce en attente</span>
+          </div>
+        </EmptyState>
+      </div>
+    );
 
   return (
-    <div className="space-y-4">
-      {error ? <ErrorBanner message={error} onRetry={() => void load()} /> : null}
-      {items.map((item) => (
-        <IdentityCard key={item.id} item={item} onResolved={removeItem} />
-      ))}
+    <div>
+      {header}
+      <div className="space-y-4">
+        {error ? (
+          <ErrorBanner message={error} onRetry={() => void load()} />
+        ) : null}
+        {items.map((item) => (
+          <IdentityCard key={item.id} item={item} onResolved={removeItem} />
+        ))}
+      </div>
     </div>
   );
 }
