@@ -15,12 +15,15 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { PostCard } from '@/components/feed/PostCard';
 import { associationsApi } from '@/services/associationsApi';
+import { feedApi } from '@/services/feedApi';
 import { friendsApi } from '@/services/friendsApi';
 import { useAuthStore } from '@/stores/authStore';
+import type { Post } from '@nigerconnect/shared-types';
 import {
   Colors,
   CountryNames,
@@ -199,6 +202,56 @@ export default function AssociationDetailScreen() {
     }
   }
 
+  // ── Association posts (members-only wall) ───────────────────
+  const postsKey = ['association', id, 'posts'] as const;
+  const assocPostsQuery = useInfiniteQuery({
+    queryKey: postsKey,
+    queryFn: ({ pageParam }) => associationsApi.posts(id!, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: !!id && isMember,
+  });
+
+  type PostsPage = { items: Post[]; nextCursor: string | null };
+  const likeMut = useMutation({
+    mutationFn: (postId: string) => feedApi.toggleLike(postId),
+    // Optimistic flip across all loaded pages of the association wall.
+    onMutate: async (postId) => {
+      await qc.cancelQueries({ queryKey: postsKey });
+      const prev = qc.getQueryData(postsKey);
+      qc.setQueryData(postsKey, (old: unknown) => {
+        const typed = old as { pages: PostsPage[]; pageParams: unknown[] } | undefined;
+        if (!typed?.pages) return old;
+        return {
+          ...typed,
+          pages: typed.pages.map((pg) => ({
+            ...pg,
+            items: pg.items.map((p) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    isLikedByMe: !p.isLikedByMe,
+                    likeCount: p.likeCount + (p.isLikedByMe ? -1 : 1),
+                  }
+                : p,
+            ),
+          })),
+        };
+      });
+      return { prev };
+    },
+    onError: (_e, _postId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(postsKey, ctx.prev);
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: postsKey }),
+  });
+
+  const deletePostMut = useMutation({
+    mutationFn: (postId: string) => feedApi.deletePost(postId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: postsKey }),
+    onError: (e) => Alert.alert('Suppression impossible', describeError(e)),
+  });
+
   if (assocQuery.isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -248,6 +301,7 @@ export default function AssociationDetailScreen() {
   const members = membersQuery.data?.items ?? [];
   const pending = pendingQuery.data?.items ?? [];
   const friends = friendsQuery.data?.items ?? [];
+  const assocPosts = assocPostsQuery.data?.pages.flatMap((p) => p.items) ?? [];
   const role = membership ? ROLE_LABELS[membership.role] : null;
 
   return (
@@ -357,6 +411,66 @@ export default function AssociationDetailScreen() {
             </Pressable>
           )}
         </View>
+
+        {isMember ? (
+          <View style={{ marginTop: Spacing.lg }}>
+            <View style={styles.pubHeader}>
+              <Text style={styles.sectionTitle}>Publications</Text>
+              <Pressable
+                style={styles.writeBtn}
+                onPress={() =>
+                  router.push({
+                    pathname: '/post/new',
+                    params: { associationId: id, associationName: a.name },
+                  })
+                }
+              >
+                <Feather name="edit-2" size={14} color={Colors.white} />
+                <Text style={styles.writeLabel}>Écrire</Text>
+              </Pressable>
+            </View>
+            {assocPostsQuery.isLoading ? (
+              <Loader style={{ marginTop: Spacing.sm }} />
+            ) : assocPostsQuery.isError ? (
+              <Text style={[styles.sectionHint, { paddingHorizontal: Spacing.lg }]}>
+                Impossible de charger les publications.
+              </Text>
+            ) : assocPosts.length === 0 ? (
+              <Text style={[styles.sectionHint, { paddingHorizontal: Spacing.lg }]}>
+                Aucune publication pour l’instant. Sois le premier à publier !
+              </Text>
+            ) : (
+              assocPosts.map((p) => (
+                <PostCard
+                  key={p.id}
+                  post={p}
+                  currentUserId={me?.id}
+                  onLike={(pid) => likeMut.mutate(pid)}
+                  onComment={(pid) => router.push(`/post/${pid}`)}
+                  onEdit={(pid) => router.push(`/post/edit/${pid}` as never)}
+                  onDelete={(pid) => deletePostMut.mutate(pid)}
+                  onPhotoPress={(photos, index) =>
+                    router.push({
+                      pathname: '/photos/viewer',
+                      params: { photos: JSON.stringify(photos), index: String(index) },
+                    } as never)
+                  }
+                />
+              ))
+            )}
+            {assocPostsQuery.hasNextPage ? (
+              <Pressable
+                onPress={() => assocPostsQuery.fetchNextPage()}
+                disabled={assocPostsQuery.isFetchingNextPage}
+                style={styles.loadMoreBtn}
+              >
+                <Text style={styles.loadMoreLabel}>
+                  {assocPostsQuery.isFetchingNextPage ? 'Chargement…' : 'Voir plus'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         {canManage ? (
           <View style={styles.section}>
@@ -648,6 +762,32 @@ const styles = StyleSheet.create({
   },
   roleBadge: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radii.full },
   roleLabel: { fontSize: Typography.sizes.xs, fontWeight: '700' },
+  pubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  writeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 7,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.orange,
+  },
+  writeLabel: { color: Colors.white, fontSize: Typography.sizes.sm, fontWeight: '700' },
+  loadMoreBtn: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.tan100,
+    alignItems: 'center',
+  },
+  loadMoreLabel: { color: Colors.brown, fontSize: Typography.sizes.sm, fontWeight: '700' },
   memberActions: { flexDirection: 'row', gap: Spacing.sm, width: '100%' },
   secondaryBtn: {
     flex: 1,

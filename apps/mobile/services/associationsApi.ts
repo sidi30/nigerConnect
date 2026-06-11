@@ -1,4 +1,4 @@
-import type { Association, AssociationMember, AssociationEvent, CursorPage } from '@nigerconnect/shared-types';
+import type { Association, AssociationMember, AssociationEvent, CursorPage, Post } from '@nigerconnect/shared-types';
 import { api } from './api';
 
 export interface MyAssociation extends Association {
@@ -91,6 +91,12 @@ export const associationsApi = {
   },
   async reject(id: string, userId: string, reason?: string) {
     await api.post(`/associations/${id}/members/${userId}/reject`, { reason });
+  },
+  async posts(id: string, cursor?: string): Promise<CursorPage<Post>> {
+    const { data } = await api.get<CursorPage<Post>>(`/associations/${id}/posts`, {
+      params: { cursor },
+    });
+    return data;
   },
   async events(id: string): Promise<AssociationEvent[]> {
     const { data } = await api.get<AssociationEvent[]>(`/associations/${id}/events`);

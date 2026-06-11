@@ -91,6 +91,17 @@ export class PostsService {
     });
 
     await this.invalidateFeedCache(authorId);
+    // invalidateFeedCache only busts the author + their friends. Association
+    // posts also surface in the main feed of approved co-members who may NOT be
+    // friends, so bust their cached start-page too — otherwise they'd miss the
+    // post for up to the feed-cache TTL.
+    if (post.visibility === 'association' && post.associationId) {
+      const memberRows = await this.prisma.associationMember.findMany({
+        where: { associationId: post.associationId, status: 'approved' },
+        select: { userId: true },
+      });
+      await this.invalidateFeedForUsers(memberRows.map((m) => m.userId));
+    }
     return post;
   }
 
@@ -215,6 +226,18 @@ export class PostsService {
     if (post.authorId !== authorId) throw new ForbiddenException('Not your post');
     if (Date.now() - post.createdAt.getTime() > EDIT_WINDOW_MS) {
       throw new ForbiddenException('Edit window expired (24h)');
+    }
+    // `associationId` is immutable and not validated here, so any visibility
+    // change that involves 'association' is rejected: converting TO association
+    // would orphan the post (associationId stays null → invisible to all), and
+    // converting an association post AWAY would leak members-only content to
+    // public/friends. The association composer is the only path in/out.
+    if (
+      dto.visibility &&
+      dto.visibility !== post.visibility &&
+      (dto.visibility === 'association' || post.visibility === 'association')
+    ) {
+      throw new BadRequestException('Cannot change the association visibility of a post');
     }
     const updated = await this.prisma.post.update({
       where: { id: postId },
@@ -381,6 +404,56 @@ export class PostsService {
       await this.redis.client.set(cacheKey, JSON.stringify(result), 'EX', FEED_CACHE_TTL);
     }
     return result;
+  }
+
+  /**
+   * The wall of a single association: every `association`-visibility post tied
+   * to it. Read access is members-only — a non-approved viewer gets 403 (same
+   * rule `assertCanViewPost` enforces per-post, applied once here for the
+   * dedicated feed). Blocked authors are filtered out in both directions.
+   */
+  async getAssociationFeed(viewerId: string, associationId: string, cursor?: string, limit = 20) {
+    const isMember =
+      (await this.prisma.associationMember.count({
+        where: { userId: viewerId, associationId, status: 'approved' },
+      })) > 0;
+    if (!isMember) throw new ForbiddenException('Not a member of this association');
+
+    const blockedRows = await this.prisma.block.findMany({
+      where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = Array.from(
+      new Set(blockedRows.map((b) => (b.blockerId === viewerId ? b.blockedId : b.blockerId))),
+    );
+
+    const cursorDate = cursor ? new Date(cursor) : null;
+
+    const posts = await this.prisma.post.findMany({
+      where: {
+        deletedAt: null,
+        isStory: false,
+        visibility: 'association',
+        associationId,
+        ...(blockedIds.length ? { authorId: { notIn: blockedIds } } : {}),
+        ...(cursorDate ? { createdAt: { lt: cursorDate } } : {}),
+      },
+      include: {
+        media: { orderBy: { sortOrder: 'asc' } },
+        author: { select: AUTHOR_SELECT },
+        likes: { where: { userId: viewerId }, select: { userId: true } },
+        sharedPost: { include: SHARED_POST_INCLUDE },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+    });
+
+    const hasMore = posts.length > limit;
+    const items = (hasMore ? posts.slice(0, limit) : posts).map((p) =>
+      this.decoratePost(p, viewerId),
+    );
+    const nextCursor = hasMore ? items[items.length - 1]!.createdAt.toISOString() : null;
+    return { items, nextCursor };
   }
 
   /**

@@ -25,6 +25,7 @@ export const feedApi = {
   async createPost(input: {
     content?: string;
     visibility?: 'public' | 'friends' | 'association';
+    associationId?: string;
     media?: Array<{ mediaUrl: string; mediaType: 'image' | 'video' }>;
   }): Promise<Post> {
     const { data } = await api.post<Post>('/posts', input);

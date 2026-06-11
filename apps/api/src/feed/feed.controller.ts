@@ -90,6 +90,17 @@ export class FeedController {
     return this.posts.getUserPosts(me.sub, userId, cursor, lim);
   }
 
+  @Get('associations/:id/posts')
+  associationPosts(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const lim = limit ? Math.min(50, Math.max(1, Number(limit))) : 20;
+    return this.posts.getAssociationFeed(me.sub, id, cursor, lim);
+  }
+
   @Post('posts/:id/like')
   like(
     @CurrentUser() me: JwtUserPayload,
