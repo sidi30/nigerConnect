@@ -9,8 +9,10 @@ export interface CreatePageInput {
   kind: PageKind;
   avatarUrl?: string;
   coverUrl?: string;
-  countryCode?: string;
-  city?: string;
+  // Required: the map filters out pages with no countryCode, so creation must
+  // carry a place. update() relaxes this via Partial<CreatePageInput>.
+  countryCode: string;
+  city: string;
   website?: string;
   contactEmail?: string;
 }

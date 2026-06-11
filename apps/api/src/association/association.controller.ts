@@ -18,11 +18,13 @@ import {
   changeRoleSchema,
   createAssociationSchema,
   createEventSchema,
+  inviteMemberSchema,
   listAssociationsSchema,
   updateAssociationSchema,
   type ChangeRoleDto,
   type CreateAssociationDto,
   type CreateEventDto,
+  type InviteMemberDto,
   type ListAssociationsDto,
   type UpdateAssociationDto,
 } from './dto/association.dto';
@@ -87,6 +89,15 @@ export class AssociationController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<void> {
     await this.assoc.leave(me.sub, id);
+  }
+
+  @Post('associations/:id/invite')
+  invite(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(inviteMemberSchema)) dto: InviteMemberDto,
+  ) {
+    return this.assoc.inviteMember(me.sub, id, dto.userId);
   }
 
   @Patch('associations/:id/members/:userId/role')

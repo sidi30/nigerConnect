@@ -17,8 +17,10 @@ export const createAssociationSchema = z.object({
   logoUrl: z.string().url().max(500).optional(),
   coverUrl: z.string().url().max(500).optional(),
   category: associationCategoryEnum,
-  countryCode: z.string().length(2).toUpperCase().optional(),
-  city: z.string().max(100).optional(),
+  // Required so the entity is always placeable on the map (geo.service filters
+  // out rows with a null countryCode). Update stays optional via .partial().
+  countryCode: z.string().length(2).toUpperCase(),
+  city: z.string().min(1).max(100),
   website: z.string().url().max(300).optional(),
   contactEmail: z.string().email().max(255).optional(),
   requiresApproval: z.boolean().optional(),
@@ -40,6 +42,11 @@ export const changeRoleSchema = z.object({
   role: z.enum(['admin', 'moderator', 'member']),
 });
 export type ChangeRoleDto = z.infer<typeof changeRoleSchema>;
+
+export const inviteMemberSchema = z.object({
+  userId: z.string().uuid(),
+});
+export type InviteMemberDto = z.infer<typeof inviteMemberSchema>;
 
 export const createEventSchema = z.object({
   title: z.string().min(1).max(200),

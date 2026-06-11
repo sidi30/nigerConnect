@@ -1,10 +1,63 @@
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Notification } from '@nigerconnect/shared-types';
 import { notificationApi } from '@/services/notificationApi';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { Loader } from '@/components/ui/Loader';
 import { relativeTime } from '@/constants/lookups';
+
+/**
+ * Map a notification to the in-app screen it should open when tapped. Mirrors
+ * the push deep-link logic in app/_layout.tsx (NotificationDeepLink), reading
+ * the same `data` payload the backend sets on each notification. Returns null
+ * when there's no meaningful destination (e.g. identity_*, system).
+ */
+function routeForNotification(n: Notification): string | null {
+  const d = (n.data ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : null);
+  switch (n.type) {
+    case 'message': {
+      const c = str('conversationId');
+      return c ? `/chat/${c}` : null;
+    }
+    case 'friend_request':
+    case 'friend_accepted':
+      return '/friends';
+    case 'like':
+    case 'comment':
+    case 'poll_new': {
+      const p = str('postId');
+      return p ? `/post/${p}` : null;
+    }
+    case 'association_invite':
+    case 'association_join_request':
+    case 'association_join_approved':
+    case 'association_join_rejected': {
+      const a = str('associationId');
+      return a ? `/associations/${a}` : null;
+    }
+    case 'page_follow': {
+      const p = str('pageId');
+      return p ? `/pages/${p}` : null;
+    }
+    case 'review_received': {
+      const t = str('targetId');
+      return t ? (d.reviewTargetType === 'page' ? `/pages/${t}` : `/user/${t}`) : null;
+    }
+    case 'service_response': {
+      const r = str('requestId');
+      return r ? `/services/${r}` : null;
+    }
+    case 'proximity': {
+      const u = str('userId');
+      return u ? `/user/${u}` : null;
+    }
+    default:
+      return null;
+  }
+}
 
 const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: string }> = {
   friend_request: { icon: 'user-plus', color: Colors.orange },
@@ -28,6 +81,7 @@ const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
 
 export default function NotificationsScreen() {
   const qc = useQueryClient();
+  const router = useRouter();
   const { data, isLoading } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => notificationApi.list(),
@@ -96,7 +150,11 @@ export default function NotificationsScreen() {
             return (
               <Pressable
                 key={n.id}
-                onPress={() => !n.read && markReadMut.mutate(n.id)}
+                onPress={() => {
+                  if (!n.read) markReadMut.mutate(n.id);
+                  const route = routeForNotification(n);
+                  if (route) router.push(route as never);
+                }}
                 style={[styles.item, !n.read && styles.itemUnread]}
               >
                 <View style={[styles.iconCircle, { backgroundColor: t.color + '22' }]}>

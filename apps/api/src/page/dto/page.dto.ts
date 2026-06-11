@@ -8,8 +8,10 @@ export const createPageSchema = z.object({
   kind: pageKindEnum,
   avatarUrl: z.string().url().max(500).optional(),
   coverUrl: z.string().url().max(500).optional(),
-  countryCode: z.string().length(2).toUpperCase().optional(),
-  city: z.string().max(100).optional(),
+  // Required so the entity is always placeable on the map (geo.service filters
+  // out rows with a null countryCode). Update stays optional via .partial().
+  countryCode: z.string().length(2).toUpperCase(),
+  city: z.string().min(1).max(100),
   website: z.string().url().max(300).optional(),
   contactEmail: z.string().email().max(255).optional(),
 });

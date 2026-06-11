@@ -189,6 +189,10 @@ function NotificationDeepLink() {
       const conversationId = typeof data.conversationId === 'string' ? data.conversationId : null;
       const pageId = typeof data.pageId === 'string' ? data.pageId : null;
       const postId = typeof data.postId === 'string' ? data.postId : null;
+      const associationId = typeof data.associationId === 'string' ? data.associationId : null;
+      const requestId = typeof data.requestId === 'string' ? data.requestId : null;
+      const proximityUserId =
+        data.type === 'proximity' && typeof data.userId === 'string' ? data.userId : null;
       // review_received carries { reviewTargetType: 'user'|'page', targetId }.
       const reviewTargetType =
         data.reviewTargetType === 'user' || data.reviewTargetType === 'page'
@@ -204,6 +208,9 @@ function NotificationDeepLink() {
         );
       } else if (pageId) router.push(`/pages/${pageId}` as never);
       else if (postId) router.push(`/post/${postId}` as never);
+      else if (associationId) router.push(`/associations/${associationId}` as never);
+      else if (requestId) router.push(`/services/${requestId}` as never);
+      else if (proximityUserId) router.push(`/user/${proximityUserId}` as never);
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
         router.push('/friends' as never);
       } else {

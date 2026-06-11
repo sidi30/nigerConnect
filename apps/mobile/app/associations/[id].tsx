@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import {
   Alert,
   FlatList,
+  Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -16,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
 import { associationsApi } from '@/services/associationsApi';
+import { friendsApi } from '@/services/friendsApi';
 import { useAuthStore } from '@/stores/authStore';
 import {
   Colors,
@@ -138,6 +142,63 @@ export default function AssociationDetailScreen() {
     ]);
   }
 
+  // Admins & moderators manage join requests and can invite people.
+  const canManage = membership?.role === 'admin' || membership?.role === 'moderator';
+
+  const pendingQuery = useQuery({
+    queryKey: ['association', id, 'pending'],
+    queryFn: () => associationsApi.pending(id!),
+    enabled: !!id && canManage,
+  });
+
+  function invalidateRequests() {
+    void qc.invalidateQueries({ queryKey: ['association', id, 'pending'] });
+    void qc.invalidateQueries({ queryKey: ['association', id, 'members'] });
+    void qc.invalidateQueries({ queryKey: ['association', id] });
+  }
+
+  const approveMut = useMutation({
+    mutationFn: (userId: string) => associationsApi.approve(id!, userId),
+    onSuccess: invalidateRequests,
+    onError: (e) => Alert.alert('Action impossible', describeError(e)),
+  });
+  const rejectMut = useMutation({
+    mutationFn: (userId: string) => associationsApi.reject(id!, userId),
+    onSuccess: invalidateRequests,
+    onError: (e) => Alert.alert('Action impossible', describeError(e)),
+  });
+
+  // ── Invite ──────────────────────────────────────────────────
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
+
+  const friendsQuery = useQuery({
+    queryKey: ['friends'],
+    queryFn: () => friendsApi.list(),
+    enabled: inviteOpen,
+  });
+
+  const inviteMut = useMutation({
+    mutationFn: (userId: string) => associationsApi.invite(id!, userId),
+    onSuccess: (_res, userId) => {
+      setInvitedIds((prev) => new Set(prev).add(userId));
+    },
+    onError: (e) => Alert.alert('Invitation impossible', describeError(e)),
+  });
+
+  async function shareJoinLink() {
+    const name = assocQuery.data?.name ?? 'cette association';
+    const url = `nigerconnect://associations/${id}`;
+    try {
+      await Share.share({
+        message: `Rejoins « ${name} » sur NigerConnect : ${url}`,
+        url,
+      });
+    } catch {
+      // User dismissed the share sheet — nothing to do.
+    }
+  }
+
   if (assocQuery.isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -185,6 +246,8 @@ export default function AssociationDetailScreen() {
   const a = assocQuery.data;
   const events = a.events ?? [];
   const members = membersQuery.data?.items ?? [];
+  const pending = pendingQuery.data?.items ?? [];
+  const friends = friendsQuery.data?.items ?? [];
   const role = membership ? ROLE_LABELS[membership.role] : null;
 
   return (
@@ -241,7 +304,11 @@ export default function AssociationDetailScreen() {
         </View>
 
         <View style={styles.actions}>
-          {isMember ? (
+          {mineQuery.isPending ? (
+            // Membership unknown until `mineQuery` resolves — show a neutral
+            // state so an admin never sees (or taps) "Rejoindre" by mistake.
+            <Loader />
+          ) : isMember ? (
             <>
               {role ? (
                 <View style={[styles.roleBadge, { backgroundColor: role.bg }]}>
@@ -250,6 +317,18 @@ export default function AssociationDetailScreen() {
                   </Text>
                 </View>
               ) : null}
+              <View style={styles.memberActions}>
+                {canManage ? (
+                  <Pressable style={styles.secondaryBtn} onPress={() => setInviteOpen(true)}>
+                    <Feather name="user-plus" size={15} color={Colors.orange} />
+                    <Text style={styles.secondaryLabel}>Inviter</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable style={styles.secondaryBtn} onPress={shareJoinLink}>
+                  <Feather name="share-2" size={15} color={Colors.orange} />
+                  <Text style={styles.secondaryLabel}>Partager le lien</Text>
+                </Pressable>
+              </View>
               <Pressable
                 onPress={confirmLeave}
                 disabled={leaveMut.isPending}
@@ -278,6 +357,65 @@ export default function AssociationDetailScreen() {
             </Pressable>
           )}
         </View>
+
+        {canManage ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Demandes d’adhésion{pending.length ? ` (${pending.length})` : ''}
+            </Text>
+            {pendingQuery.isLoading ? (
+              <Loader style={{ marginTop: Spacing.sm }} />
+            ) : pendingQuery.isError ? (
+              <Text style={styles.sectionHint}>Impossible de charger les demandes.</Text>
+            ) : pending.length === 0 ? (
+              <Text style={styles.sectionHint}>Aucune demande en attente.</Text>
+            ) : (
+              pending.map((p) => (
+                <View key={p.userId} style={styles.requestRow}>
+                  <Pressable
+                    style={styles.requestUser}
+                    onPress={() => router.push(`/user/${p.userId}`)}
+                  >
+                    <Avatar
+                      uri={p.user.avatarUrl}
+                      name={p.user.displayName ?? 'N'}
+                      size={40}
+                      border={false}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.requestName} numberOfLines={1}>
+                        {p.user.displayName ?? 'Membre'}
+                      </Text>
+                      {p.user.city ? (
+                        <Text style={styles.requestMeta} numberOfLines={1}>
+                          {p.user.city}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                  <View style={styles.requestActions}>
+                    <Pressable
+                      onPress={() => approveMut.mutate(p.userId)}
+                      disabled={approveMut.isPending || rejectMut.isPending}
+                      style={[styles.reqBtn, styles.reqApprove]}
+                      accessibilityLabel="Accepter la demande"
+                    >
+                      <Feather name="check" size={16} color={Colors.white} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => rejectMut.mutate(p.userId)}
+                      disabled={approveMut.isPending || rejectMut.isPending}
+                      style={[styles.reqBtn, styles.reqReject]}
+                      accessibilityLabel="Refuser la demande"
+                    >
+                      <Feather name="x" size={16} color={Colors.danger} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        ) : null}
 
         {a.description ? (
           <View style={styles.section}>
@@ -374,6 +512,64 @@ export default function AssociationDetailScreen() {
           )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={inviteOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setInviteOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Inviter un ami</Text>
+              <Pressable onPress={() => setInviteOpen(false)} hitSlop={10}>
+                <Feather name="x" size={22} color={Colors.brown} />
+              </Pressable>
+            </View>
+            {friendsQuery.isLoading ? (
+              <Loader style={{ marginTop: Spacing.lg }} />
+            ) : friends.length === 0 ? (
+              <Text style={styles.sectionHint}>
+                Tu n’as pas encore d’amis à inviter. Partage plutôt le lien d’adhésion.
+              </Text>
+            ) : (
+              <FlatList
+                data={friends}
+                keyExtractor={(u) => u.id}
+                contentContainerStyle={{ gap: Spacing.sm, paddingVertical: Spacing.sm }}
+                renderItem={({ item }) => {
+                  const invited = invitedIds.has(item.id);
+                  return (
+                    <View style={styles.friendRow}>
+                      <Avatar
+                        uri={item.avatarUrl}
+                        name={item.displayName ?? item.firstName ?? 'N'}
+                        size={40}
+                        border={false}
+                      />
+                      <Text style={styles.friendName} numberOfLines={1}>
+                        {item.displayName ??
+                          `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() ??
+                          'Ami'}
+                      </Text>
+                      <Pressable
+                        onPress={() => inviteMut.mutate(item.id)}
+                        disabled={invited || inviteMut.isPending}
+                        style={[styles.inviteBtn, invited && styles.inviteBtnDone]}
+                      >
+                        <Text style={[styles.inviteBtnLabel, invited && { color: Colors.green }]}>
+                          {invited ? 'Invité ✓' : 'Inviter'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -452,6 +648,77 @@ const styles = StyleSheet.create({
   },
   roleBadge: { paddingHorizontal: Spacing.md, paddingVertical: 4, borderRadius: Radii.full },
   roleLabel: { fontSize: Typography.sizes.xs, fontWeight: '700' },
+  memberActions: { flexDirection: 'row', gap: Spacing.sm, width: '100%' },
+  secondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 44,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.peach100,
+    backgroundColor: Colors.peach50,
+  },
+  secondaryLabel: { color: Colors.orange, fontSize: Typography.sizes.sm, fontWeight: '700' },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.tan100,
+  },
+  requestUser: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 },
+  requestName: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.brown },
+  requestMeta: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 1 },
+  requestActions: { flexDirection: 'row', gap: 8 },
+  reqBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reqApprove: { backgroundColor: Colors.green },
+  reqReject: { backgroundColor: Colors.dangerSoft, borderWidth: 1, borderColor: Colors.dangerMuted },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalCard: {
+    backgroundColor: Colors.cream,
+    borderTopLeftRadius: Radii.xxl,
+    borderTopRightRadius: Radii.xxl,
+    padding: Spacing.lg,
+    maxHeight: '75%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  modalTitle: { fontSize: Typography.sizes.lg, fontWeight: '800', color: Colors.brown },
+  friendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    padding: Spacing.sm,
+  },
+  friendName: { flex: 1, fontSize: Typography.sizes.sm + 1, fontWeight: '600', color: Colors.brown },
+  inviteBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.peach50,
+    borderWidth: 1,
+    borderColor: Colors.peach100,
+  },
+  inviteBtnDone: { backgroundColor: Colors.white, borderColor: Colors.tan200 },
+  inviteBtnLabel: { color: Colors.orange, fontSize: Typography.sizes.sm, fontWeight: '700' },
   joinBtn: {
     width: '100%',
     height: 52,

@@ -22,8 +22,10 @@ export interface CreateAssociationInput {
   logoUrl?: string;
   coverUrl?: string;
   category: AssociationCategory;
-  countryCode?: string;
-  city?: string;
+  // Required: the map filters out orgs with no countryCode, so creation must
+  // carry a place. update() relaxes this via Partial<CreateAssociationInput>.
+  countryCode: string;
+  city: string;
   website?: string;
   contactEmail?: string;
   requiresApproval?: boolean;
@@ -80,6 +82,9 @@ export const associationsApi = {
   async pending(id: string): Promise<CursorPage<PendingMember>> {
     const { data } = await api.get<CursorPage<PendingMember>>(`/associations/${id}/pending`);
     return data;
+  },
+  async invite(id: string, userId: string): Promise<void> {
+    await api.post(`/associations/${id}/invite`, { userId });
   },
   async approve(id: string, userId: string) {
     await api.post(`/associations/${id}/members/${userId}/approve`);

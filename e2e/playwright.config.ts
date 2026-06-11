@@ -169,6 +169,22 @@ export default defineConfig({
         extraHTTPHeaders: { 'Content-Type': 'application/json' },
       },
     },
+    {
+      name: 'api-city-required-map',
+      testMatch: 'api/city-required-map.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-association-membership',
+      testMatch: 'api/association-membership-invites.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
 
     // ── Browser tests against the Next.js web app ────────────────────────────
     {

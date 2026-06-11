@@ -20,6 +20,8 @@ import type {
 const MEMBER_SELECT = {
   id: true,
   displayName: true,
+  firstName: true,
+  lastName: true,
   avatarUrl: true,
   city: true,
   countryCode: true,
@@ -217,6 +219,53 @@ export class AssociationService {
       }),
     ]);
     return { ...membership, pending: false };
+  }
+
+  /**
+   * Invite a user to the association. Admins/moderators only. We don't create a
+   * membership row here — the invite is a prompt: the target taps the
+   * `association_invite` notification, lands on the association page and joins
+   * through the normal flow (which respects `requiresApproval`).
+   */
+  async inviteMember(actorId: string, id: string, targetUserId: string) {
+    await this.assertRole(actorId, id, ['admin', 'moderator']);
+    if (targetUserId === actorId) {
+      throw new BadRequestException('Cannot invite yourself');
+    }
+
+    const existing = await this.prisma.associationMember.findUnique({
+      where: { associationId_userId: { associationId: id, userId: targetUserId } },
+    });
+    if (existing?.status === 'approved') throw new ConflictException('User is already a member');
+    if (existing?.status === 'pending') {
+      throw new ConflictException('User already has a pending request');
+    }
+
+    const assoc = await this.prisma.association.findUnique({
+      where: { id },
+      select: { name: true },
+    });
+    if (!assoc) throw new NotFoundException('Association not found');
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+
+    const inviter = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { displayName: true, firstName: true },
+    });
+    const inviterName = inviter?.displayName || inviter?.firstName || 'Un membre';
+    await this.notifications.create({
+      userId: targetUserId,
+      actorId,
+      type: 'association_invite',
+      title: `${inviterName} t'invite à rejoindre ${assoc.name}`,
+      data: { associationId: id },
+    });
+    return { invited: true };
   }
 
   async listPendingRequests(userId: string, id: string, cursor?: string, limit = 30) {

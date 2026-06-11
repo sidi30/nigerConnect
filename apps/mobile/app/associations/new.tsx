@@ -112,12 +112,19 @@ export default function NewAssociationScreen() {
       });
       return;
     }
+    if (!city.trim() || !countryCode) {
+      setFeedback({
+        kind: 'error',
+        message: 'Choisis une ville — sans elle, l’association n’apparaît pas sur la carte.',
+      });
+      return;
+    }
     mut.mutate({
       name: name.trim(),
       description: description.trim() || undefined,
       category,
-      countryCode: countryCode || undefined,
-      city: city.trim() || undefined,
+      countryCode,
+      city: city.trim(),
       website: website.trim() || undefined,
       contactEmail: contactEmail.trim() || undefined,
       logoUrl: logoUrl ?? undefined,
