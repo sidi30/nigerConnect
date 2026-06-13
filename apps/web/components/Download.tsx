@@ -1,4 +1,5 @@
 import { IconApple, IconGooglePlay, IconArrowRight } from "./Icons";
+import { WaitlistForm } from "./WaitlistForm";
 
 export function Download() {
   return (
@@ -46,21 +47,8 @@ export function Download() {
           </a>
         </div>
 
-        {/* Email waitlist */}
-        <form className="mx-auto mt-10 flex max-w-md flex-col gap-2 sm:flex-row">
-          <input
-            type="email"
-            required
-            placeholder="ton@email.com"
-            className="flex-1 rounded-full border border-white/15 bg-white/10 px-5 py-3.5 text-sm text-white placeholder-white/40 outline-none transition focus:border-brand-orange focus:bg-white/15"
-          />
-          <button type="submit" className="btn-primary">
-            M'avertir du lancement
-          </button>
-        </form>
-        <p className="mt-3 text-xs text-white/50">
-          Pas de spam. Tu recevras un seul email : celui du lancement.
-        </p>
+        {/* Email waitlist / newsletter */}
+        <WaitlistForm />
       </div>
     </section>
   );

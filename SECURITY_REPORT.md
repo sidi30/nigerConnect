@@ -1,71 +1,115 @@
-# Security Audit — Post-Push Diff Review (Mode A, READ-ONLY)
+# SECURITY_REPORT — NigerConnect
 
-- **Range:** `6df13db..6485eb9` (29 commits)
-- **Scope:** new/changed API modules — admin, page, poll, review, association (invites), geo, chat (edit/delete), auth (OAuth/reset), moderation; web admin console; infra/config.
-- **Method:** SAST (code read + grep), convention conformance vs `CLAUDE.md`, OWASP Top 10 2021 / API Top 10 2023 mapping. No DAST executed (read-only mandate).
-- **Verdict:** No critical/high open findings. Three lower-severity items below — none block deploy.
+**Mode:** A (post-push audit, READ-ONLY / report-only — no fixes applied)
+**Date:** 2026-06-11
+**Auditor:** gwani-pentest
+**Referential:** OWASP Top 10 2021 + OWASP API Security Top 10 2023
+
+---
+
+## Scope & method
+
+Requested range: `edd8e0be18cce435cc383ba36871e20eabf54de3..9b55a7ce51b7f7c1108e2fba46927bdab8f60397`.
+
+That literal range contains a **single commit** (`9b55a7c chore(mobile): version 1.2.0 pour livraison OTA`) whose only change is a one-line version string in `apps/mobile/app.json` (`1.3.0` → `1.2.0`). Zero security surface.
+
+Because the BEFORE endpoint (`edd8e0b`) is itself the substantive feature commit, the meaningful change set actually delivered with this push is the **association feature** spanning `481a055..edd8e0b` (commits `feat(assos): invitations…` and `feat(assos): publications réservées aux membres`). I audited that change set in full — it is where all the access-control surface lives:
+
+```
+apps/api/src/association/association.controller.ts   (+invite route)
+apps/api/src/association/association.service.ts       (+inviteMember, MEMBER_SELECT +firstName/lastName)
+apps/api/src/association/dto/association.dto.ts        (+inviteMemberSchema, countryCode/city now required)
+apps/api/src/feed/feed.controller.ts                  (+GET associations/:id/posts)
+apps/api/src/feed/posts.service.ts                    (+association visibility, getAssociationFeed)
+apps/api/src/page/dto/page.dto.ts                     (countryCode/city now required)
+apps/mobile/*                                          (deep links, composer, members UI)
+e2e/tests/api/*                                        (new spec coverage)
+.gitignore                                             (service-account exclusion hardening)
+```
+
+Static analysis only. The app was not run; no destructive or DAST actions were performed.
 
 ---
 
 ## Findings
 
-### [MEDIUM] WebSocket gateway does not honour JWT revocation (jti blacklist) — OWASP A07 / CWE-613 (CVSS 4.2)
-- **Where:** `apps/api/src/chat/chat.gateway.ts:312-327` (`verifyToken`) vs `apps/api/src/auth/guards/jwt-auth.guard.ts:29`.
-- **Evidence:** The REST guard rejects revoked tokens:
-  `if (user?.jti && (await this.redis.isJwtBlacklisted(user.jti))) ...`.
-  The gateway's `verifyToken` validates signature + `iss`/`aud`/`exp` only and never consults `redis.isJwtBlacklisted(payload.jti)`. `logout()` blacklists the access-token `jti` (`auth.service.ts:369-375`), so a logged-out (but not-yet-expired) access token is rejected on REST yet still opens a `/chat` socket and can send/read messages until natural expiry.
-- **Impact:** A stolen or post-logout access token retains realtime chat access for the remainder of its TTL. Bounded by access-token lifetime; requires possession of a valid unexpired token.
-- **PoC (safe, local):** Log in, capture `accessToken`, call `/api/auth/logout`, then open a socket to `/chat` with `auth.token = <that token>` and emit `message:read`/`message:send` — it still succeeds. (Not executed here; read-only.)
-- **Fix (proposed):** In `verifyToken` / `handleConnection`, after decoding, check `await this.redis.isJwtBlacklisted(payload.jti)` and `client.disconnect(true)` on hit — mirror `JwtAuthGuard`. Optionally re-check on each `message:send` for long-lived sockets.
-- **Ref:** OWASP API2:2023 Broken Authentication; CWE-613 Insufficient Session Expiration.
-
-### [LOW-to-MEDIUM] Page / association / event image URLs persisted unbound (no `assertOwnedPublicImage`) — OWASP A08 / A10 / CWE-918 (CVSS 4.0)
-- **Where:**
-  - `apps/api/src/page/page.service.ts:42-43` (`avatarUrl`, `coverUrl` on create) and `:123` (`update` passes `data: dto` straight through).
-  - `apps/api/src/association/association.service.ts:51-52` (`logoUrl`, `coverUrl` on create), `:148` (`update`), `:412` (event `coverUrl`).
-  - DTOs validate only `z.string().url().max(...)` — `page.dto.ts:9-10`, `association.dto.ts` logo/cover/event cover.
-- **Evidence:** The documented convention (`CLAUDE.md` -> "ne jamais persister une URL client brute... La binder via `S3Service.assertOwnedPublicImage`... vaut pour posts, stories ET chat"). Posts (`feed/posts.service.ts:67,100`), stories, profile avatar/cover (`profile.service.ts:110,122,309`) and chat (`chat.service.ts:254`) all bind. The new Page/Association/Event entities store the raw client URL. `assertOwnedPublicImage` is what enforces "points at OUR public bucket + caller's `users/<id>/` prefix + image/* MIME + size cap" (`s3.service.ts:212-241`).
-- **Impact:** An identity-approved creator (gate at `page.service.ts:33` / `association.service.ts:43`) can store an arbitrary off-platform URL as a page/asso logo/cover. That URL is then auto-loaded by every viewer's client (tracking-pixel / beacon) and appears on the public map markers (`geo.service.ts:226,267`). It also lets a creator reference another user's uploaded object. Not a server-side SSRF (the API never fetches it), so impact is client-side beacon + cross-object reference rather than internal network access — hence below high.
-- **PoC (safe):** `POST /api/pages` with `avatarUrl: "https://attacker.example/track.gif"` -> stored verbatim, surfaced on `/api/geo/markers`.
-- **Fix (proposed):** Bind each image field through `s3.assertOwnedPublicImage(url, creatorId)` in `PageService.create/update`, `AssociationService.create/update`, and `createEvent` (mirror `posts.service.ts`). On `update`, only re-bind fields actually present.
-- **Ref:** OWASP A08:2021 Software & Data Integrity; CWE-918 (variant) / CWE-20.
-
-### [LOW] Association reject reason not schema-validated — OWASP A04 / CWE-20 (CVSS 2.6)
-- **Where:** `apps/api/src/association/association.controller.ts:143-151` — `@Body('reason') reason?: string` (raw, no `ZodValidationPipe`); flows to `rejectJoinRequest` -> stored in a notification (`association.service.ts:343-350`).
-- **Evidence:** Every other body in the module uses `ZodValidationPipe`; this one extracts a raw field with no type/length cap.
-- **Impact:** An admin/moderator (already role-checked via `assertRole`) can store an arbitrarily long / non-string-coerced `reason` in a notification row sent to the rejected user. Authenticated-privileged, no length bound. Minor (no injection — rendered as text on RN client).
-- **Fix (proposed):** Validate with a small Zod object (`{ reason: z.string().max(500).optional() }`).
-- **Ref:** OWASP A04:2021 Insecure Design; CWE-20 Improper Input Validation.
+### [INFO] Audited range is a no-op version bump
+- **Where:** `apps/mobile/app.json:5`
+- **Evidence:** the only diff in `edd8e0b..9b55a7c` is `"version": "1.3.0"` → `"1.2.0"`.
+- **Impact:** none (security). Operational note only: this is a version *downgrade*; confirm it is intentional for the OTA channel (a lower `runtimeVersion`/version can affect OTA targeting), but it carries no security risk.
+- **Fix:** n/a.
 
 ---
 
-## Verified-good (no finding)
-
-- **AuthZ / IDOR — pages:** all mutations go through `assertRole` (`page.service.ts:122,127,191,205,219`); follow/unfollow are self-scoped; `update` cannot mass-assign sensitive fields (`updatePageSchema = createPageSchema.partial()` excludes `createdById`/`followerCount`/`isVerified`).
-- **AuthZ / IDOR — associations:** `assertRole` (status `approved` + role) on update/delete/invite/approve/reject/changeRole/createEvent/pending (`association.service.ts:435-443`); `inviteMember` rejects self-invite and dup states; last-admin guards on leave/removeAdmin.
-- **AuthZ / IDOR — polls:** page-poll creation requires page admin (`poll.service.ts:24-28`); option ids validated against the poll (`:103-110`); delete = author or page admin (`:145-161`); vote/retract self-scoped.
-- **AuthZ / IDOR — reviews:** cannot review self / own page / administered page (`review.service.ts:130-153`); delete checks `authorId` (`:112-115`); unique constraint per (author,target).
-- **Chat edit/delete:** sender-only + 15-min window (`chat.service.ts:354-356,387-393`), soft-delete nulls content/media, `replyToId` confined to same live conversation (`:222-230`), `assertMember` everywhere, media bound via `assertOwnedPublicImage` (`:254`), control/invisible-char sanitisation + 4 kB cap on both REST and WS paths.
-- **WS gateway:** RS256 + `iss`/`aud` verify with key rotation (`chat.gateway.ts:312-327`); Zod re-validation of the socket payload (`socketSendMessageSchema`); per-user Redis rate-limit keyed by user not socket (`:166-173`); presence scoped to shared conversations (no stranger leak); CORS from validated `CORS_ORIGINS`.
-- **Auth service:** OAuth auto-link guarded against account takeover (`auth.service.ts:404-430`, only links verified-email + password-less + same/no provider); Google rejects unverified email; Apple trusts only verifier's `email_verified`; login lockout (staged), timing-safe `fakeVerify` against enumeration, register IP rate-limit; password reset revokes all refresh tokens (`:302-316`); identity file pointer validated to private bucket + `users/<id>/identity/`, traversal-checked (`:509-526`).
-- **Admin module:** role-gated `@UseGuards(RolesGuard) @Roles('admin','moderator')` (`admin.controller.ts:26-27`); identity docs served via short-lived (300 s) presigned GET, never persisted/logged; web console gates client-side AND server enforces RolesGuard (`moderation.controller.ts:40-49`, `auth.controller.ts:239-241`).
-- **Injection:** all admin `$queryRaw` / geo `$queryRaw` use `Prisma.sql` parameterised binds (`${since}`, `${dto.lat}`, `Prisma.join(blockedIds)`) — no string interpolation. `days` etc. Zod-bounded upstream.
-- **Privacy (public/friends/private):** individual map markers, orphan clusters, nearby, and proximity all filter `privacyLevel <> 'private'` + `showOnMap` (`geo.service.ts:337,429,663,711`); private users only feed anonymous aggregate counts.
-- **Secrets:** no secret files added in range; SMTP/DKIM/Apple/Resend all sourced from env (`docker-compose.prod.yml`, `env.validation.ts`); OAuth refused-link log redacts email to a 12-char SHA-256 prefix.
-- **Web CSP:** `connect-src` correctly reduced to API origin; `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'`; admin tree `noindex`.
+### [LOW/MEDIUM] Association members list is readable by any authenticated user, and the diff broadens the PII it returns
+- **Where:** `apps/api/src/association/association.controller.ts:113-121` (`GET associations/:id/members`) → `apps/api/src/association/association.service.ts:386-400` (`listMembers`); `MEMBER_SELECT` at `:20-28`.
+- **OWASP:** A01 Broken Access Control / API3:2023 Broken Object Property Level Authorization (excessive data exposure).
+- **Evidence:** the `members` route has **no `assertRole` / membership check** — only the implicit global auth guard. `listMembers` returns every approved member. This diff added `firstName: true` and `lastName: true` to `MEMBER_SELECT`:
+  ```ts
+  const MEMBER_SELECT = {
+    id: true, displayName: true,
+    firstName: true,   // ← added in this change set
+    lastName: true,    // ← added in this change set
+    avatarUrl: true, city: true, countryCode: true,
+  };
+  ```
+  So any logged-in user can enumerate the full membership roster of *any* association (including approval-gated ones) together with real first/last names, city and country.
+- **Impact:** roster enumeration + real-name harvesting of arbitrary associations by any account, independent of the member's own profile `privacyLevel`. The diff did not create the open endpoint (pre-existing design) but it **widened the exposed PII** (added legal names).
+- **Severity rationale:** kept at LOW/MEDIUM because `firstName`/`lastName` are already exposed app-wide for post authors, friends and blocks (`AUTHOR_SELECT` in `posts.service.ts:20-29`, `friends.service.ts:16-17`, `block.service.ts:78-79`), so this is consistent with existing exposure rather than a new class of leak. Still worth a decision: a members roster is more aggregatable than scattered author bylines.
+- **PoC (safe, not executed):** as any test account, `GET /api/associations/<uuid>/members` for an association you are not a member of → returns the roster with names.
+- **Fix (proposed, NOT applied):** gate `listMembers` on caller membership (same pattern as `getAssociationFeed` / `assertRole`), requiring approved membership before returning the roster; or, if the roster is intentionally public, drop `firstName`/`lastName` from `MEMBER_SELECT` and keep only `displayName`. Decide per product intent.
+- **Ref:** OWASP API3:2023; CWE-200.
 
 ---
 
-## Recap by severity
+### [LOW] `rejectRequest` reason is an unvalidated free-form body field
+- **Where:** `apps/api/src/association/association.controller.ts:143-151` — `@Body('reason') reason?: string` (no `ZodValidationPipe`).
+- **OWASP:** A04 Insecure Design (validation gap) — minor.
+- **Evidence:** unlike every other body in this module, `reason` bypasses Zod (no length bound, no type guard beyond TS). It flows into the rejection/notification path (`rejectJoinRequest`). Pre-existing pattern, not newly introduced, but adjacent to the audited feature.
+- **Impact:** an admin/mod (already privileged via `assertRole`) could store an unbounded string. No injection (Prisma parameterises; RN/text rendering). Low blast radius — requires admin/mod role on the association.
+- **Fix (proposed):** validate with a small Zod schema (`z.object({ reason: z.string().max(500).optional() })`) for consistency with the rest of the module.
+- **Ref:** CWE-20.
 
-| Severity | Count | Items |
+---
+
+## Items verified clean (no finding)
+
+- **Association post creation authZ** — `posts.service.ts:50-59`: `visibility === 'association'` requires `associationId` and an **approved** membership (`ForbiddenException` otherwise). No way to post into an association you don't belong to. (A01 OK.)
+- **Association feed read authZ** — `getAssociationFeed` (`:415-420`) enforces approved membership before returning anything; main feed (`:344-383`) and per-user wall (`:495-517`) gate `association` posts on `memberAssocIds`; single-post side channel `assertCanViewPost` (`:191-202`) enforces membership and returns 404 (no existence oracle). Consistent across all read surfaces. (A01 OK.)
+- **Visibility-transition lock** — `update` (`:230-241`) rejects any change into/out of `association` visibility, preventing both orphaning and leak of members-only content to public/friends. Good defensive design.
+- **Share guard** — `share` (`:285-292`) refuses to re-broadcast non-public (incl. association) posts. (A01 OK.)
+- **Invite endpoint** — `inviteMember` (`association.service.ts:225-268`): `assertRole(['admin','moderator'])`, Zod `uuid` validation, self-invite rejected, existence checks on association/target, ConflictException on already-member/pending. Notification-only (creates no membership row) → respects `requiresApproval`. No spam/abuse vector beyond the role-gated caller. (A04/API6 OK.)
+- **Media URL binding** — `create`/`createStory` (`:64-76`, `:111`) bind every client URL via `s3.assertOwnedPublicImage(url, authorId)` (owner-scoped `users/{id}/...` key). No raw client URL persisted; no SSRF via mediaUrl. (A08/A10 OK.)
+- **Input validation** — `createPostSchema`/`updatePostSchema` (`post.dto.ts:13-25`) use `z.enum` visibility, `z.string().uuid()` associationId, bounded content/media; `inviteMemberSchema`, `createAssociationSchema`/`createPageSchema` (countryCode `length(2)`, city `min(1).max(100)`) all Zod-validated via `ZodValidationPipe`. UUID path params via `ParseUUIDPipe`. (A03 OK.)
+- **Injection** — diff-wide scan: no `$queryRaw`/`$executeRaw`/`*Unsafe` introduced; all new queries are Prisma query-builder calls. (A03 OK.)
+- **Mobile deep-link handler** — `_layout.tsx:189-213`: new `associationId`/`requestId`/`proximityUserId` branches all `typeof === 'string'` guarded and route only to internal app paths (`/associations/:id`, etc.). No open-redirect / arbitrary-URL navigation. (A01/A10 OK.)
+- **Secrets** — no secret files added in range; the `.gitignore` change *hardens* posture by excluding `play-service-account.json` / `*service-account*.json`. Test-only `VALID_PASSWORD` constants in e2e specs are expected and harmless.
+- **Private-profile leakage** — public-feed and per-user-wall queries continue to exclude `privacyLevel === 'private'` authors from strangers (`:370`, `:182-184`, `:487-492`); the association changes did not regress this.
+
+---
+
+## Out-of-scope note (pre-existing, flagged for awareness)
+
+- `apps/mobile/google-services.json` is **tracked in git** (`git ls-files`). This is *not* part of the audited diff and Firebase Android config keys are client-distributable by design (low sensitivity), but the project's own rule (`CLAUDE.md` §Sécurité) lists `google-services.json` in its secret-scan exclusion. The `.gitignore` excludes `GoogleService-Info.plist` (iOS) but not the Android `google-services.json`. Recommend reviewing separately; not a blocker and not introduced by this push.
+
+---
+
+## Recap by severity (audited change set)
+
+| Severity | Count | Open |
 |---|---|---|
-| critical | 0 | — |
-| high | 0 | — |
-| medium | 1 | WS jti-revocation gap |
-| low | 2 | unbound page/asso/event image URLs; un-validated reject reason |
+| critical | 0 | 0 |
+| high | 0 | 0 |
+| medium | 1 (members roster PII — rated LOW/MEDIUM) | 1 |
+| low | 2 | 2 |
+| info | 1 | 1 |
 
-**Fixes applied:** none (read-only audit — report only).
-**Fixes proposed (for human review):** WS gateway jti blacklist check; bind page/asso/event image URLs via `assertOwnedPublicImage`; Zod-validate association reject `reason`.
+No fixes were applied (report-only mandate). All findings are proposals.
 
-**Deploy verdict:** no open critical/high -> OK to deploy. The medium (WS revocation) and lows should be scheduled but do not block.
+---
+
+## Verdict
+
+**OK_TO_DEPLOY.**
+
+No OPEN critical or high finding. The association feature's access-control model (create / read / share / visibility-transition / invite) is consistently and correctly gated on approved membership and role. The only substantive item is the members-roster endpoint being readable by any authenticated user while now also returning real names — rated LOW/MEDIUM, consistent with existing app-wide name exposure; recommend deciding whether to gate it on membership or drop the names, but it does not block this deploy.

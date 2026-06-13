@@ -308,6 +308,9 @@ export default function MapTab() {
     queryKey: ['profile', 'search', 'map', debouncedSearch],
     queryFn: () => profileApi.search({ q: debouncedSearch, limit: 10 }),
     enabled: searchOpen && debouncedSearch.length >= 2,
+    // Same rationale as the friends search — cache results for 5 min so panning
+    // back to a recent query doesn't refire /profile/search.
+    staleTime: 5 * 60 * 1000,
   });
 
   const markersQuery = useQuery({

@@ -60,6 +60,10 @@ export default function FriendsScreen() {
     queryKey: ['profile', 'search', debouncedQ],
     queryFn: () => profileApi.search({ q: debouncedQ, limit: 30 }),
     enabled: tab === 'search' && debouncedQ.length >= 2,
+    // Search results barely change minute-to-minute — keep them fresh for 5 min
+    // so re-typing or revisiting a recent query serves the cache instead of
+    // re-hitting /profile/search.
+    staleTime: 5 * 60 * 1000,
   });
 
   const acceptMut = useMutation({

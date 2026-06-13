@@ -358,3 +358,110 @@ export function resolveReport(
     body,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Newsletter — subscribers + campaigns (admin-only).
+// ---------------------------------------------------------------------------
+
+export type NewsletterSubStatus = "subscribed" | "unsubscribed";
+
+export interface NewsletterSubscriber {
+  id: string;
+  email: string;
+  status: NewsletterSubStatus;
+  source: string | null;
+  locale: string | null;
+  createdAt: string;
+  unsubscribedAt: string | null;
+}
+
+export interface NewsletterSubscriberList {
+  items: NewsletterSubscriber[];
+  nextCursor: string | null;
+}
+
+export interface NewsletterStats {
+  subscribed: number;
+  unsubscribed: number;
+  total: number;
+}
+
+export type CampaignStatus = "draft" | "sending" | "sent" | "failed";
+
+export interface NewsletterCampaign {
+  id: string;
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+  status: CampaignStatus;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  createdById: string | null;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+export function fetchSubscribers(
+  status?: NewsletterSubStatus,
+  cursor?: string,
+  signal?: AbortSignal,
+): Promise<NewsletterSubscriberList> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (cursor) params.set("cursor", cursor);
+  const qs = params.toString();
+  return adminFetch<NewsletterSubscriberList>(
+    `/admin/newsletter/subscribers${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+export function fetchNewsletterStats(
+  signal?: AbortSignal,
+): Promise<NewsletterStats> {
+  return adminFetch<NewsletterStats>("/admin/newsletter/subscribers/stats", {
+    signal,
+  });
+}
+
+export function fetchCampaigns(
+  signal?: AbortSignal,
+): Promise<NewsletterCampaign[]> {
+  return adminFetch<NewsletterCampaign[]>("/admin/newsletter/campaigns", {
+    signal,
+  });
+}
+
+export function createCampaign(input: {
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+}): Promise<NewsletterCampaign> {
+  return adminFetch<NewsletterCampaign>("/admin/newsletter/campaigns", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function deleteCampaign(id: string): Promise<void> {
+  return adminFetch<void>(`/admin/newsletter/campaigns/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function sendTestCampaign(id: string, email: string): Promise<void> {
+  return adminFetch<void>(`/admin/newsletter/campaigns/${id}/test`, {
+    method: "POST",
+    body: { email },
+  });
+}
+
+export function sendCampaign(
+  id: string,
+): Promise<{ totalRecipients: number }> {
+  return adminFetch<{ totalRecipients: number }>(
+    `/admin/newsletter/campaigns/${id}/send`,
+    { method: "POST" },
+  );
+}

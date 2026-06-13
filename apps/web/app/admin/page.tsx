@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, LifeBuoy, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, LifeBuoy, Mail, ShieldCheck } from "lucide-react";
 import {
   clearSession,
   ROLE_KEY,
@@ -11,14 +11,21 @@ import {
 import OverviewSection from "@/components/admin/OverviewSection";
 import IdentitySection from "@/components/admin/IdentitySection";
 import ReportsSection from "@/components/admin/ReportsSection";
+import NewsletterSection from "@/components/admin/NewsletterSection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
-type Tab = "overview" | "identity" | "reports";
+type Tab = "overview" | "identity" | "reports" | "newsletter";
 
+// Newsletter is admin-only on the API. A moderator hitting it would 403 →
+// adminFetch bounces to login, so the tab is gated to admins below.
 const NAV: NavEntry[] = [
   { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
   { id: "identity", label: "Identité", icon: ShieldCheck },
   { id: "reports", label: "Support & Modération", icon: LifeBuoy },
+];
+
+const ADMIN_ONLY_NAV: NavEntry[] = [
+  { id: "newsletter", label: "Newsletter", icon: Mail },
 ];
 
 export default function AdminDashboardPage() {
@@ -37,10 +44,12 @@ export default function AdminDashboardPage() {
     router.replace("/admin/login");
   }
 
+  const nav = role === "admin" ? [...NAV, ...ADMIN_ONLY_NAV] : NAV;
+
   return (
     <div className="lg:pl-64">
       <Sidebar
-        items={NAV}
+        items={nav}
         active={tab}
         onSelect={(id) => setTab(id as Tab)}
         role={role}
@@ -51,6 +60,7 @@ export default function AdminDashboardPage() {
         {tab === "overview" ? <OverviewSection /> : null}
         {tab === "identity" ? <IdentitySection /> : null}
         {tab === "reports" ? <ReportsSection /> : null}
+        {tab === "newsletter" ? <NewsletterSection /> : null}
       </main>
     </div>
   );

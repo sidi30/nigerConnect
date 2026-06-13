@@ -824,3 +824,54 @@ model Review {
   @@index([targetPageId, createdAt(sort: Desc)])
   @@map("reviews")
 }
+
+// ── Newsletter ───────────────────────────────────────────────────
+// Pre-launch waitlist + ongoing newsletter. Single opt-in: an email is stored
+// directly when collected via the landing "M'avertir du lancement" form (no
+// confirmation email). Every campaign carries a per-subscriber unsubscribe
+// token surfaced through the List-Unsubscribe header (RGPD / CAN-SPAM).
+enum NewsletterStatus {
+  subscribed
+  unsubscribed
+}
+
+enum CampaignStatus {
+  draft
+  sending
+  sent
+  failed
+}
+
+model NewsletterSubscriber {
+  id               String           @id @default(uuid()) @db.Uuid
+  email            String           @unique @db.VarChar(255)
+  status           NewsletterStatus @default(subscribed)
+  // Where the address came from: 'landing', 'admin', … (free-form, for stats).
+  source           String?          @db.VarChar(50)
+  locale           String?          @db.VarChar(10)
+  // Opaque random token (hex) used for one-click unsubscribe links.
+  unsubscribeToken String           @unique @map("unsubscribe_token") @db.VarChar(64)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  unsubscribedAt   DateTime?        @map("unsubscribed_at") @db.Timestamptz
+
+  @@index([status])
+  @@map("newsletter_subscribers")
+}
+
+model NewsletterCampaign {
+  id              String         @id @default(uuid()) @db.Uuid
+  subject         String         @db.VarChar(200)
+  // Inner HTML body (wrapped in the branded layout at send time) + plain-text part.
+  bodyHtml        String         @map("body_html") @db.Text
+  bodyText        String         @map("body_text") @db.Text
+  status          CampaignStatus @default(draft)
+  totalRecipients Int            @default(0) @map("total_recipients")
+  sentCount       Int            @default(0) @map("sent_count")
+  failedCount     Int            @default(0) @map("failed_count")
+  createdById     String?        @map("created_by_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  sentAt          DateTime?      @map("sent_at") @db.Timestamptz
+
+  @@index([status])
+  @@map("newsletter_campaigns")
+}

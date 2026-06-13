@@ -24,6 +24,7 @@ import { PageModule } from './page/page.module';
 import { PollModule } from './poll/poll.module';
 import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
+import { NewsletterModule } from './newsletter/newsletter.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { AdminModule } from './admin/admin.module';
     PollModule,
     ReviewModule,
     AdminModule,
+    NewsletterModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

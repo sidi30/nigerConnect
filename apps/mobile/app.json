@@ -17,7 +17,7 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.nigerconnect.app",
       "buildNumber": "2",
       "usesAppleSignIn": true,

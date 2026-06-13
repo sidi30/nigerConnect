@@ -9,6 +9,13 @@ export interface SendMailInput {
   html: string;
   text: string;
   attachments?: Array<{ filename: string; content: string | Buffer; contentType?: string }>;
+  /**
+   * Per-recipient one-click unsubscribe URL (newsletter/marketing mail). When
+   * present it replaces the generic mailto List-Unsubscribe header with an
+   * HTTPS target + `List-Unsubscribe-Post` so Gmail/Outlook render a native
+   * "Unsubscribe" link — required for bulk-mail reputation.
+   */
+  unsubscribeUrl?: string;
 }
 
 /**
@@ -97,11 +104,17 @@ export class MailerService implements OnModuleInit {
         text: input.text,
         replyTo: this.fromAddress,
         ...(input.attachments ? { attachments: input.attachments } : {}),
-        // List-Unsubscribe improves inbox placement even for transactional mail;
-        // mailto target is the sending address. Helps reputation with Gmail.
-        headers: {
-          'List-Unsubscribe': `<mailto:${this.fromAddress}?subject=unsubscribe>`,
-        },
+        // List-Unsubscribe improves inbox placement even for transactional mail.
+        // Bulk mail (newsletter) passes an HTTPS one-click URL; everything else
+        // falls back to the mailto target (the sending address).
+        headers: input.unsubscribeUrl
+          ? {
+              'List-Unsubscribe': `<${input.unsubscribeUrl}>, <mailto:${this.fromAddress}?subject=unsubscribe>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            }
+          : {
+              'List-Unsubscribe': `<mailto:${this.fromAddress}?subject=unsubscribe>`,
+            },
       });
       if ((info as { message?: string }).message) {
         // Dev json transport — log the whole email
@@ -435,5 +448,31 @@ export class MailerService implements OnModuleInit {
       text,
       attachments: [{ filename, content: json, contentType: 'application/json' }],
     });
+  }
+
+  /**
+   * Newsletter / launch-announcement broadcast. `bodyHtml` is the admin-authored
+   * inner HTML (trusted: only admins compose campaigns) — wrapped in the shared
+   * branded layout. A per-recipient unsubscribe link is appended to the body AND
+   * surfaced via the List-Unsubscribe header (one-click) for deliverability.
+   */
+  async sendNewsletter(
+    to: string,
+    subject: string,
+    bodyHtml: string,
+    bodyText: string,
+    unsubscribeUrl: string,
+  ): Promise<void> {
+    const b = MailerService.BRAND;
+    const fullBody = `
+      ${bodyHtml}
+      <p style="margin:28px 0 0;padding-top:16px;border-top:1px solid ${b.tan100};
+                font-size:12px;color:${b.tan400};">
+        Tu reçois cet email car tu t'es inscrit·e à la newsletter de NigerConnect.
+        <a href="${unsubscribeUrl}" style="color:${b.tan500};text-decoration:underline;">Se désinscrire</a>.
+      </p>`;
+    const text = `${bodyText}\n\n—\nSe désinscrire : ${unsubscribeUrl}`;
+    const html = this.layout({ preheader: subject, bodyHtml: fullBody });
+    await this.send({ to, subject, html, text, unsubscribeUrl });
   }
 }

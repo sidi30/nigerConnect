@@ -28,6 +28,31 @@ export const api = axios.create({
   timeout: 15000,
 });
 
+// In-flight GET de-duplication. React Query already coalesces fetches that
+// share a queryKey, but two *different* keys hitting the same endpoint (e.g.
+// the friend search and the map search both resolving to /profile/search?q=…),
+// a refetch racing a mount, or any direct `api.get` outside React Query still
+// fire redundant requests. We collapse concurrent GETs with the same URL +
+// params onto a single network promise, releasing the slot once it settles.
+// Only GET is deduped — it is idempotent and side-effect free; mutations
+// (POST/PATCH/PUT/DELETE) must never share a response.
+// IMPORTANT: the de-dup key is built from URL + `params` only. Any GET that
+// distinguishes itself via custom `headers`/`data` instead of `params` would
+// wrongly collapse onto another request — keep all distinguishing data in
+// `params` (every current caller already does, and auth is injected uniformly).
+const inflightGet = new Map<string, Promise<unknown>>();
+const originalGet = api.get.bind(api);
+api.get = function dedupedGet(url: string, config?: AxiosRequestConfig) {
+  const key = `${url}?${config?.params ? JSON.stringify(config.params) : ''}`;
+  const existing = inflightGet.get(key);
+  if (existing) return existing;
+  const promise = originalGet(url, config).finally(() => {
+    inflightGet.delete(key);
+  });
+  inflightGet.set(key, promise);
+  return promise;
+} as typeof api.get;
+
 let refreshPromise: Promise<string | null> | null = null;
 
 api.interceptors.request.use(async (config) => {
