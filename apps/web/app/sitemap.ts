@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base =
-    process.env.NEXT_PUBLIC_APP_URL ?? "https://nigerconnect.sahabiguide.com";
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://nigerconnect.app";
   const now = new Date();
   // Legal pages must be discoverable by store reviewers — they routinely
   // verify that the privacy/terms URLs declared in the listing actually

@@ -2,7 +2,7 @@
 const { chromium } = require('playwright');
 
 const PAGE_URL = process.env.PAGE_URL || 'http://localhost:8081/';
-const API_HOST = 'api-nigerconnect.sahabiguide.com';
+const API_HOST = 'api.nigerconnect.app';
 const TIMEOUT_MS = 90_000;
 
 (async () => {

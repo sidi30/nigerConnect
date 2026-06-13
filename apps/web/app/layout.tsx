@@ -24,7 +24,7 @@ const description =
 // Settable via NEXT_PUBLIC_APP_URL at build time (eas/Vercel/Docker build arg).
 // Falls back to the prod URL on sahabiguide.com.
 const SITE_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://nigerconnect.sahabiguide.com";
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://nigerconnect.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

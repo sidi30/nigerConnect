@@ -51,7 +51,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   {
     heading: "6. Suppression de compte",
     body:
-      "Tu peux supprimer ton compte à tout moment via Paramètres → Supprimer mon compte dans l’app, ou via la page web https://nigerconnect.sahabiguide.com/account-deletion. La suppression est immédiate et supprime toutes tes données — publications, messages, photos, amitiés. Les logs serveur anonymisés sont conservés 30 jours maximum pour prévenir les abus, puis détruits.",
+      "Tu peux supprimer ton compte à tout moment via Paramètres → Supprimer mon compte dans l’app, ou via la page web https://nigerconnect.app/account-deletion. La suppression est immédiate et supprime toutes tes données — publications, messages, photos, amitiés. Les logs serveur anonymisés sont conservés 30 jours maximum pour prévenir les abus, puis détruits.",
   },
   {
     heading: "7. Limitation de responsabilité",

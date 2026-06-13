@@ -34,7 +34,7 @@ Aller dans **APIs & Services > Credentials > Create Credentials > OAuth client I
 |-------|--------|
 | Application type | **Web application** |
 | Authorised redirect URIs | `https://auth.expo.io/@sidi30/nigerconnect` |
-| | `https://nigerconnect.sahabiguide.com/auth/callback` (si web app) |
+| | `https://nigerconnect.app/auth/callback` (si web app) |
 
 Copier le **Client ID** → variable `GOOGLE_CLIENT_ID_WEB` dans `.env` de l'API.
 
@@ -100,8 +100,8 @@ Dans **APIs & Services > OAuth consent screen** :
 3. Identifier: `com.nigerconnect.app.web` (doit être différent du bundle ID).
 4. Après création, cocher **Sign In with Apple** → **Configure**.
    - Primary App ID: `com.nigerconnect.app`
-   - Domains: `nigerconnect.sahabiguide.com`
-   - Return URLs: `https://nigerconnect.sahabiguide.com/auth/apple/callback`
+   - Domains: `nigerconnect.app`
+   - Return URLs: `https://nigerconnect.app/auth/apple/callback`
 5. Copier cet identifier → variable `APPLE_CLIENT_ID_WEB` dans `.env` (commentée par défaut).
 
 ### 2.3 Key (pour la révocation de token / passport-apple)

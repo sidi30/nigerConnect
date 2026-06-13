@@ -6,8 +6,8 @@ Une application mobile qui permet aux Nigériens vivant à l'étranger de se ret
 
 | | |
 |---|---|
-| 🌍 Site web | [nigerconnect.sahabiguide.com](https://nigerconnect.sahabiguide.com) |
-| 🔌 API | [api-nigerconnect.sahabiguide.com](https://api-nigerconnect.sahabiguide.com/health) |
+| 🌍 Site web | [nigerconnect.app](https://nigerconnect.app) |
+| 🔌 API | [api.nigerconnect.app](https://api.nigerconnect.app/health) |
 | 📱 Mobile | iOS (EAS / TestFlight) + Android — Expo SDK 54 |
 | 📦 Repo | [github.com/sidi30/nigerConnect](https://github.com/sidi30/nigerConnect) |
 
@@ -84,7 +84,7 @@ Une seule app, **simple et mobile-first**, qui réunit tout ce dont la diaspora 
             └──────────┬───────────┘
                        │ HTTPS + Socket.io
             ┌──────────▼───────────┐
-            │  API NestJS (VPS)    │  api-nigerconnect.sahabiguide.com
+            │  API NestJS (VPS)    │  api.nigerconnect.app
             │  Traefik + Docker    │
             └──┬───────┬───────┬───┘
                │       │       │
@@ -94,7 +94,7 @@ Une seule app, **simple et mobile-first**, qui réunit tout ce dont la diaspora 
         └─────────┘ └──────┘ └────────┘
 
             ┌──────────────────────┐
-            │  Site web Next.js    │  nigerconnect.sahabiguide.com
+            │  Site web Next.js    │  nigerconnect.app
             │  (vitrine + légal)   │  (même VPS, même Traefik)
             └──────────────────────┘
 ```

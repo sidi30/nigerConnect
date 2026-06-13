@@ -8,13 +8,13 @@
 #   - The .well-known files have the right Content-Type
 #
 # Exits non-zero if any check fails so you can wire it into a CI step:
-#   ./scripts/smoke-prod.sh https://nigerconnect.sahabiguide.com https://api-nigerconnect.sahabiguide.com
+#   ./scripts/smoke-prod.sh https://nigerconnect.app https://api.nigerconnect.app
 # =============================================================================
 
 set -euo pipefail
 
-WEB_BASE="${1:-https://nigerconnect.sahabiguide.com}"
-API_BASE="${2:-https://api-nigerconnect.sahabiguide.com}"
+WEB_BASE="${1:-https://nigerconnect.app}"
+API_BASE="${2:-https://api.nigerconnect.app}"
 
 C_OK=$'\e[32m'; C_ERR=$'\e[31m'; C_DIM=$'\e[2m'; C_RST=$'\e[0m'
 fail=0

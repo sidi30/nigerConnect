@@ -10,12 +10,13 @@
 #                              challenge via the existing `letsencrypt-dns` resolver
 #   - Middleware             → cloudflare-only@file (only Cloudflare egress IPs)
 #
-# Three single-level subdomains (Cloudflare Universal SSL constraint).
-# Same convention as auth.sahabiguide.com / cs-api.* / cs-monitoring.*:
-#   - ${WEB_HOST}   (default: nigerconnect.sahabiguide.com)     → web (Next.js)
-#   - ${API_HOST}   (default: api-nigerconnect.sahabiguide.com) → API + Socket.io
-#   - ${CDN_HOST}   (default: cdn-nigerconnect.sahabiguide.com) → MinIO public bucket
-# All three must exist as Cloudflare A records → 46.224.193.109, proxied=ON.
+# Four single-level subdomains of the owned apex nigerconnect.app (Cloudflare
+# Universal SSL covers one level):
+#   - ${WEB_HOST}   (default: nigerconnect.app)        → web vitrine (Next.js)
+#   - ${API_HOST}   (default: api.nigerconnect.app)    → API + Socket.io
+#   - ${CDN_HOST}   (default: cdn.nigerconnect.app)    → MinIO public bucket
+#   - ${ADMIN_HOST} (default: tenant.nigerconnect.app) → admin console (same web container)
+# All four must exist as Cloudflare A records → 46.224.193.109, proxied=ON.
 #
 # Deploy:
 #   cd /opt/apps/nigerConnect
@@ -276,8 +277,8 @@ services:
       args:
         # NEXT_PUBLIC_* are inlined at build time; needed for the admin console
         # + verify-email page to reach the API. Override via .env.prod if hosts differ.
-        NEXT_PUBLIC_API_URL: ${API_PUBLIC_URL:-https://api-nigerconnect.sahabiguide.com/api}
-        NEXT_PUBLIC_APP_URL: ${WEB_PUBLIC_URL:-https://nigerconnect.sahabiguide.com}
+        NEXT_PUBLIC_API_URL: ${API_PUBLIC_URL:-https://api.nigerconnect.app/api}
+        NEXT_PUBLIC_APP_URL: ${WEB_PUBLIC_URL:-https://nigerconnect.app}
     image: nigerconnect-web:latest
     container_name: nigerconnect-web
     <<: *security-defaults
@@ -294,13 +295,22 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
-      # Single-level subdomain only (Cloudflare Universal SSL constraint).
-      # No `www.` here — would land on a 2-level subdomain not covered by the cert.
+      # Public vitrine — apex domain. Single-level subdomains only (Cloudflare
+      # Universal SSL covers one level). No `www.` here.
       - traefik.http.routers.nigerconnect-web.rule=Host(`${WEB_HOST}`)
       - traefik.http.routers.nigerconnect-web.entrypoints=https
       - traefik.http.routers.nigerconnect-web.tls.certresolver=letsencrypt-dns
       - traefik.http.routers.nigerconnect-web.middlewares=cloudflare-only@file
       - traefik.http.services.nigerconnect-web.loadbalancer.server.port=3000
+      # Admin console — same Next.js container, served on its own host
+      # (${ADMIN_HOST}, e.g. tenant.nigerconnect.app). The web app's middleware
+      # rewrites this host onto the /admin route group and 404s /admin on the
+      # public vitrine. Reuses the nigerconnect-web loadbalancer (port 3000).
+      - traefik.http.routers.nigerconnect-admin.rule=Host(`${ADMIN_HOST:?ADMIN_HOST is required}`)
+      - traefik.http.routers.nigerconnect-admin.entrypoints=https
+      - traefik.http.routers.nigerconnect-admin.tls.certresolver=letsencrypt-dns
+      - traefik.http.routers.nigerconnect-admin.middlewares=cloudflare-only@file
+      - traefik.http.routers.nigerconnect-admin.service=nigerconnect-web
     networks:
       - traefik-public
     deploy:

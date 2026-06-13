@@ -128,7 +128,7 @@ Apple Developer → Keys → "+" → enable APNs → upload du `.p8` dans Fireba
 
 | # | Application type | Champs | Variable cible |
 |---|---|---|---|
-| 1 | **Web application** | Authorized redirect URIs : `https://api-nigerconnect.sahabiguide.com/auth/google/callback` | `GOOGLE_CLIENT_ID_WEB` |
+| 1 | **Web application** | Authorized redirect URIs : `https://api.nigerconnect.app/auth/google/callback` | `GOOGLE_CLIENT_ID_WEB` |
 | 2 | **Android** | Package : `com.nigerconnect.app`<br>SHA-1 : à récupérer après le 1er `eas build` Android via `eas credentials -p android` | `GOOGLE_CLIENT_ID_ANDROID` |
 | 3 | **iOS** | Bundle ID : `com.nigerconnect.app` | `GOOGLE_CLIENT_ID_IOS` |
 
@@ -167,9 +167,9 @@ Dans la zone `sahabiguide.com`, **proxied = ON** (orange) :
 
 | Sous-domaine | Type | Cible |
 |---|---|---|
-| `nigerconnect.sahabiguide.com` | A | `46.224.193.109` |
-| `api-nigerconnect.sahabiguide.com` | A | `46.224.193.109` |
-| `cdn-nigerconnect.sahabiguide.com` | A | `46.224.193.109` |
+| `nigerconnect.app` | A | `46.224.193.109` |
+| `api.nigerconnect.app` | A | `46.224.193.109` |
+| `cdn.nigerconnect.app` | A | `46.224.193.109` |
 
 Propagation ~1-5 min. Pas besoin d'attendre la propagation pour lancer le deploy — Traefik gère le cert dès que le DNS résout.
 
@@ -220,10 +220,10 @@ cd /opt/apps/nigerConnect
 ### Vérifs
 
 ```bash
-curl -f https://api-nigerconnect.sahabiguide.com/health
+curl -f https://api.nigerconnect.app/health
 # → {"status":"ok",...}
 
-curl -fI https://nigerconnect.sahabiguide.com/
+curl -fI https://nigerconnect.app/
 # → HTTP/2 200
 ```
 
@@ -251,7 +251,7 @@ Une fois la web prod up :
 3. Re-deploy le web.
 4. Vérifier :
    ```bash
-   curl https://nigerconnect.sahabiguide.com/.well-known/assetlinks.json | jq .
+   curl https://nigerconnect.app/.well-known/assetlinks.json | jq .
    ```
 
 ---
@@ -310,7 +310,7 @@ Puis re-builder une dernière fois pour que l'app embarque le bon `GOOGLE_CLIENT
 eas submit --profile production --platform android
 ```
 
-Google Play Console : remplir métadonnées (description FR, screenshots min 2, content rating, data safety, privacy policy URL = `https://nigerconnect.sahabiguide.com/legal/privacy`).
+Google Play Console : remplir métadonnées (description FR, screenshots min 2, content rating, data safety, privacy policy URL = `https://nigerconnect.app/legal/privacy`).
 
 Premier upload sur le track `internal` → tester avec quelques comptes → promouvoir vers `production`.
 

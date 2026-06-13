@@ -1,7 +1,7 @@
 # Google Sign-In ne marche pas — diagnostic & fix
 
 **Daté du** : 2026-05-01
-**Environnement** : prod `api-nigerconnect.sahabiguide.com`
+**Environnement** : prod `api.nigerconnect.app`
 
 ---
 
@@ -14,7 +14,7 @@ Deux bugs distincts ont été identifiés ; le second nécessite **1 commande SS
 | 1 | Login email "ne marche pas" | `apps/mobile/.env` pointe sur la prod ET le compte n'existe peut-être pas en prod (créé en dev) | Tester avec un compte créé sur la prod, ou modifier `apps/mobile/.env` pour pointer en local |
 | 2 | Google Sign-In `Unauthorized` | Sur la prod, `GOOGLE_CLIENT_ID_WEB` est vide → l'API rejette tous les tokens avec `Google sign-in is not configured on this server` | Ajouter le client ID dans `.env.prod` du VPS et redémarrer l'API |
 
-Tests effectués depuis ce poste contre `https://api-nigerconnect.sahabiguide.com` :
+Tests effectués depuis ce poste contre `https://api.nigerconnect.app` :
 
 ```
 POST /api/auth/register   → 201   ✅ création compte OK
@@ -33,8 +33,8 @@ Donc **le backend prod marche pour email/password**, mais Google est désactivé
 Le fichier `apps/mobile/.env` (en dev local) contient :
 
 ```
-EXPO_PUBLIC_API_URL=https://api-nigerconnect.sahabiguide.com
-EXPO_PUBLIC_SOCKET_URL=https://api-nigerconnect.sahabiguide.com
+EXPO_PUBLIC_API_URL=https://api.nigerconnect.app
+EXPO_PUBLIC_SOCKET_URL=https://api.nigerconnect.app
 ```
 
 Donc même quand tu lances `expo start` en dev sur ton PC, l'app mobile tape **directement la prod**. Conséquence :
@@ -67,7 +67,7 @@ pnpm --filter @nigerconnect/api start                  # API sur :3000
 **Option B — créer un compte directement sur la prod** :
 
 ```bash
-curl -k -X POST https://api-nigerconnect.sahabiguide.com/api/auth/register \
+curl -k -X POST https://api.nigerconnect.app/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"toi@example.com","password":"ToiTest2026!","firstName":"Toi","lastName":"Test"}'
 ```
@@ -146,7 +146,7 @@ docker logs --tail 20 nigerconnect-api | grep -i google
 Depuis ton PC (sans SSH sur le VPS) :
 
 ```bash
-curl -k -X POST https://api-nigerconnect.sahabiguide.com/api/auth/google \
+curl -k -X POST https://api.nigerconnect.app/api/auth/google \
   -H "Content-Type: application/json" \
   -d '{"idToken":"fake.token.here"}'
 

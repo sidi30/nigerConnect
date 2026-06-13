@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 
-const WEB_BASE = 'https://nigerconnect.sahabiguide.com';
+const WEB_BASE = 'https://nigerconnect.app';
 
 const ITEMS: Array<{ icon: keyof typeof Feather.glyphMap; title: string; desc: string; href: Href }> = [
   {

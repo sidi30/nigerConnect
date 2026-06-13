@@ -19,16 +19,16 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+        "EXPO_PUBLIC_API_URL": "https://api.nigerconnect.app",
+        "EXPO_PUBLIC_SOCKET_URL": "https://api.nigerconnect.app"
       }
     },
     "preview-sim": {
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+        "EXPO_PUBLIC_API_URL": "https://api.nigerconnect.app",
+        "EXPO_PUBLIC_SOCKET_URL": "https://api.nigerconnect.app"
       },
       "ios": {
         "simulator": true
@@ -37,8 +37,8 @@
     "production": {
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-        "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+        "EXPO_PUBLIC_API_URL": "https://api.nigerconnect.app",
+        "EXPO_PUBLIC_SOCKET_URL": "https://api.nigerconnect.app"
       },
       "autoIncrement": true
     }

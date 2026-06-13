@@ -28,10 +28,10 @@ $EDITOR .env.prod                            # remplis les __CHANGE_ME__
 ```
 
 Endpoints publics après déploiement :
-- Web    : <https://nigerconnect.sahabiguide.com>
-- API    : <https://api-nigerconnect.sahabiguide.com>
-- Health : <https://api-nigerconnect.sahabiguide.com/health>
-- CDN    : <https://cdn-nigerconnect.sahabiguide.com/nigerconnect/...>
+- Web    : <https://nigerconnect.app>
+- API    : <https://api.nigerconnect.app>
+- Health : <https://api.nigerconnect.app/health>
+- CDN    : <https://cdn.nigerconnect.app/nigerconnect/...>
   (route Traefik dédiée vers MinIO bucket public)
 
 ---
@@ -61,9 +61,9 @@ sur `46.224.193.109`, **proxied = ON** (orange cloud) — sinon le middleware
 
 | Sous-domaine | Type | Cible | Proxied | Sert |
 |---|---|---|---|---|
-| `nigerconnect.sahabiguide.com` | A | `46.224.193.109` | ✅ ON | Web (Next.js) |
-| `api-nigerconnect.sahabiguide.com` | A | `46.224.193.109` | ✅ ON | API NestJS + Socket.io |
-| `cdn-nigerconnect.sahabiguide.com` | A | `46.224.193.109` | ✅ ON | MinIO (médias publics) |
+| `nigerconnect.app` | A | `46.224.193.109` | ✅ ON | Web (Next.js) |
+| `api.nigerconnect.app` | A | `46.224.193.109` | ✅ ON | API NestJS + Socket.io |
+| `cdn.nigerconnect.app` | A | `46.224.193.109` | ✅ ON | MinIO (médias publics) |
 
 Format identique à tes apps existantes (`auth.sahabiguide.com`, `cs-app.X`,
 `cs-api.X`, `cs-monitoring.X`). Single-level partout, donc Universal SSL
@@ -135,18 +135,18 @@ Idempotent. Options :
 docker compose -f docker-compose.prod.yml --env-file .env.prod ps
 
 # API health
-curl -f https://api-nigerconnect.sahabiguide.com/health
+curl -f https://api.nigerconnect.app/health
 # → {"status":"ok","service":"nigerconnect-api",…}
 
 # Web 200
-curl -fI https://nigerconnect.sahabiguide.com/
+curl -fI https://nigerconnect.app/
 
 # CDN (le bucket public renvoie 404 sur la racine — c'est attendu, pas 403)
-curl -I https://cdn-nigerconnect.sahabiguide.com/nigerconnect/
+curl -I https://cdn.nigerconnect.app/nigerconnect/
 
 # Cert Let's Encrypt valide
-echo | openssl s_client -servername api-nigerconnect.sahabiguide.com \
-  -connect api-nigerconnect.sahabiguide.com:443 2>/dev/null | \
+echo | openssl s_client -servername api.nigerconnect.app \
+  -connect api.nigerconnect.app:443 2>/dev/null | \
   openssl x509 -noout -dates
 ```
 
@@ -234,8 +234,8 @@ Une fois la prod live, change l'URL de l'API dans `apps/mobile/eas.json`
 ```json
 "production": {
   "env": {
-    "EXPO_PUBLIC_API_URL": "https://api-nigerconnect.sahabiguide.com",
-    "EXPO_PUBLIC_SOCKET_URL": "https://api-nigerconnect.sahabiguide.com"
+    "EXPO_PUBLIC_API_URL": "https://api.nigerconnect.app",
+    "EXPO_PUBLIC_SOCKET_URL": "https://api.nigerconnect.app"
   }
 }
 ```

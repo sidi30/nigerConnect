@@ -19,8 +19,8 @@ name: Production deploy
 #   VPS_SSH_PORT   optionnel, défaut 22
 #
 # Variables optionnelles (Settings → Variables → Actions) :
-#   PROD_WEB_URL   défaut https://nigerconnect.sahabiguide.com
-#   PROD_API_URL   défaut https://api-nigerconnect.sahabiguide.com
+#   PROD_WEB_URL   défaut https://nigerconnect.app
+#   PROD_API_URL   défaut https://api.nigerconnect.app
 #   VPS_APP_DIR    défaut /opt/apps/nigerConnect
 # =============================================================================
 
@@ -177,7 +177,7 @@ jobs:
     timeout-minutes: 30
     environment:
       name: production
-      url: ${{ vars.PROD_WEB_URL || 'https://nigerconnect.sahabiguide.com' }}
+      url: ${{ vars.PROD_WEB_URL || 'https://nigerconnect.app' }}
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -206,8 +206,8 @@ jobs:
           echo "🚀 **Déployé sur le VPS**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Web : ${{ vars.PROD_WEB_URL || 'https://nigerconnect.sahabiguide.com' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- API : ${{ vars.PROD_API_URL || 'https://api-nigerconnect.sahabiguide.com' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Web : ${{ vars.PROD_WEB_URL || 'https://nigerconnect.app' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- API : ${{ vars.PROD_API_URL || 'https://api.nigerconnect.app' }}" >> $GITHUB_STEP_SUMMARY
 
   # ── Smoke test post-déploiement ────────────────────────────────────────────
   smoke:
@@ -220,8 +220,8 @@ jobs:
         run: |
           chmod +x scripts/smoke-prod.sh
           ./scripts/smoke-prod.sh \
-            "${{ vars.PROD_WEB_URL || 'https://nigerconnect.sahabiguide.com' }}" \
-            "${{ vars.PROD_API_URL || 'https://api-nigerconnect.sahabiguide.com' }}"
+            "${{ vars.PROD_WEB_URL || 'https://nigerconnect.app' }}" \
+            "${{ vars.PROD_API_URL || 'https://api.nigerconnect.app' }}"
       - name: Summary
         if: success()
         run: echo "✅ Smoke tests OK — production saine." >> $GITHUB_STEP_SUMMARY

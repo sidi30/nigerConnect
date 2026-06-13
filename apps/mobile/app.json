@@ -22,8 +22,8 @@
       "buildNumber": "2",
       "usesAppleSignIn": true,
       "associatedDomains": [
-        "applinks:nigerconnect.sahabiguide.com",
-        "webcredentials:nigerconnect.sahabiguide.com"
+        "applinks:nigerconnect.app",
+        "webcredentials:nigerconnect.app"
       ],
       "config": {
         "usesNonExemptEncryption": false
@@ -157,7 +157,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "nigerconnect.sahabiguide.com"
+              "host": "nigerconnect.app"
             }
           ],
           "category": [

@@ -1,7 +1,7 @@
 // Full register → login → /auth/me flow exercised from a real browser context.
 const { chromium } = require('playwright');
 const PAGE_URL = process.env.PAGE_URL || 'http://localhost:8082/';
-const API = 'https://api-nigerconnect.sahabiguide.com';
+const API = 'https://api.nigerconnect.app';
 
 (async () => {
   const browser = await chromium.launch({ headless: true });

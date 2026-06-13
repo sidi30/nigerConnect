@@ -20,7 +20,7 @@ const nextConfig = {
      * Tighten further if we ever add 3rd-party scripts.
      */
     const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL ?? "https://api-nigerconnect.sahabiguide.com";
+      process.env.NEXT_PUBLIC_API_URL ?? "https://api.nigerconnect.app";
     // CSP connect-src must be an ORIGIN (no path): a source with a path that
     // doesn't end in "/" matches that exact path only, so a value like
     // ".../api" would block ".../api/auth/login". Strip to the origin.

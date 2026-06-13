@@ -48,7 +48,7 @@ git archive HEAD | ssh root@46.224.193.109 "cd /opt/apps/nigerConnect && tar xf 
 La commande fait : copie du code → fix des fins de ligne Windows → fix des permissions →
 rebuild Docker → migrations Prisma → redémarrage API + web.
 
-Vérification : <https://api-nigerconnect.sahabiguide.com/health> doit répondre `{"status":"ok",...}`.
+Vérification : <https://api.nigerconnect.app/health> doit répondre `{"status":"ok",...}`.
 
 ---
 

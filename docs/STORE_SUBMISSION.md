@@ -13,21 +13,21 @@ Ces URLs doivent répondre **200 OK** pour passer la review. Toutes hébergées 
 
 | URL | Usage | Page |
 |---|---|---|
-| `https://nigerconnect.sahabiguide.com/` | Site vitrine, lien "Visit website" | `app/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/privacy` | **Privacy Policy URL** (Play + Apple obligatoires) | `app/privacy/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/terms` | Terms of Service | `app/terms/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/community` | Community guidelines | `app/community/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/account-deletion` | **Account deletion** (Play obligatoire depuis avril 2024) | `app/account-deletion/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/support` | Support + FAQ + emails dédiés | `app/support/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/verify-email?token=…` | Lien de mail de vérification | `app/verify-email/page.tsx` ✅ |
-| `https://nigerconnect.sahabiguide.com/reset-password?token=…` | Lien de reset password | `app/reset-password/page.tsx` ✅ |
+| `https://nigerconnect.app/` | Site vitrine, lien "Visit website" | `app/page.tsx` ✅ |
+| `https://nigerconnect.app/privacy` | **Privacy Policy URL** (Play + Apple obligatoires) | `app/privacy/page.tsx` ✅ |
+| `https://nigerconnect.app/terms` | Terms of Service | `app/terms/page.tsx` ✅ |
+| `https://nigerconnect.app/community` | Community guidelines | `app/community/page.tsx` ✅ |
+| `https://nigerconnect.app/account-deletion` | **Account deletion** (Play obligatoire depuis avril 2024) | `app/account-deletion/page.tsx` ✅ |
+| `https://nigerconnect.app/support` | Support + FAQ + emails dédiés | `app/support/page.tsx` ✅ |
+| `https://nigerconnect.app/verify-email?token=…` | Lien de mail de vérification | `app/verify-email/page.tsx` ✅ |
+| `https://nigerconnect.app/reset-password?token=…` | Lien de reset password | `app/reset-password/page.tsx` ✅ |
 
 **Sanity check automatisé** : utiliser le script `scripts/smoke-prod.sh` qui vérifie d'un coup les URLs publiques, le bon `Content-Type` des `.well-known`, les headers de sécurité et `/health/live` + `/health/ready` :
 
 ```bash
 ./scripts/smoke-prod.sh \
-  https://nigerconnect.sahabiguide.com \
-  https://api-nigerconnect.sahabiguide.com
+  https://nigerconnect.app \
+  https://api.nigerconnect.app
 # Exit code 0 si tout est vert, sinon non-zero (utilisable en CI).
 ```
 
@@ -58,13 +58,13 @@ Ces URLs doivent répondre **200 OK** pour passer la review. Toutes hébergées 
 | Tags (5 max) | `social`, `community`, `messaging`, `diaspora`, `niger` |
 | Contact email | `contact@sahabiguide.com` |
 | Contact phone | (optionnel) |
-| Contact website | `https://nigerconnect.sahabiguide.com/` |
-| Privacy Policy | `https://nigerconnect.sahabiguide.com/privacy` |
+| Contact website | `https://nigerconnect.app/` |
+| Privacy Policy | `https://nigerconnect.app/privacy` |
 
 ### 2.3 « App content »
 
 #### Privacy Policy
-URL : `https://nigerconnect.sahabiguide.com/privacy`
+URL : `https://nigerconnect.app/privacy`
 
 #### App access (Login required)
 > ☑ All or some functionality is restricted
@@ -137,7 +137,7 @@ Voir §3 ci-dessous (réponses prêtes).
 #### Account deletion
 > ☑ Yes, users can request account deletion
 
-URL : `https://nigerconnect.sahabiguide.com/account-deletion`
+URL : `https://nigerconnect.app/account-deletion`
 
 > ☑ When a user requests account deletion, both the account and associated data are deleted
 
@@ -251,7 +251,7 @@ Le code est **prêt pour les deux options** : un seul flag (`extra.appleSignInEn
 **A. Activer Apple Sign-In** (recommandé pour iOS — bouton Apple visible)
 1. Apple Developer Program ($99/an) → indispensable pour publier
 2. Identifiers → "+" → Service ID `com.nigerconnect.app.signin`
-3. Activer "Sign in with Apple", configurer le domain `nigerconnect.sahabiguide.com` + return URL
+3. Activer "Sign in with Apple", configurer le domain `nigerconnect.app` + return URL
 4. Créer une Key (`.p8`) avec Sign in with Apple enabled, télécharger
 5. Remplir dans `.env.prod` :
    ```
@@ -295,8 +295,8 @@ To test:
 Notification testing : the demo account is set to receive a daily test push
 at 09:00 UTC.
 
-Privacy policy : https://nigerconnect.sahabiguide.com/privacy
-Account deletion (web) : https://nigerconnect.sahabiguide.com/account-deletion
+Privacy policy : https://nigerconnect.app/privacy
+Account deletion (web) : https://nigerconnect.app/account-deletion
 Support : contact@sahabiguide.com
 ```
 
@@ -363,8 +363,8 @@ NigerConnect est une app indépendante, gratuite, créée par et pour la
 diaspora nigérienne. Pas de modèle économique caché : on construit ensemble
 le réseau dont notre communauté a besoin.
 
-Site : https://nigerconnect.sahabiguide.com
-Confidentialité : https://nigerconnect.sahabiguide.com/privacy
+Site : https://nigerconnect.app
+Confidentialité : https://nigerconnect.app/privacy
 Contact : contact@sahabiguide.com
 ```
 
@@ -435,12 +435,12 @@ Outil recommandé : `eas build --profile preview` puis screen recorder de l'ému
 ## 8. Checklist finale avant clic « Submit »
 
 ### Backend
-- [ ] `https://nigerconnect.sahabiguide.com/privacy` répond 200
-- [ ] `https://nigerconnect.sahabiguide.com/terms` répond 200
-- [ ] `https://nigerconnect.sahabiguide.com/community` répond 200
-- [ ] `https://nigerconnect.sahabiguide.com/account-deletion` répond 200
+- [ ] `https://nigerconnect.app/privacy` répond 200
+- [ ] `https://nigerconnect.app/terms` répond 200
+- [ ] `https://nigerconnect.app/community` répond 200
+- [ ] `https://nigerconnect.app/account-deletion` répond 200
 - [ ] Sitemap inclut les 4 URLs (`/sitemap.xml`)
-- [ ] `https://api-nigerconnect.sahabiguide.com/health` répond `ok` sur DB + Redis
+- [ ] `https://api.nigerconnect.app/health` répond `ok` sur DB + Redis
 - [ ] Comptes `reviewer@nigerconnect.ne` + `reviewer-deletion@nigerconnect.ne` créés en prod, mots de passe testés
 - [ ] Compte reviewer principal a au moins 3 amis fictifs, 1 conversation, 5 posts
 - [ ] Email `contact@sahabiguide.com` reçoit (test : envoyer un mail bidon, vérifier réception)

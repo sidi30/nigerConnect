@@ -44,7 +44,7 @@ Ce document a deux parties :
 | 18 | **P2** | Mobile | Pas d'intégration Sentry mobile (le DSN dans `app.json` extra n'est lu par personne). | 🟡 À faire (instructions doc plus bas) |
 | 19 | **P2** | DB | `passwordHash` en clair (argon2id, pas un secret en soi) — OK. `mfaSecret` chiffré AES-256 ✓. Aucune autre PII chiffrée. | 🟢 OK pour MVP |
 | 20 | **P2** | DB | Cascades `onDelete: Cascade` partout → un user supprimé efface ses messages aux autres. RGPD-compliant mais peut surprendre. | 🟢 Décision conservée |
-| 21 | **P3** | Mobile | iOS associated-domains (`applinks:nigerconnect.sahabiguide.com`) déclaré sans fichier `apple-app-site-association` côté web encore. Universal Links inactifs. | 🟡 À faire avant submit iOS |
+| 21 | **P3** | Mobile | iOS associated-domains (`applinks:nigerconnect.app`) déclaré sans fichier `apple-app-site-association` côté web encore. Universal Links inactifs. | 🟡 À faire avant submit iOS |
 | 22 | **P3** | Backend | `softwareKeyboardLayoutMode: 'pan'` peut induire chevauchement statusbar sur certains form-screens Android. | 🟢 Acceptable, peut être basculé en `resize` plus tard |
 
 ### Couches déjà bien posées (avant cet audit)
@@ -115,8 +115,8 @@ openssl rand -base64 32   # → DATA_ENCRYPTION_KEY (32 octets)
 $EDITOR .env.prod
 
 # Champs obligatoires en plus :
-#   APP_WEB_URL=https://nigerconnect.sahabiguide.com   ← NOUVEAU, sinon l'API refuse de démarrer
-#   CORS_ORIGINS=https://nigerconnect.sahabiguide.com  (jamais localhost en prod)
+#   APP_WEB_URL=https://nigerconnect.app   ← NOUVEAU, sinon l'API refuse de démarrer
+#   CORS_ORIGINS=https://nigerconnect.app  (jamais localhost en prod)
 #   GOOGLE_CLIENT_ID_WEB=…  (doit matcher app.json:extra.googleClientIdWeb du mobile)
 #   GOOGLE_CLIENT_ID_ANDROID=…  (créé dans Google Cloud Console — type Android)
 #   GOOGLE_CLIENT_ID_IOS=…  (type iOS) — si submit iOS
@@ -171,13 +171,13 @@ Le script :
 Vérifier ensuite :
 
 ```bash
-curl -fsS https://api-nigerconnect.sahabiguide.com/health
+curl -fsS https://api.nigerconnect.app/health
 # → { "status": "ok", "checks": { "db": "ok", "redis": "ok" } }
 
-curl -I https://nigerconnect.sahabiguide.com
+curl -I https://nigerconnect.app
 # → 200, headers Cloudflare, HSTS
 
-curl -I https://cdn-nigerconnect.sahabiguide.com/nigerconnect/
+curl -I https://cdn.nigerconnect.app/nigerconnect/
 # → 403 attendu (bucket public, mais listing désactivé)
 ```
 
@@ -218,13 +218,13 @@ Tester la **restauration** au moins une fois avant ouverture publique.
 
 Le web doit servir :
 
-- `https://nigerconnect.sahabiguide.com/.well-known/apple-app-site-association` (sans extension, `Content-Type: application/json`)
-- `https://nigerconnect.sahabiguide.com/.well-known/assetlinks.json` (Android)
+- `https://nigerconnect.app/.well-known/apple-app-site-association` (sans extension, `Content-Type: application/json`)
+- `https://nigerconnect.app/.well-known/assetlinks.json` (Android)
 
 Templates déjà présents dans `apps/web/public/.well-known/` selon `GO-LIVE.md`. Vérifier le `Content-Type` :
 
 ```bash
-curl -I https://nigerconnect.sahabiguide.com/.well-known/apple-app-site-association
+curl -I https://nigerconnect.app/.well-known/apple-app-site-association
 # Doit montrer Content-Type: application/json
 ```
 
@@ -310,7 +310,7 @@ Une version d'app dans les stores ne se rollback pas. Mitigation :
 
 1. Vérifier que `S3_PUBLIC_ENDPOINT` est défini dans le compose (devrait être `https://${CDN_HOST}`).
 2. Vérifier que MinIO a bien créé les buckets : `docker logs nigerconnect-minio-init`.
-3. Tester manuellement un presign : `curl -X POST https://api-nigerconnect.sahabiguide.com/api/profile/me/photos/presign -H "Authorization: Bearer …" -d '{"contentType":"image/jpeg","kind":"photo"}'`.
+3. Tester manuellement un presign : `curl -X POST https://api.nigerconnect.app/api/profile/me/photos/presign -H "Authorization: Bearer …" -d '{"contentType":"image/jpeg","kind":"photo"}'`.
 4. Vérifier que le client envoie bien `Content-Type` ET `x-amz-server-side-encryption: AES256` (signableHeaders les rend obligatoires).
 
 ### 5.3 « Le chat n'affiche pas mes messages »
