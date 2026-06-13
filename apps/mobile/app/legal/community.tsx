@@ -4,7 +4,7 @@ export default function CommunityRulesScreen() {
   return (
     <LegalDoc
       title="Règles communautaires"
-      lastUpdated="24 avril 2026"
+      lastUpdated="13 juin 2026"
       intro="NigerConnect est l’endroit où la diaspora nigérienne se retrouve. Pour que chacun s’y sente bien, quelques règles claires, appliquées sans exception."
       sections={[
         {
@@ -18,7 +18,7 @@ export default function CommunityRulesScreen() {
         {
           heading: 'Contenus interdits (bannissement immédiat)',
           bullets: [
-            'Nudité, contenus sexuels explicites, pédopornographie.',
+            'Nudité, contenus sexuels explicites, exploitation de mineurs.',
             'Incitation à la violence, apologie du terrorisme.',
             'Contenus illégaux selon la loi du Niger ou du pays de résidence.',
             'Arnaques, faux dons, chaînes de Ponzi.',
@@ -43,7 +43,7 @@ export default function CommunityRulesScreen() {
         },
         {
           heading: 'Si tu vois un contenu qui pose problème',
-          body: 'Utilise le bouton 🚩 Signaler sur la publication, le commentaire ou le profil concerné. L’équipe de modération examine chaque signalement sous 24h ouvrées. Pour une urgence (mineur en danger, menace physique), écris-nous directement à contact@sahabiguide.com.',
+          body: 'Utilise le bouton 🚩 Signaler sur la publication, le commentaire ou le profil concerné. L’équipe de modération examine chaque signalement sous 24h ouvrées. Pour une urgence (mineur en danger, menace physique), écris-nous directement à contact@nigerconnect.app.',
         },
         {
           heading: 'Conséquences en cas de violation',
@@ -55,7 +55,7 @@ export default function CommunityRulesScreen() {
           ],
         },
       ]}
-      contact="Contester une décision de modération : contact@sahabiguide.com. Réponse sous 72 heures."
+      contact="Contester une décision de modération : contact@nigerconnect.app. Réponse sous 72 heures."
     />
   );
 }

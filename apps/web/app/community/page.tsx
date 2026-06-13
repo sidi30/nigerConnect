@@ -4,6 +4,7 @@ import {
   LEGAL_LAST_UPDATED,
   COMMUNITY_INTRO,
   COMMUNITY_SECTIONS,
+  COMMUNITY_CONTACT,
 } from "@/lib/legal-content";
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export default function CommunityPage() {
       lastUpdated={LEGAL_LAST_UPDATED}
       intro={COMMUNITY_INTRO}
       sections={COMMUNITY_SECTIONS}
-      contact="Contester une décision de modération : contact@sahabiguide.com. Réponse sous 72 heures."
+      contact={COMMUNITY_CONTACT}
     />
   );
 }

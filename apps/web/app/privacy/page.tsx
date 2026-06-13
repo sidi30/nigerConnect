@@ -4,6 +4,7 @@ import {
   LEGAL_LAST_UPDATED,
   PRIVACY_INTRO,
   PRIVACY_SECTIONS,
+  PRIVACY_CONTACT,
 } from "@/lib/legal-content";
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export default function PrivacyPolicyPage() {
       lastUpdated={LEGAL_LAST_UPDATED}
       intro={PRIVACY_INTRO}
       sections={PRIVACY_SECTIONS}
-      contact="Délégué à la protection des données : contact@sahabiguide.com. Réclamation CNIL : cnil.fr."
+      contact={PRIVACY_CONTACT}
     />
   );
 }

@@ -95,7 +95,7 @@ export default function DeleteAccountScreen() {
             <Text style={styles.rgpdTitle}>Tes droits</Text>
             <Text style={styles.rgpdText}>
               Conformément au RGPD, tu peux exporter tes données avant suppression en nous
-              contactant à <Text style={styles.email}>contact@sahabiguide.com</Text>. Sans action
+              contactant à <Text style={styles.email}>contact@nigerconnect.app</Text>. Sans action
               de ta part, la suppression est immédiate et aucune copie n’est conservée après
               30 jours (logs serveur anonymisés).
             </Text>

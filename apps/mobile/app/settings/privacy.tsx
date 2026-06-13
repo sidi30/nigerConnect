@@ -186,7 +186,7 @@ export default function PrivacyScreen() {
             const sizeKb = Math.round(new TextEncoder().encode(json).length / 1024);
             Alert.alert(
               'Export prêt',
-              `Tes données ont été récupérées (${sizeKb} Ko). Une copie a été envoyée à ton adresse email pour archivage.\n\nTu peux aussi écrire à contact@sahabiguide.com pour recevoir un export hors-ligne.`,
+              `Tes données ont été récupérées (${sizeKb} Ko). Une copie a été envoyée à ton adresse email pour archivage.\n\nTu peux aussi écrire à contact@nigerconnect.app pour recevoir un export hors-ligne.`,
             );
           } catch (e) {
             const msg = (e as Error).message ?? "Échec de l'export";

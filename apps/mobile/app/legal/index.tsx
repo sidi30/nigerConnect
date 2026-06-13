@@ -60,6 +60,9 @@ export default function LegalIndex() {
           <Pressable onPress={() => void Linking.openURL(`${WEB_BASE}/community`)}>
             <Text style={styles.webLink}>{WEB_BASE}/community</Text>
           </Pressable>
+          <Pressable onPress={() => void Linking.openURL(`${WEB_BASE}/mentions-legales`)}>
+            <Text style={styles.webLink}>{WEB_BASE}/mentions-legales</Text>
+          </Pressable>
         </View>
         <Text style={styles.version}>Version de l’app 1.0.0</Text>
       </ScrollView>

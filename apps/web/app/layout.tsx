@@ -22,7 +22,7 @@ const description =
 
 // Public origin used for OG images, sitemap, and absolute URLs.
 // Settable via NEXT_PUBLIC_APP_URL at build time (eas/Vercel/Docker build arg).
-// Falls back to the prod URL on sahabiguide.com.
+// Falls back to the prod URL on nigerconnect.app.
 const SITE_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://nigerconnect.app";
 

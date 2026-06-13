@@ -4,6 +4,7 @@ import {
   LEGAL_LAST_UPDATED,
   TERMS_INTRO,
   TERMS_SECTIONS,
+  TERMS_CONTACT,
 } from "@/lib/legal-content";
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export default function TermsPage() {
       lastUpdated={LEGAL_LAST_UPDATED}
       intro={TERMS_INTRO}
       sections={TERMS_SECTIONS}
-      contact="Questions légales : contact@sahabiguide.com — l’équipe répond sous 5 jours ouvrés."
+      contact={TERMS_CONTACT}
     />
   );
 }

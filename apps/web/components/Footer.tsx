@@ -73,6 +73,14 @@ export function Footer() {
               </li>
               <li>
                 <Link
+                  href="/mentions-legales"
+                  className="text-brand-brown transition hover:text-brand-orange"
+                >
+                  Mentions légales
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/account-deletion"
                   className="text-brand-brown transition hover:text-brand-orange"
                 >

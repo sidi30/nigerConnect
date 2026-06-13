@@ -15,19 +15,19 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Comment exporter mes données (RGPD article 20) ?",
-    a: "Écris à contact@sahabiguide.com depuis l'adresse de ton compte. Tu reçois un export JSON complet sous 30 jours conformément au RGPD.",
+    a: "Écris à contact@nigerconnect.app depuis l'adresse de ton compte. Tu reçois un export JSON complet sous 30 jours conformément au RGPD.",
   },
   {
     q: "Mon compte a été suspendu, que faire ?",
-    a: "Écris à contact@sahabiguide.com en précisant l'email du compte. L'équipe modération répond sous 72 h ouvrées.",
+    a: "Écris à contact@nigerconnect.app en précisant l'email du compte. L'équipe modération répond sous 72 h ouvrées.",
   },
   {
     q: "Je n'ai pas reçu l'email de vérification",
-    a: "Vérifie tes spams. Si toujours rien, demande un nouveau lien depuis l'app (Paramètres → Vérifier mon email) ou écris à contact@sahabiguide.com.",
+    a: "Vérifie tes spams. Si toujours rien, demande un nouveau lien depuis l'app (Paramètres → Vérifier mon email) ou écris à contact@nigerconnect.app.",
   },
   {
     q: "Je veux signaler un contenu",
-    a: "Touche le bouton ⋯ ou 🚩 sur la publication / le profil concerné depuis l'app. Pour une urgence (mineur en danger, menace physique), écris directement à contact@sahabiguide.com.",
+    a: "Touche le bouton ⋯ ou 🚩 sur la publication / le profil concerné depuis l'app. Pour une urgence (mineur en danger, menace physique), écris directement à contact@nigerconnect.app.",
   },
   {
     q: "Comment se faire vérifier (badge ✓) ?",
@@ -39,31 +39,31 @@ const CONTACTS: Array<{ icon: string; label: string; email: string; desc: string
   {
     icon: "💬",
     label: "Support général",
-    email: "contact@sahabiguide.com",
+    email: "contact@nigerconnect.app",
     desc: "Question, bug, suggestion — réponse sous 5 jours ouvrés.",
   },
   {
     icon: "🔒",
     label: "Confidentialité / RGPD",
-    email: "contact@sahabiguide.com",
+    email: "contact@nigerconnect.app",
     desc: "Export, rectification, suppression de données, questions RGPD.",
   },
   {
     icon: "🚨",
     label: "Sécurité",
-    email: "contact@sahabiguide.com",
+    email: "contact@nigerconnect.app",
     desc: "Urgence sécurité utilisateur, mineur en danger, menace physique.",
   },
   {
     icon: "⚖️",
     label: "Légal",
-    email: "contact@sahabiguide.com",
+    email: "contact@nigerconnect.app",
     desc: "Réquisition judiciaire, droits d'auteur, demande légale.",
   },
   {
     icon: "📨",
     label: "Modération — appel",
-    email: "contact@sahabiguide.com",
+    email: "contact@nigerconnect.app",
     desc: "Contester une suspension ou une décision de modération.",
   },
 ];
