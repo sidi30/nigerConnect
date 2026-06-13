@@ -211,7 +211,10 @@ services:
       JWT_ISSUER: nigerconnect-api
       JWT_AUDIENCE: nigerconnect-app
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://${WEB_HOST}}
+      # Includes the admin host: the admin console (served on ${ADMIN_HOST})
+      # makes cross-origin XHR + WebSocket calls to this API. Override in
+      # .env.prod to add/remove origins; never use a wildcard in prod.
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${WEB_HOST},https://${ADMIN_HOST}}
       API_URL: https://${API_HOST}
       APP_WEB_URL: https://${WEB_HOST}
       # OAuth client IDs are PUBLIC identifiers (they ship inside the mobile app),

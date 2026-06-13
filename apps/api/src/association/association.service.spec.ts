@@ -14,12 +14,25 @@ function makeGeoStub() {
   return { invalidateMarkerCache: jest.fn(async () => undefined) };
 }
 
+// S3 stub: mirrors assertOwnedPublicImage — returns the URL for an owned
+// object, throws BadRequest for anything else (foreign host / not owned).
+function makeS3Stub() {
+  return {
+    assertOwnedPublicImage: jest.fn(async (url: string, ownerId?: string) => {
+      if (ownerId && !url.includes(`users/${ownerId}/`)) {
+        throw new BadRequestException('Media does not belong to you');
+      }
+      return url;
+    }),
+  };
+}
+
 describe('AssociationService', () => {
   it('requires identity verification to create an association', async () => {
     const prisma = {
       user: { findUnique: jest.fn(async () => ({ identityStatus: 'not_submitted' })) },
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
     await expect(
       svc.create('u1', {
         name: 'A',
@@ -34,7 +47,7 @@ describe('AssociationService', () => {
         findUnique: jest.fn(async () => ({ userId: 'u1', status: 'approved' })),
       },
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
     await expect(svc.join('u1', 'a1')).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -44,7 +57,7 @@ describe('AssociationService', () => {
         findUnique: jest.fn(async () => ({ userId: 'u1', status: 'pending' })),
       },
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
     await expect(svc.join('u1', 'a1')).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -68,7 +81,7 @@ describe('AssociationService', () => {
         findUnique: jest.fn(async () => ({ displayName: 'Aïcha', firstName: 'Aïcha' })),
       },
     };
-    const svc = new AssociationService(prisma as never, notifs as never, makeGeoStub() as never);
+    const svc = new AssociationService(prisma as never, notifs as never, makeGeoStub() as never, makeS3Stub() as never);
     const result = (await svc.join('u1', 'a1')) as { pending: boolean };
     expect(result.pending).toBe(true);
     expect(create).toHaveBeenCalledWith(
@@ -87,13 +100,73 @@ describe('AssociationService', () => {
       association: { update: jest.fn() },
       $transaction: jest.fn(),
     };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
     await expect(svc.leave('u1', 'a1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('throws NotFound on unknown association', async () => {
     const prisma = { association: { findUnique: jest.fn(async () => null) } };
-    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never);
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
     await expect(svc.getById('x')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  // Security regression: a verified creator must not be able to attach a media
+  // URL that isn't an object they uploaded (foreign host = SSRF, or another
+  // user's key). create() must run logoUrl/coverUrl through assertOwnedPublicImage.
+  it('rejects a logo URL not owned by the creator (no unbound media)', async () => {
+    const s3 = makeS3Stub();
+    const prisma = {
+      user: { findUnique: jest.fn(async () => ({ identityStatus: 'approved' })) },
+      $transaction: jest.fn(),
+    };
+    const svc = new AssociationService(
+      prisma as never,
+      makeNotifsStub() as never,
+      makeGeoStub() as never,
+      s3 as never,
+    );
+    await expect(
+      svc.create('u1', {
+        name: 'A',
+        category: 'generaliste',
+        // Points at the CDN but under another user's prefix → must be rejected.
+        logoUrl: 'https://cdn.nigerconnect.app/users/someone-else/logo.jpg',
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(s3.assertOwnedPublicImage).toHaveBeenCalledWith(
+      'https://cdn.nigerconnect.app/users/someone-else/logo.jpg',
+      'u1',
+    );
+    // It must fail BEFORE writing anything.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('binds an owned logo URL through assertOwnedPublicImage on create', async () => {
+    const s3 = makeS3Stub();
+    const txCreate = jest.fn(async () => ({ id: 'a1' }));
+    const prisma = {
+      user: { findUnique: jest.fn(async () => ({ identityStatus: 'approved' })) },
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) =>
+        cb({
+          association: { create: txCreate },
+          associationMember: { create: jest.fn() },
+        }),
+      ),
+    };
+    const svc = new AssociationService(
+      prisma as never,
+      makeNotifsStub() as never,
+      makeGeoStub() as never,
+      s3 as never,
+    );
+    await svc.create('u1', {
+      name: 'A',
+      category: 'generaliste',
+      logoUrl: 'https://cdn.nigerconnect.app/users/u1/logo.jpg',
+    } as never);
+    expect(s3.assertOwnedPublicImage).toHaveBeenCalledWith(
+      'https://cdn.nigerconnect.app/users/u1/logo.jpg',
+      'u1',
+    );
   });
 });

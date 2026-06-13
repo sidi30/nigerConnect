@@ -88,6 +88,13 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       const token = this.extractToken(client);
       if (!token) throw new Error('No token');
       const payload = await this.verifyToken(token);
+      // Mirror the REST JwtAuthGuard: a token whose jti has been revoked
+      // (logout / "revoke all sessions") must NOT be honoured here either.
+      // Without this, a revoked access token still buys a live chat socket
+      // until its natural 15-min expiry.
+      if (payload.jti && (await this.redis.isJwtBlacklisted(payload.jti))) {
+        throw new Error('Token revoked');
+      }
       const authed = client as AuthedSocket;
       authed.userId = payload.sub;
       authed.userJti = payload.jti;

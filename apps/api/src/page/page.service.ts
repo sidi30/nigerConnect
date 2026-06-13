@@ -9,6 +9,7 @@ import type { PageRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { GeoService } from '../geo/geo.service';
+import { S3Service } from '../common/storage/s3.service';
 import { USER_PUBLIC_SELECT } from '../common/prisma/user-select';
 import type {
   ChangePageRoleDto,
@@ -23,6 +24,7 @@ export class PageService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly geo: GeoService,
+    private readonly s3: S3Service,
   ) {}
 
   async create(creatorId: string, dto: CreatePageDto) {
@@ -34,14 +36,25 @@ export class PageService {
       throw new ForbiddenException('Identity verification required to create a page');
     }
 
+    // Never trust client-supplied media URLs: bind them to objects this user
+    // actually uploaded under their own prefix (proves ownership, HEADs the
+    // object, enforces image MIME + size). Otherwise a page avatar/cover could
+    // point at an arbitrary internal host (SSRF) or another user's object.
+    const avatarUrl = dto.avatarUrl
+      ? await this.s3.assertOwnedPublicImage(dto.avatarUrl, creatorId)
+      : null;
+    const coverUrl = dto.coverUrl
+      ? await this.s3.assertOwnedPublicImage(dto.coverUrl, creatorId)
+      : null;
+
     const page = await this.prisma.$transaction(async (tx) => {
       const created = await tx.page.create({
         data: {
           name: dto.name,
           description: dto.description ?? null,
           kind: dto.kind,
-          avatarUrl: dto.avatarUrl ?? null,
-          coverUrl: dto.coverUrl ?? null,
+          avatarUrl,
+          coverUrl,
           countryCode: dto.countryCode ?? null,
           city: dto.city ?? null,
           website: dto.website ?? null,
@@ -120,7 +133,16 @@ export class PageService {
 
   async update(userId: string, id: string, dto: UpdatePageDto) {
     await this.assertRole(userId, id, ['admin', 'editor']);
-    return this.prisma.page.update({ where: { id }, data: dto });
+    // Re-bind any media URL the editor sends, same as create — a partial
+    // update must not be a hole through which an unbound URL slips in.
+    const data: Prisma.PageUpdateInput = { ...dto };
+    if (dto.avatarUrl !== undefined) {
+      data.avatarUrl = await this.s3.assertOwnedPublicImage(dto.avatarUrl, userId);
+    }
+    if (dto.coverUrl !== undefined) {
+      data.coverUrl = await this.s3.assertOwnedPublicImage(dto.coverUrl, userId);
+    }
+    return this.prisma.page.update({ where: { id }, data });
   }
 
   async remove(userId: string, id: string): Promise<void> {

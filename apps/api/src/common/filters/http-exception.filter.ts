@@ -61,13 +61,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const scrubbedUrl = scrubUrl(request.url);
 
+    // For non-HTTP exceptions (status 500) the underlying error message can carry
+    // internal details — Prisma constraint text, file paths, driver errors. Never
+    // surface those to the client: emit a stable generic message and a body that
+    // does NOT spread the raw exception. HttpExceptions are author-controlled and
+    // safe to echo.
+    const message = isHttp
+      ? this.extractMessage(raw, exception)
+      : 'Internal server error';
+
     const payload = {
       statusCode: status,
       // Don't echo sensitive query params back to the client either.
       path: scrubbedUrl,
       method: request.method,
       timestamp: new Date().toISOString(),
-      message: this.extractMessage(raw, exception),
+      message,
       ...(isHttp && typeof raw === 'object' && raw !== null ? raw : {}),
     };
 

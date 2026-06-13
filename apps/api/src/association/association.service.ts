@@ -9,6 +9,7 @@ import type { AssociationRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { GeoService } from '../geo/geo.service';
+import { S3Service } from '../common/storage/s3.service';
 import type {
   ChangeRoleDto,
   CreateAssociationDto,
@@ -33,6 +34,7 @@ export class AssociationService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly geo: GeoService,
+    private readonly s3: S3Service,
   ) {}
 
   async create(creatorId: string, dto: CreateAssociationDto) {
@@ -44,13 +46,23 @@ export class AssociationService {
       throw new ForbiddenException('Identity verification required to create an association');
     }
 
+    // Bind client-supplied media to objects this user uploaded under their own
+    // prefix (ownership + HEAD + MIME/size checks). Stops SSRF / foreign-URL /
+    // cross-user-object injection through logo/cover.
+    const logoUrl = dto.logoUrl
+      ? await this.s3.assertOwnedPublicImage(dto.logoUrl, creatorId)
+      : null;
+    const coverUrl = dto.coverUrl
+      ? await this.s3.assertOwnedPublicImage(dto.coverUrl, creatorId)
+      : null;
+
     const created = await this.prisma.$transaction(async (tx) => {
       const assoc = await tx.association.create({
         data: {
           name: dto.name,
           description: dto.description ?? null,
-          logoUrl: dto.logoUrl ?? null,
-          coverUrl: dto.coverUrl ?? null,
+          logoUrl,
+          coverUrl,
           category: dto.category,
           countryCode: dto.countryCode ?? null,
           city: dto.city ?? null,
@@ -145,7 +157,15 @@ export class AssociationService {
 
   async update(userId: string, id: string, dto: UpdateAssociationDto) {
     await this.assertRole(userId, id, ['admin']);
-    return this.prisma.association.update({ where: { id }, data: dto });
+    // Re-bind media on partial updates too — same guard as create.
+    const data: Prisma.AssociationUpdateInput = { ...dto };
+    if (dto.logoUrl !== undefined) {
+      data.logoUrl = await this.s3.assertOwnedPublicImage(dto.logoUrl, userId);
+    }
+    if (dto.coverUrl !== undefined) {
+      data.coverUrl = await this.s3.assertOwnedPublicImage(dto.coverUrl, userId);
+    }
+    return this.prisma.association.update({ where: { id }, data });
   }
 
   async join(userId: string, id: string) {
@@ -402,6 +422,9 @@ export class AssociationService {
   // ── Events ──────────────────────────────────────────────────
   async createEvent(userId: string, id: string, dto: CreateEventDto) {
     await this.assertRole(userId, id, ['admin', 'moderator']);
+    const coverUrl = dto.coverUrl
+      ? await this.s3.assertOwnedPublicImage(dto.coverUrl, userId)
+      : null;
     return this.prisma.associationEvent.create({
       data: {
         associationId: id,
@@ -409,7 +432,7 @@ export class AssociationService {
         description: dto.description ?? null,
         eventDate: new Date(dto.eventDate),
         location: dto.location ?? null,
-        coverUrl: dto.coverUrl ?? null,
+        coverUrl,
       },
     });
   }
