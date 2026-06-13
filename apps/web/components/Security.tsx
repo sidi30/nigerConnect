@@ -3,10 +3,10 @@ import { IconShield, IconCheck } from "./Icons";
 const pillars = [
   "Authentification Google / Apple / Email",
   "JWT RS256 avec refresh rotatif — sessions robustes",
-  "Mots de passe Argon2id — standard industrie",
+  "Mots de passe Argon2id — standard de l'industrie",
   "Vérification d'identité optionnelle pour les comptes associatifs",
   "Blocage, signalement & modération humaine",
-  "Données hébergées chiffrées (AES-256)",
+  "Chiffrement AES-256 des données sensibles",
 ];
 
 export function Security() {
@@ -20,12 +20,12 @@ export function Security() {
               <IconShield className="h-7 w-7" />
             </div>
             <h3 className="mt-5 font-serif text-2xl font-bold text-brand-brown">
-              12 couches de sécurité
+              Une sécurité pensée dès le départ
             </h3>
             <p className="mt-2 text-sm text-tan-600">
-              TLS 1.3, rate limiting, CORS whitelist, protection anti-SQLi, détection de vol
-              de refresh token, lock exponentiel anti-brute-force. Ton compte est
-              protégé comme celui d'une banque.
+              TLS 1.3, limitation des tentatives, liste blanche CORS, requêtes SQL
+              paramétrées (anti-injection), détection de réutilisation des jetons de session
+              et verrouillage automatique du compte après échecs répétés.
             </p>
             <div className="mt-6 h-px bg-tan-200" />
             <ul className="mt-6 space-y-3">
@@ -55,9 +55,9 @@ export function Security() {
           </p>
           <div className="mt-8 grid grid-cols-2 gap-4">
             <KPI n="0" label="Publicité tierce" />
-            <KPI n="100%" label="Données chiffrées" />
+            <KPI n="AES-256" label="Données sensibles" />
             <KPI n="RGPD" label="Conforme UE" />
-            <KPI n="24/7" label="Modération" />
+            <KPI n="<24h" label="Signalements traités" />
           </div>
         </div>
       </div>

@@ -26,28 +26,28 @@ export function Hero() {
           </h1>
 
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-tan-600">
-            NigerConnect rassemble la diaspora nigérienne —{" "}
-            <strong className="text-brand-brown">62 000+ personnes dans 15+ pays</strong>.
-            Un réseau pensé pour retrouver tes proches, trouver de l'aide, vivre ta culture,
-            où que tu sois dans le monde.
+            <strong className="text-brand-brown">Le Niger ne s'arrête pas aux frontières.</strong>{" "}
+            NigerConnect réunit la diaspora nigérienne dispersée aux quatre coins du monde —
+            du continent à l'Europe et au Golfe. Retrouve tes proches, trouve de l'aide et
+            vis ta culture : où que tu sois, le pays n'est jamais loin.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a href="#download" className="btn-primary group">
-              <IconApple className="h-5 w-5" />
-              Télécharger sur iOS
+              Rejoindre l'aventure
               <IconArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </a>
             <a href="#download" className="btn-ghost group">
+              <IconApple className="h-5 w-5" />
               <IconGooglePlay className="h-5 w-5 text-brand-orange" />
-              Google Play
+              iOS &amp; Android
             </a>
           </div>
 
           <div className="mt-10 grid grid-cols-3 gap-4 border-t border-tan-200 pt-6">
-            <Stat value="62K+" label="Nigériens diaspora" />
-            <Stat value="15+" label="Pays couverts" />
-            <Stat value="100%" label="Gratuit" />
+            <Stat value="100%" label="Gratuit, pour toujours" />
+            <Stat value="0" label="Pub & tracking tiers" />
+            <Stat value="RGPD" label="Conforme UE" />
           </div>
         </div>
 
