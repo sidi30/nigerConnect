@@ -20,7 +20,7 @@ export const LEGAL_LAST_UPDATED = "13 juin 2026";
 // Contacts officiels — uniformisés sur le domaine nigerconnect.app.
 // Prévoir les alias / MX correspondants côté messagerie.
 export const LEGAL_CONTACT_EMAIL = "contact@nigerconnect.app";
-export const LEGAL_DPO_EMAIL = "dpo@nigerconnect.app";
+export const LEGAL_DPO_EMAIL = "contact@nigerconnect.app";
 
 export const TERMS_CONTACT = `Questions légales : ${LEGAL_CONTACT_EMAIL} — réponse sous 5 jours ouvrés.`;
 export const PRIVACY_CONTACT = `Protection des données : ${LEGAL_DPO_EMAIL}. Tu peux aussi introduire une réclamation auprès de la CNIL (cnil.fr).`;

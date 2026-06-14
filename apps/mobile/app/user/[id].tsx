@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
+  Dimensions,
   FlatList,
   Pressable,
   StyleSheet,
@@ -11,8 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CursorPage, Post, PublicUser, User } from '@nigerconnect/shared-types';
+import type { CursorPage, Post, PostMedia, PublicUser, User } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
+import { NCImage } from '@/components/ui/NCImage';
 import { Loader } from '@/components/ui/Loader';
 import { StarRating } from '@/components/ui/StarRating';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
@@ -76,6 +78,14 @@ const RELATION_ICONS: Record<Relationship, keyof typeof Feather.glyphMap | null>
   blocked: 'slash',
   none: 'user-plus',
 };
+
+// "Photos" grid sizing — 3 columns à la Facebook. Cell width is derived from
+// the screen width minus the section's horizontal padding and the inter-cell
+// gaps so the row fills edge to edge without overflow.
+const PHOTO_COLS = 3;
+const PHOTO_GAP = 3;
+const PHOTO_CELL =
+  (Dimensions.get('window').width - Spacing.md * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
 
 export default function UserScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -241,6 +251,22 @@ export default function UserScreen() {
   const friendsError = friendsQuery.isError;
   const postsError = postsQuery.isError;
 
+  // Flatten every image this user posted into a single gallery (videos
+  // excluded — the viewer only renders stills). Order follows the posts feed
+  // (newest first). The full-screen viewer receives the whole list so the user
+  // can swipe through all of them from any thumbnail.
+  const photoMedia: PostMedia[] = posts
+    .flatMap((p) => p.media)
+    .filter((m) => m.mediaType === 'image');
+  const photoUrls = photoMedia.map((m) => m.mediaUrl);
+
+  // Open the shared full-screen pager at a given index.
+  const openViewer = (urls: string[], index: number) =>
+    router.push({
+      pathname: '/photos/viewer',
+      params: { photos: JSON.stringify(urls), index: String(index) },
+    } as never);
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
@@ -325,7 +351,14 @@ export default function UserScreen() {
                 style={StyleSheet.absoluteFill}
               />
               <View style={styles.heroContent}>
-                <Avatar uri={u.avatarUrl} name={name} size={96} border={false} />
+                <Pressable
+                  onPress={() => u.avatarUrl && openViewer([u.avatarUrl], 0)}
+                  disabled={!u.avatarUrl}
+                  hitSlop={6}
+                  accessibilityLabel="Voir la photo de profil"
+                >
+                  <Avatar uri={u.avatarUrl} name={name} size={96} border={false} />
+                </Pressable>
                 <View style={styles.nameRow}>
                   <Text style={styles.name}>{name}</Text>
                   {u.identityStatus === 'approved' && <VerifiedBadge size={18} />}
@@ -429,6 +462,28 @@ export default function UserScreen() {
                 />
               )}
             </View>
+
+            {photoUrls.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Photos</Text>
+                <View style={styles.photoGrid}>
+                  {photoMedia.map((m, i) => (
+                    <Pressable
+                      key={m.id}
+                      onPress={() => openViewer(photoUrls, i)}
+                      style={styles.photoCell}
+                    >
+                      <NCImage
+                        source={{ uri: m.thumbnailUrl ?? m.mediaUrl }}
+                        placeholder={m.blurhash ? { blurhash: m.blurhash } : undefined}
+                        recyclingKey={m.id}
+                        style={styles.photoThumb}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
 
             <ReviewsSection
               targetType="user"
@@ -589,6 +644,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 68,
     gap: 4,
+  },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: PHOTO_GAP,
+  },
+  photoCell: {
+    width: PHOTO_CELL,
+    height: PHOTO_CELL,
+    borderRadius: Radii.sm,
+    overflow: 'hidden',
+    backgroundColor: Colors.tan100,
+  },
+  photoThumb: {
+    width: '100%',
+    height: '100%',
   },
   friendName: {
     fontSize: Typography.sizes.xs,

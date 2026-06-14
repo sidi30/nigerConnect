@@ -49,7 +49,7 @@ export class MailerService implements OnModuleInit {
   private readonly fromAddress: string;
 
   constructor(private readonly config: ConfigService<Env, true>) {
-    this.from = config.get('MAIL_FROM', { infer: true }) ?? 'no-reply@nigerconnect.local';
+    this.from = config.get('MAIL_FROM', { infer: true }) ?? 'contact@nigerconnect.app';
     this.fromAddress = this.from.match(/<([^>]+)>/)?.[1] ?? this.from;
     this.webUrl =
       config.get('APP_WEB_URL', { infer: true }) ?? config.get('API_URL', { infer: true });

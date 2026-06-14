@@ -245,4 +245,4 @@ Typographies : **DM Sans** (texte) + **Playfair Display** (titres)
 
 ## Contact
 
-Support, RGPD, modération : **contact@sahabiguide.com**
+Support, RGPD, modération : **contact@nigerconnect.app**

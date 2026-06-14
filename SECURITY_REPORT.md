@@ -1,106 +1,105 @@
-# Security Audit — NigerConnect (Mode A, post-push, read-only)
+# Security Audit Report — NigerConnect
 
-- **Range:** `9b55a7c..e33c491` (4 commits)
-- **Date:** 2026-06-13
-- **Auditor:** gwani-pentest
-- **Scope:** diff-only review (OWASP Top 10 2021 / API Top 10 2023), per `CLAUDE.md` conventions.
-- **Method:** SAST + manual diff review. No DAST executed (read-only constraint).
+**Mode:** A (post-push diff audit) — STRICT READ-ONLY. No source edits, no fixes, no commits.
+**Auditor:** Gwani-Pentest
+**Date:** 2026-06-14
+**Repository:** `C:\Users\ramzi\Desktop\devs\nigerConnect`
 
-## Commits in range
+---
 
-| SHA | Subject |
+## 1. Audit Scope
+
+**Git range audited (exclusive lower bound, inclusive upper bound):**
+
+```
+506bc4ef345e502de9e0517ab2eb61989dbb212f..b6614f414f010de14eae81990cce5f0c9d7f225f
+```
+
+**Commits in range (1):**
+
+| Commit | Subject |
 |---|---|
-| 5b1da25 | chore(infra): migrate domain to nigerconnect.app + split admin to tenant subdomain |
-| e270992 | feat(legal): RGPD-compliant CGU + privacy + mentions légales |
-| 458fdde | fix(security): harden prod — WS jti revocation, bind entity media URLs, mask 500s |
-| e33c491 | refacto et news letters (newsletter module) |
+| `b6614f4` | `chore(mobile): bump version 1.2.0 → 1.3.0 (expo-updates native major)` |
 
-## Summary
+**Files changed in range (1):**
 
-This range is **net security-positive**. Commit `458fdde` closes three previously-identified
-weaknesses (WS jti revocation, entity media SSRF binding, 500 info-disclosure), each with a
-regression test. The new **newsletter module** (`e33c491`) follows project conventions closely:
-Zod validation on every body, `@Public()` + tight throttling on public routes, `RolesGuard`
-+ `@Roles('admin')` on the admin console (on top of the global JWT + EmailVerified guards),
-cryptographically-strong unsubscribe tokens, anti-enumeration behaviour, and HTML escaping on
-admin-composed campaigns. No Critical or High finding was introduced by this diff.
+| File | +/- | Nature |
+|---|---|---|
+| `apps/mobile/app.json` | +1 / -1 | Expo app version string `1.2.0` → `1.3.0` |
 
-## Findings
+**Effective diff (the entire change):**
 
-| # | Severity | Location | Class | Status |
-|---|----------|----------|-------|--------|
-| 1 | Info | `apps/mobile/google-services.json` (tracked, pre-existing) | A05 — config | Pre-existing, outside diff |
-| 2 | Info | `apps/api/src/newsletter/dto/newsletter.dto.ts:32-34` | A03/A08 — admin-authored raw `bodyHtml` | Accepted (admin-trusted) |
-| 3 | Info | `apps/web/middleware.ts:16-18` | A05 — host-prefix admin gating | Defense-in-depth, OK |
-| 4 | Info | `apps/api/src/newsletter/newsletter.service.ts:201` | A04 — in-process dispatcher, `sending` stuck on restart | Documented limitation |
+```diff
+--- a/apps/mobile/app.json
++++ b/apps/mobile/app.json
+@@ -2,7 +2,7 @@
+   "expo": {
+     "name": "NigerConnect",
+     "slug": "nigerconnect",
+-    "version": "1.2.0",
++    "version": "1.3.0",
+```
 
-No Critical / High / Medium / Low findings introduced by this range.
+> **Important scoping note.** The commit *message* references the `expo-updates 0.28 → 29` / Expo SDK 54 native bump and dependency realignment. Those dependency/manifest/lockfile and CI changes were landed in **prior** commits (`7afb40d` "align deps to Expo SDK 54", `506bc4e` "Node 24 for JavaScript actions"), which sit **at or below** the exclusive lower bound of this range and are therefore **outside the audited diff**. Within `506bc4e..b6614f4` the only change is the single version string above — no `package.json`, no `pnpm-lock.yaml`, no `.github/workflows/*`, no source code, no Dockerfile, and no secret material were modified.
 
-### Verified hardening (positive controls confirmed in this diff)
+---
 
-**A07/A01 — WS jti revocation** — `apps/api/src/chat/chat.gateway.ts:91-94`
-Handshake now consults the Redis jti blacklist (`isJwtBlacklisted`), mirroring the REST
-`JwtAuthGuard`. A revoked/logged-out access token can no longer open a `/chat` socket.
-Regression test: `apps/api/src/chat/chat.gateway.spec.ts`.
+## 2. Methodology
 
-**A10/A08 — Entity media binding (SSRF / cross-user object)** —
-`apps/api/src/page/page.service.ts:40-56,133-145` and
-`apps/api/src/association/association.service.ts:49-66,157-168,425-427`
-Page avatar/cover and association logo/cover/event-cover are now bound via
-`S3Service.assertOwnedPublicImage(url, ownerId)` on both create and partial update. The helper
-(`s3.service.ts:212-241`) parses the public key, requires the `users/<ownerId>/` prefix, HEADs
-the object, and enforces image MIME + size. Update DTOs declare these fields `.optional()`
-(string-or-undefined, never null) and the `!== undefined` guard always passes a string. Closes
-SSRF-to-internal-host and foreign-URL / cross-user-object injection. Matches posts/stories/chat.
+1. **Range enumeration** — `git log --oneline`, `git diff --stat`, `git diff --numstat`, `git diff --name-only` over the exact range to establish the true change set.
+2. **Full diff inspection** — `git show b6614f4` to read every changed hunk.
+3. **Context review** — read the complete `apps/mobile/app.json` to assess whether the surrounding configuration (OAuth client IDs, EAS projectId, permissions, privacy manifest, ATS/encryption flags, deep-link `associatedDomains`/`intentFilters`) introduced any exploitable surface *as part of this change*.
+4. **Regression baseline diff** — compared `app.json` at the base commit (`506bc4e:apps/mobile/app.json`) against HEAD to confirm that all sensitive-looking identifiers pre-existed and were **not** introduced, altered, or newly exposed by this range.
+5. **Secrets check** — verified no private key / token / service-account / `.env` / keystore material is added by the diff. (OAuth *client* IDs present in `app.json` are public client identifiers shipped inside every mobile binary by design, not secrets; they are unchanged by this range.)
+6. **Convention mapping** — assessed against project CLAUDE.md security conventions (Zod validation, AuthZ/IDOR owner-filtering, JWT RS256 iss/aud/jti, `S3Service.assertOwnedPublicImage` media binding, privacy levels, no secrets in repo) and OWASP Top 10 2021 / API Top 10 2023.
 
-**A05/A09 — 500 masking** — `apps/api/src/common/filters/http-exception.filter.ts:64-80`
-Non-HTTP exceptions now return a stable `"Internal server error"` and the raw exception is **not**
-spread into the body (`raw` is `null` for non-HTTP). Full detail still logged + sent to Sentry with
-a scrubbed URL. HttpExceptions remain author-controlled and safe to echo. No Prisma/driver/path leak.
+**Coverage of OWASP / SAST categories for this diff:** A version-string change touches no auth flow, no data access path, no input parsing, no network/URL handling, no deserialization, no template/HTML rendering, no CI/build pipeline, and no dependency surface. Categories A01–A10 are therefore **not reachable** by the audited change. There is no executable code, query, route, guard, or dependency delta to analyze.
 
-### Newsletter module review (new code, `e33c491`)
+---
 
-- **Validation / mass-assignment** — every body uses `ZodValidationPipe` with bounded schemas
-  (`newsletter.dto.ts`). Page/association update DTOs are strict allow-lists (no `role`/`ownerId`/
-  `status`), so the `{ ...dto }` spread into Prisma update is not a mass-assignment vector.
-- **AuthZ** — public routes (`newsletter.controller.ts`) are `@Public()` and throttled
-  (5/min, 20/h on subscribe). Admin routes (`newsletter.admin.controller.ts`) are gated by
-  `RolesGuard` + `@Roles('admin')` *and* the global JWT/EmailVerified guards (`auth.module.ts:34-35`).
-  IDs validated by `ParseUUIDPipe`.
-- **Account enumeration** — `subscribe()` is an idempotent `upsert` and the controller always
-  returns a generic `{ ok: true }` (`newsletter.controller.ts:30`). Unsubscribe returns the same
-  page for unknown vs already-unsubscribed tokens. No oracle.
-- **Tokens** — `randomBytes(32).toString('hex')` (256-bit), looked up by exact match; unguessable.
-  Validation schema bounds token to 16-64 chars.
-- **Open-relay / abuse** — `testCampaign` (arbitrary recipient) is throttled (5/min, 30/h) and
-  admin-only, with an explicit defense-in-depth comment. Bulk send is an atomic `draft→sending`
-  `updateMany` claim, preventing double-dispatch.
-- **XSS** — admin UI composes campaigns from plain text via `textToHtml()` which HTML-escapes
-  `& < > " '` (`apps/web/components/admin/NewsletterSection.tsx:43-50`); no `dangerouslySetInnerHTML`.
-  Raw `bodyHtml` can still be POSTed directly to the admin API and is rendered in recipient emails —
-  acceptable since campaign authoring is admin-trusted (Finding #2, Info).
-- **Headers / URL** — `List-Unsubscribe` / `List-Unsubscribe-Post` set per-recipient
-  (`mailer.service.ts`); unsubscribe URL is `encodeURIComponent`-escaped (`newsletter.service.ts:273`).
+## 3. Findings
 
-### Infra / config (`5b1da25`)
+| # | Severity | Title | File:Line | OWASP / CWE | Status |
+|---|---|---|---|---|---|
+| INFO-1 | **Info** | No security-relevant change in range | `apps/mobile/app.json:5` | n/a | Open (informational) |
 
-- CORS default is an explicit allow-list `https://${WEB_HOST},https://${ADMIN_HOST}` — **not** a
-  wildcard (`docker-compose.prod.yml`). `ADMIN_HOST` is mandatory (`:?` Traefik rule).
-- Admin console split by Host: Traefik routes only `tenant.*` to the container; `middleware.ts`
-  404s `/admin` on the public apex and rewrites it onto the admin host. Edge routing is the real
-  control; the middleware host-prefix check is defense-in-depth (Finding #3, Info).
-- No hardcoded secrets in the diff (only the test fixture `'valid.jwt.token'`). Domain migration only.
+### INFO-1 — Range contains only a cosmetic version bump; no attack surface affected
 
-### Finding #1 detail — google-services.json
+- **Where:** `apps/mobile/app.json:5`
+- **Evidence:** The complete diff for the range is a one-line change: `"version": "1.2.0"` → `"version": "1.3.0"`. No other file is touched (`git diff --numstat` reports `1  1  apps/mobile/app.json`).
+- **Impact:** None from a security standpoint. The `version` value drives Expo `runtimeVersion` (policy `appVersion`), which correctly **decouples** future OTA updates of the 1.3.0 (expo-updates 29.x / SDK 54) binary from the 1.2.0 (expo-updates 0.28) TestFlight binary. This is the *security-positive* outcome: it prevents shipping an OTA bundle built against the new native runtime to an old runtime (which would crash / be an integrity & availability hazard). The change reduces, rather than introduces, runtime-integrity risk (cf. OWASP A08 Software & Data Integrity Failures — mitigated, not violated).
+- **PoC:** N/A — no reachable behavior to exploit.
+- **Remediation:** None required. Operational reminder only: because expo-updates jumped a **native** major, the next iOS/Android artifact **must be a full EAS rebuild** at runtimeVersion `1.3.0` (not an OTA over the 1.2.0 binary), as the commit message itself states. Verify the rebuild before publishing any `1.3.0` OTA channel.
+- **Ref:** Expo OTA runtimeVersion semantics; OWASP A08:2021.
 
-`apps/mobile/google-services.json` is tracked in git (added in `d2bb9e9`, long before this range, so
-EAS Build can embed it). Firebase config files contain a client API key that is identifying rather
-than secret by Google's design; restrict it by package name / SHA in the Google Cloud console.
-Out of scope for this diff-focused audit — noted because project `CLAUDE.md` flags tracked secret files.
+### Non-findings explicitly verified (defensive notes)
 
-## Verdict
+- **No secrets introduced.** `git diff` adds no `*.pem`, `*.p8`, keystore, `service-account*.json`, `google-services.json`, or `.env`. The Google OAuth **client** IDs and EAS `projectId` visible in `app.json` are unchanged from the base commit (`506bc4e`) and are public client identifiers by design. (Not a finding; reconfirmed for completeness.)
+- **No CI / workflow change** in this range (the Node 24 workflow change is the prior commit `506bc4e`, excluded by the exclusive lower bound).
+- **No dependency / lockfile change** in this range (the SDK 54 / expo-updates realignment is the prior commit `7afb40d`, excluded). If a dependency-level audit of those bumps is desired, it must target the range `…7afb40d` or `7afb40d^..7afb40d`, which is **out of scope** here.
+- **No code touching** auth, guards, Prisma queries (IDOR), Zod validation, WebSocket gateway, S3 presign/media binding, geo/privacy, SSRF sinks, or raw SQL — none of these paths appear in the diff.
 
-No open Critical or High findings. This range removes risk on net (three prior weaknesses fixed
-with regression tests; the new newsletter module is conformant). Safe to deploy.
+---
 
-OK_TO_DEPLOY
+## 4. Severity Recap (`by_severity`)
+
+| Severity | Count |
+|---|---|
+| Critical | 0 |
+| High | 0 |
+| Medium | 0 |
+| Low | 0 |
+| Info | 1 |
+
+**Fixes applied:** none (read-only audit; nothing to fix).
+**Fixes proposed (require human action):** none. Operational note only: ensure the next mobile artifact for `1.3.0` is a full EAS **rebuild**, not an OTA, before publishing to the `1.3.0` runtime.
+
+---
+
+## 5. Verdict
+
+The audited range `506bc4e..b6614f4` consists solely of an Expo app version bump (`1.2.0` → `1.3.0`) in `apps/mobile/app.json`. It introduces **no source code, no dependency, no CI, no configuration secret, and no new attack surface**. The change is security-neutral-to-positive (it correctly isolates the new native runtimeVersion from old OTA bundles). There are **no Critical, High, Medium, or Low findings**.
+
+**Caveat for the deployer:** the security posture of the underlying SDK 54 / expo-updates 29.x dependency upgrade was *not* evaluated here because those commits fall outside the requested range. If assurance over that native/dependency jump is required, run a dedicated dependency audit against `7afb40d` and its lockfile.
+
+> **Verdict:** OK_TO_DEPLOY (no open Critical/High findings in this range).

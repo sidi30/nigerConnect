@@ -79,7 +79,7 @@ const envSchema = z
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_PHONE_NUMBER: z.string().optional(),
 
-    MAIL_FROM: z.string().default('NigerConnect <no-reply@nigerconnect.local>'),
+    MAIL_FROM: z.string().default('NigerConnect <contact@nigerconnect.app>'),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.string().optional(),
     SMTP_SECURE: z.string().optional(),

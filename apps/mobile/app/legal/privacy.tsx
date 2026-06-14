@@ -9,7 +9,7 @@ export default function PrivacyScreen() {
       sections={[
         {
           heading: 'Responsable du traitement',
-          body: 'Le responsable du traitement est l’Éditeur du Service, identifié dans les Mentions légales. Pour exercer tes droits ou toute question sur tes données : dpo@nigerconnect.app.',
+          body: 'Le responsable du traitement est l’Éditeur du Service, identifié dans les Mentions légales. Pour exercer tes droits ou toute question sur tes données : contact@nigerconnect.app.',
         },
         {
           heading: 'Données que tu fournis',
@@ -66,7 +66,7 @@ export default function PrivacyScreen() {
         {
           heading: 'Tes droits (RGPD)',
           bullets: [
-            'Accès : obtenir copie de tes données — écris à dpo@nigerconnect.app.',
+            'Accès : obtenir copie de tes données — écris à contact@nigerconnect.app.',
             'Rectification : modifier ton profil à tout moment depuis l’app.',
             'Effacement : Paramètres → Supprimer mon compte (immédiat).',
             'Limitation / opposition : t’opposer aux traitements fondés sur l’intérêt légitime.',
@@ -97,7 +97,7 @@ export default function PrivacyScreen() {
           body: 'Le Service est destiné aux personnes de 15 ans et plus (13 ans avec l’accord d’un titulaire de l’autorité parentale). Un compte appartenant à une personne plus jeune que l’âge requis est supprimé sans préavis.',
         },
       ]}
-      contact="Protection des données : dpo@nigerconnect.app. Réclamation CNIL : cnil.fr."
+      contact="Protection des données : contact@nigerconnect.app. Réclamation CNIL : cnil.fr."
     />
   );
 }

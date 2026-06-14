@@ -56,7 +56,7 @@ Ces URLs doivent répondre **200 OK** pour passer la review. Toutes hébergées 
 | Free or paid | **Free** |
 | Category | **Social** |
 | Tags (5 max) | `social`, `community`, `messaging`, `diaspora`, `niger` |
-| Contact email | `contact@sahabiguide.com` |
+| Contact email | `contact@nigerconnect.app` |
 | Contact phone | (optionnel) |
 | Contact website | `https://nigerconnect.app/` |
 | Privacy Policy | `https://nigerconnect.app/privacy` |
@@ -297,7 +297,7 @@ at 09:00 UTC.
 
 Privacy policy : https://nigerconnect.app/privacy
 Account deletion (web) : https://nigerconnect.app/account-deletion
-Support : contact@sahabiguide.com
+Support : contact@nigerconnect.app
 ```
 
 ### 4.5 Export Compliance
@@ -365,7 +365,7 @@ le réseau dont notre communauté a besoin.
 
 Site : https://nigerconnect.app
 Confidentialité : https://nigerconnect.app/privacy
-Contact : contact@sahabiguide.com
+Contact : contact@nigerconnect.app
 ```
 
 ### What's new (release notes 1.0.0)
@@ -443,7 +443,7 @@ Outil recommandé : `eas build --profile preview` puis screen recorder de l'ému
 - [ ] `https://api.nigerconnect.app/health` répond `ok` sur DB + Redis
 - [ ] Comptes `reviewer@nigerconnect.ne` + `reviewer-deletion@nigerconnect.ne` créés en prod, mots de passe testés
 - [ ] Compte reviewer principal a au moins 3 amis fictifs, 1 conversation, 5 posts
-- [ ] Email `contact@sahabiguide.com` reçoit (test : envoyer un mail bidon, vérifier réception)
+- [ ] Email `contact@nigerconnect.app` reçoit (test : envoyer un mail bidon, vérifier réception)
 
 ### Mobile
 - [ ] `app.json:version = "1.0.0"`, `versionCode = 1`, `buildNumber = "1"`
@@ -479,7 +479,7 @@ Outil recommandé : `eas build --profile preview` puis screen recorder de l'ému
 | Account deletion in-app | ✅ `Settings → Supprimer mon compte` |
 | Account deletion URL publique | ✅ `/account-deletion` |
 | RGPD export article 20 | ✅ in-app `Confidentialité → Exporter mes données` + endpoint `GET /profile/me/export` |
-| Email de contact public | ✅ `contact@sahabiguide.com` (à activer côté boîte mail) |
+| Email de contact public | ✅ `contact@nigerconnect.app` (à activer côté boîte mail) |
 | Test accounts pour reviewer | ✅ Script idempotent prêt (`pnpm seed:reviewer`) |
 | Data Safety form rempli | 🟡 Réponses prêtes (§3) — à coller dans Play Console |
 | Permission justifications | ✅ Texte prêt (§2.4) — permissions Android **minimisées** (RECORD_AUDIO retiré, FINE_LOCATION blocked) |
