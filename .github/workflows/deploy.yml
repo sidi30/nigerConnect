@@ -55,6 +55,11 @@ concurrency:
 permissions:
   contents: read
 
+# Run all JavaScript-based actions on Node 24 (GitHub forces this on 2026-06-16;
+# opt in early so any breakage surfaces here, not on the deadline).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   # ── Gate 1 : qualité API (typecheck + tests + build) ──────────────────────
   quality-api:
