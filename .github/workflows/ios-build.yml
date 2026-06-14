@@ -33,12 +33,23 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    # macos-15 ships Xcode 16.x by default — required by Expo SDK 54 / RN 0.81
+    # (macos-14's default Xcode is too old: "Invalid Podfile: Please upgrade XCode").
+    runs-on: macos-15
     timeout-minutes: 60
     environment:
       name: production-mobile
     steps:
       - uses: actions/checkout@v4
+
+      # Belt-and-suspenders: pick the newest non-beta Xcode actually installed,
+      # so a runner-image change can't silently downgrade us under the SDK floor.
+      - name: Select latest stable Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -vi beta | sort -V | tail -1)
+          echo "Selecting $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
 
       # No `version:` — action-setup reads `packageManager` (pnpm@10.33.0) from
       # the root package.json, matching the other workflows in this repo.
