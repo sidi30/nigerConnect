@@ -1,7 +1,12 @@
 {
-  "deployed_at": "2026-06-13T18:52:51Z",
-  "git_sha": "5b1da25",
-  "commit_message": "chore(infra): migrate domain to nigerconnect.app + split admin to tenant subdomain",
+  "deployed_at": "2026-06-13T19:57:39Z",
+  "git_sha": "a5a096d",
+  "commit_message": "copy(web): honest, punchier landing — drop fabricated metrics + bank hyperbole",
+  "also_includes": [
+    "e33c491 refacto et news letters (newsletter/waitlist feature + Prisma migration 20260613000000_newsletter)",
+    "458fdde fix(security): harden prod — WS jti revocation, bind entity media URLs, mask 500s",
+    "e270987 feat(legal): RGPD-compliant CGU + privacy + mentions légales"
+  ],
   "status": "DEPLOYED",
   "server": "root@46.224.193.109",
   "app_dir": "/opt/apps/nigerConnect",
@@ -16,50 +21,45 @@
     "deploy_script": "ok",
     "env_prod_on_server": "ok",
     "no_secrets_in_git": "ok",
-    "commit_clean": "SECURITY_REPORT.md modified (not deploy-critical)"
+    "working_tree": "SECURITY_REPORT.md + memory/deployment.json modified locally — excluded by git archive, not deploy-critical"
   },
   "env_changes": {
-    "WEB_HOST": "nigerconnect.app",
-    "API_HOST": "api.nigerconnect.app",
-    "CDN_HOST": "cdn.nigerconnect.app",
-    "ADMIN_HOST": "tenant.nigerconnect.app (NEW — added)",
-    "CDN_URL": "https://cdn.nigerconnect.app/nigerconnect",
-    "APP_WEB_URL": "https://nigerconnect.app (NEW — added)",
-    "CORS_ORIGINS": "https://nigerconnect.app + localhost entries",
-    "env_backup": ".env.prod.bak.1781376514"
+    "all_domain_keys": "unchanged — WEB_HOST, API_HOST, CDN_HOST, ADMIN_HOST, CDN_URL, APP_WEB_URL all nigerconnect.app values from previous deploy",
+    "CORS_ORIGINS": "unchanged — https://nigerconnect.app,https://tenant.nigerconnect.app",
+    "SMTP_MAIL_FROM": "present and unchanged"
   },
-  "backup_before": "backups/pre-deploy-5b1da25-20260613-184932.sql.gz",
+  "backup_before": "backups/pre-deploy-a5a096d-20260613-195432.sql.gz (26K, pre-newsletter-migration snapshot)",
   "migration": {
-    "status": "no_pending",
-    "detail": "16 migrations found, 0 pending — schema unchanged in this commit"
-  },
-  "security_checks": {
-    "S3_db_unexposed": "ok — 5432/tcp internal only, no 0.0.0.0 mapping",
-    "S4_api_unexposed": "ok — 3000/tcp internal only, no 0.0.0.0 mapping",
-    "S5_nonroot": "ok — api=nodejs, web=nextjs",
-    "S6_no_secrets": "ok — no .env/.pem/service-account in git",
-    "S7_backup": "ok — 26K gz present on server"
+    "status": "applied",
+    "before": 16,
+    "after": 17,
+    "applied": "20260613000000_newsletter",
+    "detail": "All migrations have been successfully applied."
   },
   "health_checks": {
-    "internal_api": "ok — {status:ok, db:ok, redis:ok}",
-    "internal_web": "ok — WEB_OK",
     "containers": "all healthy — api, web, postgres, redis, minio",
+    "internal_api": "ok — {status:ok, db:ok, redis:ok, uptime:40s}",
+    "newsletter_tables": "newsletter_subscribers + newsletter_campaigns — both present in public schema",
+    "newsletter_subscribe_route": "POST /api/newsletter/subscribe → {ok:true} (HTTP 200) — route wired and functional",
+    "hero_copy": "Rejoindre l'aventure — present in web homepage response",
+    "traefik_admin_router": "nigerconnect-admin Host(tenant.nigerconnect.app) — still registered",
     "post_deploy_errors": []
   },
   "traefik_routers": {
     "nigerconnect-web": "Host(`nigerconnect.app`) — registered",
     "nigerconnect-api": "Host(`api.nigerconnect.app`) — registered",
-    "nigerconnect-cdn": "Host(`cdn.nigerconnect.app`) — registered (see MinIO/CDN note)",
+    "nigerconnect-cdn": "Host(`cdn.nigerconnect.app`) — registered",
     "nigerconnect-admin": "Host(`tenant.nigerconnect.app`) — registered"
   },
-  "tls_acme_status": "BLOCKED — Cloudflare API token does not have access to the nigerconnect.app zone. All 4 hosts failing with: 'failed to find zone nigerconnect.app.: zone could not be found'. Action required: add nigerconnect.app zone permissions to the Cloudflare API token used by Traefik letsencrypt-dns resolver.",
+  "tls_acme_status": "STILL BLOCKED — third consecutive deploy with same root cause. Cloudflare API token used by Traefik letsencrypt-dns resolver lacks access to the nigerconnect.app zone. All 4 hosts failing: 'failed to find zone nigerconnect.app.: zone could not be found'. No certs have issued for any of the 4 hosts.",
   "dns_status": {
-    "nigerconnect.app": "resolves — Cloudflare IPs 188.114.96.2/97.2 (proxied OK)",
-    "api.nigerconnect.app": "MISSING — no A/AAAA record in Cloudflare",
-    "cdn.nigerconnect.app": "MISSING — no A/AAAA record in Cloudflare",
-    "tenant.nigerconnect.app": "resolves — Cloudflare IPs 188.114.96.2/97.2 (proxied OK)"
+    "nigerconnect.app": "resolves — Cloudflare-proxied",
+    "api.nigerconnect.app": "still MISSING A record in Cloudflare",
+    "cdn.nigerconnect.app": "still MISSING A record in Cloudflare",
+    "tenant.nigerconnect.app": "resolves — Cloudflare-proxied"
   },
-  "rollback_command": "git archive HEAD~1 | ssh -o BatchMode=yes root@46.224.193.109 'cd /opt/apps/nigerConnect && tar xf - && find . -name \"*.sh\" -exec sed -i \"s/\\r$//\" {} + && chmod +x scripts/*.sh && ./scripts/deploy-vps.sh'",
-  "rollback_db": "gunzip -c backups/pre-deploy-5b1da25-20260613-184932.sql.gz | docker exec -i nigerconnect-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB",
-  "notes": "Containers and code deployed successfully. Two blocking items require manual action before the new domains are live: (1) DNS missing for api.nigerconnect.app and cdn.nigerconnect.app — add A records in Cloudflare pointing to 46.224.193.109 (or as proxied CNAME). (2) Traefik Cloudflare API token must be granted Zone:Read + DNS:Edit for the nigerconnect.app zone — Traefik cannot issue Let's Encrypt DNS-01 certs for any of the 4 new hosts until this is done."
+  "rollback_command": "git archive 458fdde | ssh -o BatchMode=yes root@46.224.193.109 'cd /opt/apps/nigerConnect && tar xf - && find . -name \"*.sh\" -exec sed -i \"s/\\r$//\" {} + && chmod +x scripts/*.sh && ./scripts/deploy-vps.sh'",
+  "rollback_db": "gunzip -c backups/pre-deploy-a5a096d-20260613-195432.sql.gz | docker exec -i nigerconnect-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB",
+  "rollback_note": "DB restore required when rolling back past e33c491 — newsletter migration added newsletter_subscribers + newsletter_campaigns tables. Rolling back code without restoring the DB leaves orphaned tables (harmless but inconsistent with the schema at 458fdde).",
+  "notes": "Full deploy successful. Newsletter live: both DB tables created by migration, POST /api/newsletter/subscribe returns {ok:true}, web homepage shows new hero copy. TLS remains blocked — two manual actions still pending: (1) add A records for api.nigerconnect.app and cdn.nigerconnect.app → 46.224.193.109 in Cloudflare (proxy ON); (2) grant Traefik Cloudflare token Zone:Read + DNS:Edit on the nigerconnect.app zone, then run: ssh root@46.224.193.109 docker restart traefik"
 }
