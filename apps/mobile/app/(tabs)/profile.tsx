@@ -101,8 +101,17 @@ export default function ProfileTab() {
   const verified = user.identityStatus === 'approved';
   const friendsCount = friendsQuery.data?.items.length ?? 0;
   const photos = photosQuery.data?.items ?? [];
+  const photoUrls = photos.map((p) => p.url);
   const assocsCount = assocsQuery.data?.length ?? 0;
   const unreadNotifs = notifQuery.data ?? 0;
+
+  // Open the shared full-screen pager (same viewer used by the feed, the chat
+  // lightbox and other users' profiles) so a tap enlarges the photo.
+  const openViewer = (urls: string[], index: number) =>
+    router.push({
+      pathname: '/photos/viewer',
+      params: { photos: JSON.stringify(urls), index: String(index) },
+    } as never);
 
   function handleLogout() {
     Alert.alert('Se déconnecter', 'Voulez-vous vraiment quitter NigerConnect ?', [
@@ -120,7 +129,15 @@ export default function ProfileTab() {
             style={StyleSheet.absoluteFill}
           />
           <View style={styles.heroTop}>
-            <Avatar uri={user.avatarUrl} name={displayName} size={68} border={false} />
+            <Pressable
+              onPress={() => user.avatarUrl && openViewer([user.avatarUrl], 0)}
+              disabled={!user.avatarUrl}
+              hitSlop={6}
+              accessibilityRole="imagebutton"
+              accessibilityLabel="Voir la photo de profil en grand"
+            >
+              <Avatar uri={user.avatarUrl} name={displayName} size={68} border={false} />
+            </Pressable>
             <View style={{ flex: 1 }}>
               <View style={styles.nameRow}>
                 <Text style={styles.name}>{displayName}</Text>
@@ -171,11 +188,13 @@ export default function ProfileTab() {
           </Pressable>
           {photos.length > 0 ? (
             <View style={styles.photoGrid}>
-              {photos.slice(0, 6).map((p) => (
+              {photos.slice(0, 6).map((p, i) => (
                 <Pressable
                   key={p.id}
-                  onPress={() => router.push('/settings/photos')}
+                  onPress={() => openViewer(photoUrls, i)}
                   style={styles.photoTile}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel="Voir la photo en grand"
                 >
                   <Image
                     source={{ uri: p.thumbnailUrl ?? p.url }}
