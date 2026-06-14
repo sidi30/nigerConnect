@@ -1,0 +1,126 @@
+name: iOS Build (CI Mac) → TestFlight
+
+# Builds the iOS .ipa LOCALLY on a GitHub-hosted macOS runner via
+# `eas build --local`. This consumes GitHub Actions minutes — NOT the EAS
+# cloud build quota — so it works even when the free EAS build allotment is
+# exhausted. The runner provides macOS + Xcode (which a Windows dev box can't),
+# while the account, projectId, credentials and OTA channels stay untouched.
+#
+# Manual trigger only (Actions tab → Run workflow). One run = one TestFlight build.
+#
+# Required secret: EXPO_TOKEN
+#   https://expo.dev/accounts/sidi30/settings/access-tokens
+#   (same secret the OTA job in mobile.yml already uses)
+#
+# iOS distribution credentials (cert + provisioning) and the App Store Connect
+# API key are managed by EAS and fetched non-interactively during the local
+# build / submit — nothing else to configure here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Submit the build to TestFlight after building"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    environment:
+      name: production-mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` — action-setup reads `packageManager` (pnpm@10.33.0) from
+      # the root package.json, matching the other workflows in this repo.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Installs & authenticates eas-cli (puts `eas` on PATH for all later steps).
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      # Read-only: prints the buildNumber EAS will use. If a later submit is ever
+      # rejected for a duplicate version, this is the number to look at.
+      - name: Show remote iOS build number (info)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build:version:get --platform ios --non-interactive || true
+
+      # Local build on the CI Mac. Distribution = store (production profile),
+      # so the artifact is a TestFlight/App-Store-ready .ipa.
+      #
+      # Versioning: eas.json has appVersionSource:remote + autoIncrement, so the
+      # `eas build` pipeline bumps the buildNumber on EAS' servers and embeds it
+      # before the local Xcode compile (same as a cloud build — `--local` only
+      # moves the *compile* step here, not the version resolution). `eas
+      # build:version:set` is interactive-only on eas-cli, so autoIncrement is
+      # the correct non-interactive bump. If TestFlight ever rejects a duplicate
+      # buildNumber, bump `version` in app.json and re-run.
+      - name: Build .ipa locally (no EAS cloud quota)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas build \
+            --platform ios \
+            --profile production \
+            --local \
+            --non-interactive \
+            --output "$GITHUB_WORKSPACE/app.ipa"
+
+      # Keep the .ipa even if submit fails — lets you submit manually later
+      # without rebuilding (and burning more minutes).
+      - name: Upload .ipa artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: ${{ github.workspace }}/app.ipa
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Uploads to TestFlight using the App Store Connect API key on EAS
+      # (ascAppId 6775895189, team 4SRJRX4N45 from eas.json submit.production).
+      - name: Submit to TestFlight
+        if: ${{ inputs.submit }}
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas submit \
+            --platform ios \
+            --profile production \
+            --path "$GITHUB_WORKSPACE/app.ipa" \
+            --non-interactive
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## iOS build" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Built locally on \`macos-14\` (no EAS cloud quota used)." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Submit to TestFlight: \`${{ inputs.submit }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- .ipa uploaded as artifact \`ios-ipa\` (7-day retention)." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "First build of an app → answer Export Compliance in App Store Connect (standard encryption → No)." >> "$GITHUB_STEP_SUMMARY"
