@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
 import {
   DMSans_400Regular,
   DMSans_500Medium,
@@ -33,6 +34,11 @@ import { captureRenderError, initSentry } from '@/services/sentry';
 // Boot Sentry as early as possible — before any React render — so the very
 // first error during font loading or auth hydration still gets captured.
 initSentry();
+
+// Keep the native splash on screen until fonts AND the persisted session are
+// ready (see RootLayout). This removes the brief login-screen flash a returning
+// user used to see before auth hydration redirected them to the feed.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Wire React Query to NetInfo so queries auto-pause when the device drops
 // offline and resume on reconnection — no per-call retry logic needed.
@@ -93,10 +99,22 @@ export default function RootLayout() {
   });
   const fontsLoaded = dmLoaded && playfairLoaded;
   const hydrate = useAuthStore((s) => s.hydrate);
+  const isHydrated = useAuthStore((s) => s.isHydrated);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  // Hide the native splash only once fonts are ready AND the session has been
+  // restored. The router tree below mounts as soon as fonts load, so `index`
+  // and `AuthGate` resolve the correct destination (feed vs welcome) while the
+  // splash still covers the screen — the user goes straight from splash to the
+  // right screen, with no auth-screen flash in between.
+  useEffect(() => {
+    if (fontsLoaded && isHydrated) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, isHydrated]);
 
   if (!fontsLoaded) return null;
 
