@@ -71,7 +71,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
+          # NB: no `cache: gradle` — this is a managed Expo app with no android/
+          # folder in the repo (prebuild generates it during `eas build --local`),
+          # so setup-java finds no *.gradle files at checkout and errors out hard.
 
       # The RN 0.81 / New-Arch Gradle build OOMs the daemon's Metaspace with the
       # template default (MaxMetaspaceSize=512m) — codegen + Kotlin load a lot of
