@@ -58,7 +58,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     environment:
       name: production-mobile
     steps:
@@ -71,6 +71,20 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+
+      # The RN 0.81 / New-Arch Gradle build OOMs the daemon's Metaspace with the
+      # template default (MaxMetaspaceSize=512m) — codegen + Kotlin load a lot of
+      # classes. Disable the long-lived daemon (its idle RMI threads were the
+      # ones throwing) and let one-shot builds run clean. Memory itself is forced
+      # via _JAVA_OPTIONS on the build step (last-wins, overrides the template).
+      - name: Tune Gradle for CI
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "org.gradle.daemon=false"
+            echo "org.gradle.parallel=true"
+          } >> ~/.gradle/gradle.properties
 
       # No `version:` — action-setup reads `packageManager` (pnpm@10.33.0) from
       # the root package.json, matching the other workflows in this repo.
@@ -119,6 +133,12 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          # Lift Metaspace ceiling for every JVM in the build (Gradle, Kotlin,
+          # codegen). _JAVA_OPTIONS is applied last by the JVM, so it overrides
+          # the template's -XX:MaxMetaspaceSize=512m that caused the OOM thrash.
+          # It's a ceiling (grows on demand), so it's cheap to set high; heap is
+          # left at the template default (no heap OOM was observed).
+          _JAVA_OPTIONS: "-XX:MaxMetaspaceSize=2g"
         run: |
           eas build \
             --platform android \
