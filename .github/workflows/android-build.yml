@@ -1,0 +1,185 @@
+name: Android Build (CI Linux) → APK / Play
+
+# Builds the Android app LOCALLY on a GitHub-hosted Linux runner via
+# `eas build --local`. Consumes GitHub Actions minutes — NOT the EAS cloud
+# build quota — so it works even when the free EAS allotment is exhausted.
+# Android compiles on Linux (no Mac needed), so this runs on the cheaper/faster
+# `ubuntu-latest` image, which already ships the Android SDK. The account,
+# projectId, credentials (keystore) and OTA channels stay untouched.
+#
+# Manual trigger only (Actions tab -> Run workflow).
+#
+# Two modes (input `profile`):
+#   - preview     -> installable test .apk (buildType apk, distribution internal,
+#                    channel preview). Download from the run artifacts and
+#                    sideload on any device. This is the default "test APK".
+#   - production  -> store .aab (channel production). Set `submit: true` to push
+#                    it to Google Play (track `internal`, per eas.json submit).
+#
+# Required secret: EXPO_TOKEN
+#   https://expo.dev/accounts/sidi30/settings/access-tokens
+#   (same secret the OTA job in mobile.yml and ios-build.yml already use)
+#
+# Required ONLY when submitting to Play (profile=production + submit=true):
+#   PLAY_SERVICE_ACCOUNT_JSON  -> full JSON of the Play service account
+#   (the play-service-account.json file content; it is gitignored, so it must
+#    live as a repo secret for CI submit). Decoded to a file before `eas submit`.
+#
+# The Android keystore is managed by EAS and fetched non-interactively during
+# the local build — nothing else to configure here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        type: choice
+        default: preview
+        options:
+          - preview
+          - production
+      submit:
+        description: "Submit to Google Play (production profile only)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Run all JavaScript-based actions on Node 24 (GitHub forces this on 2026-06-16;
+# opt in early so any breakage surfaces here, not on the deadline).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: production-mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      # Expo SDK 54 / RN 0.81 targets a recent JDK; pin 17 (Temurin) so a runner
+      # image change can't silently shift the Gradle toolchain under us.
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # No `version:` — action-setup reads `packageManager` (pnpm@10.33.0) from
+      # the root package.json, matching the other workflows in this repo.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Installs & authenticates eas-cli (puts `eas` on PATH for all later steps).
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      # Resolve the output extension: preview profile -> apk, production -> aab.
+      - name: Resolve artifact path
+        id: art
+        run: |
+          if [ "${{ inputs.profile }}" = "production" ]; then
+            echo "ext=aab" >> "$GITHUB_OUTPUT"
+          else
+            echo "ext=apk" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Read-only: prints the versionCode EAS will use. If a later Play submit is
+      # ever rejected for a duplicate version, this is the number to look at.
+      - name: Show remote Android version (info)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build:version:get --platform android --non-interactive || true
+
+      # Local build on the CI Linux box. preview -> installable test .apk;
+      # production -> store .aab. Versioning: eas.json has appVersionSource:remote
+      # + autoIncrement (production), so the versionCode is bumped on EAS' servers
+      # and embedded before the local Gradle compile (--local only moves the
+      # *compile* step here, not the version resolution).
+      - name: Build locally (no EAS cloud quota)
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ inputs.profile }} \
+            --local \
+            --non-interactive \
+            --output "$GITHUB_WORKSPACE/app.${{ steps.art.outputs.ext }}"
+
+      # Keep the artifact even if a later submit fails — lets you sideload the
+      # APK or submit the AAB manually without rebuilding (burning more minutes).
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ inputs.profile }}-${{ steps.art.outputs.ext }}
+          path: ${{ github.workspace }}/app.${{ steps.art.outputs.ext }}
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Write the Play service account JSON (secret) to the path eas.json expects,
+      # only when we're actually going to submit.
+      - name: Write Play service account
+        if: ${{ inputs.profile == 'production' && inputs.submit }}
+        working-directory: apps/mobile
+        env:
+          PLAY_SA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$PLAY_SA" ]; then
+            echo "::error::PLAY_SERVICE_ACCOUNT_JSON secret is empty — cannot submit to Play."
+            exit 1
+          fi
+          printf '%s' "$PLAY_SA" > play-service-account.json
+
+      # Uploads the .aab to Google Play (track `internal`, per eas.json submit).
+      - name: Submit to Google Play
+        if: ${{ inputs.profile == 'production' && inputs.submit }}
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas submit \
+            --platform android \
+            --profile production \
+            --path "$GITHUB_WORKSPACE/app.aab" \
+            --non-interactive
+
+      # Don't leave the credential on disk even though the runner is ephemeral.
+      - name: Cleanup credentials
+        if: always()
+        working-directory: apps/mobile
+        run: rm -f play-service-account.json
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## Android build" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Built locally on \`ubuntu-latest\` (no EAS cloud quota used)." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Profile: \`${{ inputs.profile }}\` -> \`app.${{ steps.art.outputs.ext }}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Submitted to Google Play: \`${{ inputs.profile == 'production' && inputs.submit }}\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Artifact \`android-${{ inputs.profile }}-${{ steps.art.outputs.ext }}\` (7-day retention)." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ inputs.profile }}" = "preview" ]; then
+            echo "Download the .apk artifact and sideload it on any Android device to test." >> "$GITHUB_STEP_SUMMARY"
+          fi
