@@ -53,7 +53,12 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
-  workers: process.env['CI'] ? 2 : undefined,
+  // Serial in CI: several suites mutate GLOBAL DB singletons (notably
+  // app_settings.registration_mode for the parrainage invite_only/closed
+  // tests). With >1 worker those mutations bleed across concurrently-running
+  // suites (a register in one suite hits "Inscriptions fermées" set by
+  // another). One worker = deterministic global state. Local stays parallel.
+  workers: process.env['CI'] ? 1 : undefined,
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
