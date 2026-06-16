@@ -433,7 +433,9 @@ test.describe.serial('closed mode', () => {
   test('AC-INV-06b — closed mode: existing user refresh still → 200', async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/auth/refresh`, {
       data: { refreshToken: existingUser.tokens.refreshToken },
-      headers: { 'Content-Type': 'application/json' },
+      // Unique IP per call — same isolation every other auth request uses, so a
+      // shared throttle bucket across the serial suite can't 429 this test.
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': uniqueIp() },
     });
     expect(res.status(), 'refresh in closed mode must still work').toBe(200);
   });
