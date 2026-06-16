@@ -28,8 +28,8 @@
  *   - authHeaders() helper
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -45,21 +45,12 @@ const NIGER_WEST = 0;
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
-
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 function approveIdentityInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`);
 }
 
 // ── Request helpers ───────────────────────────────────────────────────────────

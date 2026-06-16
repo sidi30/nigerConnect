@@ -23,8 +23,8 @@
  *   Postgres accessible via nigerconnect-postgres container (port 5433)
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -33,17 +33,12 @@ const VALID_PASSWORD = 'E2eTest#2026!z';
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
-
 /**
  * Mark a user's email as verified directly in the DB.
  * Column name: `email_verified` (Prisma @map of field `emailVerified`).
  */
 function verifyEmailInDb(userId: string): void {
-  execSync(PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`), {
-    stdio: 'pipe',
-  });
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 // ── Request helpers ───────────────────────────────────────────────────────────

@@ -22,18 +22,13 @@
  *   Postgres accessible at localhost:5433 (nigerconnect/nigerconnect/nigerconnect)
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Shared constants ─────────────────────────────────────────────────────────
 
 const BASE_URL = process.env['API_BASE_URL'] ?? 'http://127.0.0.1:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
-
-// Postgres connection string for direct DB mutations (identity approval).
-// Using docker exec so we don't need psql in PATH.
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,10 +70,7 @@ async function register(
 
 /** Approve identity status directly via psql (avoids full identity-review flow). */
 function approveIdentityInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`);
 }
 
 /**
@@ -88,10 +80,7 @@ function approveIdentityInDb(userId: string): void {
  * Column is `email_verified` (mapped from Prisma field `emailVerified`).
  */
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 // ── Bug 1: Friend button on map — relationship + request endpoints ─────────

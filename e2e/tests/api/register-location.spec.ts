@@ -18,14 +18,11 @@
  * Postgres available for email-verification DB mutations (same as other specs).
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 const BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
-
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,18 +89,12 @@ async function registerOk(
 
 /** Mark email verified via direct DB mutation — required by EmailVerifiedGuard. */
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 /** Enable show_on_map so the user appears in /geo/members individual markers. */
 function enableShowOnMap(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET show_on_map = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET show_on_map = true WHERE id = '${userId}';`);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

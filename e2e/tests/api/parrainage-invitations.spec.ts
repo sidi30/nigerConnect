@@ -52,8 +52,8 @@
  *     invite_expiry_days='30')
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql, redisDel } from './_db-exec';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -62,12 +62,9 @@ const VALID_PASSWORD = 'E2eTest#2026!z';
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
-/** Run a SQL statement inside the postgres container (no host port needed). */
-const PSQL_CMD = (sql: string): string =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
-
+/** Run a SQL statement against the test DB (pg over TCP in CI; docker psql locally). */
 function runSql(sql: string): string {
-  return execSync(PSQL_CMD(sql), { stdio: 'pipe' }).toString();
+  return psql(sql);
 }
 
 function verifyEmailInDb(userId: string): void {
@@ -81,10 +78,7 @@ function setRoleInDb(userId: string, role: 'admin' | 'moderator' | 'user'): void
 function setRegistrationModeInDb(mode: 'open' | 'invite_only' | 'closed'): void {
   runSql(`UPDATE app_settings SET value = '${mode}' WHERE key = 'registration_mode';`);
   // Also flush Redis so the API picks it up without waiting for TTL
-  execSync(
-    `docker exec nigerconnect-redis redis-cli DEL "setting:registration_mode"`,
-    { stdio: 'pipe' },
-  );
+  redisDel('setting:registration_mode');
 }
 
 /** Revoke every pending invitation for cleanup between sub-tests. */
@@ -92,10 +86,7 @@ function revokeAllPendingInvitesInDb(inviterId: string): void {
   runSql(
     `UPDATE invitations SET status = 'revoked', revoked_at = now() WHERE inviter_id = '${inviterId}' AND status = 'pending';`,
   );
-  execSync(
-    `docker exec nigerconnect-redis redis-cli DEL "setting:registration_mode"`,
-    { stdio: 'pipe' },
-  );
+  redisDel('setting:registration_mode');
 }
 
 // ── Request helpers ────────────────────────────────────────────────────────────

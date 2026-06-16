@@ -18,8 +18,8 @@
  */
 
 import { createHash } from 'crypto';
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -29,21 +29,6 @@ const KNOWN_CODE = '123456';
 const KNOWN_CODE_HASH = createHash('sha256').update(KNOWN_CODE).digest('hex');
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Run SQL via docker exec. SQL must be a single logical line (no embedded
- * newlines) because psql -c passes it as a shell argument. Collapse whitespace
- * before calling.
- */
-function psql(sql: string): string {
-  // Collapse all whitespace runs (including newlines) to a single space so the
-  // SQL fits inside a single -c "..." shell argument on Windows/PowerShell.
-  const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(
-    `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${oneLine.replace(/"/g, '\\"')}"`,
-    { stdio: 'pipe' },
-  ).toString();
-}
 
 /**
  * Overwrite the code_hash of the newest unused verify_email token for userId

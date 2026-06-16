@@ -22,8 +22,8 @@
  */
 
 import { createHash } from 'crypto';
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -33,14 +33,6 @@ const KNOWN_CODE = '654321';
 const KNOWN_CODE_HASH = createHash('sha256').update(KNOWN_CODE).digest('hex');
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
-
-function psql(sql: string): string {
-  const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(
-    `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${oneLine.replace(/"/g, '\\"')}"`,
-    { stdio: 'pipe' },
-  ).toString();
-}
 
 function seedKnownCode(userId: string): void {
   psql(

@@ -14,8 +14,8 @@
  *   API_BASE_URL=http://127.0.0.1:3000 npx playwright test tests/api/feed-comments.spec.ts --project=api-feed-comments
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql, redisDel } from './_db-exec';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -23,15 +23,6 @@ const BASE_URL = process.env['API_BASE_URL'] ?? 'http://127.0.0.1:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
-
-function psql(sql: string): string {
-  // Collapse whitespace so the SQL fits in a single-line shell argument.
-  const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(
-    `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${oneLine.replace(/"/g, '\\"')}"`,
-    { stdio: 'pipe' },
-  ).toString();
-}
 
 function verifyEmailInDb(userId: string): void {
   psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
@@ -73,10 +64,7 @@ function invalidateFeedCache(userId: string): void {
   // tests that don't rely on cache freshness we bust it through the running Redis.
   // Use redis-cli through docker if available; silently skip if not.
   try {
-    execSync(
-      `docker exec nigerconnect-redis redis-cli DEL "feed:${userId}:start"`,
-      { stdio: 'pipe' },
-    );
+    redisDel(`feed:${userId}:start`);
   } catch {
     // redis container name may differ; not fatal — tests use fresh posts
   }

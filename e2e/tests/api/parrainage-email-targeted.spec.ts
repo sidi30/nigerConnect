@@ -35,8 +35,8 @@
  *   - Each test uses unique emails via randomEmail() to avoid inter-test conflicts.
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql, redisDel } from './_db-exec';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -45,11 +45,8 @@ const VALID_PASSWORD = 'E2eTest#2026!z';
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
-const PSQL_CMD = (sql: string): string =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
-
 function runSql(sql: string): string {
-  return execSync(PSQL_CMD(sql), { stdio: 'pipe' }).toString();
+  return psql(sql);
 }
 
 function verifyEmailInDb(userId: string): void {
@@ -62,10 +59,7 @@ function setRoleInDb(userId: string, role: 'admin' | 'moderator' | 'user'): void
 
 function setRegistrationModeInDb(mode: 'open' | 'invite_only' | 'closed'): void {
   runSql(`UPDATE app_settings SET value = '${mode}' WHERE key = 'registration_mode';`);
-  execSync(
-    `docker exec nigerconnect-redis redis-cli DEL "setting:registration_mode"`,
-    { stdio: 'pipe' },
-  );
+  redisDel('setting:registration_mode');
 }
 
 function resetRegistrationModeToOpen(): void {
@@ -100,10 +94,7 @@ function revokeAllPendingInvitesInDb(inviterId: string): void {
   runSql(
     `UPDATE invitations SET status = 'revoked', revoked_at = now(), target_email = null WHERE inviter_id = '${inviterId}' AND status = 'pending';`,
   );
-  execSync(
-    `docker exec nigerconnect-redis redis-cli DEL "setting:registration_mode"`,
-    { stdio: 'pipe' },
-  );
+  redisDel('setting:registration_mode');
 }
 
 // ── Request helpers ────────────────────────────────────────────────────────────
