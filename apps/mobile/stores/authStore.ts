@@ -54,6 +54,8 @@ interface AuthState {
     latitude?: number;
     /** WGS-84 longitude from the city autocomplete. */
     longitude?: number;
+    /** Invitation code (required in invite_only mode, ignored otherwise). */
+    inviteCode?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;

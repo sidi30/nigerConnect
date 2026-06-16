@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import Constants from 'expo-constants';
@@ -41,6 +41,11 @@ const CLIENT_IDS = {
   iosClientId: asClientId(extra.googleClientIdIos, process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS),
 } as const;
 
+export interface GoogleAuthOptions {
+  /** Invitation code to forward on the first Google sign-in (account creation). */
+  inviteCode?: string;
+}
+
 export interface GoogleAuthState {
   isLoading: boolean;
   error: string | null;
@@ -66,7 +71,7 @@ export interface GoogleAuthState {
  *  - iOS native flow needs an iOS-type client (bundle id `com.nigerconnect.app`)
  *    → set `extra.googleClientIdIos`.
  */
-export function useGoogleAuth(): GoogleAuthState {
+export function useGoogleAuth(options: GoogleAuthOptions = {}): GoogleAuthState {
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: CLIENT_IDS.webClientId,
     androidClientId: CLIENT_IDS.androidClientId,
@@ -76,6 +81,11 @@ export function useGoogleAuth(): GoogleAuthState {
   const setUser = useAuthStore((s) => s.setUser);
   const [isLoading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Keep a ref so the response effect always reads the latest inviteCode without
+  // being added to the effect's dependency array (which would re-run the effect
+  // on every keystroke in the invite-code field).
+  const inviteCodeRef = useRef(options.inviteCode);
+  inviteCodeRef.current = options.inviteCode;
 
   // Surface the resolved redirect URI in dev so the project owner knows
   // exactly which URL to whitelist in Google Cloud Console. Without this,
@@ -106,10 +116,13 @@ export function useGoogleAuth(): GoogleAuthState {
           // Anti-replay: forward the request nonce (echoed into the ID token's
           // `nonce` claim) so the server can reject a replayed token. Optional —
           // older server builds ignore it.
+          // inviteCode is forwarded only on account creation; the server ignores
+          // it on login of an existing account.
           const { user, tokens } = await authApi.loginWithGoogle(
             idToken,
             undefined,
             request?.nonce,
+            inviteCodeRef.current,
           );
           // Server auth succeeded — don't let a Keychain write failure surface as
           // a generic "Connexion Google échouée". Give a specific message.

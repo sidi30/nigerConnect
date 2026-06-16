@@ -5,6 +5,8 @@ import { useGoogleAuth } from '@/services/googleAuth';
 
 interface Props {
   label?: string;
+  /** Invitation code forwarded to the API on account creation. */
+  inviteCode?: string;
 }
 
 /**
@@ -21,8 +23,8 @@ interface Props {
  * (Apple Developer Program + APPLE_* env vars), flip `appleSignInEnabled`
  * to true and Google appears on iOS prod builds too.
  */
-export function GoogleButton({ label = 'Continuer avec Google' }: Props) {
-  const { signIn, isLoading, error, isConfigured } = useGoogleAuth();
+export function GoogleButton({ label = 'Continuer avec Google', inviteCode }: Props) {
+  const { signIn, isLoading, error, isConfigured } = useGoogleAuth({ inviteCode });
 
   const appleEnabled = Boolean(
     (Constants.expoConfig?.extra as { appleSignInEnabled?: boolean } | undefined)

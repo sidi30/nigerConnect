@@ -21,6 +21,8 @@ export const authApi = {
     // pins the user exactly instead of geocoding from the city name.
     latitude?: number;
     longitude?: number;
+    // Invitation code (required in invite_only mode, ignored in open mode).
+    inviteCode?: string;
   }): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/register', input);
     return data;
@@ -35,8 +37,14 @@ export const authApi = {
     idToken: string,
     deviceName?: string,
     nonce?: string,
+    inviteCode?: string,
   ): Promise<AuthResponse> {
-    const { data } = await api.post<AuthResponse>('/auth/google', { idToken, deviceName, nonce });
+    const { data } = await api.post<AuthResponse>('/auth/google', {
+      idToken,
+      deviceName,
+      nonce,
+      inviteCode,
+    });
     return data;
   },
 

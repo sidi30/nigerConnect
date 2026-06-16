@@ -278,6 +278,15 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     ],
   },
   {
+    heading: "Parrainage",
+    body: "NigerConnect propose un système de parrainage. Deux modes d'invitation sont disponibles :",
+    bullets: [
+      "Invitation par lien : tu génères un lien d'invitation et tu le partages toi-même via tes propres moyens (messagerie, SMS, réseaux sociaux). Nous ne collectons ni ne conservons aucune donnée sur la personne invitée tant qu'elle ne crée pas de compte.",
+      "Invitation par e-mail : tu fournis l'adresse e-mail de la personne que tu souhaites inviter. La plateforme lui envoie un e-mail en ton nom et conserve cette adresse uniquement pendant la durée où l'invitation est en attente. Elle est définitivement supprimée dès que l'invitation est acceptée, expirée ou révoquée (minimisation des données). Tu es responsable de ne renseigner que l'adresse de personnes que tu connais et qui sont susceptibles d'accepter d'être contactées.",
+      "Dans les deux cas, lorsqu'un filleul crée un compte, nous conservons le lien de parrainage entre vos comptes sur la base de notre intérêt légitime (prévention de la fraude, mesure de la croissance). Ces données sont agrégées pour nos statistiques internes.",
+    ],
+  },
+  {
     heading: "Modifications de la politique",
     body:
       "Cette politique peut évoluer. En cas de changement substantiel, tu en seras informé avant son entrée en vigueur. La date de dernière mise à jour figure en tête du document.",

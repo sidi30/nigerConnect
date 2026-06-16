@@ -29,6 +29,9 @@ export const registerSchema = z.object({
   // map placement. Values are validated to legal WGS-84 ranges.
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  // Parrainage (§5.1): optional invite code forwarded by the client.
+  // Ignored in 'open' mode; required + consumed in 'invite_only'.
+  inviteCode: z.string().trim().min(6).max(16).optional(),
 }).refine(
   // A coordinate is only meaningful as a (lat, lng) pair. Reject a half-supplied
   // pair so the register() coords branch never runs with one axis undefined.

@@ -193,6 +193,31 @@ export default defineConfig({
         extraHTTPHeaders: { 'Content-Type': 'application/json' },
       },
     },
+    {
+      name: 'api-parrainage-invitations',
+      testMatch: 'api/parrainage-invitations.spec.ts',
+      // Run sequentially: mode-switching tests (invite_only/closed) mutate a global
+      // DB setting (registration_mode + Redis cache). Parallel workers would race on
+      // this shared state, causing non-deterministic failures. Sequential execution
+      // is the only reliable strategy for this spec.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-parrainage-email-targeted',
+      testMatch: 'api/parrainage-email-targeted.spec.ts',
+      // Sequential for the same reason: several describes flip registration_mode
+      // to invite_only. Running in parallel with itself or with the base spec
+      // would cause non-deterministic failures on shared DB/Redis state.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
 
     // ── Browser tests against the Next.js web app ────────────────────────────
     {

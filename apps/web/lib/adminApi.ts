@@ -465,3 +465,62 @@ export function sendCampaign(
     { method: "POST" },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Invitations / Settings (§5.3)
+// ---------------------------------------------------------------------------
+
+export type RegistrationMode = "open" | "invite_only" | "closed";
+
+export interface AdminSettings {
+  registrationMode: RegistrationMode;
+  defaultInviteQuota: number;
+  inviteExpiryDays: number;
+}
+
+export interface RootInvite {
+  code: string;
+  url: string;
+  expiresAt: string | null;
+}
+
+export interface InviteMetrics {
+  sent: number;
+  accepted: number;
+  pending: number;
+  expired: number;
+  revoked: number;
+  conversionRate: number;
+  kFactor: number;
+  topInviters: Array<{ name: string; count: number }>;
+}
+
+export function fetchAdminSettings(signal?: AbortSignal): Promise<AdminSettings> {
+  return adminFetch<AdminSettings>("/admin/settings", { signal });
+}
+
+export function patchAdminSettings(
+  body: Partial<{
+    registrationMode: RegistrationMode;
+    defaultInviteQuota: number;
+    inviteExpiryDays: number;
+  }>,
+): Promise<AdminSettings> {
+  return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });
+}
+
+export function generateRootInvites(
+  count: number,
+  expiresInDays?: number,
+): Promise<RootInvite[]> {
+  const payload: { count: number; expiresInDays?: number } = { count };
+  if (expiresInDays !== undefined) payload.expiresInDays = expiresInDays;
+  return adminFetch<RootInvite[]>("/admin/invitations/root", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchInviteMetrics(signal?: AbortSignal): Promise<InviteMetrics> {
+  return adminFetch<InviteMetrics>("/admin/invitations/metrics", { signal });
+}

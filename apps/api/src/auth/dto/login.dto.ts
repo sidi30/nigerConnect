@@ -22,6 +22,9 @@ export const oauthSchema = z.object({
   // present-and-mismatched nonce is rejected.
   nonce: z.string().min(1).max(256).optional(),
   deviceName: z.string().max(100).optional(),
+  // Parrainage (§5.1): optional invite code. Required in 'invite_only' mode
+  // for the account-creation branch only. Ignored for existing-account logins.
+  inviteCode: z.string().trim().min(6).max(16).optional(),
 });
 
 export type OAuthDto = z.infer<typeof oauthSchema>;
@@ -43,6 +46,9 @@ export const appleSchema = z.object({
   // compatibility; a present-and-mismatched nonce is rejected.
   rawNonce: z.string().min(1).max(256).optional(),
   deviceName: z.string().max(100).optional(),
+  // Parrainage (§5.1): optional invite code. Required in 'invite_only' mode
+  // for the account-creation branch only. Ignored for existing-account logins.
+  inviteCode: z.string().trim().min(6).max(16).optional(),
 });
 
 export type AppleDto = z.infer<typeof appleSchema>;

@@ -132,6 +132,21 @@ model User {
   reviewsAuthored         Review[]             @relation("ReviewAuthor")
   reviewsReceived         Review[]             @relation("ReviewTargetUser")
 
+  // ── Parrainage ──────────────────────────────────────────────────
+  // Parrain direct (arbre). SetNull si le parrain supprime son compte —
+  // on ne casse pas le filleul, on perd juste le lien de parenté.
+  invitedById      String?      @map("invited_by_id") @db.Uuid
+  invitedBy        User?        @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitees         User[]       @relation("UserInvitedBy")
+  // Nombre max d'invitations actives (pending + accepted). Surchargeable par
+  // l'admin pour un influenceur. Défaut piloté par AppSetting au moment du create.
+  inviteQuota      Int          @default(3) @map("invite_quota")
+  // Compteur d'abus : +1 quand un filleul est banni. ≥ seuil → quota gelé.
+  inviteAbuseFlags Int          @default(0) @map("invite_abuse_flags")
+
+  invitesSent      Invitation[] @relation("UserInvitesSent")
+  invitesAccepted  Invitation[] @relation("UserInviteAccepted")
+
   // Unique per OAuth identity so concurrent link-or-create requests can't mint
   // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
   // Both columns are nullable; Postgres treats NULLs as distinct, so the many
@@ -140,6 +155,7 @@ model User {
   @@index([countryCode, city])
   @@index([latitude, longitude])
   @@index([showOnMap, status])
+  @@index([invitedById])
   @@map("users")
 }
 
@@ -259,6 +275,16 @@ enum NotificationType {
   poll_new
   review_received
   system
+  invite_accepted
+}
+
+// ── Parrainage ────────────────────────────────────────────────────
+
+enum InvitationStatus {
+  pending
+  accepted
+  revoked
+  expired
 }
 
 enum ReportTargetType {
@@ -874,4 +900,44 @@ model NewsletterCampaign {
 
   @@index([status])
   @@map("newsletter_campaigns")
+}
+
+// ── Parrainage — Invitation ───────────────────────────────────────
+model Invitation {
+  id           String           @id @default(uuid()) @db.Uuid
+  // Code haute entropie partagé par le parrain. base62, 10+ chars (~59 bits).
+  code         String           @unique @db.VarChar(16)
+  // null = invitation racine générée par l'admin (bootstrap / seeding waitlist).
+  inviterId    String?          @map("inviter_id") @db.Uuid
+  inviter      User?            @relation("UserInvitesSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  status       InvitationStatus @default(pending)
+  // Compte créé en consommant ce code. SetNull si ce compte est supprimé,
+  // pour garder l'historique de l'invitation.
+  acceptedById String?          @map("accepted_by_id") @db.Uuid
+  acceptedBy   User?            @relation("UserInviteAccepted", fields: [acceptedById], references: [id], onDelete: SetNull)
+  // Data-minimization: email du destinataire ciblé par une invitation email.
+  // Normalisé (lowercase+trim) avant stockage. PURGÉ (→ null) dès que
+  // l'invitation quitte 'pending' (accept, revoke, expiry). On ne conserve
+  // jamais l'email d'un tiers au-delà de la durée de vie de l'invitation.
+  targetEmail  String?          @map("target_email") @db.VarChar(254)
+  expiresAt    DateTime?        @map("expires_at") @db.Timestamptz
+  acceptedAt   DateTime?        @map("accepted_at") @db.Timestamptz
+  revokedAt    DateTime?        @map("revoked_at") @db.Timestamptz
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([inviterId, status])
+  @@index([status, expiresAt])
+  @@index([status, targetEmail])
+  @@map("invitations")
+}
+
+// ── Réglages runtime ─────────────────────────────────────────────
+// Réutilisable pour tout futur feature-flag.
+model AppSetting {
+  key         String   @id @db.VarChar(60)        // 'registration_mode', 'default_invite_quota', 'invite_expiry_days'
+  value       String   @db.VarChar(100)
+  updatedById String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("app_settings")
 }

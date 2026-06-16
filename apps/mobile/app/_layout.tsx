@@ -174,6 +174,8 @@ export default function RootLayout() {
                 <Stack.Screen name="legal/terms" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/community" options={{ presentation: 'card' }} />
+                {/* Invitation deep-link: https://nigerconnect.app/invite/CODE */}
+                <Stack.Screen name="invite/[code]" options={{ presentation: 'card', headerShown: false }} />
               </Stack>
             </PersistQueryClientProvider>
           </ThemeProvider>
@@ -231,6 +233,11 @@ function NotificationDeepLink() {
       else if (proximityUserId) router.push(`/user/${proximityUserId}` as never);
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
         router.push('/friends' as never);
+      } else if (data.type === 'invite_accepted') {
+        // The backend sets actorId = new member — navigate to their profile.
+        const actorId = typeof data.actorId === 'string' ? data.actorId : null;
+        if (actorId) router.push(`/user/${actorId}` as never);
+        else router.push('/(tabs)/invite' as never);
       } else {
         router.push('/settings/notifications' as never);
       }

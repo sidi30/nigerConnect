@@ -218,6 +218,15 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
+          name="invite"
+          options={{
+            title: 'Inviter',
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon name="gift" color={color} focused={focused} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="profile"
           options={{
             title: 'Profil',

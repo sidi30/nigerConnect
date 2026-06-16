@@ -17,7 +17,8 @@ export type NotificationType =
   | 'page_follow'
   | 'poll_new'
   | 'review_received'
-  | 'system';
+  | 'system'
+  | 'invite_accepted';
 
 export interface Notification {
   id: string;

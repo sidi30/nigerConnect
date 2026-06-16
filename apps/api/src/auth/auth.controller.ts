@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { SettingsService } from '../common/settings/settings.service';
 import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
@@ -43,6 +44,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly config: ConfigService<Env, true>,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @Public()
@@ -81,7 +83,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('google')
   async google(@Body(new ZodValidationPipe(oauthSchema)) dto: OAuthDto) {
-    const result = await this.auth.signInWithGoogle(dto.idToken, dto.deviceName, dto.nonce);
+    const result = await this.auth.signInWithGoogle(dto.idToken, dto.deviceName, dto.nonce, dto.inviteCode);
     return {
       user: serializeUser(result.user),
       tokens: { accessToken: result.accessToken, refreshToken: result.refreshToken },
@@ -99,11 +101,25 @@ export class AuthController {
       email: dto.email,
       rawNonce: dto.rawNonce,
       deviceName: dto.deviceName,
+      inviteCode: dto.inviteCode,
     });
     return {
       user: serializeUser(result.user),
       tokens: { accessToken: result.accessToken, refreshToken: result.refreshToken },
     };
+  }
+
+  /**
+   * GET /auth/registration-mode
+   * Public endpoint — client reads this to decide which UI to show.
+   * Light throttle (global default is sufficient, but we add a medium cap).
+   */
+  @Public()
+  @Throttle({ short: { limit: 10, ttl: 1_000 }, medium: { limit: 200, ttl: 60_000 } })
+  @Get('registration-mode')
+  async registrationMode(): Promise<{ mode: 'open' | 'invite_only' | 'closed' }> {
+    const mode = await this.settingsService.getRegistrationMode();
+    return { mode };
   }
 
   @Public()

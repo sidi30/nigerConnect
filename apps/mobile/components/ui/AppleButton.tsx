@@ -9,6 +9,8 @@ interface Props {
   label?: string;
   /** Used to swap the button label for the sign-up screen. */
   mode?: 'signIn' | 'signUp';
+  /** Invitation code forwarded to the API on account creation. */
+  inviteCode?: string;
 }
 
 /**
@@ -23,8 +25,8 @@ interface Props {
  * are in place. While disabled, `GoogleButton` hides itself on iOS to keep
  * the app compliant with 4.8 (no third-party social login at all on iOS).
  */
-export function AppleButton({ mode = 'signIn', label }: Props) {
-  const { signIn, isLoading, error, isAvailable } = useAppleAuth();
+export function AppleButton({ mode = 'signIn', label, inviteCode }: Props) {
+  const { signIn, isLoading, error, isAvailable } = useAppleAuth({ inviteCode });
 
   const enabled = Boolean(
     (Constants.expoConfig?.extra as { appleSignInEnabled?: boolean } | undefined)
