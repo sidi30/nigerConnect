@@ -49,9 +49,11 @@ export default function InviteScreen() {
   const [emailSending, setEmailSending] = useState(false);
   const emailInputRef = useRef<TextInput>(null);
 
-  // ── Link / phone state ──────────────────────────────────────────────────────
+  // ── Link state ──────────────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['invitations', 'list'],
@@ -71,7 +73,7 @@ export default function InviteScreen() {
     },
   });
 
-  // ── Guard shared by both actions ────────────────────────────────────────────
+  // ── Guard shared by all actions ─────────────────────────────────────────────
   function checkEmailVerified(): boolean {
     if (!user?.emailVerified) {
       Alert.alert(
@@ -103,7 +105,7 @@ export default function InviteScreen() {
     const trimmed = emailValue.trim().toLowerCase();
     setEmailSending(true);
     try {
-      await invitationsApi.create(trimmed);
+      await invitationsApi.create({ email: trimmed });
       void qc.invalidateQueries({ queryKey: ['invitations', 'list'] });
       toast.success(`Invitation envoyée à ${trimmed}`);
       setEmailValue('');
@@ -118,7 +120,7 @@ export default function InviteScreen() {
     }
   }
 
-  // ── Link invite ─────────────────────────────────────────────────────────────
+  // ── Single-use link invite (one code, one signup) ────────────────────────────
   async function handleGenerate() {
     if (!checkEmailVerified()) return;
     setGenError(null);
@@ -142,10 +144,33 @@ export default function InviteScreen() {
     }
   }
 
+  // ── Reusable mass link (one link, N signups) — gated on `canBulkInvite` ──────
+  async function handleGenerateBulk() {
+    if (!checkEmailVerified()) return;
+    setBulkError(null);
+    setBulkGenerating(true);
+    try {
+      const inv = await invitationsApi.create({ kind: 'reusable' });
+      void qc.invalidateQueries({ queryKey: ['invitations', 'list'] });
+      await Share.share({
+        message: `Rejoins la communauté NigerConnect, le réseau de la diaspora nigérienne ! Inscris-toi avec mon lien : ${inv.url}`,
+        url: inv.url,
+      });
+    } catch (e: unknown) {
+      const apiMsg = (e as { response?: { data?: { message?: string } } })?.response?.data
+        ?.message;
+      if ((e as { message?: string })?.message !== 'The operation was canceled.') {
+        setBulkError(apiMsg ?? 'Impossible de générer un lien de masse. Réessaie.');
+      }
+    } finally {
+      setBulkGenerating(false);
+    }
+  }
+
   function confirmRevoke(id: string) {
     Alert.alert(
       'Révoquer cette invitation ?',
-      'Le lien ne fonctionnera plus. Le slot sera remboursé.',
+      'Le lien ne fonctionnera plus pour les nouvelles inscriptions.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
@@ -157,10 +182,9 @@ export default function InviteScreen() {
     );
   }
 
-  const available = data?.available ?? 0;
-  const quota = data?.quota ?? 0;
+  const canBulkInvite = data?.canBulkInvite ?? false;
   const invites = data?.invites ?? [];
-  const isDisabled = available <= 0 || isLoading;
+  const actionsDisabled = !user?.emailVerified;
 
   // Inline email validation feedback once the field has been touched
   const showEmailError = emailTouched && !!emailError;
@@ -172,25 +196,16 @@ export default function InviteScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Quota card */}
+        {/* Intro card */}
         <View style={styles.quotaCard}>
           <View style={styles.quotaIconWrap}>
             <Feather name="gift" size={26} color={Colors.orange} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.quotaHeading}>Tes invitations</Text>
-            {isLoading ? (
-              <Text style={styles.quotaSubtext}>Chargement…</Text>
-            ) : error ? (
-              <Text style={styles.quotaSubtext}>Erreur de chargement.</Text>
-            ) : (
-              <Text style={styles.quotaSubtext}>
-                Il te reste{' '}
-                <Text style={styles.quotaCount}>{available}</Text>
-                {' '}invitation{available !== 1 ? 's' : ''} sur{' '}
-                <Text style={styles.quotaCount}>{quota}</Text>
-              </Text>
-            )}
+            <Text style={styles.quotaHeading}>Fais grandir le réseau</Text>
+            <Text style={styles.quotaSubtext}>
+              Invite autant d&apos;amis que tu veux à rejoindre la diaspora nigérienne.
+            </Text>
           </View>
         </View>
 
@@ -203,12 +218,6 @@ export default function InviteScreen() {
           </View>
         ) : null}
 
-        {available <= 0 && !isLoading ? (
-          <Text style={styles.quotaExhausted}>
-            Quota épuisé. Tes slots se libèrent si une invitation expire ou est révoquée.
-          </Text>
-        ) : null}
-
         {/* ── Invite par email ─────────────────────────────────────────────── */}
         <View style={styles.methodCard}>
           <View style={styles.methodHeader}>
@@ -218,7 +227,7 @@ export default function InviteScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.methodTitle}>Par email</Text>
               <Text style={styles.methodSubtitle}>
-                On envoie l'invitation directement à la personne.
+                On envoie l&apos;invitation directement à la personne.
               </Text>
             </View>
           </View>
@@ -249,7 +258,7 @@ export default function InviteScreen() {
                 setEmailError(validateEmail(emailValue));
               }}
               onSubmitEditing={() => void handleEmailInvite()}
-              editable={!emailSending && !isDisabled}
+              editable={!emailSending && !actionsDisabled}
               accessibilityLabel="Adresse email du destinataire"
             />
           </View>
@@ -260,10 +269,10 @@ export default function InviteScreen() {
 
           <Pressable
             onPress={() => void handleEmailInvite()}
-            disabled={emailSending || isDisabled}
+            disabled={emailSending || actionsDisabled}
             style={({ pressed }) => [
               styles.emailBtn,
-              (emailSending || isDisabled || pressed) && { opacity: 0.72 },
+              (emailSending || actionsDisabled || pressed) && { opacity: 0.72 },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Envoyer l'invitation par email"
@@ -273,7 +282,7 @@ export default function InviteScreen() {
             ) : (
               <>
                 <Feather name="send" size={16} color={Colors.white} />
-                <Text style={styles.emailBtnLabel}>Envoyer l'invitation</Text>
+                <Text style={styles.emailBtnLabel}>Envoyer l&apos;invitation</Text>
               </>
             )}
           </Pressable>
@@ -309,10 +318,10 @@ export default function InviteScreen() {
 
           <Pressable
             onPress={() => void handleGenerate()}
-            disabled={generating || isDisabled}
+            disabled={generating || actionsDisabled}
             style={({ pressed }) => [
               styles.generateBtn,
-              (generating || isDisabled || pressed) && { opacity: 0.72 },
+              (generating || actionsDisabled || pressed) && { opacity: 0.72 },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Générer un lien d'invitation"
@@ -328,10 +337,55 @@ export default function InviteScreen() {
           </Pressable>
         </View>
 
-        {/* Invitations list */}
+        {/* ── Lien de masse (droit accordé) ────────────────────────────────── */}
+        {canBulkInvite ? (
+          <View style={styles.methodCard}>
+            <View style={styles.methodHeader}>
+              <View style={styles.methodIconWrap}>
+                <Feather name="users" size={18} color={Colors.orange} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.methodTitle}>Lien d&apos;invitation de masse</Text>
+                <Text style={styles.methodSubtitle}>
+                  Un seul lien réutilisable, partageable à un groupe entier. Suis le nombre
+                  d&apos;inscriptions ci-dessous.
+                </Text>
+              </View>
+            </View>
+
+            {bulkError ? (
+              <View style={styles.errorBanner} accessibilityRole="alert">
+                <Feather name="alert-triangle" size={14} color={palette.errorText} />
+                <Text style={styles.errorText}>{bulkError}</Text>
+              </View>
+            ) : null}
+
+            <Pressable
+              onPress={() => void handleGenerateBulk()}
+              disabled={bulkGenerating || actionsDisabled}
+              style={({ pressed }) => [
+                styles.generateBtn,
+                (bulkGenerating || actionsDisabled || pressed) && { opacity: 0.72 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Générer un lien d'invitation de masse"
+            >
+              {bulkGenerating ? (
+                <ActivityIndicator color={Colors.white} />
+              ) : (
+                <>
+                  <Feather name="share" size={18} color={Colors.white} />
+                  <Text style={styles.generateBtnLabel}>Générer un lien d&apos;invitation</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/* Invitations / filleuls list */}
         {invites.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Mes invitations</Text>
+            <Text style={styles.sectionTitle}>Mes invitations & filleuls</Text>
             {invites.map((inv) => (
               <InviteRow
                 key={inv.id}
@@ -378,9 +432,8 @@ function InviteRow({
   isRevoking: boolean;
 }) {
   const statusColor = STATUS_COLORS[inv.status];
-  const acceptedName = inv.acceptedBy
-    ? `${inv.acceptedBy.firstName} ${inv.acceptedBy.lastName}`
-    : null;
+  const isReusable = inv.kind === 'reusable';
+  const acceptedName = inv.acceptedBy?.displayName ?? null;
 
   return (
     <View style={styles.inviteRow}>
@@ -388,18 +441,28 @@ function InviteRow({
       <View style={{ flex: 1, gap: 2 }}>
         <View style={styles.inviteCodeRow}>
           <Text style={styles.inviteCode}>{inv.code}</Text>
+          <View style={styles.kindBadge}>
+            <Feather
+              name={isReusable ? 'users' : 'user'}
+              size={11}
+              color={Colors.tan600}
+            />
+            <Text style={styles.kindBadgeLabel}>
+              {isReusable ? 'Lien de masse' : 'Usage unique'}
+            </Text>
+          </View>
           <View style={[styles.statusBadge, { backgroundColor: statusColor + '22' }]}>
             <Text style={[styles.statusLabel, { color: statusColor }]}>
               {STATUS_LABELS[inv.status]}
             </Text>
           </View>
         </View>
-        {acceptedName ? (
-          <Text style={styles.inviteMeta}>Rejoint par {acceptedName}</Text>
-        ) : inv.expiresAt ? (
+        {isReusable ? (
           <Text style={styles.inviteMeta}>
-            Expire {relativeTime(inv.expiresAt)}
+            {inv.signupsCount} inscription{inv.signupsCount !== 1 ? 's' : ''} via ce lien
           </Text>
+        ) : acceptedName ? (
+          <Text style={styles.inviteMeta}>Rejoint par {acceptedName}</Text>
         ) : null}
         <Text style={styles.inviteDate}>
           Créée {relativeTime(inv.createdAt)}
@@ -441,7 +504,7 @@ const styles = StyleSheet.create({
   },
   scroll: { padding: Spacing.lg, paddingBottom: Spacing.xxxl, gap: Spacing.md },
 
-  // ── Quota card ──────────────────────────────────────────────────────────────
+  // ── Intro card ──────────────────────────────────────────────────────────────
   quotaCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -466,14 +529,7 @@ const styles = StyleSheet.create({
     color: Colors.brown,
     marginBottom: 2,
   },
-  quotaSubtext: { fontSize: Typography.sizes.sm, color: Colors.tan500 },
-  quotaCount: { color: Colors.orange, fontWeight: '800' },
-  quotaExhausted: {
-    fontSize: Typography.sizes.xs,
-    color: Colors.tan500,
-    textAlign: 'center',
-    paddingHorizontal: Spacing.lg,
-  },
+  quotaSubtext: { fontSize: Typography.sizes.sm, color: Colors.tan500, lineHeight: 19 },
 
   // ── Method cards ────────────────────────────────────────────────────────────
   methodCard: {
@@ -618,13 +674,23 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginTop: 6,
   },
-  inviteCodeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  inviteCodeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
   inviteCode: {
     fontSize: Typography.sizes.md,
     fontWeight: '700',
     color: Colors.brown,
     fontFamily: 'monospace',
   },
+  kindBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.tan100,
+  },
+  kindBadgeLabel: { fontSize: Typography.sizes.xxs, fontWeight: '700', color: Colors.tan600 },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,

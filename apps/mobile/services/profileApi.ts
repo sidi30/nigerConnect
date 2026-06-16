@@ -2,9 +2,30 @@ import type { User, CursorPage, Post, PublicUser } from '@nigerconnect/shared-ty
 import { api, BASE_URL } from './api';
 import { tokenStore } from './secureStore';
 
+/** Minimal sponsor reference exposed on the public "network" profile. */
+export interface InvitedBy {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+/**
+ * Referral-network fields the profile endpoints expose since the parrainage v2
+ * rework. Optional so the augmented shape stays assignable to `User` everywhere
+ * the bare type is still expected (auth store, caches…).
+ */
+export interface ProfileNetwork {
+  /** The sponsor who invited this user, or `null` (also `null` if private). */
+  invitedBy?: InvitedBy | null;
+  /** Number of accounts this user has sponsored (`invitedById = this user`). */
+  inviteesCount?: number;
+}
+
+export type ProfileUser = User & ProfileNetwork;
+
 export const profileApi = {
-  async me(): Promise<User> {
-    const { data } = await api.get<{ user: User }>('/profile/me');
+  async me(): Promise<ProfileUser> {
+    const { data } = await api.get<{ user: ProfileUser }>('/profile/me');
     return data.user;
   },
 
@@ -40,8 +61,8 @@ export const profileApi = {
     return data;
   },
 
-  async getById(id: string): Promise<User> {
-    const { data } = await api.get<{ user: User }>(`/profile/${id}`);
+  async getById(id: string): Promise<ProfileUser> {
+    const { data } = await api.get<{ user: ProfileUser }>(`/profile/${id}`);
     return data.user;
   },
 

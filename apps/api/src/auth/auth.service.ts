@@ -146,21 +146,30 @@ export class AuthService {
     // Pre-validate invite code OR email-match before expensive ops (uniqueness
     // check, hash). Precedence: code first; email-match fallback.
     let invitedById: string | null = null;
+    // Which invitation authorized this registration (network analytics: invitedViaId).
+    let invitedViaId: string | null = null;
+    // Code kind drives the consume path: single_use is consumed (one acceptance);
+    // reusable is never consumed (shareable link, N signups).
+    let inviteKind: 'single_use' | 'reusable' | null = null;
     // Track which mechanism authorized this registration so the consume step uses
     // the right path (code-consume vs email-consume).
     let emailMatchAuthorized = false;
     if (mode === 'invite_only') {
       if (dto.inviteCode) {
-        // CODE PATH — existing behavior unchanged.
-        const { inviterId } = await this.invitations.preValidateCode(dto.inviteCode);
+        // CODE PATH — single_use or reusable (mass-invite link).
+        const { inviterId, invitationId, kind } =
+          await this.invitations.resolveCodeForRegistration(dto.inviteCode);
         invitedById = inviterId;
+        invitedViaId = invitationId;
+        inviteKind = kind;
       } else {
-        // EMAIL-MATCH FALLBACK — soft lookup, no throw on miss.
+        // EMAIL-MATCH FALLBACK — soft lookup, no throw on miss (single_use only).
         const emailMatch = dto.email
           ? await this.invitations.preValidateEmail(dto.email)
           : null;
         if (emailMatch !== null) {
           invitedById = emailMatch.inviterId;
+          invitedViaId = emailMatch.invitationId;
           emailMatchAuthorized = true;
         } else {
           // Neither a valid code nor a matching targeted invite — block.
@@ -233,26 +242,32 @@ export class AuthService {
           latitude,
           longitude,
           invitedById,
+          invitedViaId,
         },
       });
 
       if (mode === 'invite_only') {
         if (dto.inviteCode && !emailMatchAuthorized) {
-          // CODE PATH: atomic consume by code.
-          const consumed = await this.invitations.atomicallyConsumeCode(
-            dto.inviteCode,
-            created.id,
-            tx as unknown as PrismaService,
-          );
-          if (consumed === 0) {
-            throw new BadRequestException({
-              code: 'INVITE_CODE_CONSUMED',
-              message: 'Ce code d\'invitation vient d\'être utilisé. Demande un nouveau code.',
-            });
+          if (inviteKind === 'reusable') {
+            // REUSABLE LINK: nothing to consume — the link stays active for the
+            // next signup. invitedById/invitedViaId already set on the user row.
+          } else {
+            // SINGLE-USE CODE PATH: atomic consume by code.
+            const consumed = await this.invitations.atomicallyConsumeSingleUse(
+              dto.inviteCode,
+              created.id,
+              tx as unknown as PrismaService,
+            );
+            if (consumed === 0) {
+              throw new BadRequestException({
+                code: 'INVITE_CODE_CONSUMED',
+                message: 'Ce code d\'invitation vient d\'être utilisé. Demande un nouveau code.',
+              });
+            }
           }
         } else if (emailMatchAuthorized && dto.email) {
-          // EMAIL-MATCH PATH: atomic consume by targetEmail.
-          const { count, inviterId: emailInviterId } =
+          // EMAIL-MATCH PATH: atomic consume by targetEmail (single_use only).
+          const { count, inviterId: emailInviterId, invitationId: emailInvitationId } =
             await this.invitations.atomicallyConsumeByEmail(
               dto.email,
               created.id,
@@ -265,23 +280,26 @@ export class AuthService {
               message: 'L\'invitation pour cet email vient d\'être utilisée.',
             });
           }
-          // Update invitedById with the resolved inviterId from the email-match
-          // (it may differ from the pre-validate result if a race happened between
-          // preValidateEmail and here, but count===1 means we won cleanly).
-          if (emailInviterId && !invitedById) {
-            // Update the newly created user row with the correct invitedById.
+          // Reconcile invitedById/invitedViaId with the row we ACTUALLY consumed.
+          // atomicallyConsumeByEmail re-runs its own findFirst and may accept a
+          // different invitation than preValidateEmail picked when 2+ pending
+          // invites target the same email (or the first was revoked in between).
+          // The consumed row is the source of truth — so we sync unconditionally,
+          // not only when invitedById was unset.
+          if (emailInviterId && (emailInviterId !== invitedById || emailInvitationId !== invitedViaId)) {
             await tx.user.update({
               where: { id: created.id },
-              data: { invitedById: emailInviterId },
+              data: { invitedById: emailInviterId, invitedViaId: emailInvitationId },
             });
             invitedById = emailInviterId;
+            invitedViaId = emailInvitationId;
           }
         }
       }
       return created;
     });
 
-    // Post-commit: notify inviter (fire & forget)
+    // Post-commit: notify inviter (fire & forget) — link or code alike.
     if (mode === 'invite_only' && invitedById) {
       this.invitations.notifyInviter(invitedById, user.id, user.firstName);
     }
@@ -532,6 +550,8 @@ export class AuthService {
 
     let createdNow = false;
     let newUserInvitedById: string | null = null;
+    let newUserInvitedViaId: string | null = null;
+    let oauthInviteKind: 'single_use' | 'reusable' | null = null;
     // Track whether this OAuth creation was authorized via email-match
     // (vs. a code). Used to select the correct atomic-consume path below.
     let oauthEmailMatchAuthorized = false;
@@ -545,9 +565,12 @@ export class AuthService {
       }
       if (mode === 'invite_only') {
         if (inviteCode) {
-          // CODE PATH — existing behavior unchanged.
-          const { inviterId } = await this.invitations.preValidateCode(inviteCode);
+          // CODE PATH — single_use or reusable (mass-invite link).
+          const { inviterId, invitationId, kind } =
+            await this.invitations.resolveCodeForRegistration(inviteCode);
           newUserInvitedById = inviterId;
+          newUserInvitedViaId = invitationId;
+          oauthInviteKind = kind;
         } else {
           // EMAIL-MATCH FALLBACK — soft lookup using the OAuth profile email.
           // Apple Hide-My-Email relay addresses will not match a stored targetEmail
@@ -558,6 +581,7 @@ export class AuthService {
             : null;
           if (emailMatch !== null) {
             newUserInvitedById = emailMatch.inviterId;
+            newUserInvitedViaId = emailMatch.invitationId;
             oauthEmailMatchAuthorized = true;
           } else {
             throw new ForbiddenException({
@@ -596,26 +620,31 @@ export class AuthService {
               // follow-up onboarding step.
               emailVerified: profile.emailVerified === true,
               invitedById: newUserInvitedById,
+              invitedViaId: newUserInvitedViaId,
             },
           });
 
           if (mode === 'invite_only') {
             if (inviteCode && !oauthEmailMatchAuthorized) {
-              // CODE PATH.
-              const consumed = await this.invitations.atomicallyConsumeCode(
-                inviteCode,
-                created.id,
-                tx as unknown as PrismaService,
-              );
-              if (consumed === 0) {
-                throw new BadRequestException({
-                  code: 'INVITE_CODE_CONSUMED',
-                  message: 'Ce code d\'invitation vient d\'être utilisé. Demande un nouveau code.',
-                });
+              if (oauthInviteKind === 'reusable') {
+                // REUSABLE LINK: nothing to consume — stays active for next signup.
+              } else {
+                // SINGLE-USE CODE PATH.
+                const consumed = await this.invitations.atomicallyConsumeSingleUse(
+                  inviteCode,
+                  created.id,
+                  tx as unknown as PrismaService,
+                );
+                if (consumed === 0) {
+                  throw new BadRequestException({
+                    code: 'INVITE_CODE_CONSUMED',
+                    message: 'Ce code d\'invitation vient d\'être utilisé. Demande un nouveau code.',
+                  });
+                }
               }
             } else if (oauthEmailMatchAuthorized && profile.email) {
-              // EMAIL-MATCH PATH.
-              const { count, inviterId: emailInviterId } =
+              // EMAIL-MATCH PATH (single_use only).
+              const { count, inviterId: emailInviterId, invitationId: emailInvitationId } =
                 await this.invitations.atomicallyConsumeByEmail(
                   profile.email,
                   created.id,
@@ -627,13 +656,19 @@ export class AuthService {
                   message: 'L\'invitation pour cet email vient d\'être utilisée.',
                 });
               }
-              // Sync resolved inviterId back.
-              if (emailInviterId && !newUserInvitedById) {
+              // Sync invitedById/invitedViaId with the row we ACTUALLY consumed
+              // (the consume re-runs findFirst and may pick a different invite
+              // when 2+ target the same email) — sync unconditionally.
+              if (
+                emailInviterId &&
+                (emailInviterId !== newUserInvitedById || emailInvitationId !== newUserInvitedViaId)
+              ) {
                 await tx.user.update({
                   where: { id: created.id },
-                  data: { invitedById: emailInviterId },
+                  data: { invitedById: emailInviterId, invitedViaId: emailInvitationId },
                 });
                 newUserInvitedById = emailInviterId;
+                newUserInvitedViaId = emailInvitationId;
               }
             }
           }

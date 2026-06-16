@@ -478,10 +478,14 @@ export interface AdminSettings {
   inviteExpiryDays: number;
 }
 
+export type InvitationKind = "single_use" | "reusable";
+
 export interface RootInvite {
   code: string;
   url: string;
+  /** Always null in v2 (invitations no longer expire). */
   expiresAt: string | null;
+  kind?: InvitationKind;
 }
 
 export interface InviteMetrics {
@@ -511,10 +515,16 @@ export function patchAdminSettings(
 
 export function generateRootInvites(
   count: number,
-  expiresInDays?: number,
+  options?: { expiresInDays?: number; kind?: InvitationKind },
 ): Promise<RootInvite[]> {
-  const payload: { count: number; expiresInDays?: number } = { count };
-  if (expiresInDays !== undefined) payload.expiresInDays = expiresInDays;
+  const payload: {
+    count: number;
+    expiresInDays?: number;
+    kind?: InvitationKind;
+  } = { count };
+  if (options?.expiresInDays !== undefined)
+    payload.expiresInDays = options.expiresInDays;
+  if (options?.kind !== undefined) payload.kind = options.kind;
   return adminFetch<RootInvite[]>("/admin/invitations/root", {
     method: "POST",
     body: payload,
@@ -523,4 +533,57 @@ export function generateRootInvites(
 
 export function fetchInviteMetrics(signal?: AbortSignal): Promise<InviteMetrics> {
   return adminFetch<InviteMetrics>("/admin/invitations/metrics", { signal });
+}
+
+// ---------------------------------------------------------------------------
+// Referral network (v2)
+// ---------------------------------------------------------------------------
+
+/** User node in the referral tree returned by GET /admin/referrals. */
+export interface ReferralNode {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  /** Parrain direct — null for root / uninvited accounts. */
+  invitedBy: { id: string; displayName: string | null } | null;
+  /** Via which invitation kind the account registered (null for root accounts). */
+  via: { kind: "single_use" | "reusable" } | null;
+  /** Number of accounts directly sponsored by this user. */
+  inviteesCount: number;
+}
+
+export interface ReferralListResponse {
+  items: ReferralNode[];
+  nextCursor: string | null;
+}
+
+/**
+ * GET /admin/referrals?cursor=&limit=
+ * Paginated list of recent members with their parrain chain.
+ */
+export function listReferrals(
+  cursor?: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ReferralListResponse> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const qs = params.toString();
+  return adminFetch<ReferralListResponse>(
+    `/admin/referrals${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+/** PATCH /admin/users/:id/bulk-invite — grants or revokes the reusable-link right. */
+export function setBulkInviteRight(
+  userId: string,
+  allowed: boolean,
+): Promise<{ id: string; canBulkInvite: boolean }> {
+  return adminFetch<{ id: string; canBulkInvite: boolean }>(
+    `/admin/users/${userId}/bulk-invite`,
+    { method: "PATCH", body: { allowed } },
+  );
 }

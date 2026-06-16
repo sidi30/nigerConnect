@@ -391,6 +391,7 @@ export class AdminService {
     count: number,
     expiresInDays: number | undefined,
     _adminId: string,
+    kind: 'single_use' | 'reusable' = 'single_use',
   ): Promise<Array<{ code: string; url: string; expiresAt: Date | null }>> {
     const expiresAt = expiresInDays != null ? new Date(Date.now() + expiresInDays * 86_400_000) : null;
     const results: Array<{ code: string; url: string; expiresAt: Date | null }> = [];
@@ -401,7 +402,7 @@ export class AdminService {
         const code = generateBase62Code();
         try {
           const inv = await this.prisma.invitation.create({
-            data: { code, inviterId: null, expiresAt },
+            data: { code, inviterId: null, expiresAt, kind },
           });
           results.push({
             code: inv.code,
@@ -444,50 +445,43 @@ export class AdminService {
     kFactor: number;
     topInviters: Array<{ name: string; count: number }>;
   }> {
-    const now = new Date();
-
+    // v2 réseau : on compte les inscriptions RÉELLES via user.invitedById, pas
+    // invitation.status='accepted'. Un lien reusable reste 'pending' à vie tout
+    // en générant N filleuls — le compter par statut sous-estimerait fortement
+    // conversion et K-factor. La source de vérité du « filleul inscrit » est la
+    // ligne User (invitedById posé au register, lien OU code).
     const [sent, accepted, pending, expired, revoked] = await Promise.all([
       // Total invitations ever created by users (non-root)
       this.prisma.invitation.count({ where: { inviterId: { not: null } } }),
-      this.prisma.invitation.count({ where: { status: 'accepted' } }),
-      // Active (non-expired) pending
-      this.prisma.invitation.count({
-        where: {
-          status: 'pending',
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-        },
-      }),
-      // Expired: pending past expiry OR status=expired (cron marks them)
-      this.prisma.invitation.count({
-        where: {
-          OR: [
-            { status: 'expired' },
-            { status: 'pending', expiresAt: { lte: now } },
-          ],
-        },
-      }),
+      // Filleuls réellement inscrits (single_use accepté + signups via lien reusable)
+      this.prisma.user.count({ where: { invitedById: { not: null } } }),
+      // Invitations encore actives (pending = single_use non consommé + liens reusable)
+      this.prisma.invitation.count({ where: { status: 'pending', inviterId: { not: null } } }),
+      // Expirées (legacy v1 — plus aucune nouvelle invitation n'expire en v2)
+      this.prisma.invitation.count({ where: { status: 'expired' } }),
       this.prisma.invitation.count({ where: { status: 'revoked' } }),
     ]);
 
-    // K-factor: accepted / distinct non-null inviters
+    // K-factor: filleuls inscrits / parrains distincts
     const distinctInvitersRaw = await this.prisma.$queryRaw<[{ cnt: bigint }]>`
-      SELECT COUNT(DISTINCT inviter_id)::bigint AS cnt
-      FROM invitations
-      WHERE status = 'accepted' AND inviter_id IS NOT NULL
+      SELECT COUNT(DISTINCT invited_by_id)::bigint AS cnt
+      FROM users
+      WHERE invited_by_id IS NOT NULL
     `;
     const distinctInviters = Number(distinctInvitersRaw[0]?.cnt ?? 0);
     const kFactor = distinctInviters > 0 ? Math.round((accepted / distinctInviters) * 100) / 100 : 0;
 
     const conversionRate = sent > 0 ? Math.round((accepted / sent) * 10_000) / 100 : 0;
 
-    // Top 10 inviters (by accepted invitations)
+    // Top 10 parrains (par nombre de filleuls inscrits). Pas de fallback email
+    // (PII inutile dans un payload analytics) → 'Inconnu' si pas de nom.
     const topRaw = await this.prisma.$queryRaw<Array<{ name: string | null; cnt: bigint }>>`
-      SELECT COALESCE(u.display_name, u.first_name, u.email) AS name,
+      SELECT COALESCE(p.display_name, p.first_name) AS name,
              COUNT(*)::bigint AS cnt
-      FROM invitations i
-      JOIN users u ON u.id = i.inviter_id
-      WHERE i.status = 'accepted' AND i.inviter_id IS NOT NULL
-      GROUP BY i.inviter_id, u.display_name, u.first_name, u.email
+      FROM users u
+      JOIN users p ON p.id = u.invited_by_id
+      WHERE u.invited_by_id IS NOT NULL
+      GROUP BY u.invited_by_id, p.display_name, p.first_name
       ORDER BY cnt DESC
       LIMIT 10
     `;
@@ -501,6 +495,98 @@ export class AdminService {
       conversionRate,
       kFactor,
       topInviters: topRaw.map((r) => ({ name: r.name ?? 'Inconnu', count: Number(r.cnt) })),
+    };
+  }
+
+  /**
+   * PATCH /admin/users/:id/bulk-invite
+   * Accorde ou retire le droit de générer des liens d'invitation réutilisables
+   * (lien de masse). Admin-only. Idempotent.
+   *
+   * Sécurité : retirer le droit ne suffit pas — un lien `reusable` déjà émis reste
+   * 'pending' (= actif) et continue d'onboarder des comptes indéfiniment, ce qui
+   * laisse le vecteur d'abus ouvert alors même qu'on vient de retirer le droit.
+   * On révoque donc atomiquement les liens reusable encore actifs de l'utilisateur
+   * en même temps que le retrait (les `single_use` ne sont pas touchés : ce ne sont
+   * pas des liens de masse).
+   */
+  async setBulkInviteRight(
+    userId: string,
+    allowed: boolean,
+  ): Promise<{ id: string; canBulkInvite: boolean }> {
+    if (allowed) {
+      const user = await this.prisma.user.update({
+        where: { id: userId },
+        data: { canBulkInvite: allowed },
+        select: { id: true, canBulkInvite: true },
+      });
+      return user;
+    }
+
+    // Retrait du droit : flip + révocation des liens reusable actifs dans une
+    // transaction (le retrait et la coupure du vecteur d'abus sont indivisibles).
+    const [user] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { canBulkInvite: false },
+        select: { id: true, canBulkInvite: true },
+      }),
+      this.prisma.invitation.updateMany({
+        where: { inviterId: userId, kind: 'reusable', status: 'pending' },
+        data: { status: 'revoked', revokedAt: new Date(), targetEmail: null },
+      }),
+    ]);
+    return user;
+  }
+
+  /**
+   * GET /admin/referrals
+   * Arbre de parrainage (vue plate paginée) : chaque membre récemment inscrit
+   * avec SON parrain et le type d'invitation utilisé. Curseur sur user.id.
+   */
+  async listReferrals(
+    limit: number,
+    cursor?: string,
+  ): Promise<{
+    items: Array<{
+      id: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      createdAt: Date;
+      invitedBy: { id: string; displayName: string | null } | null;
+      via: { kind: string } | null;
+      inviteesCount: number;
+    }>;
+    nextCursor: string | null;
+  }> {
+    const rows = await this.prisma.user.findMany({
+      where: { invitedById: { not: null } },
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        displayName: true,
+        avatarUrl: true,
+        createdAt: true,
+        invitedBy: { select: { id: true, displayName: true } },
+        invitedVia: { select: { kind: true } },
+        _count: { select: { invitees: true } },
+      },
+    });
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      items: page.map((u) => ({
+        id: u.id,
+        displayName: u.displayName,
+        avatarUrl: u.avatarUrl,
+        createdAt: u.createdAt,
+        invitedBy: u.invitedBy ? { id: u.invitedBy.id, displayName: u.invitedBy.displayName } : null,
+        via: u.invitedVia ? { kind: u.invitedVia.kind } : null,
+        inviteesCount: u._count.invitees,
+      })),
+      nextCursor: hasMore ? page[page.length - 1]!.id : null,
     };
   }
 

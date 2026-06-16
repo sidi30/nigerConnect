@@ -7,7 +7,11 @@ export const createInvitationSchema = z
     // Optional: inviter provides the invitee's email → platform sends an
     // invitation email AND stores it for email-match registration.
     // Normalized to lowercase+trim before use. Not stored if absent.
+    // Ignored when kind=reusable (a shareable link has no single recipient).
     email: z.string().trim().toLowerCase().email().max(254).optional(),
+    // single_use (default) = email/code, one acceptance.
+    // reusable = shareable mass-invite link (granted right canBulkInvite only).
+    kind: z.enum(['single_use', 'reusable']).optional(),
   })
   .strict();
 export type CreateInvitationDto = z.infer<typeof createInvitationSchema>;

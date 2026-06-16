@@ -1,30 +1,36 @@
 import { api } from './api';
 
+/** Two kinds of invitation since the v2 "network" rework. */
+export type InvitationKind = 'single_use' | 'reusable';
+
 export interface InvitationCheckResult {
   valid: boolean;
   inviterName?: string;
+  kind?: InvitationKind;
 }
 
 export interface CreatedInvitation {
   id: string;
   code: string;
   url: string;
-  expiresAt: string | null;
+  kind: InvitationKind;
 }
 
 export interface InvitationItem {
   id: string;
   code: string;
+  kind: InvitationKind;
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
-  acceptedBy?: { id: string; firstName: string; lastName: string; avatarUrl?: string | null } | null;
+  acceptedBy?: { id: string; displayName: string | null; avatarUrl?: string | null } | null;
+  /** For `reusable`: number of accounts that signed up via this link. `single_use`: 0 or 1. */
+  signupsCount: number;
+  url: string;
   createdAt: string;
-  expiresAt: string | null;
 }
 
 export interface InvitationsListResult {
-  quota: number;
-  used: number;
-  available: number;
+  /** Whether the current user is allowed to create mass (`reusable`) links. */
+  canBulkInvite: boolean;
   invites: InvitationItem[];
 }
 
@@ -43,8 +49,16 @@ export const invitationsApi = {
     return data;
   },
 
-  async create(email?: string): Promise<CreatedInvitation> {
-    const body = email ? { email } : undefined;
+  /**
+   * Create an invitation. `email` sends a single-use invite to that address;
+   * `kind: 'reusable'` mints a shareable mass link (requires the `canBulkInvite`
+   * right server-side). No quota, no expiration anymore.
+   */
+  async create(input?: { email?: string; kind?: InvitationKind }): Promise<CreatedInvitation> {
+    const body =
+      input && (input.email || input.kind)
+        ? { ...(input.email ? { email: input.email } : {}), ...(input.kind ? { kind: input.kind } : {}) }
+        : undefined;
     const { data } = await api.post<CreatedInvitation>('/invitations', body);
     return data;
   },

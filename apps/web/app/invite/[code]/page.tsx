@@ -15,6 +15,8 @@ const ANDROID_STORE_URL =
 interface CheckResult {
   valid: boolean;
   inviterName?: string;
+  /** v2: present when the invitation is a reusable link. */
+  kind?: "single_use" | "reusable";
 }
 
 async function checkCode(code: string): Promise<CheckResult> {
@@ -70,7 +72,7 @@ export default async function InvitePage({
           </h1>
           <p className="text-[#5A4634] mb-6 leading-relaxed">
             Ce lien d&apos;invitation n&apos;est plus valide. Il a peut-être
-            expiré ou déjà été utilisé.
+            été révoqué ou le code est incorrect.
           </p>
           <p className="text-sm text-[#8A6B4D] mb-6">
             Demande un nouveau lien à la personne qui souhaitait t&apos;inviter.
@@ -89,6 +91,9 @@ export default async function InvitePage({
   const inviterPhrase = result.inviterName
     ? `${result.inviterName} t'invite sur NigerConnect`
     : "Tu es invité(e) sur NigerConnect";
+
+  // For reusable links: clarify that the link can be used by multiple people.
+  const isReusable = result.kind === "reusable";
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-[#FDFBF7] px-6 py-12">
@@ -117,6 +122,11 @@ export default async function InvitePage({
           <h1 className="text-2xl font-bold text-[#1A0F0A] mb-2">
             {inviterPhrase}
           </h1>
+          {isReusable ? (
+            <p className="text-xs font-semibold text-[#1D4ED8] bg-[#E6EDFB] rounded-full px-3 py-1 inline-block mb-3">
+              Lien d&apos;invitation — partage-le librement
+            </p>
+          ) : null}
           <p className="text-[#5A4634] leading-relaxed mb-6">
             Le réseau social de la diaspora nigérienne — se retrouver,
             s&apos;entraider, rester connectés.

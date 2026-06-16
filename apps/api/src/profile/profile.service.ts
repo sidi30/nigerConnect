@@ -17,6 +17,16 @@ import type { CreatePhotoDto, SearchDto } from './dto/photo.dto';
 
 const CACHE_TTL_SECONDS = 300;
 
+/**
+ * Réseau de parrainage exposé publiquement sur le profil (décision proprio v2) :
+ * qui a invité ce membre + combien de filleuls il a. invitedBy d'un parrain
+ * `private` est masqué (→ null) pour ne pas fuiter un profil privé via le lien.
+ */
+export interface ProfileNetwork {
+  invitedBy: { id: string; displayName: string | null; avatarUrl: string | null } | null;
+  inviteesCount: number;
+}
+
 @Injectable()
 export class ProfileService {
   constructor(
@@ -42,13 +52,36 @@ export class ProfileService {
     return { email: user.email };
   }
 
-  async getMe(userId: string): Promise<SelfUser> {
+  async getMe(userId: string): Promise<SelfUser & ProfileNetwork> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: USER_SELF_SELECT,
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return { ...user, ...(await this.loadNetwork(userId)) };
+  }
+
+  /**
+   * Charge l'info réseau (parrain + nb de filleuls). Calculé à part du cache
+   * profil public pour rester toujours frais et ne pas altérer la sérialisation.
+   */
+  private async loadNetwork(userId: string): Promise<ProfileNetwork> {
+    // Single read: the parrain (invitedBy) + the filleul count (_count.invitees).
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        invitedBy: {
+          select: { id: true, displayName: true, avatarUrl: true, privacyLevel: true },
+        },
+        _count: { select: { invitees: true } },
+      },
+    });
+    const inv = row?.invitedBy;
+    const invitedBy =
+      inv && inv.privacyLevel !== 'private'
+        ? { id: inv.id, displayName: inv.displayName, avatarUrl: inv.avatarUrl }
+        : null;
+    return { invitedBy, inviteesCount: row?._count?.invitees ?? 0 };
   }
 
   async updateMe(userId: string, dto: UpdateProfileDto): Promise<SelfUser> {
@@ -136,7 +169,10 @@ export class ProfileService {
    * Cached in Redis under a public-shape-only key so we never replicate secrets
    * outside Postgres.
    */
-  async getById(viewerId: string, targetId: string): Promise<SelfUser | PublicUser> {
+  async getById(
+    viewerId: string,
+    targetId: string,
+  ): Promise<(SelfUser | PublicUser) & ProfileNetwork> {
     if (viewerId === targetId) return this.getMe(targetId);
     if (await this.blocks.isBlocked(viewerId, targetId)) throw new NotFoundException('User not found');
 
@@ -167,7 +203,7 @@ export class ProfileService {
     // listFriendsOf below) — remain restricted; what we expose here is the
     // same set of fields already visible in the search/map response, so no
     // new information leaks.
-    return target;
+    return { ...target, ...(await this.loadNetwork(targetId)) };
   }
 
   /**

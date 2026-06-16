@@ -1,12 +1,14 @@
 "use client";
 
-// "Invitations & Paramètres" — admin console section for the referral system.
+// "Invitations & Paramètres" — admin console section for the referral system v2.
 //
 // Three panels:
-//   1. Mode toggle (open / invite_only / closed) + quota/expiry settings
-//      → PATCH /admin/settings (admin-only; mods see the panel read-only via
-//        GET /admin/settings, but the controls are disabled for non-admins)
+//   1. Mode toggle (open / invite_only / closed)
+//      → PATCH /admin/settings (admin-only; mods see the panel read-only)
+//      Note: defaultInviteQuota / inviteExpiryDays are deprecated in v2 and no
+//      longer displayed (invitations are unlimited and never expire).
 //   2. Root-invite generator → POST /admin/invitations/root
+//      Supports kind: 'single_use' | 'reusable' (v2).
 //   3. Invite funnel metrics  → GET /admin/invitations/metrics
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +17,7 @@ import {
   CheckCircle2,
   ClipboardCopy,
   Link2,
+  RefreshCw,
   Settings2,
   TrendingUp,
   Users,
@@ -23,6 +26,7 @@ import {
   adminFetch,
   AdminApiError,
   type AdminRole,
+  type InvitationKind,
 } from "@/lib/adminApi";
 import {
   Card,
@@ -38,14 +42,16 @@ import { BarList } from "./charts";
 import { Funnel } from "./Funnel";
 
 // ---------------------------------------------------------------------------
-// API types
+// API types (local — mirrors adminApi types without re-exporting)
 // ---------------------------------------------------------------------------
 
 type RegistrationMode = "open" | "invite_only" | "closed";
 
 interface AdminSettings {
   registrationMode: RegistrationMode;
+  /** Deprecated (v2) — kept for API compat, not displayed. */
   defaultInviteQuota: number;
+  /** Deprecated (v2) — kept for API compat, not displayed. */
   inviteExpiryDays: number;
 }
 
@@ -53,6 +59,7 @@ interface RootInvite {
   code: string;
   url: string;
   expiresAt: string | null;
+  kind?: InvitationKind;
 }
 
 interface InviteMetrics {
@@ -74,18 +81,22 @@ function fetchSettings(signal?: AbortSignal): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { signal });
 }
 
-function patchSettings(body: Partial<{
-  registrationMode: RegistrationMode;
-  defaultInviteQuota: number;
-  inviteExpiryDays: number;
-}>): Promise<AdminSettings> {
+function patchSettings(
+  body: Partial<{ registrationMode: RegistrationMode }>,
+): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });
 }
 
-function generateRootInvites(count: number, expiresInDays?: number): Promise<RootInvite[]> {
-  const body: { count: number; expiresInDays?: number } = { count };
-  if (expiresInDays !== undefined) body.expiresInDays = expiresInDays;
-  return adminFetch<RootInvite[]>("/admin/invitations/root", { method: "POST", body });
+function generateRootInvites(
+  count: number,
+  options?: { kind?: InvitationKind },
+): Promise<RootInvite[]> {
+  const body: { count: number; kind?: InvitationKind } = { count };
+  if (options?.kind !== undefined) body.kind = options.kind;
+  return adminFetch<RootInvite[]>("/admin/invitations/root", {
+    method: "POST",
+    body,
+  });
 }
 
 function fetchInviteMetrics(signal?: AbortSignal): Promise<InviteMetrics> {
@@ -110,7 +121,9 @@ function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unknown[]) {
         .then((res) => setData(res))
         .catch((e: unknown) => {
           if (e instanceof DOMException && e.name === "AbortError") return;
-          setError(e instanceof AdminApiError ? e.message : "Erreur de chargement.");
+          setError(
+            e instanceof AdminApiError ? e.message : "Erreur de chargement.",
+          );
         })
         .finally(() => setLoading(false));
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,7 +144,11 @@ function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unknown[]) {
 // Mode toggle
 // ---------------------------------------------------------------------------
 
-const MODE_OPTIONS: { value: RegistrationMode; label: string; tone: "green" | "amber" | "red" }[] = [
+const MODE_OPTIONS: {
+  value: RegistrationMode;
+  label: string;
+  tone: "green" | "amber" | "red";
+}[] = [
   { value: "open", label: "Ouvert", tone: "green" },
   { value: "invite_only", label: "Sur invitation", tone: "amber" },
   { value: "closed", label: "Fermé", tone: "red" },
@@ -179,88 +196,10 @@ function ModeToggle({
 }
 
 // ---------------------------------------------------------------------------
-// Integer input with save button
+// Settings panel (v2: mode only — quota & expiry deprecated)
 // ---------------------------------------------------------------------------
 
-function IntInput({
-  label,
-  value,
-  min,
-  max,
-  unit,
-  disabled,
-  onSave,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  unit?: string;
-  disabled: boolean;
-  onSave: (v: number) => void;
-}) {
-  const [local, setLocal] = useState(String(value));
-  const [saving, setSaving] = useState(false);
-
-  // Sync when prop changes (after a successful PATCH)
-  useEffect(() => {
-    setLocal(String(value));
-  }, [value]);
-
-  const dirty = parseInt(local, 10) !== value && !Number.isNaN(parseInt(local, 10));
-
-  async function save() {
-    const n = parseInt(local, 10);
-    if (Number.isNaN(n) || n < min || n > max) return;
-    setSaving(true);
-    try {
-      await onSave(n);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-semibold text-[#5A4634] uppercase tracking-wide">
-        {label}
-      </label>
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={min}
-          max={max}
-          value={local}
-          disabled={disabled || saving}
-          onChange={(e) => setLocal(e.target.value)}
-          aria-label={label}
-          className="w-24 rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 text-sm font-semibold text-[#1A0F0A] focus:outline-none focus:ring-2 focus:ring-[#E05206] disabled:opacity-50"
-        />
-        {unit ? <span className="text-sm text-[#8A6B4D]">{unit}</span> : null}
-        {dirty ? (
-          <button
-            type="button"
-            disabled={saving || disabled}
-            onClick={save}
-            className="px-3 py-1.5 rounded-lg bg-[#E05206] hover:bg-[#C8470A] text-white text-xs font-semibold transition-colors disabled:opacity-50"
-          >
-            {saving ? "Enregistrement…" : "Enregistrer"}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Settings panel
-// ---------------------------------------------------------------------------
-
-function SettingsPanel({
-  role,
-}: {
-  role: AdminRole | null;
-}) {
+function SettingsPanel({ role }: { role: AdminRole | null }) {
   const isAdmin = role === "admin";
   const settings = useAsync<AdminSettings>((s) => fetchSettings(s), []);
   const [saving, setSaving] = useState(false);
@@ -271,12 +210,10 @@ function SettingsPanel({
     setSaving(true);
     setSaved(false);
     try {
-      const updated = await patchSettings({ registrationMode: mode });
-      settings.data.registrationMode = updated.registrationMode;
+      await patchSettings({ registrationMode: mode });
       setSaved(true);
       settings.reload();
-    } catch (e) {
-      // Let the user see the optimistic toggle revert on reload
+    } catch {
       settings.reload();
     } finally {
       setSaving(false);
@@ -284,22 +221,12 @@ function SettingsPanel({
     }
   }
 
-  async function handleQuotaSave(n: number) {
-    await patchSettings({ defaultInviteQuota: n });
-    settings.reload();
-  }
-
-  async function handleExpirySave(n: number) {
-    await patchSettings({ inviteExpiryDays: n });
-    settings.reload();
-  }
-
   return (
     <Card className="p-5">
       <CardHeader
         icon={Settings2}
         title="Paramètres d'inscription"
-        subtitle="Mode global, quota d'invitations et expiration"
+        subtitle="Mode global d'accès à la plateforme"
         right={
           saved ? (
             <span className="flex items-center gap-1 text-xs font-semibold text-[#15803D]">
@@ -311,18 +238,11 @@ function SettingsPanel({
       />
 
       {settings.loading && !settings.data ? (
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-64" />
-          <div className="flex gap-6">
-            <Skeleton className="h-10 w-32" />
-            <Skeleton className="h-10 w-32" />
-          </div>
-        </div>
+        <Skeleton className="h-10 w-64" />
       ) : settings.error && !settings.data ? (
         <ErrorBanner message={settings.error} onRetry={settings.reload} />
       ) : settings.data ? (
-        <div className="space-y-6">
-          {/* Mode toggle */}
+        <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-xs font-semibold text-[#5A4634] uppercase tracking-wide">
               Mode d&apos;inscription
@@ -341,27 +261,11 @@ function SettingsPanel({
             </div>
           </div>
 
-          {/* Numeric settings */}
-          <div className="flex gap-6 flex-wrap">
-            <IntInput
-              label="Quota d'invitations par défaut"
-              value={settings.data.defaultInviteQuota}
-              min={1}
-              max={1000}
-              unit="invitations"
-              disabled={!isAdmin}
-              onSave={handleQuotaSave}
-            />
-            <IntInput
-              label="Expiration par défaut"
-              value={settings.data.inviteExpiryDays}
-              min={1}
-              max={365}
-              unit="jours"
-              disabled={!isAdmin}
-              onSave={handleExpirySave}
-            />
-          </div>
+          {/* v2 notice: quota and expiry removed */}
+          <p className="text-xs text-[#8A6B4D]">
+            En mode v2 les invitations sont illimitées et n&apos;expirent jamais.
+            Le gel est automatique dès 3 signalements d&apos;abus.
+          </p>
         </div>
       ) : null}
     </Card>
@@ -369,10 +273,18 @@ function SettingsPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Root invite generator
+// Root invite generator (v2 — kind selector added)
 // ---------------------------------------------------------------------------
 
-function CopyableLink({ code, url }: { code: string; url: string }) {
+function CopyableLink({
+  code,
+  url,
+  kind,
+}: {
+  code: string;
+  url: string;
+  kind?: InvitationKind;
+}) {
   const [copied, setCopied] = useState(false);
 
   function copy() {
@@ -387,6 +299,17 @@ function CopyableLink({ code, url }: { code: string; url: string }) {
       <span className="font-mono text-xs text-[#E05206] font-semibold w-28 shrink-0 truncate">
         {code}
       </span>
+      {kind ? (
+        <span className="shrink-0">
+          {kind === "reusable" ? (
+            <StatusChip tone="blue" icon={RefreshCw}>
+              réutilisable
+            </StatusChip>
+          ) : (
+            <StatusChip tone="neutral">usage unique</StatusChip>
+          )}
+        </span>
+      ) : null}
       <span className="flex-1 text-xs text-[#5A4634] truncate hidden sm:block">
         {url}
       </span>
@@ -398,7 +321,12 @@ function CopyableLink({ code, url }: { code: string; url: string }) {
         className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold border border-[#E8DFD3] text-[#5A4634] hover:bg-[#FDFBF7] transition-colors"
       >
         {copied ? (
-          <CheckCircle2 size={13} strokeWidth={2.5} className="text-[#15803D]" aria-hidden="true" />
+          <CheckCircle2
+            size={13}
+            strokeWidth={2.5}
+            className="text-[#15803D]"
+            aria-hidden="true"
+          />
         ) : (
           <ClipboardCopy size={13} strokeWidth={2} aria-hidden="true" />
         )}
@@ -411,7 +339,7 @@ function CopyableLink({ code, url }: { code: string; url: string }) {
 function RootInviteGenerator({ role }: { role: AdminRole | null }) {
   const isAdmin = role === "admin";
   const [count, setCount] = useState("10");
-  const [expiresInDays, setExpiresInDays] = useState("30");
+  const [kind, setKind] = useState<InvitationKind>("single_use");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<RootInvite[]>([]);
@@ -419,20 +347,24 @@ function RootInviteGenerator({ role }: { role: AdminRole | null }) {
 
   async function generate() {
     const n = parseInt(count, 10);
-    const exp = parseInt(expiresInDays, 10);
     if (Number.isNaN(n) || n < 1 || n > 200) return;
     setLoading(true);
     setError(null);
     try {
-      const invites = await generateRootInvites(
-        n,
-        !Number.isNaN(exp) && exp > 0 ? exp : undefined,
-      );
+      const invites = await generateRootInvites(n, { kind });
       setResults(invites);
-      // Scroll to results list
-      setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+      setTimeout(
+        () =>
+          listRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          }),
+        100,
+      );
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : "Erreur lors de la génération.");
+      setError(
+        e instanceof AdminApiError ? e.message : "Erreur lors de la génération.",
+      );
     } finally {
       setLoading(false);
     }
@@ -463,6 +395,7 @@ function RootInviteGenerator({ role }: { role: AdminRole | null }) {
       />
 
       <div className="flex flex-wrap gap-4 items-end mb-4">
+        {/* Count */}
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor="root-invite-count"
@@ -481,47 +414,70 @@ function RootInviteGenerator({ role }: { role: AdminRole | null }) {
             className="w-24 rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 text-sm font-semibold text-[#1A0F0A] focus:outline-none focus:ring-2 focus:ring-[#E05206] disabled:opacity-50"
           />
         </div>
+
+        {/* Kind selector */}
         <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="root-invite-expiry"
-            className="text-xs font-semibold text-[#5A4634] uppercase tracking-wide"
+          <span className="text-xs font-semibold text-[#5A4634] uppercase tracking-wide">
+            Type
+          </span>
+          <div
+            role="group"
+            aria-label="Type d'invitation"
+            className="inline-flex rounded-xl border border-[#E8DFD3] bg-[#FDFBF7] p-1 gap-1"
           >
-            Expiration
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              id="root-invite-expiry"
-              type="number"
-              min={1}
-              max={365}
-              value={expiresInDays}
-              onChange={(e) => setExpiresInDays(e.target.value)}
+            <button
+              type="button"
               disabled={loading}
-              className="w-20 rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 text-sm font-semibold text-[#1A0F0A] focus:outline-none focus:ring-2 focus:ring-[#E05206] disabled:opacity-50"
-            />
-            <span className="text-sm text-[#8A6B4D]">jours</span>
+              aria-pressed={kind === "single_use"}
+              onClick={() => setKind("single_use")}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E05206] disabled:opacity-50 ${
+                kind === "single_use"
+                  ? "bg-[#F1E9DD] text-[#5A4634] shadow-sm"
+                  : "text-[#5A4634] hover:text-[#1A0F0A] hover:bg-white"
+              }`}
+            >
+              Usage unique
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              aria-pressed={kind === "reusable"}
+              onClick={() => setKind("reusable")}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E05206] disabled:opacity-50 ${
+                kind === "reusable"
+                  ? "bg-[#E6EDFB] text-[#1D4ED8] shadow-sm"
+                  : "text-[#5A4634] hover:text-[#1A0F0A] hover:bg-white"
+              }`}
+            >
+              Réutilisable
+            </button>
           </div>
         </div>
-        <PrimaryButton onClick={generate} disabled={loading}>
+
+        <PrimaryButton onClick={() => void generate()} disabled={loading}>
           {loading ? "Génération…" : "Générer"}
         </PrimaryButton>
       </div>
 
-      {error ? <ErrorBanner message={error} onRetry={generate} /> : null}
+      {error ? <ErrorBanner message={error} onRetry={() => void generate()} /> : null}
 
       {results.length > 0 ? (
         <div ref={listRef}>
           <div className="flex items-center justify-between gap-3 mb-2">
             <p className="text-xs font-semibold text-[#5A4634]">
-              {results.length} lien{results.length > 1 ? "s" : ""} généré{results.length > 1 ? "s" : ""}
+              {results.length} lien{results.length > 1 ? "s" : ""} généré
+              {results.length > 1 ? "s" : ""}
             </p>
-            <GhostButton onClick={copyAll}>
-              Tout copier
-            </GhostButton>
+            <GhostButton onClick={copyAll}>Tout copier</GhostButton>
           </div>
           <ul className="max-h-64 overflow-y-auto">
             {results.map((r) => (
-              <CopyableLink key={r.code} code={r.code} url={r.url} />
+              <CopyableLink
+                key={r.code}
+                code={r.code}
+                url={r.url}
+                kind={r.kind}
+              />
             ))}
           </ul>
         </div>
@@ -560,7 +516,7 @@ function MetricsPanel() {
             <KpiChip label="Envoyées" value={metrics.data.sent} tone="neutral" />
             <KpiChip label="Acceptées" value={metrics.data.accepted} tone="green" />
             <KpiChip label="En attente" value={metrics.data.pending} tone="amber" />
-            <KpiChip label="Expirées" value={metrics.data.expired} tone="red" />
+            <KpiChip label="Révoquées" value={metrics.data.revoked} tone="red" />
           </div>
 
           {/* Conversion + K-factor */}
@@ -568,13 +524,18 @@ function MetricsPanel() {
             <div className="rounded-xl border border-[#E8DFD3] bg-[#FDFBF7] px-4 py-3 min-w-[120px]">
               <p className="text-xs text-[#8A6B4D] mb-0.5">Taux de conversion</p>
               <p className="text-2xl font-bold text-[#E05206] tabular-nums">
-                {metrics.data.conversionRate.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %
+                {metrics.data.conversionRate.toLocaleString("fr-FR", {
+                  maximumFractionDigits: 1,
+                })}{" "}
+                %
               </p>
             </div>
             <div className="rounded-xl border border-[#E8DFD3] bg-[#FDFBF7] px-4 py-3 min-w-[120px]">
               <p className="text-xs text-[#8A6B4D] mb-0.5">K-factor</p>
               <p className="text-2xl font-bold text-[#1D4ED8] tabular-nums">
-                {metrics.data.kFactor.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}
+                {metrics.data.kFactor.toLocaleString("fr-FR", {
+                  maximumFractionDigits: 2,
+                })}
               </p>
               <p className="text-xs text-[#8A6B4D] mt-0.5">
                 {metrics.data.kFactor >= 1 ? "Croissance virale" : "< 1 (non viral)"}
@@ -664,7 +625,7 @@ export default function InvitationsSection({ role }: { role: AdminRole | null })
             Parrainage & Invitations
           </h2>
           <p className="text-xs text-[#8A6B4D]">
-            Pilotage du mode d&apos;inscription, génération de codes racines et métriques
+            Mode d&apos;inscription, génération de codes racines et métriques
           </p>
         </div>
       </div>

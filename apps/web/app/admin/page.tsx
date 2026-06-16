@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, LifeBuoy, Mail, ShieldCheck, Users } from "lucide-react";
+import {
+  LayoutDashboard,
+  LifeBuoy,
+  Mail,
+  Network,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import {
   clearSession,
   ROLE_KEY,
@@ -13,19 +20,28 @@ import IdentitySection from "@/components/admin/IdentitySection";
 import ReportsSection from "@/components/admin/ReportsSection";
 import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
+import ReferralsSection from "@/components/admin/ReferralsSection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
-type Tab = "overview" | "identity" | "reports" | "newsletter" | "invitations";
+type Tab =
+  | "overview"
+  | "identity"
+  | "reports"
+  | "newsletter"
+  | "invitations"
+  | "referrals";
 
 // Newsletter is admin-only on the API. A moderator hitting it would 403 →
 // adminFetch bounces to login, so the tab is gated to admins below.
-// Invitations section is visible to both admin and moderator (metrics are
-// readable by both; settings write is admin-only and handled in the component).
+// Invitations and Referrals sections are visible to both admin and moderator
+// (metrics are readable by both; settings write is admin-only and handled
+// inside the component).
 const NAV: NavEntry[] = [
   { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
   { id: "identity", label: "Identité", icon: ShieldCheck },
   { id: "reports", label: "Support & Modération", icon: LifeBuoy },
   { id: "invitations", label: "Invitations", icon: Users },
+  { id: "referrals", label: "Réseau", icon: Network },
 ];
 
 const ADMIN_ONLY_NAV: NavEntry[] = [
@@ -66,6 +82,7 @@ export default function AdminDashboardPage() {
         {tab === "reports" ? <ReportsSection /> : null}
         {tab === "newsletter" ? <NewsletterSection /> : null}
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
+        {tab === "referrals" ? <ReferralsSection /> : null}
       </main>
     </div>
   );

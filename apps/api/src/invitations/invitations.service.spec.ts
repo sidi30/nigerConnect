@@ -1,25 +1,25 @@
 /**
- * Unit tests — Parrainage & Invitations (§12)
+ * Unit tests — Parrainage & Invitations (v2 réseau)
  *
- * Tests:
- *  1. Quota math (mix pending/accepted/expired/revoked + refund on revocation/expiration)
- *  2. Email-verified gate → 403 if not verified
+ * Couvre :
+ *  1. listInvitations : nouveau contrat { canBulkInvite, invites[] } + signupsCount (plus de quota)
+ *  2. Email-verified gate → 403 si non vérifié
  *  3. Abuse-flag freeze (≥3 flags → 403)
- *  4. Atomic consumption (2 concurrent same code → 1 ok / 1 fail)
- *  5. SettingsService write-through invalidation
- *  6. Gating: 3 modes × 3 portes (email + Google + Apple, creation vs existing login)
- *  7. 'closed' blocks creation, allows existing-account login
- *  8. Email invite: targetEmail stored + mailer called
- *  9. Email-match registration: passes invite_only without code
- * 10. Code takes precedence over email-match
- * 11. targetEmail purged on accept / revoke / expiry
- * 12. atomicallyConsumeByEmail race (2 concurrent → 1 win)
- * 13. No-match email + no code → 403
+ *  4. Lien réutilisable : kind=reusable exige canBulkInvite (sinon 403), email ignoré
+ *  5. Revoke (pending → revoked, purge targetEmail, ownership)
+ *  6. checkInvitation (pending = valide pour single_use ET reusable ; plus d'expiry)
+ *  6b. resolveCodeForRegistration : 400 si single_use consommé, 403 si invalide, ok sinon (+ kind)
+ *  7. atomicallyConsumeSingleUse (course concurrente → 1 ok / 1 fail, purge email)
+ *  8. SettingsService write-through
+ *  9. Auth gating : 3 modes × 3 portes + lien reusable (pas de consume)
+ * 10. Email invite : targetEmail stocké + mailer appelé ; reusable ne stocke pas d'email
+ * 11. preValidateEmail → { inviterId, invitationId }
+ * 12. atomicallyConsumeByEmail → { count, inviterId, invitationId } + course
+ * 13. Expiry cron purge targetEmail (legacy)
  */
 
 import { BadRequestException, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
 import { InvitationsService } from './invitations.service';
-import { SettingsService } from '../common/settings/settings.service';
 import { AuthService } from '../auth/auth.service';
 import { PasswordService } from '../auth/password.service';
 
@@ -29,6 +29,7 @@ type InvitationRow = {
   id: string;
   code: string;
   inviterId: string | null;
+  kind: 'single_use' | 'reusable';
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
   expiresAt: Date | null;
   acceptedById: string | null;
@@ -41,8 +42,9 @@ function makeInvitationRow(overrides: Partial<InvitationRow> = {}): InvitationRo
     id: 'inv-1',
     code: 'TESTCODE10',
     inviterId: 'inviter-id',
+    kind: 'single_use',
     status: 'pending',
-    expiresAt: new Date(Date.now() + 86_400_000),
+    expiresAt: null,
     acceptedById: null,
     targetEmail: null,
     createdAt: new Date(),
@@ -53,16 +55,16 @@ function makeInvitationRow(overrides: Partial<InvitationRow> = {}): InvitationRo
 function makeUserRow(overrides: Partial<{
   id: string;
   emailVerified: boolean;
-  inviteQuota: number;
   inviteAbuseFlags: number;
+  canBulkInvite: boolean;
   displayName: string | null;
   firstName: string | null;
 }> = {}) {
   return {
     id: 'inviter-id',
     emailVerified: true,
-    inviteQuota: 3,
     inviteAbuseFlags: 0,
+    canBulkInvite: false,
     displayName: 'Test User',
     firstName: 'Test',
     ...overrides,
@@ -71,10 +73,9 @@ function makeUserRow(overrides: Partial<{
 
 function makePrisma(opts: {
   userRow?: ReturnType<typeof makeUserRow> | null;
-  countResult?: number;
   invitationRow?: InvitationRow | null;
   updateManyCount?: number;
-  inviterRow?: { displayName: string | null; firstName: string | null } | null;
+  findManyResult?: Array<Record<string, unknown>>;
   findFirstResult?: InvitationRow | null;
 } = {}) {
   const prisma: Record<string, unknown> = {
@@ -82,13 +83,13 @@ function makePrisma(opts: {
       findUniqueOrThrow: jest.fn(async () => opts.userRow ?? makeUserRow()),
     },
     invitation: {
-      count: jest.fn(async () => opts.countResult ?? 0),
       create: jest.fn(async (args: { data: Record<string, unknown> }) => ({
         id: 'inv-new',
         code: args.data['code'] ?? 'ABCDEFGHIJ',
         inviterId: args.data['inviterId'],
+        kind: args.data['kind'] ?? 'single_use',
         status: 'pending',
-        expiresAt: args.data['expiresAt'],
+        expiresAt: args.data['expiresAt'] ?? null,
         targetEmail: args.data['targetEmail'] ?? null,
         createdAt: new Date(),
         acceptedById: null,
@@ -96,22 +97,15 @@ function makePrisma(opts: {
         acceptedAt: null,
       })),
       findUnique: jest.fn(async () => opts.invitationRow ?? makeInvitationRow()),
-      findMany: jest.fn(async () => []),
+      findMany: jest.fn(async () => opts.findManyResult ?? []),
       findFirst: jest.fn(async () => opts.findFirstResult ?? null),
       update: jest.fn(async () => ({})),
       updateMany: jest.fn(async () => ({ count: opts.updateManyCount ?? 1 })),
     },
   };
-  // createInvitation now re-checks quota + creates inside a Serializable tx.
-  // The mock tx delegates to the same invitation.* jest mocks so existing
-  // assertions on count/create still hold.
-  prisma['$transaction'] = jest.fn(
-    async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma),
-  );
   return prisma as typeof prisma & {
     user: { findUniqueOrThrow: jest.Mock };
     invitation: {
-      count: jest.Mock;
       create: jest.Mock;
       findUnique: jest.Mock;
       findMany: jest.Mock;
@@ -119,17 +113,6 @@ function makePrisma(opts: {
       update: jest.Mock;
       updateMany: jest.Mock;
     };
-    $transaction: jest.Mock;
-  };
-}
-
-function makeSettingsSvc(mode: 'open' | 'invite_only' | 'closed' = 'open') {
-  return {
-    getRegistrationMode: jest.fn(async () => mode),
-    getSetting: jest.fn(async (_key: string, def: string) => def),
-    setSetting: jest.fn(async () => undefined),
-    getDefaultInviteQuota: jest.fn(async () => 3),
-    getInviteExpiryDays: jest.fn(async () => 30),
   };
 }
 
@@ -145,80 +128,47 @@ function makeMailer() {
   };
 }
 
-function makeSvc(
-  prisma: ReturnType<typeof makePrisma>,
-  settings = makeSettingsSvc(),
-  mailer = makeMailer(),
-) {
-  return new InvitationsService(
-    prisma as never,
-    settings as never,
-    makeNotifications() as never,
-    mailer as never,
-  );
+function makeSvc(prisma: ReturnType<typeof makePrisma>, mailer = makeMailer()) {
+  // v2 : InvitationsService(prisma, notifications, mailer) — plus de SettingsService.
+  return new InvitationsService(prisma as never, makeNotifications() as never, mailer as never);
 }
 
-// ─── 1. Quota math ────────────────────────────────────────────────────────────
+// ─── 1. listInvitations (nouveau contrat réseau) ────────────────────────────────
 
-describe('InvitationsService — quota math', () => {
-  it('uses 0 slots when no invitations exist', async () => {
-    const prisma = makePrisma({ countResult: 0 });
-    const svc = makeSvc(prisma);
-    const used = await svc.computeUsedSlots('inviter-id');
-    expect(used).toBe(0);
-  });
-
-  it('counts pending (non-expired) and accepted as used slots', async () => {
-    const prisma = makePrisma({ countResult: 2 });
-    const svc = makeSvc(prisma);
-    const used = await svc.computeUsedSlots('inviter-id');
-    expect(used).toBe(2);
-    // Verify the WHERE clause includes accepted + non-expired pending
-    expect(prisma.invitation.count).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          inviterId: 'inviter-id',
-          OR: expect.arrayContaining([
-            { status: 'accepted' },
-            expect.objectContaining({ status: 'pending' }),
-          ]),
-        }),
-      }),
-    );
-  });
-
-  it('does NOT count revoked invitations as used slots (slot refunded)', async () => {
-    // Revoked rows are excluded by the WHERE clause — count returns 0
-    const prisma = makePrisma({ countResult: 0 });
-    const svc = makeSvc(prisma);
-    const used = await svc.computeUsedSlots('inviter-id');
-    expect(used).toBe(0);
-  });
-
-  it('does NOT count expired invitations as used slots (slot refunded)', async () => {
-    // Expired-by-date rows are excluded (status=pending AND expiresAt<=now) — count returns 0
-    const prisma = makePrisma({ countResult: 0 });
-    const svc = makeSvc(prisma);
-    const used = await svc.computeUsedSlots('inviter-id');
-    expect(used).toBe(0);
-  });
-
-  it('returns available=max(0, quota-used) in listInvitations', async () => {
-    const prisma = makePrisma({ countResult: 2 });
-    prisma.user.findUniqueOrThrow = jest.fn(async () => makeUserRow({ inviteQuota: 3 }));
+describe('InvitationsService — listInvitations', () => {
+  it('returns { canBulkInvite, invites[] } (no quota fields)', async () => {
+    const prisma = makePrisma({
+      userRow: makeUserRow({ canBulkInvite: true }),
+      findManyResult: [
+        {
+          id: 'inv-1',
+          code: 'CODE1',
+          kind: 'reusable',
+          status: 'pending',
+          acceptedBy: null,
+          _count: { signups: 7 },
+          createdAt: new Date(),
+        },
+      ],
+    });
     const svc = makeSvc(prisma);
     const result = await svc.listInvitations('inviter-id');
-    expect(result.quota).toBe(3);
-    expect(result.used).toBe(2);
-    expect(result.available).toBe(1);
+    expect(result.canBulkInvite).toBe(true);
+    expect(result).not.toHaveProperty('quota');
+    expect(result).not.toHaveProperty('used');
+    expect(result.invites[0]).toMatchObject({
+      kind: 'reusable',
+      signupsCount: 7,
+      url: 'https://nigerconnect.app/invite/CODE1',
+    });
   });
 
-  it('available is 0 when used >= quota (never negative)', async () => {
-    const prisma = makePrisma({ countResult: 5 });
-    prisma.user.findUniqueOrThrow = jest.fn(async () => makeUserRow({ inviteQuota: 3 }));
+  it('reports canBulkInvite=false for a regular user', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ canBulkInvite: false }), findManyResult: [] });
     const svc = makeSvc(prisma);
     const result = await svc.listInvitations('inviter-id');
-    expect(result.available).toBe(0);
+    expect(result.canBulkInvite).toBe(false);
+    expect(result.invites).toEqual([]);
   });
 });
 
@@ -234,15 +184,13 @@ describe('InvitationsService — email-verified gate', () => {
     });
   });
 
-  it('allows invitation creation when email is verified', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-      countResult: 0,
-    });
+  it('allows invitation creation when email is verified (no quota anymore)', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true }) });
     const svc = makeSvc(prisma);
     const result = await svc.createInvitation('inviter-id');
     expect(result).toHaveProperty('code');
     expect(result).toHaveProperty('url');
+    expect(result.kind).toBe('single_use');
   });
 });
 
@@ -258,63 +206,56 @@ describe('InvitationsService — abuse-flag freeze', () => {
     });
   });
 
-  it('throws when inviteAbuseFlags > 3 (well above threshold)', async () => {
-    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, inviteAbuseFlags: 10 }) });
-    const svc = makeSvc(prisma);
-    await expect(svc.createInvitation('inviter-id')).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
   it('allows creation when inviteAbuseFlags = 2 (below threshold)', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteAbuseFlags: 2, inviteQuota: 3 }),
-      countResult: 0,
-    });
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, inviteAbuseFlags: 2 }) });
     const svc = makeSvc(prisma);
     const result = await svc.createInvitation('inviter-id');
     expect(result).toHaveProperty('code');
   });
 });
 
-// ─── 4. Quota exceeded ───────────────────────────────────────────────────────
+// ─── 4. Lien réutilisable (droit canBulkInvite) ──────────────────────────────────
 
-describe('InvitationsService — quota exceeded', () => {
-  it('throws ForbiddenException (INVITE_QUOTA_EXCEEDED) when quota is full', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-      countResult: 3, // used = quota
-    });
+describe('InvitationsService — reusable link (mass invite)', () => {
+  it('creates a reusable link when the inviter has canBulkInvite', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, canBulkInvite: true }) });
     const svc = makeSvc(prisma);
-    await expect(svc.createInvitation('inviter-id')).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.createInvitation('inviter-id')).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'INVITE_QUOTA_EXCEEDED' }),
-    });
+    const result = await svc.createInvitation('inviter-id', { kind: 'reusable' });
+    expect(result.kind).toBe('reusable');
+    expect(prisma.invitation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ kind: 'reusable' }) }),
+    );
   });
 
-  // ── Regression: TOCTOU quota race (point 4) ────────────────────────────────
-  it('rejects creation when the in-transaction re-count hits quota (concurrent insert)', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-    });
-    prisma.invitation.count
-      .mockResolvedValueOnce(2) // step-4 pre-check
-      .mockResolvedValueOnce(3); // in-transaction authoritative re-count
+  it('throws 403 BULK_INVITE_NOT_ALLOWED when reusable requested without the right', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, canBulkInvite: false }) });
     const svc = makeSvc(prisma);
-    await expect(svc.createInvitation('inviter-id')).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'INVITE_QUOTA_EXCEEDED' }),
+    await expect(svc.createInvitation('inviter-id', { kind: 'reusable' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(svc.createInvitation('inviter-id', { kind: 'reusable' })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'BULK_INVITE_NOT_ALLOWED' }),
     });
     expect(prisma.invitation.create).not.toHaveBeenCalled();
   });
 
-  it('creates inside the Serializable transaction on the happy path', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-      countResult: 1,
-    });
+  it('ignores the email field for a reusable link (no targetEmail stored)', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, canBulkInvite: true }) });
+    const mailer = makeMailer();
+    const svc = makeSvc(prisma, mailer);
+    await svc.createInvitation('inviter-id', { kind: 'reusable', email: 'bob@example.com' });
+    expect(prisma.invitation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ targetEmail: null }) }),
+    );
+    await Promise.resolve();
+    expect(mailer.sendInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it('defaults to single_use when kind omitted', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, canBulkInvite: false }) });
     const svc = makeSvc(prisma);
     const result = await svc.createInvitation('inviter-id');
-    expect(result).toHaveProperty('code');
-    expect(prisma.$transaction).toHaveBeenCalled();
-    expect(prisma.invitation.create).toHaveBeenCalled();
+    expect(result.kind).toBe('single_use');
   });
 });
 
@@ -340,16 +281,12 @@ describe('InvitationsService — revoke', () => {
     const svc = makeSvc(prisma);
     await svc.revokeInvitation('inviter-id', 'inv-1');
     expect(prisma.invitation.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ targetEmail: null }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ targetEmail: null }) }),
     );
   });
 
   it('throws NotFoundException when invitation does not belong to caller', async () => {
-    const prisma = makePrisma({
-      invitationRow: makeInvitationRow({ inviterId: 'someone-else' }),
-    });
+    const prisma = makePrisma({ invitationRow: makeInvitationRow({ inviterId: 'someone-else' }) });
     const svc = makeSvc(prisma);
     await expect(svc.revokeInvitation('inviter-id', 'inv-1')).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -363,9 +300,7 @@ describe('InvitationsService — revoke', () => {
   });
 
   it('throws ConflictException (INVITATION_NOT_REVOCABLE) for an accepted invitation', async () => {
-    const prisma = makePrisma({
-      invitationRow: makeInvitationRow({ status: 'accepted', inviterId: 'inviter-id' }),
-    });
+    const prisma = makePrisma({ invitationRow: makeInvitationRow({ status: 'accepted', inviterId: 'inviter-id' }) });
     const svc = makeSvc(prisma);
     await expect(svc.revokeInvitation('inviter-id', 'inv-1')).rejects.toBeInstanceOf(ConflictException);
   });
@@ -374,29 +309,29 @@ describe('InvitationsService — revoke', () => {
 // ─── 6. checkInvitation (public endpoint) ────────────────────────────────────
 
 describe('InvitationsService — checkInvitation', () => {
-  it('returns { valid: true, inviterName } for a valid pending code', async () => {
+  it('returns { valid:true, kind, inviterName } for a valid pending single_use code', async () => {
     const prisma = makePrisma();
     prisma.invitation.findUnique = jest.fn(async () => ({
-      ...makeInvitationRow({ status: 'pending' }),
+      ...makeInvitationRow({ status: 'pending', kind: 'single_use' }),
       inviter: { displayName: 'Aïcha Maïga', firstName: 'Aïcha' },
     }));
     const svc = makeSvc(prisma);
     const result = await svc.checkInvitation('TESTCODE10');
-    expect(result).toEqual({ valid: true, inviterName: 'Aïcha Maïga' });
+    expect(result).toEqual({ valid: true, kind: 'single_use', inviterName: 'Aïcha Maïga' });
   });
 
-  it('returns { valid: false } for an expired code', async () => {
+  it('returns { valid:true, kind:"reusable" } for an active reusable link', async () => {
     const prisma = makePrisma();
     prisma.invitation.findUnique = jest.fn(async () => ({
-      ...makeInvitationRow({ status: 'pending', expiresAt: new Date(Date.now() - 1000) }),
-      inviter: { displayName: 'Aïcha', firstName: null },
+      ...makeInvitationRow({ status: 'pending', kind: 'reusable' }),
+      inviter: { displayName: 'Moussa', firstName: 'Moussa' },
     }));
     const svc = makeSvc(prisma);
-    const result = await svc.checkInvitation('TESTCODE10');
-    expect(result).toEqual({ valid: false });
+    const result = await svc.checkInvitation('LINKCODE10');
+    expect(result).toMatchObject({ valid: true, kind: 'reusable' });
   });
 
-  it('returns { valid: false } for an accepted code', async () => {
+  it('returns { valid:false } for an accepted single_use code', async () => {
     const prisma = makePrisma();
     prisma.invitation.findUnique = jest.fn(async () => ({
       ...makeInvitationRow({ status: 'accepted' }),
@@ -407,26 +342,35 @@ describe('InvitationsService — checkInvitation', () => {
     expect(result).toEqual({ valid: false });
   });
 
-  it('returns { valid: false } for a non-existent code', async () => {
+  it('returns { valid:false } for a revoked link', async () => {
+    const prisma = makePrisma();
+    prisma.invitation.findUnique = jest.fn(async () => ({
+      ...makeInvitationRow({ status: 'revoked', kind: 'reusable' }),
+      inviter: null,
+    }));
+    const svc = makeSvc(prisma);
+    expect(await svc.checkInvitation('REVOKED')).toEqual({ valid: false });
+  });
+
+  it('returns { valid:false } for a non-existent code', async () => {
     const prisma = makePrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prisma.invitation.findUnique = jest.fn(async () => null) as any;
     const svc = makeSvc(prisma);
-    const result = await svc.checkInvitation('NONEXIST');
-    expect(result).toEqual({ valid: false });
+    expect(await svc.checkInvitation('NONEXIST')).toEqual({ valid: false });
   });
 });
 
-// ─── 6b. preValidateCode HTTP-status discrimination (BUG-001) ────────────────
+// ─── 6b. resolveCodeForRegistration HTTP-status discrimination ────────────────
 
-describe('InvitationsService — preValidateCode status codes', () => {
-  it('throws 400 INVITE_CODE_CONSUMED for an already-accepted code (spec §4.1.6.b)', async () => {
+describe('InvitationsService — resolveCodeForRegistration', () => {
+  it('throws 400 INVITE_CODE_CONSUMED for an already-accepted single_use code', async () => {
     const prisma = makePrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prisma.invitation.findUnique = jest.fn(async () => makeInvitationRow({ status: 'accepted' })) as any;
     const svc = makeSvc(prisma);
-    await expect(svc.preValidateCode('USEDCODE10')).rejects.toBeInstanceOf(BadRequestException);
-    await expect(svc.preValidateCode('USEDCODE10')).rejects.toMatchObject({
+    await expect(svc.resolveCodeForRegistration('USEDCODE10')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.resolveCodeForRegistration('USEDCODE10')).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'INVITE_CODE_CONSUMED' }),
     });
   });
@@ -436,75 +380,96 @@ describe('InvitationsService — preValidateCode status codes', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prisma.invitation.findUnique = jest.fn(async () => null) as any;
     const svc = makeSvc(prisma);
-    await expect(svc.preValidateCode('NONEXIST10')).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(svc.preValidateCode('NONEXIST10')).rejects.toMatchObject({
+    await expect(svc.resolveCodeForRegistration('NONEXIST10')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.resolveCodeForRegistration('NONEXIST10')).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'INVALID_INVITE_CODE' }),
     });
   });
 
-  it('throws 403 for a revoked code (not 400 — only accepted is "consumed")', async () => {
+  it('throws 403 for a revoked code (not 400)', async () => {
     const prisma = makePrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     prisma.invitation.findUnique = jest.fn(async () => makeInvitationRow({ status: 'revoked' })) as any;
     const svc = makeSvc(prisma);
-    await expect(svc.preValidateCode('REVOKED100')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.resolveCodeForRegistration('REVOKED100')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('returns inviterId for a valid pending code', async () => {
+  it('returns { inviterId, invitationId, kind } for a valid pending single_use code', async () => {
     const prisma = makePrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prisma.invitation.findUnique = jest.fn(async () => makeInvitationRow({ status: 'pending', inviterId: 'inv-9' })) as any;
+    prisma.invitation.findUnique = jest.fn(async () =>
+      makeInvitationRow({ status: 'pending', inviterId: 'inv-9', id: 'inv-1', kind: 'single_use' }),
+    ) as any;
     const svc = makeSvc(prisma);
-    await expect(svc.preValidateCode('PENDING100')).resolves.toEqual({ inviterId: 'inv-9' });
+    await expect(svc.resolveCodeForRegistration('PENDING100')).resolves.toEqual({
+      inviterId: 'inv-9',
+      invitationId: 'inv-1',
+      kind: 'single_use',
+    });
+  });
+
+  it('accepts a reusable link (always pending) and returns kind=reusable', async () => {
+    const prisma = makePrisma();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prisma.invitation.findUnique = jest.fn(async () =>
+      makeInvitationRow({ status: 'pending', inviterId: 'inv-9', id: 'link-1', kind: 'reusable' }),
+    ) as any;
+    const svc = makeSvc(prisma);
+    await expect(svc.resolveCodeForRegistration('LINKCODE10')).resolves.toEqual({
+      inviterId: 'inv-9',
+      invitationId: 'link-1',
+      kind: 'reusable',
+    });
   });
 });
 
-// ─── 7. Atomic consumption (§4.1.6.b) ───────────────────────────────────────
+// ─── 7. atomicallyConsumeSingleUse ───────────────────────────────────────────
 
-describe('InvitationsService — atomicallyConsumeCode', () => {
+describe('InvitationsService — atomicallyConsumeSingleUse', () => {
   it('returns 1 when the code is consumed successfully', async () => {
     const prisma = makePrisma({ updateManyCount: 1 });
     const svc = makeSvc(prisma);
-    const count = await svc.atomicallyConsumeCode('TESTCODE10', 'new-user-id', prisma as never);
+    const count = await svc.atomicallyConsumeSingleUse('TESTCODE10', 'new-user-id', prisma as never);
     expect(count).toBe(1);
+  });
+
+  it('only targets single_use rows (reusable links never consumed)', async () => {
+    const prisma = makePrisma({ updateManyCount: 1 });
+    const svc = makeSvc(prisma);
+    await svc.atomicallyConsumeSingleUse('TESTCODE10', 'new-user-id', prisma as never);
+    expect(prisma.invitation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ kind: 'single_use', status: 'pending' }) }),
+    );
   });
 
   it('returns 0 when the code was already consumed (race lost)', async () => {
     const prisma = makePrisma({ updateManyCount: 0 });
     const svc = makeSvc(prisma);
-    const count = await svc.atomicallyConsumeCode('TESTCODE10', 'new-user-id', prisma as never);
+    const count = await svc.atomicallyConsumeSingleUse('TESTCODE10', 'new-user-id', prisma as never);
     expect(count).toBe(0);
   });
 
   it('simulates 2 concurrent consumption — only 1 succeeds', async () => {
-    // First call returns count=1, second returns count=0 (race)
     const updateMany = jest.fn()
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 });
-
     const prisma = makePrisma();
     prisma.invitation.updateMany = updateMany;
     const svc = makeSvc(prisma);
-
     const [r1, r2] = await Promise.all([
-      svc.atomicallyConsumeCode('TESTCODE10', 'user-A', prisma as never),
-      svc.atomicallyConsumeCode('TESTCODE10', 'user-B', prisma as never),
+      svc.atomicallyConsumeSingleUse('TESTCODE10', 'user-A', prisma as never),
+      svc.atomicallyConsumeSingleUse('TESTCODE10', 'user-B', prisma as never),
     ]);
-
-    const successes = [r1, r2].filter((c) => c === 1).length;
-    const failures = [r1, r2].filter((c) => c === 0).length;
-    expect(successes).toBe(1);
-    expect(failures).toBe(1);
+    expect([r1, r2].filter((c) => c === 1).length).toBe(1);
+    expect([r1, r2].filter((c) => c === 0).length).toBe(1);
   });
 
   it('purges targetEmail on consume (data-minimization)', async () => {
     const prisma = makePrisma({ updateManyCount: 1 });
     const svc = makeSvc(prisma);
-    await svc.atomicallyConsumeCode('TESTCODE10', 'new-user-id', prisma as never);
+    await svc.atomicallyConsumeSingleUse('TESTCODE10', 'new-user-id', prisma as never);
     expect(prisma.invitation.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ targetEmail: null }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ targetEmail: null }) }),
     );
   });
 });
@@ -519,64 +484,38 @@ describe('SettingsService — write-through cache', () => {
       set: jest.fn(async () => undefined),
       del: jest.fn(async () => undefined),
     };
-    const prismaMock = {
-      appSetting: {
-        findUnique: jest.fn(async () => null),
-        upsert: prismaSet,
-      },
-    };
-
+    const prismaMock = { appSetting: { findUnique: jest.fn(async () => null), upsert: prismaSet } };
     const { SettingsService: SS } = await import('../common/settings/settings.service');
     const svc = new SS(prismaMock as never, redisMock as never);
-
     await svc.setSetting('registration_mode', 'invite_only', 'admin-id');
-
-    // DB upsert called
     expect(prismaSet).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { key: 'registration_mode' },
         update: expect.objectContaining({ value: 'invite_only' }),
       }),
     );
-    // Redis set called immediately (write-through)
     expect(redisMock.set).toHaveBeenCalledWith('setting:registration_mode', 'invite_only', 300);
   });
 
   it('returns cached value from Redis without hitting the DB', async () => {
-    const redisMock = {
-      get: jest.fn(async () => 'invite_only'),
-      set: jest.fn(async () => undefined),
-    };
-    const prismaMock = {
-      appSetting: { findUnique: jest.fn(async () => null) },
-    };
-
+    const redisMock = { get: jest.fn(async () => 'invite_only'), set: jest.fn(async () => undefined) };
+    const prismaMock = { appSetting: { findUnique: jest.fn(async () => null) } };
     const { SettingsService: SS } = await import('../common/settings/settings.service');
     const svc = new SS(prismaMock as never, redisMock as never);
-
-    const mode = await svc.getRegistrationMode();
-    expect(mode).toBe('invite_only');
+    expect(await svc.getRegistrationMode()).toBe('invite_only');
     expect(prismaMock.appSetting.findUnique).not.toHaveBeenCalled();
   });
 
   it('falls back to "open" when both Redis and DB miss', async () => {
-    const redisMock = {
-      get: jest.fn(async () => null),
-      set: jest.fn(async () => undefined),
-    };
-    const prismaMock = {
-      appSetting: { findUnique: jest.fn(async () => null) },
-    };
-
+    const redisMock = { get: jest.fn(async () => null), set: jest.fn(async () => undefined) };
+    const prismaMock = { appSetting: { findUnique: jest.fn(async () => null) } };
     const { SettingsService: SS } = await import('../common/settings/settings.service');
     const svc = new SS(prismaMock as never, redisMock as never);
-
-    const mode = await svc.getRegistrationMode();
-    expect(mode).toBe('open');
+    expect(await svc.getRegistrationMode()).toBe('open');
   });
 });
 
-// ─── 9. Auth gating — 3 modes × 3 portes ────────────────────────────────────
+// ─── 9. Auth gating — 3 modes × 3 portes + lien reusable ─────────────────────
 
 describe('AuthService — registration mode gating', () => {
   const password = new PasswordService();
@@ -637,18 +576,20 @@ describe('AuthService — registration mode gating', () => {
   }
 
   function makeInvitesSvc(opts: {
-    preValidateResult?: { inviterId: string | null };
+    resolveResult?: { inviterId: string | null; invitationId: string; kind: 'single_use' | 'reusable' };
     consumeCount?: number;
-    preValidateEmailResult?: { inviterId: string | null } | null;
-    consumeByEmailResult?: { count: number; inviterId: string | null };
+    preValidateEmailResult?: { inviterId: string | null; invitationId: string } | null;
+    consumeByEmailResult?: { count: number; inviterId: string | null; invitationId: string | null };
   } = {}) {
     return {
-      preValidateCode: jest.fn(async () => opts.preValidateResult ?? { inviterId: 'inv-id' }),
-      atomicallyConsumeCode: jest.fn(async () => opts.consumeCount ?? 1),
+      resolveCodeForRegistration: jest.fn(async () =>
+        opts.resolveResult ?? { inviterId: 'inv-id', invitationId: 'inv-1', kind: 'single_use' },
+      ),
+      atomicallyConsumeSingleUse: jest.fn(async () => opts.consumeCount ?? 1),
       notifyInviter: jest.fn(),
       preValidateEmail: jest.fn(async () => opts.preValidateEmailResult ?? null),
       atomicallyConsumeByEmail: jest.fn(async () =>
-        opts.consumeByEmailResult ?? { count: 1, inviterId: 'inv-id' },
+        opts.consumeByEmailResult ?? { count: 1, inviterId: 'inv-id', invitationId: 'inv-1' },
       ),
     };
   }
@@ -673,8 +614,6 @@ describe('AuthService — registration mode gating', () => {
     );
   }
 
-  // ── 'closed' mode ──────────────────────────────────────────────────────────
-
   describe("mode 'closed'", () => {
     it('blocks register (email) with 403', async () => {
       const svc = makeAuthSvc('closed', makePrismaAuth());
@@ -686,7 +625,6 @@ describe('AuthService — registration mode gating', () => {
     it('blocks new Google account creation with 403', async () => {
       const prisma = makePrismaAuth();
       const svc = makeAuthSvc('closed', prisma);
-      // No existing user → creation branch hit → 403
       await expect(
         svc.loginWithOAuth('google', 'google-sub', { email: 'x@y.com', emailVerified: true }),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -694,13 +632,7 @@ describe('AuthService — registration mode gating', () => {
     });
 
     it('allows login for existing Google account (creation branch NOT hit)', async () => {
-      const existingUser = {
-        id: 'u-exist',
-        role: 'user',
-        identityStatus: 'not_submitted',
-        firstName: null,
-      };
-      // findFirst returns the existing user → goes straight to issueTokens
+      const existingUser = { id: 'u-exist', role: 'user', identityStatus: 'not_submitted', firstName: null };
       const prisma = makePrismaAuth({ existingUser });
       const svc = makeAuthSvc('closed', prisma);
       const result = await svc.loginWithOAuth('google', 'google-sub', { email: 'x@y.com', emailVerified: true });
@@ -709,68 +641,70 @@ describe('AuthService — registration mode gating', () => {
     });
   });
 
-  // ── 'invite_only' mode ─────────────────────────────────────────────────────
-
   describe("mode 'invite_only'", () => {
     it('blocks register without inviteCode and no email-match → 403', async () => {
-      const svc = makeAuthSvc(
-        'invite_only',
-        makePrismaAuth(),
-        makeInvitesSvc({ preValidateEmailResult: null }),
-      );
+      const svc = makeAuthSvc('invite_only', makePrismaAuth(), makeInvitesSvc({ preValidateEmailResult: null }));
       await expect(
         svc.register({ email: 'x@y.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B' }),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    // Threat 1 regression: no self-authorization. An email with no PENDING
-    // targeted invite must 403 BEFORE any user row is created — the attacker
-    // cannot bootstrap an account by simply supplying an email.
     it('does NOT create a user when email-match misses and no code (no bypass)', async () => {
       const prisma = makePrismaAuth();
-      const svc = makeAuthSvc(
-        'invite_only',
-        prisma,
-        makeInvitesSvc({ preValidateEmailResult: null }),
-      );
+      const svc = makeAuthSvc('invite_only', prisma, makeInvitesSvc({ preValidateEmailResult: null }));
       await expect(
         svc.register({ email: 'attacker@evil.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B' }),
       ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'INVITE_CODE_REQUIRED' }) });
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
-    it('allows register with valid inviteCode → 201', async () => {
+    it('allows register with valid single_use inviteCode → 201 (consumed)', async () => {
       const prisma = makePrismaAuth();
-      const invites = makeInvitesSvc({ preValidateResult: { inviterId: 'inv-id' }, consumeCount: 1 });
+      const invites = makeInvitesSvc({
+        resolveResult: { inviterId: 'inv-id', invitationId: 'inv-1', kind: 'single_use' },
+        consumeCount: 1,
+      });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       const result = await svc.register({
-        email: 'x@y.com',
-        password: 'Str0ng!Pass1',
-        firstName: 'A',
-        lastName: 'B',
-        inviteCode: 'VALIDCODE10',
+        email: 'x@y.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B', inviteCode: 'VALIDCODE10',
       });
       expect(result.accessToken).toBe('access');
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ invitedById: 'inv-id' }),
+          data: expect.objectContaining({ invitedById: 'inv-id', invitedViaId: 'inv-1' }),
         }),
       );
+      expect(invites.atomicallyConsumeSingleUse).toHaveBeenCalled();
     });
 
-    it('allows register via email-match (no code, but targetEmail matches) → 201', async () => {
+    it('allows register via a REUSABLE link → 201 WITHOUT consuming the link', async () => {
       const prisma = makePrismaAuth();
       const invites = makeInvitesSvc({
-        preValidateEmailResult: { inviterId: 'inv-email-id' },
-        consumeByEmailResult: { count: 1, inviterId: 'inv-email-id' },
+        resolveResult: { inviterId: 'host-id', invitationId: 'link-1', kind: 'reusable' },
       });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       const result = await svc.register({
-        email: 'invited@example.com',
-        password: 'Str0ng!Pass1',
-        firstName: 'A',
-        lastName: 'B',
-        // No inviteCode — email-match should authorize
+        email: 'x@y.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B', inviteCode: 'LINKCODE10',
+      });
+      expect(result.accessToken).toBe('access');
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ invitedById: 'host-id', invitedViaId: 'link-1' }),
+        }),
+      );
+      // The shared link must stay active for the next signup → never consumed.
+      expect(invites.atomicallyConsumeSingleUse).not.toHaveBeenCalled();
+    });
+
+    it('allows register via email-match (no code) → 201', async () => {
+      const prisma = makePrismaAuth();
+      const invites = makeInvitesSvc({
+        preValidateEmailResult: { inviterId: 'inv-email-id', invitationId: 'inv-e' },
+        consumeByEmailResult: { count: 1, inviterId: 'inv-email-id', invitationId: 'inv-e' },
+      });
+      const svc = makeAuthSvc('invite_only', prisma, invites);
+      const result = await svc.register({
+        email: 'invited@example.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B',
       });
       expect(result.accessToken).toBe('access');
       expect(invites.preValidateEmail).toHaveBeenCalledWith('invited@example.com');
@@ -780,47 +714,35 @@ describe('AuthService — registration mode gating', () => {
     it('blocks register when email-match race: atomicallyConsumeByEmail returns 0', async () => {
       const prisma = makePrismaAuth();
       const invites = makeInvitesSvc({
-        preValidateEmailResult: { inviterId: 'inv-email-id' },
-        consumeByEmailResult: { count: 0, inviterId: null },
+        preValidateEmailResult: { inviterId: 'inv-email-id', invitationId: 'inv-e' },
+        consumeByEmailResult: { count: 0, inviterId: null, invitationId: null },
       });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       await expect(
-        svc.register({
-          email: 'invited@example.com',
-          password: 'Str0ng!Pass1',
-          firstName: 'A',
-          lastName: 'B',
-        }),
+        svc.register({ email: 'invited@example.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('code takes precedence over email-match when both are present', async () => {
       const prisma = makePrismaAuth();
       const invites = makeInvitesSvc({
-        preValidateResult: { inviterId: 'code-inviter-id' },
+        resolveResult: { inviterId: 'code-inviter-id', invitationId: 'inv-1', kind: 'single_use' },
         consumeCount: 1,
-        // email-match also would find something, but should not be called
-        preValidateEmailResult: { inviterId: 'email-inviter-id' },
+        preValidateEmailResult: { inviterId: 'email-inviter-id', invitationId: 'inv-e' },
       });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       const result = await svc.register({
-        email: 'x@y.com',
-        password: 'Str0ng!Pass1',
-        firstName: 'A',
-        lastName: 'B',
-        inviteCode: 'VALIDCODE10',
+        email: 'x@y.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B', inviteCode: 'VALIDCODE10',
       });
       expect(result.accessToken).toBe('access');
-      // Code path used: preValidateCode called, preValidateEmail NOT called
-      expect(invites.preValidateCode).toHaveBeenCalledWith('VALIDCODE10');
+      expect(invites.resolveCodeForRegistration).toHaveBeenCalledWith('VALIDCODE10');
       expect(invites.preValidateEmail).not.toHaveBeenCalled();
-      // Atomic consume by code, not by email
-      expect(invites.atomicallyConsumeCode).toHaveBeenCalled();
+      expect(invites.atomicallyConsumeSingleUse).toHaveBeenCalled();
       expect(invites.atomicallyConsumeByEmail).not.toHaveBeenCalled();
     });
 
     it('blocks new Google account without inviteCode and no email-match → 403', async () => {
-      const prisma = makePrismaAuth(); // no existing user
+      const prisma = makePrismaAuth();
       const invites = makeInvitesSvc({ preValidateEmailResult: null });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       await expect(
@@ -830,80 +752,60 @@ describe('AuthService — registration mode gating', () => {
 
     it('allows new Google account with valid inviteCode → 201', async () => {
       const prisma = makePrismaAuth();
-      const invites = makeInvitesSvc({ preValidateResult: { inviterId: 'inv-id' }, consumeCount: 1 });
+      const invites = makeInvitesSvc({
+        resolveResult: { inviterId: 'inv-id', invitationId: 'inv-1', kind: 'single_use' },
+        consumeCount: 1,
+      });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       const result = await svc.loginWithOAuth(
-        'google',
-        'goog-sub',
-        { email: 'x@y.com', emailVerified: true },
-        undefined,
-        'VALIDCODE10',
+        'google', 'goog-sub', { email: 'x@y.com', emailVerified: true }, undefined, 'VALIDCODE10',
       );
       expect(result.accessToken).toBe('access');
     });
 
-    it('allows new Google account via email-match (no code) → 201', async () => {
+    it('allows new Google account via a REUSABLE link without consuming it', async () => {
       const prisma = makePrismaAuth();
       const invites = makeInvitesSvc({
-        preValidateEmailResult: { inviterId: 'inv-email-id' },
-        consumeByEmailResult: { count: 1, inviterId: 'inv-email-id' },
+        resolveResult: { inviterId: 'host-id', invitationId: 'link-1', kind: 'reusable' },
       });
       const svc = makeAuthSvc('invite_only', prisma, invites);
       const result = await svc.loginWithOAuth(
-        'google',
-        'goog-sub',
-        { email: 'invited@example.com', emailVerified: true },
+        'google', 'goog-sub', { email: 'x@y.com', emailVerified: true }, undefined, 'LINKCODE10',
       );
       expect(result.accessToken).toBe('access');
-      expect(invites.preValidateEmail).toHaveBeenCalledWith('invited@example.com');
-      expect(invites.atomicallyConsumeByEmail).toHaveBeenCalled();
+      expect(invites.atomicallyConsumeSingleUse).not.toHaveBeenCalled();
     });
 
     it('allows login for existing Google account without inviteCode (creation NOT hit)', async () => {
       const existingUser = { id: 'u-exist', role: 'user', identityStatus: 'not_submitted', firstName: null };
       const prisma = makePrismaAuth({ existingUser });
       const svc = makeAuthSvc('invite_only', prisma);
-      // No inviteCode — but user already exists → goes straight to issueTokens
       const result = await svc.loginWithOAuth('google', 'goog-sub', { email: 'x@y.com', emailVerified: true });
       expect(result.accessToken).toBe('access');
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
   });
 
-  // ── 'open' mode ────────────────────────────────────────────────────────────
-
   describe("mode 'open'", () => {
     it('allows register without inviteCode (ignores code)', async () => {
       const svc = makeAuthSvc('open', makePrismaAuth());
       const result = await svc.register({
-        email: 'x@y.com',
-        password: 'Str0ng!Pass1',
-        firstName: 'A',
-        lastName: 'B',
+        email: 'x@y.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B',
       });
       expect(result.accessToken).toBe('access');
     });
 
-    // Threat 7 regression: in 'open' mode the email-match path must NOT run —
-    // no silent consume of a pending targeted invite that happens to match the
-    // registrant's email.
     it('does NOT run email-match (no silent consume) in open mode', async () => {
       const prisma = makePrismaAuth();
       const invites = makeInvitesSvc({
-        // even though an invite WOULD match, open mode must never look it up
-        preValidateEmailResult: { inviterId: 'inv-email-id' },
-        consumeByEmailResult: { count: 1, inviterId: 'inv-email-id' },
+        preValidateEmailResult: { inviterId: 'inv-email-id', invitationId: 'inv-e' },
+        consumeByEmailResult: { count: 1, inviterId: 'inv-email-id', invitationId: 'inv-e' },
       });
       const svc = makeAuthSvc('open', prisma, invites);
-      await svc.register({
-        email: 'invited@example.com',
-        password: 'Str0ng!Pass1',
-        firstName: 'A',
-        lastName: 'B',
-      });
+      await svc.register({ email: 'invited@example.com', password: 'Str0ng!Pass1', firstName: 'A', lastName: 'B' });
       expect(invites.preValidateEmail).not.toHaveBeenCalled();
       expect(invites.atomicallyConsumeByEmail).not.toHaveBeenCalled();
-      expect(invites.atomicallyConsumeCode).not.toHaveBeenCalled();
+      expect(invites.atomicallyConsumeSingleUse).not.toHaveBeenCalled();
     });
 
     it('allows new Google account creation without inviteCode', async () => {
@@ -917,66 +819,44 @@ describe('AuthService — registration mode gating', () => {
 // ─── 10. Email invite: targetEmail stored + mailer called ────────────────────
 
 describe('InvitationsService — email-targeted invite', () => {
-  it('stores normalized targetEmail when email is provided', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-      countResult: 0,
-    });
-    const mailer = makeMailer();
-    const svc = makeSvc(prisma, makeSettingsSvc(), mailer);
+  it('stores normalized targetEmail when email is provided (single_use)', async () => {
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true }) });
+    const svc = makeSvc(prisma);
     await svc.createInvitation('inviter-id', { email: '  Bob@Example.COM  ' });
     expect(prisma.invitation.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          targetEmail: 'bob@example.com', // normalized
-        }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ targetEmail: 'bob@example.com' }) }),
     );
   });
 
   it('calls mailer.sendInvitationEmail (fire-and-forget) when email provided', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0, displayName: 'Moussa Diallo' }),
-      countResult: 0,
-    });
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true, displayName: 'Moussa Diallo' }) });
     const mailer = makeMailer();
-    const svc = makeSvc(prisma, makeSettingsSvc(), mailer);
+    const svc = makeSvc(prisma, mailer);
     await svc.createInvitation('inviter-id', { email: 'bob@example.com' });
-    // Fire-and-forget: we need to flush the microtask queue
     await Promise.resolve();
     expect(mailer.sendInvitationEmail).toHaveBeenCalledWith(
       'bob@example.com',
       'Moussa Diallo',
-      expect.any(String), // code
+      expect.any(String),
       expect.stringContaining('https://nigerconnect.app/invite/'),
     );
   });
 
   it('does NOT call mailer when no email provided (link-only invite)', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-      countResult: 0,
-    });
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true }) });
     const mailer = makeMailer();
-    const svc = makeSvc(prisma, makeSettingsSvc(), mailer);
-    await svc.createInvitation('inviter-id'); // no email arg
+    const svc = makeSvc(prisma, mailer);
+    await svc.createInvitation('inviter-id');
     await Promise.resolve();
     expect(mailer.sendInvitationEmail).not.toHaveBeenCalled();
   });
 
   it('does NOT store targetEmail when no email provided', async () => {
-    const prisma = makePrisma({
-      userRow: makeUserRow({ emailVerified: true, inviteQuota: 3, inviteAbuseFlags: 0 }),
-      countResult: 0,
-    });
+    const prisma = makePrisma({ userRow: makeUserRow({ emailVerified: true }) });
     const svc = makeSvc(prisma);
     await svc.createInvitation('inviter-id');
     expect(prisma.invitation.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          targetEmail: null,
-        }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ targetEmail: null }) }),
     );
   });
 });
@@ -984,14 +864,13 @@ describe('InvitationsService — email-targeted invite', () => {
 // ─── 11. preValidateEmail ─────────────────────────────────────────────────────
 
 describe('InvitationsService — preValidateEmail', () => {
-  it('returns { inviterId } when a pending non-expired invite targets that email', async () => {
+  it('returns { inviterId, invitationId } when a pending invite targets that email', async () => {
     const prisma = makePrisma({
-      findFirstResult: makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9' }),
+      findFirstResult: makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9', id: 'inv-1' }),
     });
     const svc = makeSvc(prisma);
     const result = await svc.preValidateEmail('BOB@EXAMPLE.COM');
-    expect(result).toEqual({ inviterId: 'inv-9' });
-    // verify the lookup normalized the email
+    expect(result).toEqual({ inviterId: 'inv-9', invitationId: 'inv-1' });
     expect(prisma.invitation.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ targetEmail: 'bob@example.com', status: 'pending' }),
@@ -1002,8 +881,7 @@ describe('InvitationsService — preValidateEmail', () => {
   it('returns null when no pending invite targets that email (no-match)', async () => {
     const prisma = makePrisma({ findFirstResult: null });
     const svc = makeSvc(prisma);
-    const result = await svc.preValidateEmail('unknown@example.com');
-    expect(result).toBeNull();
+    expect(await svc.preValidateEmail('unknown@example.com')).toBeNull();
   });
 
   it('never throws — absence is a soft null, not an error', async () => {
@@ -1016,54 +894,47 @@ describe('InvitationsService — preValidateEmail', () => {
 // ─── 12. atomicallyConsumeByEmail — race ─────────────────────────────────────
 
 describe('InvitationsService — atomicallyConsumeByEmail race', () => {
-  it('returns count=1 and inviterId when consume succeeds', async () => {
+  it('returns count=1, inviterId, invitationId when consume succeeds', async () => {
     const prisma = makePrisma({
-      findFirstResult: makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9' }),
+      findFirstResult: makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9', id: 'inv-1' }),
       updateManyCount: 1,
     });
     const svc = makeSvc(prisma);
     const result = await svc.atomicallyConsumeByEmail('bob@example.com', 'new-user-id', prisma as never);
-    expect(result).toEqual({ count: 1, inviterId: 'inv-9' });
+    expect(result).toEqual({ count: 1, inviterId: 'inv-9', invitationId: 'inv-1' });
   });
 
   it('returns count=0 when no invite found for that email', async () => {
     const prisma = makePrisma({ findFirstResult: null });
     const svc = makeSvc(prisma);
     const result = await svc.atomicallyConsumeByEmail('nobody@example.com', 'new-user-id', prisma as never);
-    expect(result).toEqual({ count: 0, inviterId: null });
+    expect(result).toEqual({ count: 0, inviterId: null, invitationId: null });
   });
 
   it('returns count=0 when the updateMany race is lost (another registration won)', async () => {
     const prisma = makePrisma({
-      findFirstResult: makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9' }),
-      updateManyCount: 0, // race lost
+      findFirstResult: makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9', id: 'inv-1' }),
+      updateManyCount: 0,
     });
     const svc = makeSvc(prisma);
     const result = await svc.atomicallyConsumeByEmail('bob@example.com', 'new-user-id', prisma as never);
-    expect(result).toEqual({ count: 0, inviterId: 'inv-9' });
+    expect(result).toEqual({ count: 0, inviterId: 'inv-9', invitationId: 'inv-1' });
   });
 
   it('simulates 2 concurrent registrations via email-match — only 1 wins', async () => {
     const candidate = makeInvitationRow({ status: 'pending', targetEmail: 'bob@example.com', inviterId: 'inv-9' });
     const findFirst = jest.fn(async () => candidate);
-    const updateMany = jest.fn()
-      .mockResolvedValueOnce({ count: 1 })  // first request wins
-      .mockResolvedValueOnce({ count: 0 }); // second request loses
-
+    const updateMany = jest.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
     const prisma = makePrisma();
     prisma.invitation.findFirst = findFirst;
     prisma.invitation.updateMany = updateMany;
-
     const svc = makeSvc(prisma);
     const [r1, r2] = await Promise.all([
       svc.atomicallyConsumeByEmail('bob@example.com', 'user-A', prisma as never),
       svc.atomicallyConsumeByEmail('bob@example.com', 'user-B', prisma as never),
     ]);
-
-    const wins = [r1, r2].filter((r) => r.count === 1).length;
-    const losses = [r1, r2].filter((r) => r.count === 0).length;
-    expect(wins).toBe(1);
-    expect(losses).toBe(1);
+    expect([r1, r2].filter((r) => r.count === 1).length).toBe(1);
+    expect([r1, r2].filter((r) => r.count === 0).length).toBe(1);
   });
 
   it('purges targetEmail on successful consume (data-minimization)', async () => {
@@ -1074,14 +945,12 @@ describe('InvitationsService — atomicallyConsumeByEmail race', () => {
     const svc = makeSvc(prisma);
     await svc.atomicallyConsumeByEmail('bob@example.com', 'new-user-id', prisma as never);
     expect(prisma.invitation.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ targetEmail: null }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ targetEmail: null }) }),
     );
   });
 });
 
-// ─── 13. Expiry cron purges targetEmail ──────────────────────────────────────
+// ─── 13. Expiry cron purges targetEmail (legacy rows) ────────────────────────
 
 describe('InvitationExpiryCron — purges targetEmail on expiry', () => {
   it('sets targetEmail=null when flipping pending→expired', async () => {
@@ -1091,9 +960,7 @@ describe('InvitationExpiryCron — purges targetEmail on expiry', () => {
     const cron = new InvitationExpiryCron(prisma as never);
     await cron.run();
     expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: 'expired', targetEmail: null }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ status: 'expired', targetEmail: null }) }),
     );
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -33,8 +33,19 @@ type PatchSettingsDto = z.infer<typeof patchSettingsSchema>;
 const generateRootInvitesSchema = z.object({
   count: z.coerce.number().int().min(1).max(200),
   expiresInDays: z.coerce.number().int().min(1).max(365).optional(),
+  // 'reusable' = un seul lien racine partageable en masse (bootstrap waitlist).
+  kind: z.enum(['single_use', 'reusable']).optional(),
 });
 type GenerateRootInvitesDto = z.infer<typeof generateRootInvitesSchema>;
+
+const bulkInviteSchema = z.object({ allowed: z.boolean() }).strict();
+type BulkInviteDto = z.infer<typeof bulkInviteSchema>;
+
+const listReferralsSchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+type ListReferralsDto = z.infer<typeof listReferralsSchema>;
 
 /**
  * Internal admin/moderator console API. Every route is role-gated by RolesGuard;
@@ -109,7 +120,30 @@ export class AdminController {
     @Body(new ZodValidationPipe(generateRootInvitesSchema)) dto: GenerateRootInvitesDto,
     @CurrentUser() user: JwtUserPayload,
   ) {
-    return this.admin.generateRootInvites(dto.count, dto.expiresInDays, user.sub);
+    return this.admin.generateRootInvites(dto.count, dto.expiresInDays, user.sub, dto.kind ?? 'single_use');
+  }
+
+  /**
+   * PATCH /admin/users/:id/bulk-invite
+   * Accorde/retire le droit de générer des liens d'invitation en masse. Admin-only.
+   */
+  @Patch('users/:id/bulk-invite')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  setBulkInvite(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(bulkInviteSchema)) dto: BulkInviteDto,
+  ) {
+    return this.admin.setBulkInviteRight(id, dto.allowed);
+  }
+
+  /**
+   * GET /admin/referrals
+   * Arbre de parrainage (vue plate paginée) : qui a invité qui. Admin + moderator.
+   */
+  @Get('referrals')
+  referrals(@Query(new ZodValidationPipe(listReferralsSchema)) dto: ListReferralsDto) {
+    return this.admin.listReferrals(dto.limit, dto.cursor);
   }
 
   /**

@@ -17,6 +17,7 @@ import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/services/api';
+import { profileApi } from '@/services/profileApi';
 import { friendsApi } from '@/services/friendsApi';
 import { associationsApi } from '@/services/associationsApi';
 import { notificationApi } from '@/services/notificationApi';
@@ -83,6 +84,14 @@ export default function ProfileTab() {
     enabled: !!user,
     refetchInterval: 30_000,
   });
+  // Referral-network info (sponsor + filleuls) lives on the full /profile/me
+  // payload, which the lightweight auth-store user doesn't carry.
+  const meQuery = useQuery({
+    queryKey: ['profile', 'me', 'network'],
+    queryFn: () => profileApi.me(),
+    enabled: !!user,
+    staleTime: 60_000,
+  });
 
   if (!user) {
     return (
@@ -104,6 +113,8 @@ export default function ProfileTab() {
   const photoUrls = photos.map((p) => p.url);
   const assocsCount = assocsQuery.data?.length ?? 0;
   const unreadNotifs = notifQuery.data ?? 0;
+  const invitedBy = meQuery.data?.invitedBy ?? null;
+  const inviteesCount = meQuery.data?.inviteesCount ?? 0;
 
   // Open the shared full-screen pager (same viewer used by the feed, the chat
   // lightbox and other users' profiles) so a tap enlarges the photo.
@@ -155,6 +166,20 @@ export default function ProfileTab() {
                   {user.bio}
                 </Text>
               ) : null}
+              {invitedBy ? (
+                <Pressable
+                  onPress={() => router.push(`/user/${invitedBy.id}`)}
+                  hitSlop={6}
+                  style={styles.invitedByChip}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Invité par ${invitedBy.displayName ?? 'un membre'}`}
+                >
+                  <Feather name="user-plus" size={12} color="rgba(255,255,255,0.85)" />
+                  <Text style={styles.invitedByText} numberOfLines={1}>
+                    Invité par {invitedBy.displayName ?? 'un membre'}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
 
@@ -163,6 +188,7 @@ export default function ProfileTab() {
               { n: friendsCount, l: 'Amis' },
               { n: photos.length, l: 'Photos' },
               { n: assocsCount, l: 'Assos' },
+              { n: inviteesCount, l: 'Filleuls' },
             ].map((s) => (
               <View key={s.l} style={styles.statCol}>
                 <Text style={styles.statNumber}>{s.n}</Text>
@@ -301,6 +327,24 @@ const styles = StyleSheet.create({
   },
   location: { fontSize: Typography.sizes.sm, color: 'rgba(255,255,255,0.6)', marginTop: 3 },
   bio: { fontSize: Typography.sizes.sm - 1, color: 'rgba(255,255,255,0.5)', marginTop: 2 },
+  invitedByChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    maxWidth: 200,
+    marginTop: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: Radii.full,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  invitedByText: {
+    fontSize: Typography.sizes.xs,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '600',
+    flexShrink: 1,
+  },
   statsRow: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.06)',

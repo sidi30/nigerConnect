@@ -49,7 +49,7 @@ function ctxFor(methodName: keyof AdminController, user?: JwtUserPayload): Execu
 }
 
 describe('Admin AuthZ — admin-only writes (method @Roles overrides class)', () => {
-  describe.each(['patchSettings', 'generateRootInvites'] as const)('%s (admin-only)', (method) => {
+  describe.each(['patchSettings', 'generateRootInvites', 'setBulkInvite'] as const)('%s (admin-only)', (method) => {
     it('rejects a moderator with 403', () => {
       expect(() => guard.canActivate(ctxFor(method, moderator))).toThrow(ForbiddenException);
     });

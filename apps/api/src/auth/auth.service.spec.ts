@@ -109,19 +109,23 @@ describe('AuthService', () => {
   }
 
   function makeInvitationsService(opts: {
-    preValidateCode?: jest.Mock;
-    atomicallyConsumeCode?: jest.Mock;
+    resolveCodeForRegistration?: jest.Mock;
+    atomicallyConsumeSingleUse?: jest.Mock;
     notifyInviter?: jest.Mock;
     preValidateEmail?: jest.Mock;
     atomicallyConsumeByEmail?: jest.Mock;
   } = {}) {
     return {
-      preValidateCode: opts.preValidateCode ?? jest.fn(async () => ({ inviterId: 'inviter-id' })),
-      atomicallyConsumeCode: opts.atomicallyConsumeCode ?? jest.fn(async () => 1),
+      resolveCodeForRegistration:
+        opts.resolveCodeForRegistration ??
+        jest.fn(async () => ({ inviterId: 'inviter-id', invitationId: 'inv-1', kind: 'single_use' })),
+      atomicallyConsumeSingleUse: opts.atomicallyConsumeSingleUse ?? jest.fn(async () => 1),
       notifyInviter: opts.notifyInviter ?? jest.fn(),
       // Email-match path — default: no matching invite (soft null, open mode tests won't call it)
       preValidateEmail: opts.preValidateEmail ?? jest.fn(async () => null),
-      atomicallyConsumeByEmail: opts.atomicallyConsumeByEmail ?? jest.fn(async () => ({ count: 1, inviterId: 'inviter-id' })),
+      atomicallyConsumeByEmail:
+        opts.atomicallyConsumeByEmail ??
+        jest.fn(async () => ({ count: 1, inviterId: 'inviter-id', invitationId: 'inv-1' })),
     };
   }
 
