@@ -43,13 +43,18 @@ describe('CommentsService', () => {
   });
 
   it('rejects nested reply beyond one level', async () => {
+    // The reply targets `c-parent`, which is already at depth 3 (parent →
+    // grandparent → root). Walking its ancestor chain must terminate at the
+    // root: return rows by id so parentDepth reaches 3 and the create is
+    // rejected. A non-terminating chain here is what previously hung the loop.
+    const rows: Record<string, { id: string; postId: string; parentId: string | null }> = {
+      'c-parent': { id: 'c-parent', postId: 'p1', parentId: 'c-grandparent' },
+      'c-grandparent': { id: 'c-grandparent', postId: 'p1', parentId: 'c-root' },
+      'c-root': { id: 'c-root', postId: 'p1', parentId: null },
+    };
     const prisma = {
       comment: {
-        findUnique: jest.fn(async () => ({
-          id: 'c-parent',
-          postId: 'p1',
-          parentId: 'c-grandparent',
-        })),
+        findUnique: jest.fn(async (args: { where: { id: string } }) => rows[args.where.id] ?? null),
       },
       $transaction: jest.fn(),
     };

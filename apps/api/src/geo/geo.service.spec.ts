@@ -26,6 +26,7 @@ function makeMocks() {
   const prisma = {
     block: { findMany: jest.fn(async () => [] as unknown[]) },
     association: { findMany: jest.fn(async () => [] as unknown[]) },
+    page: { findMany: jest.fn(async () => [] as unknown[]) },
     user: {
       findMany: jest.fn(async () => [] as unknown[]),
       findUnique: jest.fn(async () => null as unknown),

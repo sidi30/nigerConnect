@@ -36,7 +36,7 @@ describe('ModerationService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
         update: jest.fn(async () => ({})),
       },
-      user: { update: jest.fn(async () => ({})) },
+      user: { update: jest.fn(async () => ({ invitedById: null })) },
       post: { update: jest.fn() },
     };
     const svc = new ModerationService(prisma as never);
@@ -44,6 +44,42 @@ describe('ModerationService', () => {
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
       data: { status: 'banned' },
+      select: { invitedById: true },
     });
+    // No inviter → no abuse flag increment (single update only).
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('flags the inviter abuse counter when a banned user was invited (§11)', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
+        update: jest.fn(async () => ({})),
+      },
+      user: { update: jest.fn(async () => ({ invitedById: 'parrain-1' })) },
+      post: { update: jest.fn() },
+    };
+    const svc = new ModerationService(prisma as never);
+    await svc.resolve('admin', 'r1', { action: 'banned' });
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'parrain-1' },
+      data: { inviteAbuseFlags: { increment: 1 } },
+    });
+    expect(prisma.user.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('does NOT flag the inviter on suspend (only ban)', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
+        update: jest.fn(async () => ({})),
+      },
+      user: { update: jest.fn(async () => ({ invitedById: 'parrain-1' })) },
+      post: { update: jest.fn() },
+    };
+    const svc = new ModerationService(prisma as never);
+    await svc.resolve('admin', 'r1', { action: 'suspended' });
+    // Status update only — no second update to flag the inviter.
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
 });

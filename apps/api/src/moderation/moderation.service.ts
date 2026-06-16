@@ -97,6 +97,19 @@ export class ModerationService {
     status: 'suspended' | 'banned',
   ): Promise<void> {
     if (type !== 'user') return;
-    await this.prisma.user.update({ where: { id: targetId }, data: { status } });
+    const user = await this.prisma.user.update({
+      where: { id: targetId },
+      data: { status },
+      select: { invitedById: true },
+    });
+    // Anti-abuse (§11): banning a filleul flags their inviter. At >=3 flags the
+    // inviter's invite quota freezes (enforced in InvitationsService.createInvitation).
+    // No cascade — we only flag the direct inviter, never touch the filleul's own tree.
+    if (status === 'banned' && user.invitedById) {
+      await this.prisma.user.update({
+        where: { id: user.invitedById },
+        data: { inviteAbuseFlags: { increment: 1 } },
+      });
+    }
   }
 }

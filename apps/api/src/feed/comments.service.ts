@@ -46,7 +46,11 @@ export class CommentsService {
       // reply lands at depth ≤ 3.
       let parentDepth = 1;
       let ancestorId = parent.parentId;
-      while (ancestorId) {
+      // Bounded walk: stop as soon as we know the parent is at depth ≥ 3.
+      // Beyond rejecting deep replies, the cap also guarantees termination if
+      // a corrupted ancestor cycle ever exists in the data — an unbounded walk
+      // would otherwise loop forever.
+      while (ancestorId && parentDepth < 3) {
         parentDepth++;
         const ancestor = await this.prisma.comment.findUnique({
           where: { id: ancestorId },
