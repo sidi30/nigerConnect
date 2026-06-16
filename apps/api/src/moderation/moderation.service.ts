@@ -97,17 +97,21 @@ export class ModerationService {
     status: 'suspended' | 'banned',
   ): Promise<void> {
     if (type !== 'user') return;
-    const user = await this.prisma.user.update({
+    // Read the prior state first so the abuse-flag increment fires only on the
+    // transition INTO banned — re-banning an already-banned user must not
+    // over-count the inviter's flags (idempotent).
+    const prior = await this.prisma.user.findUnique({
       where: { id: targetId },
-      data: { status },
-      select: { invitedById: true },
+      select: { status: true, invitedById: true },
     });
+    if (!prior) return;
+    await this.prisma.user.update({ where: { id: targetId }, data: { status } });
     // Anti-abuse (§11): banning a filleul flags their inviter. At >=3 flags the
     // inviter's invite quota freezes (enforced in InvitationsService.createInvitation).
     // No cascade — we only flag the direct inviter, never touch the filleul's own tree.
-    if (status === 'banned' && user.invitedById) {
+    if (status === 'banned' && prior.status !== 'banned' && prior.invitedById) {
       await this.prisma.user.update({
-        where: { id: user.invitedById },
+        where: { id: prior.invitedById },
         data: { inviteAbuseFlags: { increment: 1 } },
       });
     }

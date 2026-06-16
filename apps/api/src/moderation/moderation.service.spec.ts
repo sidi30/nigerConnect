@@ -36,7 +36,10 @@ describe('ModerationService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
         update: jest.fn(async () => ({})),
       },
-      user: { update: jest.fn(async () => ({ invitedById: null })) },
+      user: {
+        findUnique: jest.fn(async () => ({ status: 'active', invitedById: null })),
+        update: jest.fn(async () => ({})),
+      },
       post: { update: jest.fn() },
     };
     const svc = new ModerationService(prisma as never);
@@ -44,9 +47,8 @@ describe('ModerationService', () => {
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
       data: { status: 'banned' },
-      select: { invitedById: true },
     });
-    // No inviter → no abuse flag increment (single update only).
+    // No inviter → no abuse flag increment (single status update only).
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
 
@@ -56,7 +58,10 @@ describe('ModerationService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
         update: jest.fn(async () => ({})),
       },
-      user: { update: jest.fn(async () => ({ invitedById: 'parrain-1' })) },
+      user: {
+        findUnique: jest.fn(async () => ({ status: 'active', invitedById: 'parrain-1' })),
+        update: jest.fn(async () => ({})),
+      },
       post: { update: jest.fn() },
     };
     const svc = new ModerationService(prisma as never);
@@ -68,13 +73,34 @@ describe('ModerationService', () => {
     expect(prisma.user.update).toHaveBeenCalledTimes(2);
   });
 
+  it('does NOT re-flag the inviter when re-banning an already-banned user (idempotent)', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
+        update: jest.fn(async () => ({})),
+      },
+      user: {
+        findUnique: jest.fn(async () => ({ status: 'banned', invitedById: 'parrain-1' })),
+        update: jest.fn(async () => ({})),
+      },
+      post: { update: jest.fn() },
+    };
+    const svc = new ModerationService(prisma as never);
+    await svc.resolve('admin', 'r1', { action: 'banned' });
+    // Already banned → only the (idempotent) status update, no flag increment.
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+  });
+
   it('does NOT flag the inviter on suspend (only ban)', async () => {
     const prisma = {
       report: {
         findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'user', targetId: 'u1' })),
         update: jest.fn(async () => ({})),
       },
-      user: { update: jest.fn(async () => ({ invitedById: 'parrain-1' })) },
+      user: {
+        findUnique: jest.fn(async () => ({ status: 'active', invitedById: 'parrain-1' })),
+        update: jest.fn(async () => ({})),
+      },
       post: { update: jest.fn() },
     };
     const svc = new ModerationService(prisma as never);
