@@ -113,7 +113,7 @@ test.describe('Pages', () => {
     const { tokens } = await registerApproved(request);
     const name = `E2EPage-${Date.now()}`;
     const res = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name, kind: 'cause', description: 'E2E test page' },
+      data: { name, kind: 'cause', description: 'E2E test page', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(res.status(), `create page: ${await res.text()}`).toBe(201);
@@ -126,7 +126,7 @@ test.describe('Pages', () => {
   test('POST /api/pages with NON-approved identity user -> 403', async ({ request }) => {
     const { tokens } = await registerVerified(request);
     const res = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-NotApproved-${Date.now()}`, kind: 'community' },
+      data: { name: `E2EPage-NotApproved-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(res.status()).toBe(403);
@@ -137,7 +137,7 @@ test.describe('Pages', () => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
     const name = `E2EPage-List-${uniqueSuffix}`;
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name, kind: 'business' },
+      data: { name, kind: 'business', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -185,7 +185,7 @@ test.describe('Pages', () => {
   test('GET /api/pages/:id as creator -> isFollowing=true, myRole=admin', async ({ request }) => {
     const { tokens } = await registerApproved(request);
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Detail-${Date.now()}`, kind: 'community' },
+      data: { name: `E2EPage-Detail-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -205,7 +205,7 @@ test.describe('Pages', () => {
     const { tokens: secondTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Follow-${Date.now()}`, kind: 'group' },
+      data: { name: `E2EPage-Follow-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -240,7 +240,7 @@ test.describe('Pages', () => {
     const { tokens: secondTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Unfollow-${Date.now()}`, kind: 'official' },
+      data: { name: `E2EPage-Unfollow-${Date.now()}`, kind: 'official', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -277,7 +277,7 @@ test.describe('Pages', () => {
     const { tokens: otherTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Update-${Date.now()}`, kind: 'community' },
+      data: { name: `E2EPage-Update-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -304,7 +304,7 @@ test.describe('Pages', () => {
     const { user, tokens } = await registerApproved(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Admins-${Date.now()}`, kind: 'cause' },
+      data: { name: `E2EPage-Admins-${Date.now()}`, kind: 'cause', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -325,7 +325,7 @@ test.describe('Pages', () => {
     const { tokens: otherTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Delete-${Date.now()}`, kind: 'group' },
+      data: { name: `E2EPage-Delete-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -359,7 +359,7 @@ test.describe('Polls', () => {
 
     // Create a page first
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `PollPage-${Date.now()}`, kind: 'community' },
+      data: { name: `PollPage-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -391,7 +391,7 @@ test.describe('Polls', () => {
     const { tokens: nonAdminTokens } = await registerVerified(request);
 
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `PollPage-NonAdmin-${Date.now()}`, kind: 'group' },
+      data: { name: `PollPage-NonAdmin-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -764,7 +764,7 @@ test.describe('Reviews', () => {
 
     // Create a page
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `ReviewPage-${Date.now()}`, kind: 'business' },
+      data: { name: `ReviewPage-${Date.now()}`, kind: 'business', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -831,7 +831,7 @@ test.describe('Notifications', () => {
 
     // A creates a page
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `NotifPage-${Date.now()}`, kind: 'community' },
+      data: { name: `NotifPage-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokensA.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -885,7 +885,7 @@ test.describe('Notifications', () => {
 
     // Create a page so B can follow it and trigger a notification for A
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `NotifDeletePage-${Date.now()}`, kind: 'cause' },
+      data: { name: `NotifDeletePage-${Date.now()}`, kind: 'cause', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokensA.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -930,7 +930,7 @@ test.describe('Notifications', () => {
 
     // Create a page + follow to generate a notification for A
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `NotifClearPage-${Date.now()}`, kind: 'group' },
+      data: { name: `NotifClearPage-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokensA.accessToken),
     });
     expect(pageRes.status()).toBe(201);

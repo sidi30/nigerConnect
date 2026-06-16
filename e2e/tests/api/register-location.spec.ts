@@ -210,7 +210,7 @@ test.describe('POST /api/auth/register — location fields', () => {
     const suppliedLat = 48.8566;
     const suppliedLng = 2.3522;
 
-    const { user, tokens } = await registerOk(request, {
+    const { user } = await registerOk(request, {
       city: 'Paris',
       countryCode: 'FR',
       latitude: suppliedLat,
@@ -218,6 +218,16 @@ test.describe('POST /api/auth/register — location fields', () => {
     });
     verifyEmailInDb(user.id);
     enableShowOnMap(user.id);
+
+    // Register a second observer user to query the geo endpoint.
+    // The individuals() query always excludes the viewer themselves
+    // (to avoid stacking "you are here" with the client-side marker),
+    // so we must query from a different user's perspective.
+    const { user: observer, tokens: observerTokens } = await registerOk(request, {
+      city: 'Lyon',
+      countryCode: 'FR',
+    });
+    verifyEmailInDb(observer.id);
 
     // Bounding box around Paris (zoom >= 9 → individual markers)
     const north = 49.5;
@@ -228,7 +238,7 @@ test.describe('POST /api/auth/register — location fields', () => {
     const markersRes = await request.get(
       `${BASE_URL}/api/geo/members?north=${north}&south=${south}&east=${east}&west=${west}&zoom=12&type=people`,
       {
-        headers: { Authorization: `Bearer ${tokens.accessToken}`, 'X-Forwarded-For': uniqueIp() },
+        headers: { Authorization: `Bearer ${observerTokens.accessToken}`, 'X-Forwarded-For': uniqueIp() },
       },
     );
     expect(markersRes.status()).toBe(200);

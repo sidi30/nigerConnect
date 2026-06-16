@@ -448,6 +448,13 @@ test.describe('Chat read receipts — Socket.io', () => {
         }),
       ]);
 
+      // The server's handleConnection is async (it queries the DB to join conv rooms).
+      // The client `connect` event fires when the transport is established, before
+      // the server-side handleConnection has resolved. We wait a short fixed interval
+      // so the server has finished joining both sockets to `conv:{id}` — without
+      // which Alice's socket won't be in the room when Bob emits message:read.
+      await new Promise<void>((r) => setTimeout(r, 500));
+
       // Alice waits for Bob's message:read event
       const readEventPromise = waitForEvent(aliceSocket, 'message:read', 8000);
 
@@ -583,6 +590,13 @@ test.describe('Chat read receipts — Socket.io', () => {
           bobSocket.on('connect_error', (e: Error) => { clearTimeout(t); rej(e); });
         }),
       ]);
+
+      // The server's handleConnection is async (it queries the DB to join conv rooms).
+      // The client `connect` event fires when the transport is established, before
+      // the server-side handleConnection has resolved. We wait a short fixed interval
+      // so the server has finished joining both sockets to `conv:{id}` — without
+      // which Alice's socket won't be in the room to receive message:new from Bob.
+      await new Promise<void>((r) => setTimeout(r, 500));
 
       // Alice listens for message:new
       const messageNewPromise = waitForEvent(aliceSocket, 'message:new', 10000);

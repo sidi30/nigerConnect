@@ -227,6 +227,8 @@ test.describe('Associations (bug 4 — detail route)', () => {
       data: {
         name: `TestAssoc-members-${Date.now()}`,
         category: 'etudiants',
+        countryCode: 'NE',
+        city: 'Niamey',
       },
       headers: { Authorization: `Bearer ${tokens.accessToken}`, 'Content-Type': 'application/json' },
     });
@@ -265,6 +267,8 @@ test.describe('Associations (bug 4 — detail route)', () => {
         name: `TestAssoc-join-${Date.now()}`,
         category: 'sport',
         requiresApproval: false,
+        countryCode: 'NE',
+        city: 'Niamey',
       },
       headers: { Authorization: `Bearer ${creatorTokens.accessToken}`, 'Content-Type': 'application/json' },
     });
@@ -281,7 +285,7 @@ test.describe('Associations (bug 4 — detail route)', () => {
     const { tokens } = await registerApproved(request);
 
     const createRes = await request.post(`${BASE_URL}/api/associations`, {
-      data: { name: `TestAssoc-leave-${Date.now()}`, category: 'business' },
+      data: { name: `TestAssoc-leave-${Date.now()}`, category: 'business', countryCode: 'NE', city: 'Niamey' },
       headers: { Authorization: `Bearer ${tokens.accessToken}`, 'Content-Type': 'application/json' },
     });
     expect(createRes.status()).toBe(201);
@@ -304,6 +308,8 @@ test.describe('Associations (bug 4 — detail route)', () => {
         name: `TestAssoc-leave2-${Date.now()}`,
         category: 'jeunesse',
         requiresApproval: false,
+        countryCode: 'NE',
+        city: 'Niamey',
       },
       headers: { Authorization: `Bearer ${creatorTokens.accessToken}`, 'Content-Type': 'application/json' },
     });
