@@ -92,7 +92,7 @@ MINIO_ROOT_PASSWORD=$(openssl rand -base64 24)
 ```
 
 Optionnel selon les fonctionnalités :
-- `RESEND_API_KEY` — emails (sinon les liens reset password sont juste loggués)
+- `SMTP_HOST/PORT/SECURE/USER/PASS` + `MAIL_FROM` — emails via SMTP IONOS (sinon les liens reset password sont juste loggués). `DKIM_*` pour l'anti-spam.
 - `GOOGLE_CLIENT_ID_*` / `APPLE_*` — Sign-in social
 - `FCM_SERVICE_ACCOUNT_JSON` (en base64) — push notifs
 - `SENTRY_DSN` — observabilité

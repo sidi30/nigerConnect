@@ -1,105 +1,141 @@
-# Security Audit Report — NigerConnect
+# Security Audit Report — OAuth users never routed to email verification (mobile gate)
 
-**Mode:** A (post-push diff audit) — STRICT READ-ONLY. No source edits, no fixes, no commits.
-**Auditor:** Gwani-Pentest
-**Date:** 2026-06-14
-**Repository:** `C:\Users\ramzi\Desktop\devs\nigerConnect`
+**Mode:** A (post-push, READ-ONLY, report only — no code modified)
+**Auditor:** gwani-pentest
+**Date:** 2026-06-17
+**Repo:** nigerConnect (`feat/parrainage-invitations`)
+
+## Scope
+
+Commit range audited (exclusive lower bound):
+
+```
+0be41f75d4fe2b0fb530ad13b2a2b0f3450a7f7e..9de87f209cb0860e64f6118d0ea0dde1af0b7a37
+```
+
+This range contains **exactly one commit**:
+
+- `9de87f2` — fix(mobile,auth): never route OAuth users to email verification (Apple Guideline 4 defense-in-depth)
+
+Files changed (3):
+
+| File | Change |
+|---|---|
+| `apps/api/src/common/prisma/user-select.ts` | Add `oauthProvider: true` to `USER_SELF_SELECT` |
+| `apps/mobile/app/_layout.tsx` | `AuthGate` skips the verify-email screen for OAuth users |
+| `packages/shared-types/src/user.ts` | Add `oauthProvider` to the `User` interface |
+
+### Out of scope (not in this range)
+
+The audit prompt mentioned the **parrainage v2** feature (reusable links, unlimited
+invitations, public parrain) and the **OAuth verified-by-default** API change. Those live
+in commits `8fbcb37` and `0be41f7`, which are the **parent and lower bound** of this range —
+i.e. already merged before this push and **not part of the audited diff**. They were covered
+by the previous report run. I read the adjacent OAuth API code only as *context* to assess
+whether this mobile change introduces a regression (it relies on that API behaviour); no
+finding below is raised against out-of-range code.
+
+## Methodology
+
+- `git log` / `git diff` / `git show` over the exact range.
+- Read `AuthGate` routing logic end-to-end (`apps/mobile/app/_layout.tsx:261-307`).
+- Traced provenance of the new `oauthProvider` field: DB select (`user-select.ts`) →
+  serializer (`auth.serializer.ts`) → shared type → client store consumption.
+- Cross-checked the server-side OAuth flow it depends on
+  (`auth.service.ts:520-649`, `apple-verifier.service.ts:108-121`) to confirm the
+  client gate cannot be used to bypass the authoritative `EmailVerifiedGuard`.
+- Secret scan over the raw diff (regex: passwords, tokens, API keys, AWS keys, PEM).
+- Confirmed `complete-profile` / `verify-email` routes exist (no redirect loop).
+
+## Findings
+
+| # | Severity | Location | Description |
+|---|---|---|---|
+| 1 | Info | `apps/api/src/common/prisma/user-select.ts:7,41` | Stale/contradictory doc comment |
+| 2 | Info | `apps/mobile/app/_layout.tsx:288-303` | `isOAuth` applied inconsistently across the 4 routing branches |
+| 3 | Info | `apps/mobile/app/_layout.tsx:294` | Client-side verify-email gate is now bypassable for any account the client can mark OAuth — but defense is server-side (not a vuln) |
+
+No Critical, High, Medium, or Low findings.
 
 ---
 
-## 1. Audit Scope
+### [Info] 1 — Doc comment now contradicts the whitelist — `user-select.ts`
 
-**Git range audited (exclusive lower bound, inclusive upper bound):**
+- **Where:** `apps/api/src/common/prisma/user-select.ts:7` vs `:41`
+- **Evidence:** The file header still says the select *EXCLUDES* `oauthProvider`
+  (`"… lastLoginIp, oauthProviderId, oauthProvider."`, line 7), while line 41 now adds
+  `oauthProvider: true` to `USER_SELF_SELECT`.
+- **Impact:** Documentation drift only. No security impact. `oauthProviderId` (the
+  opaque, sensitive provider subject) remains excluded both here and in the serializer
+  `SENSITIVE_FIELDS` (`auth.serializer.ts:9`). The exposed field is just the provider
+  *name* enum (`google`/`apple`/`facebook`/null) and is returned **only to the account
+  owner** via `USER_SELF_SELECT` — it is absent from `USER_PUBLIC_SELECT`, so it does not
+  leak to other users.
+- **Recommended fix:** Update the line-7 comment to move `oauthProvider` from the EXCLUDES
+  list to the KEEPS list (and keep `oauthProviderId` in EXCLUDES).
+- **Ref:** CWE-1059 (insufficient/inaccurate comments) — informational.
 
-```
-506bc4ef345e502de9e0517ab2eb61989dbb212f..b6614f414f010de14eae81990cce5f0c9d7f225f
-```
+### [Info] 2 — `isOAuth` only consulted in 2 of 4 AuthGate branches — `_layout.tsx`
 
-**Commits in range (1):**
+- **Where:** `apps/mobile/app/_layout.tsx:288-303`
+- **Evidence:** `isOAuth` is used in the `needsProfile` computation (line 290) and the
+  verify-email branch (line 294), but the final "forward authenticated user into the app"
+  branch (line 301) still gates on `user?.emailVerified` alone:
+  `else if (isAuthenticated && user?.emailVerified && !needsProfile && inAuth)`.
+- **Impact:** UX edge only. An OAuth account whose server-side `emailVerified` is somehow
+  `false` (the "server hiccup" the commit defends against) will *not* be auto-forwarded
+  from an `(auth)` screen to `/(tabs)`. It is not bounced to verify-email either (line 294
+  now excludes it), so it simply isn't auto-navigated. No security consequence — the user
+  is authenticated and the server still authorizes their requests.
+- **Recommended fix (optional):** For consistency, change line 301's condition to
+  `(user?.emailVerified || isOAuth)` mirroring line 290.
 
-| Commit | Subject |
-|---|---|
-| `b6614f4` | `chore(mobile): bump version 1.2.0 → 1.3.0 (expo-updates native major)` |
+### [Info] 3 — Client verify-email gate is advisory; enforcement is server-side (confirmed safe)
 
-**Files changed in range (1):**
+- **Where:** `apps/mobile/app/_layout.tsx:294` — `&& !isOAuth`
+- **Evidence / analysis:** `isOAuth = Boolean(user?.oauthProvider)` and `user` is populated
+  exclusively from the server's authenticated `/me` response (`USER_SELF_SELECT`). A
+  password account is created with `oauthProvider = null`, so `isOAuth` is `false` for them
+  and they remain corralled onto verify-email. A client cannot self-promote the flag because
+  it is server-derived, not client-asserted.
+- **Why this is not a vulnerability:** The verify-email screen is a *UX* gate. The
+  authoritative control is the API's global `EmailVerifiedGuard`, which reads `emailVerified`
+  from the DB on every request. OAuth accounts legitimately carry `emailVerified=true` in
+  the DB (set on creation in the adjacent commit `0be41f7`, `auth.service.ts:624`), so they
+  pass the guard on their own merits — the client flag does not relax any server check. The
+  email values that drive OAuth creation come from cryptographically verified provider tokens
+  (`apple-verifier.service.ts:108-121` requires a valid signature + explicit `email_verified`
+  claim; Google rejects unverified emails at `auth.service.ts:74-77`) and the account-takeover
+  auto-link guard (`auth.service.ts:520-548`) runs *before* the create branch — so a verified
+  OAuth identity cannot be minted for an address the attacker does not control.
+- **Impact:** None. Documented for completeness so reviewers know the client gate weakening
+  is intentional and backed by server-side enforcement.
+- **Ref:** OWASP A01 / A07 — reviewed, no broken access control or auth bypass introduced.
 
-| File | +/- | Nature |
+---
+
+## Summary by severity
+
+| Severity | Count | Open |
 |---|---|---|
-| `apps/mobile/app.json` | +1 / -1 | Expo app version string `1.2.0` → `1.3.0` |
+| Critical | 0 | 0 |
+| High | 0 | 0 |
+| Medium | 0 | 0 |
+| Low | 0 | 0 |
+| Info | 3 | 3 (advisory only) |
 
-**Effective diff (the entire change):**
+## Assessment
 
-```diff
---- a/apps/mobile/app.json
-+++ b/apps/mobile/app.json
-@@ -2,7 +2,7 @@
-   "expo": {
-     "name": "NigerConnect",
-     "slug": "nigerconnect",
--    "version": "1.2.0",
-+    "version": "1.3.0",
-```
+- **No secrets** introduced in the diff.
+- **No new endpoints, Zod schemas, Prisma queries, or JWT handling** in range — the change is
+  a read-only field exposure to the account owner plus a client-side navigation tweak.
+- **No IDOR / private-account leak:** `oauthProvider` is exposed only via `USER_SELF_SELECT`
+  (owner only); `USER_PUBLIC_SELECT` is unchanged.
+- **No AuthN/AuthZ regression:** the client verify-email skip is defense-in-depth on top of
+  the server `EmailVerifiedGuard`; it cannot be abused to bypass server authorization because
+  the driving flag is server-derived and the guard re-checks the DB.
 
-> **Important scoping note.** The commit *message* references the `expo-updates 0.28 → 29` / Expo SDK 54 native bump and dependency realignment. Those dependency/manifest/lockfile and CI changes were landed in **prior** commits (`7afb40d` "align deps to Expo SDK 54", `506bc4e` "Node 24 for JavaScript actions"), which sit **at or below** the exclusive lower bound of this range and are therefore **outside the audited diff**. Within `506bc4e..b6614f4` the only change is the single version string above — no `package.json`, no `pnpm-lock.yaml`, no `.github/workflows/*`, no source code, no Dockerfile, and no secret material were modified.
+## Verdict
 
----
-
-## 2. Methodology
-
-1. **Range enumeration** — `git log --oneline`, `git diff --stat`, `git diff --numstat`, `git diff --name-only` over the exact range to establish the true change set.
-2. **Full diff inspection** — `git show b6614f4` to read every changed hunk.
-3. **Context review** — read the complete `apps/mobile/app.json` to assess whether the surrounding configuration (OAuth client IDs, EAS projectId, permissions, privacy manifest, ATS/encryption flags, deep-link `associatedDomains`/`intentFilters`) introduced any exploitable surface *as part of this change*.
-4. **Regression baseline diff** — compared `app.json` at the base commit (`506bc4e:apps/mobile/app.json`) against HEAD to confirm that all sensitive-looking identifiers pre-existed and were **not** introduced, altered, or newly exposed by this range.
-5. **Secrets check** — verified no private key / token / service-account / `.env` / keystore material is added by the diff. (OAuth *client* IDs present in `app.json` are public client identifiers shipped inside every mobile binary by design, not secrets; they are unchanged by this range.)
-6. **Convention mapping** — assessed against project CLAUDE.md security conventions (Zod validation, AuthZ/IDOR owner-filtering, JWT RS256 iss/aud/jti, `S3Service.assertOwnedPublicImage` media binding, privacy levels, no secrets in repo) and OWASP Top 10 2021 / API Top 10 2023.
-
-**Coverage of OWASP / SAST categories for this diff:** A version-string change touches no auth flow, no data access path, no input parsing, no network/URL handling, no deserialization, no template/HTML rendering, no CI/build pipeline, and no dependency surface. Categories A01–A10 are therefore **not reachable** by the audited change. There is no executable code, query, route, guard, or dependency delta to analyze.
-
----
-
-## 3. Findings
-
-| # | Severity | Title | File:Line | OWASP / CWE | Status |
-|---|---|---|---|---|---|
-| INFO-1 | **Info** | No security-relevant change in range | `apps/mobile/app.json:5` | n/a | Open (informational) |
-
-### INFO-1 — Range contains only a cosmetic version bump; no attack surface affected
-
-- **Where:** `apps/mobile/app.json:5`
-- **Evidence:** The complete diff for the range is a one-line change: `"version": "1.2.0"` → `"version": "1.3.0"`. No other file is touched (`git diff --numstat` reports `1  1  apps/mobile/app.json`).
-- **Impact:** None from a security standpoint. The `version` value drives Expo `runtimeVersion` (policy `appVersion`), which correctly **decouples** future OTA updates of the 1.3.0 (expo-updates 29.x / SDK 54) binary from the 1.2.0 (expo-updates 0.28) TestFlight binary. This is the *security-positive* outcome: it prevents shipping an OTA bundle built against the new native runtime to an old runtime (which would crash / be an integrity & availability hazard). The change reduces, rather than introduces, runtime-integrity risk (cf. OWASP A08 Software & Data Integrity Failures — mitigated, not violated).
-- **PoC:** N/A — no reachable behavior to exploit.
-- **Remediation:** None required. Operational reminder only: because expo-updates jumped a **native** major, the next iOS/Android artifact **must be a full EAS rebuild** at runtimeVersion `1.3.0` (not an OTA over the 1.2.0 binary), as the commit message itself states. Verify the rebuild before publishing any `1.3.0` OTA channel.
-- **Ref:** Expo OTA runtimeVersion semantics; OWASP A08:2021.
-
-### Non-findings explicitly verified (defensive notes)
-
-- **No secrets introduced.** `git diff` adds no `*.pem`, `*.p8`, keystore, `service-account*.json`, `google-services.json`, or `.env`. The Google OAuth **client** IDs and EAS `projectId` visible in `app.json` are unchanged from the base commit (`506bc4e`) and are public client identifiers by design. (Not a finding; reconfirmed for completeness.)
-- **No CI / workflow change** in this range (the Node 24 workflow change is the prior commit `506bc4e`, excluded by the exclusive lower bound).
-- **No dependency / lockfile change** in this range (the SDK 54 / expo-updates realignment is the prior commit `7afb40d`, excluded). If a dependency-level audit of those bumps is desired, it must target the range `…7afb40d` or `7afb40d^..7afb40d`, which is **out of scope** here.
-- **No code touching** auth, guards, Prisma queries (IDOR), Zod validation, WebSocket gateway, S3 presign/media binding, geo/privacy, SSRF sinks, or raw SQL — none of these paths appear in the diff.
-
----
-
-## 4. Severity Recap (`by_severity`)
-
-| Severity | Count |
-|---|---|
-| Critical | 0 |
-| High | 0 |
-| Medium | 0 |
-| Low | 0 |
-| Info | 1 |
-
-**Fixes applied:** none (read-only audit; nothing to fix).
-**Fixes proposed (require human action):** none. Operational note only: ensure the next mobile artifact for `1.3.0` is a full EAS **rebuild**, not an OTA, before publishing to the `1.3.0` runtime.
-
----
-
-## 5. Verdict
-
-The audited range `506bc4e..b6614f4` consists solely of an Expo app version bump (`1.2.0` → `1.3.0`) in `apps/mobile/app.json`. It introduces **no source code, no dependency, no CI, no configuration secret, and no new attack surface**. The change is security-neutral-to-positive (it correctly isolates the new native runtimeVersion from old OTA bundles). There are **no Critical, High, Medium, or Low findings**.
-
-**Caveat for the deployer:** the security posture of the underlying SDK 54 / expo-updates 29.x dependency upgrade was *not* evaluated here because those commits fall outside the requested range. If assurance over that native/dependency jump is required, run a dedicated dependency audit against `7afb40d` and its lockfile.
-
-> **Verdict:** OK_TO_DEPLOY (no open Critical/High findings in this range).
+**OK_TO_DEPLOY** — no open Critical or High findings. The three Info items are
+documentation/consistency nits and may be addressed at leisure.

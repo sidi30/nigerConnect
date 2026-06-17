@@ -93,7 +93,7 @@ Build :    ✅ API build OK (Dockerfile multi-stage testé en CI)
 | Créer le réseau Docker `traefik-public` + un Traefik avec resolver `letsencrypt-dns` | VPS | Le compose attend ce réseau externe |
 | Créer 3 enregistrements **DNS A** Cloudflare (proxied=ON) → IP du VPS | Cloudflare | TLS Universal SSL (1 niveau de sous-domaine) |
 | Créer une **org Sentry** + 3 projets (api / web / mobile) | sentry.io | Observabilité erreurs |
-| Créer un compte **Resend** (ou autre SMTP), récupérer la clé API et configurer un domaine vérifié | resend.com | Envoi de mails de prod |
+| Provisionner une **boîte SMTP** (prod actuelle = IONOS `contact@gwani.fr`) + publier DKIM/SPF du domaine d'envoi | IONOS | Envoi de mails de prod (nodemailer+SMTP, pas de SDK Resend) |
 | Créer le projet **Firebase** + télécharger le **service account JSON** (FCM) | Firebase Console | Push notifications |
 | Créer 3 **OAuth clients Google** (Web / Android / iOS) | Google Cloud Console | Sign-in avec Google |
 | (iOS) Apple Developer Program + Service ID + Key `.p8` | developer.apple.com | Sign in with Apple — **uniquement si on submit iOS** |
@@ -120,7 +120,7 @@ $EDITOR .env.prod
 #   GOOGLE_CLIENT_ID_WEB=…  (doit matcher app.json:extra.googleClientIdWeb du mobile)
 #   GOOGLE_CLIENT_ID_ANDROID=…  (créé dans Google Cloud Console — type Android)
 #   GOOGLE_CLIENT_ID_IOS=…  (type iOS) — si submit iOS
-#   RESEND_API_KEY=…  ou SMTP_HOST/USER/PASS (les trois ensemble)
+#   SMTP_HOST/SMTP_PORT/SMTP_SECURE/SMTP_USER/SMTP_PASS + MAIL_FROM (transport réel) ; DKIM_DOMAIN/SELECTOR/PRIVATE_KEY_B64 (anti-spam)
 #   FCM_SERVICE_ACCOUNT_JSON=$(base64 -w0 firebase-service-account.json)
 #   SENTRY_DSN=…  (projet API)
 ```
@@ -302,7 +302,7 @@ Une version d'app dans les stores ne se rollback pas. Mitigation :
 
 1. Vérifier `APP_WEB_URL` dans `.env.prod` → doit pointer vers le web.
 2. Vérifier les logs API : `docker logs nigerconnect-api 2>&1 | grep -i 'sendmail\|smtp'`
-3. Vérifier les credentials SMTP/Resend : test avec `curl` ou Resend dashboard.
+3. Vérifier les credentials SMTP (IONOS) : log API doit afficher `Mailer: SMTP → smtp.ionos.fr`.
 4. Vérifier que `APP_WEB_URL/reset-password` répond bien (page Next.js).
 5. Si le mail arrive mais que la page web 500 : vérifier `NEXT_PUBLIC_API_URL` côté web.
 

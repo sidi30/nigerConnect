@@ -1,4 +1,10 @@
-# Déploiement Web (Next.js sur Vercel)
+# Déploiement Web (Next.js — option Vercel)
+
+> ⚠️ **État réel** : en prod, `apps/web` tourne **self-hosted sur le VPS** (conteneur
+> `nigerconnect-web`, Docker Compose derrière Traefik, `root@46.224.193.109`) — déployé
+> via `scripts/deploy-vps.sh`, comme l'API. Ce guide Vercel décrit une **alternative**
+> non utilisée actuellement. Pour le déploiement réel, voir `docs/DEPLOYMENT.md` /
+> `DEPLOY_PLAYBOOK.md`.
 
 Ce guide couvre uniquement `apps/web` (la landing/site marketing Next.js 16). Pour
 l'API NestJS et le mobile, voir `docs/DEPLOYMENT.md` et `apps/mobile/eas.json`.
@@ -7,13 +13,13 @@ l'API NestJS et le mobile, voir `docs/DEPLOYMENT.md` et `apps/mobile/eas.json`.
 
 ```
             ┌─────────────────────────┐
-            │  Vercel — apps/web      │   www.nigerconnect.ne
+            │  Vercel — apps/web      │   www.nigerconnect.app
             │  Next.js 16 (Edge)      │
             └───────────┬─────────────┘
                         │  fetch
                         ▼
             ┌─────────────────────────┐
-            │  Railway / Render       │   api.nigerconnect.ne
+            │  Railway / Render       │   api.nigerconnect.app
             │  NestJS + Postgres +    │
             │  Redis + S3 (R2/MinIO)  │
             └─────────────────────────┘
@@ -42,8 +48,8 @@ environnement (`Production`, `Preview`, `Development`) :
 
 | Variable | Production | Preview | Description |
 |---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | `https://api.nigerconnect.ne` | `https://api-staging.nigerconnect.ne` | URL publique de l'API NestJS (sans `/api` final) |
-| `NEXT_PUBLIC_APP_URL` | `https://nigerconnect.ne` | `https://staging.nigerconnect.ne` | Origine du front (sitemap, OG, robots) |
+| `NEXT_PUBLIC_API_URL` | `https://api.nigerconnect.app` | `https://api-staging.nigerconnect.app` | URL publique de l'API NestJS (sans `/api` final) |
+| `NEXT_PUBLIC_APP_URL` | `https://nigerconnect.app` | `https://staging.nigerconnect.app` | Origine du front (sitemap, OG, robots) |
 | `NEXT_PUBLIC_SENTRY_DSN` | `https://xxx@sentry.io/yyy` | (optionnel) | DSN Sentry browser. Vide = reporting désactivé. |
 
 Fichier `.env.example` à jour : voir `apps/web/.env.example`.
@@ -81,7 +87,7 @@ cat .vercel/project.json
 
 Vercel → Project → Settings → Domains :
 
-1. Ajoute `nigerconnect.ne` et `www.nigerconnect.ne` (Vercel propose un redirect
+1. Ajoute `nigerconnect.app` et `www.nigerconnect.app` (Vercel propose un redirect
    automatique du `apex` vers `www` ou l'inverse — choisis en fonction de ta
    préférence SEO).
 2. Vercel te donne soit un `A record` (76.76.21.21) soit un `CNAME` à pointer
@@ -99,7 +105,7 @@ Le `apps/web/vercel.json` configure déjà :
 - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
 - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
 
-Vérifie après le 1er deploy avec [securityheaders.com](https://securityheaders.com/?q=nigerconnect.ne). Cible : note **A** ou **A+**.
+Vérifie après le 1er deploy avec [securityheaders.com](https://securityheaders.com/?q=nigerconnect.app). Cible : note **A** ou **A+**.
 
 ## Étape 6 — Promouvoir une preview en production
 
@@ -133,10 +139,10 @@ Le rollback est instantané (re-aliasing, pas de rebuild).
 
 ## Checklist post-1er-deploy
 
-- [ ] `curl -I https://nigerconnect.ne` → `HTTP/2 200` + tous les headers de sécurité présents
+- [ ] `curl -I https://nigerconnect.app` → `HTTP/2 200` + tous les headers de sécurité présents
 - [ ] [securityheaders.com](https://securityheaders.com/) note A ou A+
-- [ ] `https://nigerconnect.ne/sitemap.xml` répond et liste les routes
-- [ ] `https://nigerconnect.ne/robots.txt` est cohérent (pas `Disallow: /` accidentel)
+- [ ] `https://nigerconnect.app/sitemap.xml` répond et liste les routes
+- [ ] `https://nigerconnect.app/robots.txt` est cohérent (pas `Disallow: /` accidentel)
 - [ ] Les images `next/image` sont servies en `image/webp` (vérifie via DevTools → Network)
 - [ ] Lighthouse score ≥ 90 sur Mobile + Desktop (Performance, Accessibility, Best Practices, SEO)
 - [ ] Sentry reçoit les premiers events (déclenche un 500 test si tu as branché un endpoint qui peut crasher)
