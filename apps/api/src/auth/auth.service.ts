@@ -610,15 +610,18 @@ export class AuthService {
               lastName: profile.lastName ?? null,
               displayName: [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
               avatarUrl: profile.avatarUrl ?? null,
-              // OAuth signup: trust the provider's verdict, never hardcode verified.
-              // Google rejects unverified emails upstream (signInWithGoogle throws),
-              // and Apple relay/real addresses carry email_verified=true → those land
-              // verified and aren't stuck behind the gate / hidden from the map. But an
-              // Apple token with an email yet NO verified claim must NOT be promoted to
-              // verified — that would let someone claim an address they may not own.
-              // Profile completion (city/country) is collected by the client in a
-              // follow-up onboarding step.
-              emailVerified: profile.emailVerified === true,
+              // OAuth signup = provider-authenticated → the new account is verified.
+              // Apple HIG / App Store Guideline 4: a Sign-in-with-Apple identity is a
+              // complete, verified authentication — we must NEVER bounce these users to
+              // the email-verification screen afterward (Apple omits the email claim on
+              // re-authorization, which previously left them stuck on verify-email = an
+              // App Store rejection). Safe here: this is the CREATE branch, only reached
+              // when NO existing account owns profile.email (the auto-link takeover guard
+              // above already ran and is the ONLY place that trusts/links by email, and it
+              // stays strict — profile.emailVerified === true). So there is no other owner
+              // to "claim", and Apple/Google only vend emails they themselves verified.
+              // Profile completion (city/country) is collected client-side afterward.
+              emailVerified: true,
               invitedById: newUserInvitedById,
               invitedViaId: newUserInvitedViaId,
             },

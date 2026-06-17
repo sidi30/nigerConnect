@@ -672,7 +672,11 @@ describe('AuthService', () => {
       );
     });
 
-    it('handles null email from Apple (token carries no email, no client fallback)', async () => {
+    it('marks a fresh Apple account verified even when the token carries no email', async () => {
+      // App Store Guideline 4 / Apple HIG: a Sign-in-with-Apple identity is a
+      // complete, verified authentication. Apple omits the email claim on
+      // re-authorization — the new account must STILL be verified so the user is
+      // never bounced to the verify-email screen (the prior App Store rejection).
       const prisma = makePrisma();
       const apple = {
         verify: jest.fn(async () => ({
@@ -691,19 +695,22 @@ describe('AuthService', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             email: null,
-            emailVerified: false,
+            emailVerified: true,
           }),
         }),
       );
     });
 
-    it('does NOT mark verified when Apple sends an email but no verified claim', async () => {
+    it('marks a fresh Apple account verified on the create path (provider-authenticated)', async () => {
+      // The create branch is only reached when NO existing account owns this email
+      // (the auto-link takeover guard — tested separately — already ran and stays
+      // strict). So trusting Apple here cannot take over or squat a real owner's
+      // account, and it keeps the user off the verify-email dead-end.
       const prisma = makePrisma();
       const apple = {
         verify: jest.fn(async () => ({
           sub: 'apple.user.unverified',
-          email: 'mallory@example.com',
-          // Verifier saw no explicit `email_verified` claim → false
+          email: 'newcomer@example.com',
           emailVerified: false,
           isPrivateEmail: false,
         })),
@@ -716,8 +723,8 @@ describe('AuthService', () => {
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            email: 'mallory@example.com',
-            emailVerified: false,
+            email: 'newcomer@example.com',
+            emailVerified: true,
           }),
         }),
       );
