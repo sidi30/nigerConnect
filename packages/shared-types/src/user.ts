@@ -30,6 +30,9 @@ export interface User extends PublicUser {
   privacyLevel: PrivacyLevel;
   emailVerified: boolean;
   phoneVerified: boolean;
+  // null = email+password account. Set = the account signs in via this provider;
+  // the app uses it to skip the email-verification gate for OAuth users.
+  oauthProvider: 'google' | 'apple' | 'facebook' | null;
   role: UserRole;
   status: UserStatus;
   mfaEnabled: boolean;
