@@ -91,6 +91,61 @@ describe('ModerationService', () => {
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
   });
 
+  // --- getTarget: role-gated privacy bypass for the moderation console ---
+
+  it('getTarget throws NotFound on unknown report (no arbitrary content fetch)', async () => {
+    const prisma = { report: { findUnique: jest.fn(async () => null) } };
+    const svc = new ModerationService(prisma as never);
+    await expect(svc.getTarget('missing')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('getTarget resolves the content id from the report only (bounded fetch)', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ targetType: 'post', targetId: 'p1' })),
+      },
+      post: {
+        findUnique: jest.fn(async () => ({ id: 'p1', content: 'x', media: [] })),
+      },
+    };
+    const svc = new ModerationService(prisma as never);
+    await svc.getTarget('r1');
+    // The post is read by the report's own targetId — never a caller-supplied id.
+    expect(prisma.post.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'p1' } }),
+    );
+  });
+
+  it('getTarget on a user target NEVER selects sensitive columns', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ targetType: 'user', targetId: 'u1' })),
+      },
+      user: { findUnique: jest.fn(async () => ({ id: 'u1', displayName: 'A' })) },
+    };
+    const svc = new ModerationService(prisma as never);
+    await svc.getTarget('r1');
+    const arg = (prisma.user.findUnique.mock.calls as unknown[][])[0]?.[0] as {
+      select: Record<string, unknown>;
+    };
+    const select = arg.select;
+    // Data minimization: the moderation preview must not leak auth/PII columns.
+    for (const forbidden of ['passwordHash', 'mfaSecret', 'email', 'lastLoginIp', 'refreshTokens']) {
+      expect(select).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it('getTarget returns found:false (not throw) when the target row is gone', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ targetType: 'message', targetId: 'm1' })),
+      },
+      message: { findUnique: jest.fn(async () => null) },
+    };
+    const svc = new ModerationService(prisma as never);
+    await expect(svc.getTarget('r1')).resolves.toEqual({ type: 'message', found: false });
+  });
+
   it('does NOT flag the inviter on suspend (only ban)', async () => {
     const prisma = {
       report: {

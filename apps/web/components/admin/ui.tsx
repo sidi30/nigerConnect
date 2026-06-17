@@ -465,8 +465,11 @@ export function SidebarItem({
       />
       <span className="flex-1 text-left truncate">{label}</span>
       {badge && badge > 0 ? (
-        <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-[#E05206] text-white text-[11px] font-bold tabular-nums">
-          {badge > 99 ? "99+" : badge}
+        <span
+          className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-[#E05206] text-white text-[11px] font-bold tabular-nums"
+          aria-label={`${badge} en attente`}
+        >
+          <span aria-hidden="true">{badge > 99 ? "99+" : badge}</span>
         </span>
       ) : null}
     </button>

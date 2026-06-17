@@ -34,6 +34,111 @@ export class ModerationService {
     return { items: page, nextCursor: hasMore ? page[page.length - 1]!.id : null };
   }
 
+  // Resolve a report's target into a content preview for the moderation console.
+  // Moderators MUST be able to read the reported content to decide — so this
+  // bypasses the privacy/ownership rules enforced on the public API (private
+  // posts, friends-only posts, DM content). Access is role-gated to
+  // admin/moderator at the controller. Soft-deleted content is still returned
+  // (the row is kept on content_removed) so a resolved report stays auditable;
+  // `deletedAt` lets the UI flag it. Hard-deleted/missing targets return found:false.
+  async getTarget(id: string) {
+    const report = await this.prisma.report.findUnique({ where: { id } });
+    if (!report) throw new NotFoundException('Report not found');
+
+    const { targetType, targetId } = report;
+    const authorSelect = { id: true, displayName: true, avatarUrl: true } as const;
+
+    switch (targetType) {
+      case 'post': {
+        const post = await this.prisma.post.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            content: true,
+            visibility: true,
+            isStory: true,
+            createdAt: true,
+            deletedAt: true,
+            author: { select: authorSelect },
+            media: {
+              select: { mediaUrl: true, thumbnailUrl: true, mediaType: true },
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
+        });
+        if (!post) return { type: 'post' as const, found: false as const };
+        return { type: 'post' as const, found: true as const, ...post };
+      }
+      case 'comment': {
+        const comment = await this.prisma.comment.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            deletedAt: true,
+            postId: true,
+            author: { select: authorSelect },
+          },
+        });
+        if (!comment) return { type: 'comment' as const, found: false as const };
+        return { type: 'comment' as const, found: true as const, ...comment };
+      }
+      case 'message': {
+        const message = await this.prisma.message.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            content: true,
+            mediaUrl: true,
+            messageType: true,
+            createdAt: true,
+            deletedAt: true,
+            sender: { select: authorSelect },
+          },
+        });
+        if (!message) return { type: 'message' as const, found: false as const };
+        return { type: 'message' as const, found: true as const, ...message };
+      }
+      case 'user': {
+        const user = await this.prisma.user.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+            bio: true,
+            city: true,
+            countryCode: true,
+            status: true,
+            createdAt: true,
+          },
+        });
+        if (!user) return { type: 'user' as const, found: false as const };
+        return { type: 'user' as const, found: true as const, ...user };
+      }
+      case 'association': {
+        const association = await this.prisma.association.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            logoUrl: true,
+            category: true,
+            city: true,
+            countryCode: true,
+            createdAt: true,
+          },
+        });
+        if (!association) return { type: 'association' as const, found: false as const };
+        return { type: 'association' as const, found: true as const, ...association };
+      }
+      default:
+        return { type: targetType, found: false as const };
+    }
+  }
+
   async resolve(reviewerId: string, id: string, dto: ResolveReportDto) {
     const report = await this.prisma.report.findUnique({ where: { id } });
     if (!report) throw new NotFoundException('Report not found');

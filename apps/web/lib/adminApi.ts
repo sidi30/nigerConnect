@@ -259,6 +259,85 @@ export interface ReportListResponse {
   nextCursor: string | null;
 }
 
+// GET /reports/:id/target — resolves a report's reported content for preview.
+// Discriminated on `type`; `found: false` when the target was hard-deleted.
+export interface ReportTargetAuthor {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface ReportTargetMedia {
+  mediaUrl: string;
+  thumbnailUrl: string | null;
+  mediaType: string;
+}
+
+export type ReportTarget =
+  | { type: "post"; found: false }
+  | {
+      type: "post";
+      found: true;
+      id: string;
+      content: string | null;
+      visibility: string;
+      isStory: boolean;
+      createdAt: string;
+      deletedAt: string | null;
+      author: ReportTargetAuthor;
+      media: ReportTargetMedia[];
+    }
+  | { type: "comment"; found: false }
+  | {
+      type: "comment";
+      found: true;
+      id: string;
+      content: string;
+      createdAt: string;
+      deletedAt: string | null;
+      postId: string;
+      author: ReportTargetAuthor;
+    }
+  | { type: "message"; found: false }
+  | {
+      type: "message";
+      found: true;
+      id: string;
+      content: string | null;
+      mediaUrl: string | null;
+      messageType: string;
+      createdAt: string;
+      deletedAt: string | null;
+      sender: ReportTargetAuthor;
+    }
+  | { type: "user"; found: false }
+  | {
+      type: "user";
+      found: true;
+      id: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      bio: string | null;
+      city: string | null;
+      countryCode: string | null;
+      status: string;
+      createdAt: string;
+    }
+  | { type: "association"; found: false }
+  | {
+      type: "association";
+      found: true;
+      id: string;
+      name: string;
+      description: string | null;
+      logoUrl: string | null;
+      category: string;
+      city: string | null;
+      countryCode: string | null;
+      createdAt: string;
+    }
+  | { type: string; found: false };
+
 export type IdentityDecision = "approved" | "rejected";
 export type ReportAction =
   | "warning"
@@ -344,6 +423,13 @@ export function fetchPendingReports(
   signal?: AbortSignal,
 ): Promise<ReportListResponse> {
   return adminFetch<ReportListResponse>("/reports?status=pending", { signal });
+}
+
+export function fetchReportTarget(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ReportTarget> {
+  return adminFetch<ReportTarget>(`/reports/${id}/target`, { signal });
 }
 
 export function resolveReport(
