@@ -58,7 +58,12 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Cold Gradle compile of the RN 0.81 / New-Arch app on a 2-core runner runs
+    # ~80-90 min with no dependency cache (a managed Expo app has no android/ at
+    # checkout, so setup-java's gradle cache can't engage). 90 min cut a build off
+    # seconds from done; 150 gives headroom. The Gradle cache step below trims
+    # subsequent runs once GitHub's cache service has a warm entry.
+    timeout-minutes: 150
     environment:
       name: production-mobile
     steps:
@@ -87,6 +92,23 @@ jobs:
             echo "org.gradle.daemon=false"
             echo "org.gradle.parallel=true"
           } >> ~/.gradle/gradle.properties
+
+      # Persist the Gradle dependency cache (~/.gradle/caches + wrapper) across
+      # runs. setup-java's built-in `cache: gradle` can't engage here (no android/
+      # *.gradle exists at checkout — prebuild generates it during the build), but
+      # the downloaded deps still land in ~/.gradle regardless, so we cache that
+      # directory directly. Keyed on the lockfile: deps change -> RN/Gradle deps
+      # change. A non-exact restore-key reuses the closest warm cache for partial
+      # hits. Save failures (GitHub cache outages) are non-fatal and just warn.
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       # No `version:` — action-setup reads `packageManager` (pnpm@10.33.0) from
       # the root package.json, matching the other workflows in this repo.
