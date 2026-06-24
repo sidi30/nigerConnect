@@ -8,7 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 // Deep-link scheme and store URLs.
 const APP_SCHEME = "nigerconnect://";
 const IOS_STORE_URL =
-  "https://apps.apple.com/app/nigerconnect/id6478371413";
+  "https://apps.apple.com/fr/app/nigerconnect/id6775895189";
 const ANDROID_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.sidi30.nigerconnect";
 
