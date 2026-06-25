@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { type Transporter } from 'nodemailer';
@@ -103,6 +104,11 @@ export class MailerService implements OnModuleInit {
         html: input.html,
         text: input.text,
         replyTo: this.fromAddress,
+        // Pin the Message-ID to the sending domain. By default nodemailer derives
+        // it from the container's os.hostname() (a random hex id), which trips
+        // SpamAssassin's "suspicious message ID" heuristic (FONT_INVIS_MSGID) and
+        // weakens domain alignment. Always emit <uuid@nigerconnect.app>.
+        messageId: `<${randomUUID()}@${this.fromAddress.split('@')[1] ?? 'nigerconnect.app'}>`,
         ...(input.attachments ? { attachments: input.attachments } : {}),
         // List-Unsubscribe improves inbox placement even for transactional mail.
         // Bulk mail (newsletter) passes an HTTPS one-click URL; everything else
