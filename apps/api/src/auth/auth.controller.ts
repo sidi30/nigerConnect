@@ -264,8 +264,10 @@ export class AuthController {
   }
 
   private getIp(req: Request): string | undefined {
-    const fwd = req.headers['x-forwarded-for'];
-    if (typeof fwd === 'string') return fwd.split(',')[0]?.trim();
-    return req.socket?.remoteAddress ?? undefined;
+    // req.ip is the trust-proxy-resolved client IP (Express applies the
+    // TRUST_PROXY_HOPS setting to X-Forwarded-For and returns the right hop).
+    // The previous leftmost-XFF parse was client-spoofable. TRUST_PROXY_HOPS must
+    // equal the real hop count in prod (Cloudflare→Traefik→api = 2) via env.
+    return req.ip;
   }
 }

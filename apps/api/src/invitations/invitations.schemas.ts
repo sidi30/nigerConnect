@@ -19,6 +19,13 @@ export type CreateInvitationDto = z.infer<typeof createInvitationSchema>;
 export const revokeInvitationSchema = z.object({}).strict();
 export type RevokeInvitationDto = z.infer<typeof revokeInvitationSchema>;
 
+// GET /invitations : pagination par curseur (rétro-compat — params optionnels).
+export const listInvitationsSchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListInvitationsDto = z.infer<typeof listInvitationsSchema>;
+
 export const checkInvitationSchema = z.object({
   code: z.string().trim().min(6).max(16),
 });

@@ -14,8 +14,16 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser, JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { InvitationsService } from './invitations.service';
-import { checkInvitationSchema, createInvitationSchema } from './invitations.schemas';
-import type { CheckInvitationDto, CreateInvitationDto } from './invitations.schemas';
+import {
+  checkInvitationSchema,
+  createInvitationSchema,
+  listInvitationsSchema,
+} from './invitations.schemas';
+import type {
+  CheckInvitationDto,
+  CreateInvitationDto,
+  ListInvitationsDto,
+} from './invitations.schemas';
 
 @Controller('invitations')
 export class InvitationsController {
@@ -55,10 +63,15 @@ export class InvitationsController {
    * GET /invitations
    * List current user's invitations plus quota summary.
    * Must come before /:id routes so Express doesn't match 'check' as a UUID.
+   * Cursor-paginated (params optionnels) — la réponse reste rétro-compatible
+   * (canBulkInvite + invites inchangés, ajout d'un nextCursor optionnel).
    */
   @Get()
-  async list(@CurrentUser() user: JwtUserPayload) {
-    return this.invitations.listInvitations(user.sub);
+  async list(
+    @CurrentUser() user: JwtUserPayload,
+    @Query(new ZodValidationPipe(listInvitationsSchema)) dto: ListInvitationsDto,
+  ) {
+    return this.invitations.listInvitations(user.sub, dto.limit, dto.cursor);
   }
 
   /**

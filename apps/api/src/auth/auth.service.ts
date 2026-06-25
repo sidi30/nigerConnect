@@ -173,6 +173,13 @@ export class AuthService {
           emailMatchAuthorized = true;
         } else {
           // Neither a valid code nor a matching targeted invite — block.
+          // SECURITY (résiduel, faible levier) : en invite_only, un appelant non
+          // authentifié peut distinguer "cet email a une invitation ciblée"
+          // (la requête poursuit jusqu'au check d'unicité → 409/succès) de "pas
+          // d'invitation" (403 ici). C'est inhérent à l'UX d'invitation ciblée :
+          // un invité légitime SANS code doit pouvoir s'inscrire. On ne peut donc
+          // pas unifier sans casser ce parcours (cf. parrainage-email-targeted.spec).
+          // Le throttle register par IP borne l'énumération de masse.
           throw new ForbiddenException({
             code: 'INVITE_CODE_REQUIRED',
             message: 'Un code d\'invitation est requis pour créer un compte.',
@@ -238,7 +245,9 @@ export class AuthService {
           city: dto.city ?? null,
           countryCode: dto.countryCode ?? null,
           bio: dto.bio ?? null,
-          avatarUrl: dto.avatarUrl ?? null,
+          // Avatar set post-signup via updateAvatar (S3-bound) — never persist a
+          // raw client URL at registration.
+          avatarUrl: null,
           latitude,
           longitude,
           invitedById,
@@ -584,6 +593,10 @@ export class AuthService {
             newUserInvitedViaId = emailMatch.invitationId;
             oauthEmailMatchAuthorized = true;
           } else {
+            // SECURITY (résiduel, faible levier) : même résidu que le register
+            // classique — un email avec invitation ciblée poursuit la création
+            // tandis qu'un email sans invitation est bloqué ici (403). Inhérent à
+            // l'UX d'invitation ciblée ; non unifiable sans casser le parcours.
             throw new ForbiddenException({
               code: 'INVITE_CODE_REQUIRED',
               message: 'Un code d\'invitation est requis pour créer un compte.',

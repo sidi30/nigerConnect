@@ -126,8 +126,8 @@ export default function VerifyEmailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Pas reçu ?</Text>
           <Text style={styles.cardText}>
-            Vérifie tes spams. Le code expire dans 24h. Tu peux en demander un nouveau
-            ci-dessous.
+            Vérifie tes spams. Le code expire dans 15 minutes. Tu peux en demander un
+            nouveau ci-dessous.
           </Text>
         </View>
 

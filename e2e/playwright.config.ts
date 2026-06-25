@@ -224,6 +224,42 @@ export default defineConfig({
       },
     },
 
+    {
+      name: 'api-inviter-ban-stops-invites',
+      testMatch: 'api/inviter-ban-stops-invites.spec.ts',
+      // Mutates registration_mode (invite_only) — same serial discipline as the
+      // parrainage specs to avoid racing on the shared global setting.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-invitations-pagination',
+      testMatch: 'api/invitations-pagination.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-email-code-decoupling',
+      testMatch: 'api/email-code-link-decoupling.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-register-avatar-dropped',
+      testMatch: 'api/register-avatar-dropped.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+
     // ── Browser tests against the Next.js web app ────────────────────────────
     {
       name: 'web-auth-pages',

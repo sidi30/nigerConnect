@@ -22,7 +22,9 @@ export const registerSchema = z.object({
     .toUpperCase()
     .optional(),
   bio: z.string().max(1000).optional(),
-  avatarUrl: z.string().url().max(500).optional(),
+  // Pas d'avatarUrl au register : une URL client brute ne doit jamais être
+  // persistée (elle n'est pas bindée S3). L'avatar se règle après inscription
+  // via updateAvatar, qui valide l'appartenance via S3Service.
   // Client-provided coordinates from the city search endpoint. When present
   // these are used directly (with jitter) instead of running geocode(), so
   // a city that has no entry in the hardcoded diaspora map still gets correct

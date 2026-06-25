@@ -157,7 +157,11 @@ export class InvitationsService {
 
   // ── GET /invitations ───────────────────────────────────────────────
 
-  async listInvitations(inviterId: string): Promise<{
+  async listInvitations(
+    inviterId: string,
+    limit = 30,
+    cursor?: string,
+  ): Promise<{
     canBulkInvite: boolean;
     invites: Array<{
       id: string;
@@ -169,14 +173,18 @@ export class InvitationsService {
       signupsCount: number;
       createdAt: Date;
     }>;
+    // Rétro-compat : champ additif, le client mobile ignore nextCursor s'il ne le lit pas.
+    nextCursor: string | null;
   }> {
     const inviter = await this.prisma.user.findUniqueOrThrow({
       where: { id: inviterId },
       select: { canBulkInvite: true },
     });
 
-    const invites = await this.prisma.invitation.findMany({
+    const rows = await this.prisma.invitation.findMany({
       where: { inviterId },
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
       include: {
         acceptedBy: { select: { id: true, displayName: true, avatarUrl: true } },
@@ -185,9 +193,12 @@ export class InvitationsService {
       },
     });
 
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
     return {
       canBulkInvite: inviter.canBulkInvite,
-      invites: invites.map((inv) => ({
+      invites: page.map((inv) => ({
         id: inv.id,
         code: inv.code,
         url: `${INVITE_URL_BASE}/${inv.code}`,
@@ -199,6 +210,7 @@ export class InvitationsService {
         signupsCount: inv._count.signups,
         createdAt: inv.createdAt,
       })),
+      nextCursor: hasMore ? page[page.length - 1]!.id : null,
     };
   }
 
@@ -236,12 +248,24 @@ export class InvitationsService {
     const invitation = await this.prisma.invitation.findUnique({
       where: { code },
       include: {
-        inviter: { select: { displayName: true, firstName: true } },
+        inviter: {
+          select: { displayName: true, firstName: true, status: true, inviteAbuseFlags: true },
+        },
       },
     });
 
     // pending = actif (vrai pour single_use non consommé ET reusable). Plus d'expiry.
     if (!invitation || invitation.status !== 'pending') {
+      return { valid: false };
+    }
+
+    // Parrain banni / gelé pour abus → le lien n'est plus valide (même réponse
+    // que la branche invalide ci-dessus, pas de fuite sur l'état du parrain).
+    if (
+      invitation.inviter &&
+      (invitation.inviter.status !== 'active' ||
+        invitation.inviter.inviteAbuseFlags >= ABUSE_THRESHOLD)
+    ) {
       return { valid: false };
     }
 
@@ -267,7 +291,15 @@ export class InvitationsService {
   ): Promise<{ inviterId: string | null; invitationId: string; kind: InvitationKind }> {
     const invitation = await this.prisma.invitation.findUnique({
       where: { code },
-      select: { id: true, status: true, kind: true, inviterId: true },
+      select: {
+        id: true,
+        status: true,
+        kind: true,
+        inviterId: true,
+        // Inviter state: a banned or abuse-frozen inviter's links must stop
+        // onboarding accounts, even if the invitation row itself is still pending.
+        inviter: { select: { status: true, inviteAbuseFlags: true } },
+      },
     });
 
     // Already-consumed single_use code → 400 (spec §4.1.6.b: "déjà utilisée").
@@ -280,6 +312,20 @@ export class InvitationsService {
     }
 
     if (!invitation || invitation.status !== 'pending') {
+      throw new ForbiddenException({
+        code: 'INVALID_INVITE_CODE',
+        message: 'Code d\'invitation invalide ou déjà utilisé.',
+      });
+    }
+
+    // Inviter gate : un parrain banni ou gelé pour abus ne peut plus parrainer,
+    // même via un lien reusable resté pending. Erreur générique identique au code
+    // invalide — ne pas révéler que le parrain est banni.
+    if (
+      invitation.inviter &&
+      (invitation.inviter.status !== 'active' ||
+        invitation.inviter.inviteAbuseFlags >= ABUSE_THRESHOLD)
+    ) {
       throw new ForbiddenException({
         code: 'INVALID_INVITE_CODE',
         message: 'Code d\'invitation invalide ou déjà utilisé.',

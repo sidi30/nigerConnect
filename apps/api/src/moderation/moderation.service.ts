@@ -210,15 +210,32 @@ export class ModerationService {
       select: { status: true, invitedById: true },
     });
     if (!prior) return;
-    await this.prisma.user.update({ where: { id: targetId }, data: { status } });
-    // Anti-abuse (§11): banning a filleul flags their inviter. At >=3 flags the
-    // inviter's invite quota freezes (enforced in InvitationsService.createInvitation).
-    // No cascade — we only flag the direct inviter, never touch the filleul's own tree.
-    if (status === 'banned' && prior.status !== 'banned' && prior.invitedById) {
+
+    if (status === 'banned' && prior.status !== 'banned') {
+      // Ban : couper aussi les liens reusable encore actifs du banni + retirer le
+      // droit bulk-invite. Sinon un lien de masse déjà émis continue d'onboarder
+      // des comptes après le ban (mirror du retrait admin). Idempotent (ne tourne
+      // qu'à la transition vers banned).
       await this.prisma.user.update({
-        where: { id: prior.invitedById },
-        data: { inviteAbuseFlags: { increment: 1 } },
+        where: { id: targetId },
+        data: { status, canBulkInvite: false },
       });
+      await this.prisma.invitation.updateMany({
+        where: { inviterId: targetId, kind: 'reusable', status: 'pending' },
+        data: { status: 'revoked', revokedAt: new Date() },
+      });
+      // Anti-abuse (§11): banning a filleul flags their inviter. At >=3 flags the
+      // inviter's invite quota freezes (enforced in InvitationsService.createInvitation).
+      // No cascade — we only flag the direct inviter, never touch the filleul's own tree.
+      if (prior.invitedById) {
+        await this.prisma.user.update({
+          where: { id: prior.invitedById },
+          data: { inviteAbuseFlags: { increment: 1 } },
+        });
+      }
+      return;
     }
+
+    await this.prisma.user.update({ where: { id: targetId }, data: { status } });
   }
 }
