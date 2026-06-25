@@ -30,22 +30,16 @@
  *   (used only for the email-verification DB shortcut shared by all api specs)
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 const BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
 
 // ── DB helper (same pattern as chat-read-receipts.spec.ts) ────────────────────
 
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
-
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 // ── Request helpers ───────────────────────────────────────────────────────────

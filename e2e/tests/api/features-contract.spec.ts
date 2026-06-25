@@ -13,17 +13,13 @@
  *   Docker container: nigerconnect-postgres (for psql mutations)
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Shared constants ─────────────────────────────────────────────────────────
 
 const BASE_URL = process.env['API_BASE_URL'] ?? 'http://127.0.0.1:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
-
-// Postgres helper — same pattern as mobile-fixes-contract.spec.ts
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,17 +62,11 @@ async function register(
 }
 
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 function approveIdentityInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`);
 }
 
 /** Register + verify email + approve identity. Re-login so JWT reflects DB state. */
@@ -123,7 +113,7 @@ test.describe('Pages', () => {
     const { tokens } = await registerApproved(request);
     const name = `E2EPage-${Date.now()}`;
     const res = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name, kind: 'cause', description: 'E2E test page' },
+      data: { name, kind: 'cause', description: 'E2E test page', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(res.status(), `create page: ${await res.text()}`).toBe(201);
@@ -136,7 +126,7 @@ test.describe('Pages', () => {
   test('POST /api/pages with NON-approved identity user -> 403', async ({ request }) => {
     const { tokens } = await registerVerified(request);
     const res = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-NotApproved-${Date.now()}`, kind: 'community' },
+      data: { name: `E2EPage-NotApproved-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(res.status()).toBe(403);
@@ -147,7 +137,7 @@ test.describe('Pages', () => {
     const uniqueSuffix = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
     const name = `E2EPage-List-${uniqueSuffix}`;
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name, kind: 'business' },
+      data: { name, kind: 'business', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -195,7 +185,7 @@ test.describe('Pages', () => {
   test('GET /api/pages/:id as creator -> isFollowing=true, myRole=admin', async ({ request }) => {
     const { tokens } = await registerApproved(request);
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Detail-${Date.now()}`, kind: 'community' },
+      data: { name: `E2EPage-Detail-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -215,7 +205,7 @@ test.describe('Pages', () => {
     const { tokens: secondTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Follow-${Date.now()}`, kind: 'group' },
+      data: { name: `E2EPage-Follow-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -250,7 +240,7 @@ test.describe('Pages', () => {
     const { tokens: secondTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Unfollow-${Date.now()}`, kind: 'official' },
+      data: { name: `E2EPage-Unfollow-${Date.now()}`, kind: 'official', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -287,7 +277,7 @@ test.describe('Pages', () => {
     const { tokens: otherTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Update-${Date.now()}`, kind: 'community' },
+      data: { name: `E2EPage-Update-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -314,7 +304,7 @@ test.describe('Pages', () => {
     const { user, tokens } = await registerApproved(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Admins-${Date.now()}`, kind: 'cause' },
+      data: { name: `E2EPage-Admins-${Date.now()}`, kind: 'cause', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -335,7 +325,7 @@ test.describe('Pages', () => {
     const { tokens: otherTokens } = await registerVerified(request);
 
     const createRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `E2EPage-Delete-${Date.now()}`, kind: 'group' },
+      data: { name: `E2EPage-Delete-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(createRes.status()).toBe(201);
@@ -369,7 +359,7 @@ test.describe('Polls', () => {
 
     // Create a page first
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `PollPage-${Date.now()}`, kind: 'community' },
+      data: { name: `PollPage-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokens.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -401,7 +391,7 @@ test.describe('Polls', () => {
     const { tokens: nonAdminTokens } = await registerVerified(request);
 
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `PollPage-NonAdmin-${Date.now()}`, kind: 'group' },
+      data: { name: `PollPage-NonAdmin-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -774,7 +764,7 @@ test.describe('Reviews', () => {
 
     // Create a page
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `ReviewPage-${Date.now()}`, kind: 'business' },
+      data: { name: `ReviewPage-${Date.now()}`, kind: 'business', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(creatorTokens.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -841,7 +831,7 @@ test.describe('Notifications', () => {
 
     // A creates a page
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `NotifPage-${Date.now()}`, kind: 'community' },
+      data: { name: `NotifPage-${Date.now()}`, kind: 'community', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokensA.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -895,7 +885,7 @@ test.describe('Notifications', () => {
 
     // Create a page so B can follow it and trigger a notification for A
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `NotifDeletePage-${Date.now()}`, kind: 'cause' },
+      data: { name: `NotifDeletePage-${Date.now()}`, kind: 'cause', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokensA.accessToken),
     });
     expect(pageRes.status()).toBe(201);
@@ -940,7 +930,7 @@ test.describe('Notifications', () => {
 
     // Create a page + follow to generate a notification for A
     const pageRes = await request.post(`${BASE_URL}/api/pages`, {
-      data: { name: `NotifClearPage-${Date.now()}`, kind: 'group' },
+      data: { name: `NotifClearPage-${Date.now()}`, kind: 'group', countryCode: 'NE', city: 'Niamey' },
       headers: authHeaders(tokensA.accessToken),
     });
     expect(pageRes.status()).toBe(201);

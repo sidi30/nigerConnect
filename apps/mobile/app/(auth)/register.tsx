@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,7 +12,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { Link, useRouter } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Colors,
@@ -26,6 +27,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { GoogleButton } from '@/components/ui/GoogleButton';
 import { AppleButton } from '@/components/ui/AppleButton';
 import { CitySearchField } from '@/components/ui/CitySearchField';
+import { invitationsApi, type RegistrationMode } from '@/services/invitationsApi';
 
 interface RegisterData {
   firstName: string;
@@ -42,9 +44,34 @@ interface RegisterData {
   longitude: number | undefined;
 }
 
+// ── Registration-mode gate states ────────────────────────────────────────────
+// 'loading'       → fetching /auth/registration-mode
+// 'closed'        → show "Inscriptions fermées" screen
+// 'invite_check'  → invite_only mode, step 0: enter/validate code
+// 'wizard'        → either open mode or validated invite code → show normal wizard
+type GateState = 'loading' | 'closed' | 'invite_check' | 'wizard';
+
 export default function RegisterScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ code?: string }>();
   const register = useAuthStore((s) => s.register);
+
+  // ── Gate state ───────────────────────────────────────────────────────────
+  const [gateState, setGateState] = useState<GateState>('loading');
+  const [modeError, setModeError] = useState<string | null>(null);
+
+  // ── Invite-code step 0 ───────────────────────────────────────────────────
+  const [inviteCode, setInviteCode] = useState<string>(params.code ?? '');
+  const [inviteCheckLoading, setInviteCheckLoading] = useState(false);
+  const [inviteCheckError, setInviteCheckError] = useState<string | null>(null);
+  const [inviterName, setInviterName] = useState<string | null>(null);
+  // Validated code that gets threaded through to the API
+  const [validatedCode, setValidatedCode] = useState<string | null>(
+    // If the deep-link pre-filled a code we auto-validate it on mount
+    null,
+  );
+
+  // ── Wizard state ─────────────────────────────────────────────────────────
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -60,6 +87,66 @@ export default function RegisterScreen() {
     latitude: undefined,
     longitude: undefined,
   });
+
+  // ── Fetch registration mode on mount ─────────────────────────────────────
+  useEffect(() => {
+    let active = true;
+    invitationsApi
+      .getRegistrationMode()
+      .then((mode: RegistrationMode) => {
+        if (!active) return;
+        if (mode === 'closed') {
+          setGateState('closed');
+        } else if (mode === 'invite_only') {
+          setGateState('invite_check');
+          // Auto-validate if a code was passed via deep-link
+          if (params.code) {
+            validateCode(params.code);
+          }
+        } else {
+          // open
+          setGateState('wizard');
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        // On error, fall back to open mode so users aren't blocked
+        setModeError(
+          'Impossible de vérifier le mode d\'inscription — accès libre activé.',
+        );
+        setGateState('wizard');
+      });
+    return () => {
+      active = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function validateCode(code: string) {
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setInviteCheckError('Saisis ton code d\'invitation.');
+      return;
+    }
+    setInviteCheckLoading(true);
+    setInviteCheckError(null);
+    setInviterName(null);
+    try {
+      const result = await invitationsApi.checkCode(trimmed);
+      if (!result.valid) {
+        setInviteCheckError('Code invalide ou expiré. Demande un nouveau lien à ton parrain.');
+        return;
+      }
+      setInviterName(result.inviterName ?? null);
+      setValidatedCode(trimmed);
+      // Small delay so the user sees the success message before the wizard opens
+      setTimeout(() => setGateState('wizard'), 900);
+    } catch {
+      setInviteCheckError('Impossible de vérifier le code. Réessaie.');
+    } finally {
+      setInviteCheckLoading(false);
+    }
+  }
 
   function update<K extends keyof RegisterData>(key: K, value: RegisterData[K]) {
     setData((prev) => ({ ...prev, [key]: value }));
@@ -96,8 +183,6 @@ export default function RegisterScreen() {
 
   async function submit() {
     setErrorMessage(null);
-    // Defense-in-depth: never persist a password account without a countryCode
-    // (the map + the OAuth-onboarding gate both rely on it being set here).
     if (!data.countryCode) {
       setStep(2);
       setErrorMessage('Sélectionne ta ville et ton pays.');
@@ -113,11 +198,9 @@ export default function RegisterScreen() {
         city: data.city.trim() || undefined,
         countryCode: data.countryCode || undefined,
         bio: data.bio.trim() || undefined,
-        // Forward the coordinates from the city autocomplete so the server
-        // can place the user precisely on the map without a second geocode
-        // lookup. The server still applies jitter before storing.
         latitude: data.latitude,
         longitude: data.longitude,
+        inviteCode: validatedCode ?? undefined,
       });
     } catch (error) {
       const err = error as {
@@ -140,6 +223,187 @@ export default function RegisterScreen() {
     }
   }
 
+  // ── Render: loading ───────────────────────────────────────────────────────
+  if (gateState === 'loading') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={gateStyles.centerFill}>
+          <ActivityIndicator size="large" color={Colors.orange} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Render: closed ────────────────────────────────────────────────────────
+  if (gateState === 'closed') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.back}
+            hitSlop={12}
+          >
+            <Feather name="arrow-left" size={20} color={Colors.brown} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Inscription</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <ScrollView contentContainerStyle={gateStyles.scroll}>
+          <View style={gateStyles.iconCircle}>
+            <Feather name="lock" size={36} color={Colors.tan500} />
+          </View>
+          <Text style={gateStyles.heading}>Inscriptions momentanément fermées</Text>
+          <Text style={gateStyles.body}>
+            NigerConnect est en maintenance ou a temporairement suspendu les nouvelles
+            inscriptions. Les membres existants continuent d'accéder au réseau normalement.
+          </Text>
+          <Text style={gateStyles.body}>
+            Reviens bientôt ou contacte-nous à{' '}
+            <Text style={gateStyles.link}>contact@nigerconnect.app</Text> pour rejoindre la
+            liste d'attente.
+          </Text>
+          <Pressable
+            onPress={() => router.push('/(auth)/login')}
+            style={({ pressed }) => [gateStyles.secondaryBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={gateStyles.secondaryBtnLabel}>Se connecter</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Render: invite_check (step 0) ─────────────────────────────────────────
+  if (gateState === 'invite_check') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.back}
+            hitSlop={12}
+          >
+            <Feather name="arrow-left" size={20} color={Colors.brown} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Inscription</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={[styles.scroll, gateStyles.inviteScroll]}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={gateStyles.iconCircle}>
+              <Feather name="gift" size={36} color={Colors.orange} />
+            </View>
+            <Text style={gateStyles.heading}>Code d'invitation requis</Text>
+            <Text style={gateStyles.body}>
+              NigerConnect fonctionne sur invitation. Saisis le code que ton parrain t'a envoyé.
+            </Text>
+
+            {/* Success banner */}
+            {inviterName ? (
+              <View style={gateStyles.successBanner}>
+                <Feather name="check-circle" size={18} color={Colors.green} />
+                <Text style={gateStyles.successText}>
+                  {inviterName} t'invite sur NigerConnect
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Code input */}
+            <View style={{ marginBottom: Spacing.md }}>
+              <Text style={styles.label}>Code d'invitation</Text>
+              <TextInput
+                value={inviteCode}
+                onChangeText={(v) => {
+                  setInviteCode(v);
+                  setInviteCheckError(null);
+                  setInviterName(null);
+                  setValidatedCode(null);
+                }}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder="Ex : A3X7K2"
+                placeholderTextColor={Colors.tan400}
+                style={styles.input}
+                returnKeyType="done"
+                onSubmitEditing={() => validateCode(inviteCode)}
+                editable={!inviteCheckLoading && !validatedCode}
+              />
+            </View>
+
+            {/* Error */}
+            {inviteCheckError ? (
+              <View
+                style={registerExtras.errorBanner}
+                accessibilityLiveRegion="polite"
+                accessibilityRole="alert"
+              >
+                <Feather
+                  name="alert-triangle"
+                  size={16}
+                  color={palette.errorText}
+                  style={registerExtras.errorIcon}
+                />
+                <Text style={registerExtras.errorText}>{inviteCheckError}</Text>
+              </View>
+            ) : null}
+
+            {modeError ? (
+              <Text style={gateStyles.modeErrorNote}>{modeError}</Text>
+            ) : null}
+
+            <Pressable
+              onPress={() => validateCode(inviteCode)}
+              disabled={inviteCheckLoading || !!validatedCode}
+              style={({ pressed }) => [
+                styles.primary,
+                (inviteCheckLoading || !!validatedCode || pressed) && { opacity: 0.85 },
+              ]}
+            >
+              <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+              {inviteCheckLoading ? (
+                <ActivityIndicator color={Colors.white} />
+              ) : (
+                <Text style={styles.primaryLabel}>
+                  {validatedCode ? 'Code validé ✓' : 'Valider le code'}
+                </Text>
+              )}
+            </Pressable>
+
+            {/* OAuth buttons also carry the validated code */}
+            {validatedCode ? (
+              <View style={{ gap: Spacing.sm, marginTop: Spacing.md }}>
+                <AppleButton
+                  mode="signUp"
+                  inviteCode={validatedCode}
+                />
+                <GoogleButton
+                  label="S'inscrire avec Google"
+                  inviteCode={validatedCode}
+                />
+              </View>
+            ) : null}
+
+            <Link href="/(auth)/login" asChild>
+              <Pressable style={{ marginTop: Spacing.md }}>
+                <Text style={styles.link}>
+                  Déjà un compte ? <Text style={styles.linkAccent}>Se connecter</Text>
+                </Text>
+              </Pressable>
+            </Link>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Render: wizard (normal registration flow) ─────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -182,8 +446,8 @@ export default function RegisterScreen() {
               </Text>
 
               <View style={{ marginBottom: Spacing.lg, gap: Spacing.sm }}>
-                <AppleButton mode="signUp" />
-                <GoogleButton label="S'inscrire avec Google" />
+                <AppleButton mode="signUp" inviteCode={validatedCode ?? undefined} />
+                <GoogleButton label="S'inscrire avec Google" inviteCode={validatedCode ?? undefined} />
               </View>
               <View style={registerExtras.divider}>
                 <View style={registerExtras.line} />
@@ -348,7 +612,7 @@ export default function RegisterScreen() {
               >
                 <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
                 <Text style={styles.primaryLabel}>
-                  {loading ? 'Création…' : 'Créer mon compte 🎉'}
+                  {loading ? 'Création…' : 'Créer mon compte'}
                 </Text>
               </Pressable>
             )}
@@ -506,6 +770,80 @@ const styles = StyleSheet.create({
   primaryLabel: { color: Colors.white, fontSize: Typography.sizes.lg, fontWeight: '700' },
   link: { textAlign: 'center', color: Colors.tan500, fontSize: Typography.sizes.sm },
   linkAccent: { color: Colors.orange, fontWeight: '700' },
+});
+
+const gateStyles = StyleSheet.create({
+  centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.xxxl,
+  },
+  inviteScroll: { alignItems: 'stretch' },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.tan100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xl,
+    marginTop: Spacing.xl,
+  },
+  heading: {
+    fontSize: Typography.sizes.xxl,
+    fontFamily: Typography.fontFamily.serifBold,
+    color: Colors.brown,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+  },
+  body: {
+    fontSize: Typography.sizes.md,
+    color: Colors.tan500,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: Spacing.lg,
+  },
+  link: { color: Colors.orange, fontWeight: '600' },
+  secondaryBtn: {
+    marginTop: Spacing.xl,
+    height: 52,
+    width: '100%',
+    borderRadius: Radii.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.tan300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+  },
+  secondaryBtnLabel: {
+    fontSize: Typography.sizes.md,
+    fontWeight: '700',
+    color: Colors.brown,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.successSoft,
+    borderWidth: 1,
+    borderColor: palette.successBorder,
+    borderRadius: Radii.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  successText: {
+    flex: 1,
+    fontSize: Typography.sizes.sm,
+    fontWeight: '700',
+    color: Colors.successDark,
+  },
+  modeErrorNote: {
+    fontSize: Typography.sizes.xs,
+    color: Colors.tan500,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
 });
 
 const registerExtras = StyleSheet.create({

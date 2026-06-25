@@ -55,8 +55,8 @@ Se retrouver, s'entraider, rester connectés.
 │                         CLIENTS                                   │
 │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐   │
 │  │   App Mobile    │  │    Web App     │  │  Admin Panel     │   │
-│  │  React Native   │  │   Next.js 15   │  │  Next.js         │   │
-│  │  Expo SDK 52    │  │   (PWA)        │  │                  │   │
+│  │  React Native   │  │   Next.js 16   │  │  Next.js         │   │
+│  │  Expo SDK 54    │  │   (PWA)        │  │                  │   │
 │  └───────┬────────┘  └───────┬────────┘  └────────┬─────────┘   │
 └──────────┼───────────────────┼────────────────────┼──────────────┘
            │                   │                    │
@@ -102,8 +102,8 @@ peut tourner dans le même process NestJS (Gateway) ou être extrait plus tard.
 
 | Couche | Techno | Pourquoi |
 |--------|--------|----------|
-| **App Mobile** | React Native + Expo SDK 52 | Cross-platform. Expo = builds cloud, OTA updates, moins de config native. |
-| **Web** | Next.js 15 (App Router) | SEO, partage de composants React avec le mobile. |
+| **App Mobile** | React Native + Expo SDK 54 | Cross-platform. Expo = builds cloud, OTA updates, moins de config native. |
+| **Web** | Next.js 16 (App Router) | SEO, partage de composants React avec le mobile. |
 | **API** | NestJS + TypeScript | Framework structuré, modules, guards, DI. Standard Node.js entreprise. |
 | **ORM** | Prisma | Type-safe, migrations, introspection. Simple et fiable. |
 | **Base de données** | PostgreSQL 16 | Tout-en-un : relationnel, JSON, full-text search, PostGIS (géo). Une seule base. |
@@ -112,8 +112,8 @@ peut tourner dans le même process NestJS (Gateway) ou être extrait plus tard.
 | **Traitement images** | Sharp | Resize, thumbnails, compression. Rapide, natif. |
 | **Temps réel** | Socket.io (intégré NestJS Gateway) | Chat, présence, notifications live. |
 | **Auth OAuth** | Passport.js (Google, Facebook, Apple) | Standard, bien intégré NestJS. |
-| **Push notifications** | Firebase Cloud Messaging | Gratuit, fiable, iOS + Android. |
-| **Emails** | Resend (ou SendGrid) | API simple, bon taux de délivrabilité. |
+| **Push notifications** | Expo Push Service (FCM optionnel) | Transport réel = Expo Push pour tous les tokens ; FCM désactivé sauf si credentials fournis. iOS + Android. |
+| **Emails** | nodemailer + SMTP (IONOS `smtp.ionos.fr`, expéditeur `contact@gwani.fr`, DKIM `nc1`) | Transport SMTP direct ; pas de SDK Resend dans le code. |
 | **SMS** | Twilio | OTP, alertes. Standard mondial. |
 | **Queues (background jobs)** | BullMQ + Redis | Traitement images, emails, notifications. Fiable. |
 | **Validation** | Zod | Validation et typage partagés front/back. |
@@ -221,8 +221,8 @@ nigerconnect/
 │   │   │   ├── notification/         # ── MODULE NOTIFICATION ──
 │   │   │   │   ├── notification.module.ts
 │   │   │   │   ├── notification.service.ts
-│   │   │   │   ├── push.service.ts       # FCM
-│   │   │   │   ├── email.service.ts      # Resend
+│   │   │   │   ├── push.service.ts       # Expo Push (FCM optionnel)
+│   │   │   │   ├── email.service.ts      # SMTP IONOS (nodemailer)
 │   │   │   │   └── sms.service.ts        # Twilio
 │   │   │   │
 │   │   │   ├── moderation/           # ── MODULE MODERATION ──
@@ -801,7 +801,7 @@ Crée la structure suivante :
 nigerconnect/
 ├── apps/
 │   ├── api/           → NestJS 10 + TypeScript + Prisma
-│   └── mobile/        → React Native Expo SDK 52 + Expo Router
+│   └── mobile/        → React Native Expo SDK 54 + Expo Router
 ├── packages/
 │   ├── shared-types/  → Types TypeScript partagés (User, Post, Message...)
 │   └── config/        → ESLint + Prettier config partagée
@@ -824,7 +824,7 @@ Pour apps/api/ :
 - Variables d'env validées au démarrage avec Zod
 
 Pour apps/mobile/ :
-- Expo SDK 52 avec Expo Router
+- Expo SDK 54 avec Expo Router
 - Structure de base : app/(auth)/login.tsx, app/(tabs)/_layout.tsx
 - Fichier de config pour les couleurs NigerConnect 
   (orange #E05206, vert #0DB02B, crème #FDFBF7, brun #1A0F0A)
@@ -1196,7 +1196,7 @@ présence, unread count.
 ```
 Développe l'app mobile NigerConnect dans apps/mobile/.
 
-Tech : Expo SDK 52, Expo Router v4, Zustand, React Query (TanStack), 
+Tech : Expo SDK 54, Expo Router v4, Zustand, React Query (TanStack), 
 React Native Reanimated 3, expo-image, expo-secure-store.
 
 Le design doit reprendre EXACTEMENT le prototype React qu'on a fait :
@@ -1469,9 +1469,9 @@ Méthodes du NotificationService :
   - createNotification(userId, type, title, body, data, actorId)
     → Insère en base + envoie push si user pas connecté en WebSocket
   - sendPush(userId, title, body, data) 
-    → Firebase Admin SDK
+    → Expo Push Service (FCM optionnel)
   - sendEmail(to, template, variables)
-    → Resend API (bienvenue, identité approuvée, résumé hebdo)
+    → SMTP IONOS via nodemailer (bienvenue, identité approuvée, résumé hebdo)
 
 Endpoints :
   GET /notifications → mes notifications (paginé)

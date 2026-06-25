@@ -12,8 +12,8 @@
  *   Postgres accessible via docker exec nigerconnect-postgres (port 5433)
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -21,14 +21,6 @@ const BASE_URL = process.env['API_BASE_URL'] ?? 'http://127.0.0.1:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
-
-function psql(sql: string): string {
-  const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(
-    `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${oneLine.replace(/"/g, '\\"')}"`,
-    { stdio: 'pipe' },
-  ).toString();
-}
 
 function verifyEmailInDb(userId: string): void {
   psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);

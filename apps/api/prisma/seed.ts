@@ -408,6 +408,23 @@ async function main(): Promise<void> {
     console.log('  · 5 associations');
   }
 
+  // ── AppSettings (parrainage §10.1) ───────────────────────────────
+  // Seeds with 'open' so deploy never locks anyone out.
+  // Flip to 'invite_only' from admin UI once root invitations are generated.
+  const settings: Array<{ key: string; value: string }> = [
+    { key: 'registration_mode', value: 'open' },
+    { key: 'default_invite_quota', value: '3' },
+    { key: 'invite_expiry_days', value: '30' },
+  ];
+  for (const s of settings) {
+    await prisma.appSetting.upsert({
+      where: { key: s.key },
+      create: { key: s.key, value: s.value },
+      update: {}, // never overwrite an admin-set value during re-seeding
+    });
+  }
+  console.log('  · app_settings seeded (registration_mode=open)');
+
   console.log('✓ Seed complete');
 }
 

@@ -9,6 +9,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
 import { MailModule } from './common/mail/mail.module';
 import { AppThrottleModule } from './common/throttle/throttle.module';
+import { SettingsModule } from './common/settings/settings.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
@@ -25,6 +26,7 @@ import { PollModule } from './poll/poll.module';
 import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
+import { InvitationsModule } from './invitations/invitations.module';
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { NewsletterModule } from './newsletter/newsletter.module';
     StorageModule,
     MailModule,
     AppThrottleModule,
+    SettingsModule,
     HealthModule,
     AuthModule,
     ProfileModule,
@@ -51,6 +54,7 @@ import { NewsletterModule } from './newsletter/newsletter.module';
     ReviewModule,
     AdminModule,
     NewsletterModule,
+    InvitationsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

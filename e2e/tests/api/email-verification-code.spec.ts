@@ -18,8 +18,8 @@
  */
 
 import { createHash } from 'crypto';
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -29,21 +29,6 @@ const KNOWN_CODE = '123456';
 const KNOWN_CODE_HASH = createHash('sha256').update(KNOWN_CODE).digest('hex');
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Run SQL via docker exec. SQL must be a single logical line (no embedded
- * newlines) because psql -c passes it as a shell argument. Collapse whitespace
- * before calling.
- */
-function psql(sql: string): string {
-  // Collapse all whitespace runs (including newlines) to a single space so the
-  // SQL fits inside a single -c "..." shell argument on Windows/PowerShell.
-  const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(
-    `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${oneLine.replace(/"/g, '\\"')}"`,
-    { stdio: 'pipe' },
-  ).toString();
-}
 
 /**
  * Overwrite the code_hash of the newest unused verify_email token for userId
@@ -68,8 +53,15 @@ function seedKnownCode(userId: string): void {
 }
 
 /**
- * Return the newest verify_email token row for the user (used or unused) as a
+ * Return the newest verify_email CODE row for the user (used or unused) as a
  * plain JSON object, or null when none exists.
+ *
+ * IMPORTANT: scope to `code_hash IS NOT NULL`. Since the code/link decoupling
+ * fix, register/createWithCode writes TWO rows per user/type with identical
+ * created_at — a link row (code_hash NULL, consumed by a scanner prefetch) and
+ * a code row (the one the user types). A bare `ORDER BY created_at DESC LIMIT 1`
+ * would tie-break nondeterministically onto the link row. We only ever assert
+ * on the code row here, exactly like seedKnownCode().
  */
 function getTokenRow(userId: string): {
   id: string;
@@ -81,8 +73,9 @@ function getTokenRow(userId: string): {
     `SELECT row_to_json(t) FROM (
        SELECT id, code_hash, attempts, used_at::text
          FROM email_tokens
-        WHERE user_id = '${userId}'::uuid
-          AND type    = 'verify_email'
+        WHERE user_id   = '${userId}'::uuid
+          AND type      = 'verify_email'
+          AND code_hash IS NOT NULL
        ORDER BY created_at DESC
         LIMIT 1
      ) t;`,

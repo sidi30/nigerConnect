@@ -21,7 +21,7 @@ import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
-import { profileApi } from '@/services/profileApi';
+import { profileApi, type InvitedBy, type ProfileUser } from '@/services/profileApi';
 import { friendsApi } from '@/services/friendsApi';
 import { blocksApi } from '@/services/blocksApi';
 import { feedApi } from '@/services/feedApi';
@@ -98,7 +98,7 @@ export default function UserScreen() {
   // cache (post.author), friends list, search results, conversation member.
   // The screen then paints instantly with whatever fields PublicUser gives,
   // and the network fetch upgrades it to the richer User shape in the bg.
-  const userQuery = useQuery<User | PublicUser>({
+  const userQuery = useQuery<ProfileUser | PublicUser>({
     queryKey: ['user', id],
     queryFn: () => profileApi.getById(id!),
     enabled: !!id,
@@ -248,6 +248,10 @@ export default function UserScreen() {
   const relLabel = RELATION_COPY[rel];
   const posts = postsQuery.data?.items ?? [];
   const friends = friendsQuery.data?.items ?? [];
+  // Referral-network fields only land once the full profile fetch resolves
+  // (the PublicUser placeholder doesn't carry them).
+  const invitedBy: InvitedBy | null = 'invitedBy' in u ? u.invitedBy ?? null : null;
+  const inviteesCount: number = 'inviteesCount' in u ? u.inviteesCount ?? 0 : 0;
   const friendsError = friendsQuery.isError;
   const postsError = postsQuery.isError;
 
@@ -373,6 +377,29 @@ export default function UserScreen() {
                   </View>
                 ) : null}
                 {'bio' in u && u.bio ? <Text style={styles.bio}>{u.bio}</Text> : null}
+                {invitedBy || inviteesCount > 0 ? (
+                  <View style={styles.networkRow}>
+                    {invitedBy ? (
+                      <Pressable
+                        onPress={() => router.push(`/user/${invitedBy.id}`)}
+                        hitSlop={6}
+                        style={styles.invitedByChip}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Invité par ${invitedBy.displayName ?? 'un membre'}`}
+                      >
+                        <Feather name="user-plus" size={12} color="rgba(255,255,255,0.85)" />
+                        <Text style={styles.invitedByText} numberOfLines={1}>
+                          Invité par {invitedBy.displayName ?? 'un membre'}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {inviteesCount > 0 ? (
+                      <Text style={styles.inviteesText}>
+                        {inviteesCount} filleul{inviteesCount !== 1 ? 's' : ''}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             </View>
 
@@ -595,6 +622,35 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  networkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm + 2,
+  },
+  invitedByChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    maxWidth: 220,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radii.full,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  invitedByText: {
+    fontSize: Typography.sizes.xs,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  inviteesText: {
+    fontSize: Typography.sizes.xs,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '600',
   },
   actions: { paddingHorizontal: Spacing.lg, gap: Spacing.md, marginBottom: Spacing.lg },
   primaryBtn: {

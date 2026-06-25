@@ -24,7 +24,9 @@ export function Download() {
 
         <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
           <a
-            href="#"
+            href="https://apps.apple.com/fr/app/nigerconnect/id6775895189"
+            target="_blank"
+            rel="noopener noreferrer"
             className="group inline-flex items-center gap-3 rounded-full bg-white px-6 py-4 text-brand-brown shadow-lg transition hover:scale-[1.02]"
           >
             <IconApple className="h-8 w-8" />

@@ -54,6 +54,11 @@ function routeForNotification(n: Notification): string | null {
       const u = str('userId');
       return u ? `/user/${u}` : null;
     }
+    case 'invite_accepted': {
+      // The backend sets actorId = the newly-joined member.
+      const actor = str('actorId');
+      return actor ? `/user/${actor}` : '/(tabs)/invite';
+    }
     default:
       return null;
   }
@@ -76,6 +81,7 @@ const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
   page_follow: { icon: 'star', color: Colors.orange },
   poll_new: { icon: 'bar-chart-2', color: Colors.info },
   review_received: { icon: 'star', color: Colors.orange },
+  invite_accepted: { icon: 'gift', color: Colors.green },
   system: { icon: 'volume-2', color: Colors.tan500 },
 };
 

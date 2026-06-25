@@ -22,13 +22,18 @@ export const registerSchema = z.object({
     .toUpperCase()
     .optional(),
   bio: z.string().max(1000).optional(),
-  avatarUrl: z.string().url().max(500).optional(),
+  // Pas d'avatarUrl au register : une URL client brute ne doit jamais être
+  // persistée (elle n'est pas bindée S3). L'avatar se règle après inscription
+  // via updateAvatar, qui valide l'appartenance via S3Service.
   // Client-provided coordinates from the city search endpoint. When present
   // these are used directly (with jitter) instead of running geocode(), so
   // a city that has no entry in the hardcoded diaspora map still gets correct
   // map placement. Values are validated to legal WGS-84 ranges.
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  // Parrainage (§5.1): optional invite code forwarded by the client.
+  // Ignored in 'open' mode; required + consumed in 'invite_only'.
+  inviteCode: z.string().trim().min(6).max(16).optional(),
 }).refine(
   // A coordinate is only meaningful as a (lat, lng) pair. Reject a half-supplied
   // pair so the register() coords branch never runs with one axis undefined.

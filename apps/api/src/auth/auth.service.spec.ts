@@ -11,16 +11,31 @@ import { PasswordService } from './password.service';
 describe('AuthService', () => {
   const password = new PasswordService();
 
-  function makePrisma(overrides: Record<string, unknown> = {}) {
-    return {
+  type PrismaMock = {
+    user: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    identityDocument: { create: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+    invitation: { updateMany: jest.Mock };
+    $transaction: jest.Mock;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function makePrisma(overrides: { user?: any; identityDocument?: any; invitation?: any } = {}): PrismaMock {
+    const base: PrismaMock = {
       user: {
         findFirst: jest.fn(async () => null),
         findUnique: jest.fn(async () => null),
         findUniqueOrThrow: jest.fn(),
         create: jest.fn(async (args: { data: Record<string, unknown> }) => ({
           id: 'u1',
-          email: args.data.email,
-          passwordHash: args.data.passwordHash ?? null,
+          email: args.data['email'],
+          passwordHash: args.data['passwordHash'] ?? null,
           role: 'user',
           identityStatus: 'not_submitted',
           status: 'active',
@@ -29,11 +44,32 @@ describe('AuthService', () => {
           ...args.data,
         })),
         update: jest.fn(async () => ({})),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
-      identityDocument: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-      $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
-      ...overrides,
+      identityDocument: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
+      invitation: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      $transaction: jest.fn(),
     };
+    if (overrides.user) Object.assign(base.user, overrides.user);
+    if (overrides.identityDocument) Object.assign(base.identityDocument, overrides.identityDocument);
+    if (overrides.invitation) Object.assign(base.invitation, overrides.invitation);
+
+    // $transaction supports both the interactive callback API (fn) and the array API
+    base['$transaction'] = jest.fn(
+      async (fnOrOps: ((tx: PrismaMock) => Promise<unknown>) | Promise<unknown>[]) => {
+        if (typeof fnOrOps === 'function') {
+          return fnOrOps(base);
+        }
+        return Promise.all(fnOrOps);
+      },
+    );
+    return base;
   }
 
   function makeTokens() {
@@ -62,6 +98,37 @@ describe('AuthService', () => {
     return { get: jest.fn(() => privateBucket) };
   }
 
+  function makeSettings(mode: 'open' | 'invite_only' | 'closed' = 'open') {
+    return {
+      getRegistrationMode: jest.fn(async () => mode),
+      getSetting: jest.fn(async () => 'open'),
+      setSetting: jest.fn(),
+      getDefaultInviteQuota: jest.fn(async () => 3),
+      getInviteExpiryDays: jest.fn(async () => 30),
+    };
+  }
+
+  function makeInvitationsService(opts: {
+    resolveCodeForRegistration?: jest.Mock;
+    atomicallyConsumeSingleUse?: jest.Mock;
+    notifyInviter?: jest.Mock;
+    preValidateEmail?: jest.Mock;
+    atomicallyConsumeByEmail?: jest.Mock;
+  } = {}) {
+    return {
+      resolveCodeForRegistration:
+        opts.resolveCodeForRegistration ??
+        jest.fn(async () => ({ inviterId: 'inviter-id', invitationId: 'inv-1', kind: 'single_use' })),
+      atomicallyConsumeSingleUse: opts.atomicallyConsumeSingleUse ?? jest.fn(async () => 1),
+      notifyInviter: opts.notifyInviter ?? jest.fn(),
+      // Email-match path — default: no matching invite (soft null, open mode tests won't call it)
+      preValidateEmail: opts.preValidateEmail ?? jest.fn(async () => null),
+      atomicallyConsumeByEmail:
+        opts.atomicallyConsumeByEmail ??
+        jest.fn(async () => ({ count: 1, inviterId: 'inviter-id', invitationId: 'inv-1' })),
+    };
+  }
+
   /** Builds a fully wired AuthService with injectable mock overrides. */
   function makeSvc({
     prisma = makePrisma(),
@@ -70,6 +137,8 @@ describe('AuthService', () => {
     google = { verifyIdToken: jest.fn() },
     apple = { verify: jest.fn(), isConfigured: false as boolean | undefined },
     config = makeConfig(),
+    settings = makeSettings(),
+    invitations = makeInvitationsService(),
   }: {
     prisma?: ReturnType<typeof makePrisma>;
     tokens?: ReturnType<typeof makeTokens>;
@@ -77,6 +146,8 @@ describe('AuthService', () => {
     google?: { verifyIdToken: jest.Mock };
     apple?: { verify: jest.Mock; isConfigured?: boolean };
     config?: ReturnType<typeof makeConfig>;
+    settings?: ReturnType<typeof makeSettings>;
+    invitations?: ReturnType<typeof makeInvitationsService>;
   } = {}) {
     return new AuthService(
       prisma as never,
@@ -88,6 +159,8 @@ describe('AuthService', () => {
       google as never,
       apple as never,
       config as never,
+      settings as never,
+      invitations as never,
     );
   }
 
@@ -397,10 +470,12 @@ describe('AuthService', () => {
 
       const result = await svc.signInWithGoogle('valid.google.idtoken');
 
+      // Linking only happens for an OAuth-verified email → the linked stub is
+      // marked verified in the same update (otherwise it'd stay gated/off-map).
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'u-stub' },
-          data: { oauthProvider: 'google', oauthProviderId: 'google-sub-123' },
+          data: { oauthProvider: 'google', oauthProviderId: 'google-sub-123', emailVerified: true },
         }),
       );
       expect(prisma.user.create).not.toHaveBeenCalled();
@@ -597,7 +672,11 @@ describe('AuthService', () => {
       );
     });
 
-    it('handles null email from Apple (token carries no email, no client fallback)', async () => {
+    it('marks a fresh Apple account verified even when the token carries no email', async () => {
+      // App Store Guideline 4 / Apple HIG: a Sign-in-with-Apple identity is a
+      // complete, verified authentication. Apple omits the email claim on
+      // re-authorization — the new account must STILL be verified so the user is
+      // never bounced to the verify-email screen (the prior App Store rejection).
       const prisma = makePrisma();
       const apple = {
         verify: jest.fn(async () => ({
@@ -616,19 +695,22 @@ describe('AuthService', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             email: null,
-            emailVerified: false,
+            emailVerified: true,
           }),
         }),
       );
     });
 
-    it('does NOT mark verified when Apple sends an email but no verified claim', async () => {
+    it('marks a fresh Apple account verified on the create path (provider-authenticated)', async () => {
+      // The create branch is only reached when NO existing account owns this email
+      // (the auto-link takeover guard — tested separately — already ran and stays
+      // strict). So trusting Apple here cannot take over or squat a real owner's
+      // account, and it keeps the user off the verify-email dead-end.
       const prisma = makePrisma();
       const apple = {
         verify: jest.fn(async () => ({
           sub: 'apple.user.unverified',
-          email: 'mallory@example.com',
-          // Verifier saw no explicit `email_verified` claim → false
+          email: 'newcomer@example.com',
           emailVerified: false,
           isPrivateEmail: false,
         })),
@@ -641,8 +723,8 @@ describe('AuthService', () => {
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            email: 'mallory@example.com',
-            emailVerified: false,
+            email: 'newcomer@example.com',
+            emailVerified: true,
           }),
         }),
       );
@@ -675,10 +757,11 @@ describe('AuthService', () => {
 
       await svc.signInWithApple({ identityToken: 'token' });
 
+      // Linking only happens for an OAuth-verified email → mark the stub verified.
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'u-stub-apple' },
-          data: { oauthProvider: 'apple', oauthProviderId: 'apple.user.001' },
+          data: { oauthProvider: 'apple', oauthProviderId: 'apple.user.001', emailVerified: true },
         }),
       );
       expect(prisma.user.create).not.toHaveBeenCalled();

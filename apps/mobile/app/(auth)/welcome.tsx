@@ -17,6 +17,7 @@ import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constant
 import { geoApi } from '@/services/geoApi';
 import { associationsApi } from '@/services/associationsApi';
 import { probeApi, type Reachability } from '@/services/connectivity';
+import { invitationsApi, type RegistrationMode } from '@/services/invitationsApi';
 
 const FLOATING_FLAGS = [
   { x: '6%', y: '8%', size: 54, code: 'FR' },
@@ -102,6 +103,25 @@ export default function WelcomeScreen() {
       active = false;
     };
   }, []);
+
+  // Fetch registration mode to surface a "closed" banner without navigating away.
+  // The actual gate lives in register.tsx; this is an early informational hint
+  // so the user doesn't tap "Rejoindre" only to hit a wall.
+  const [registrationMode, setRegistrationMode] = useState<RegistrationMode | null>(null);
+  useEffect(() => {
+    let active = true;
+    invitationsApi
+      .getRegistrationMode()
+      .then((mode) => {
+        if (active) setRegistrationMode(mode);
+      })
+      .catch(() => {
+        // silent — don't block the welcome screen on a network error
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const statsQuery = useQuery({
     queryKey: ['geo', 'stats'],
     queryFn: () => geoApi.stats(),
@@ -161,6 +181,15 @@ export default function WelcomeScreen() {
             ))}
           </View>
 
+          {registrationMode === 'closed' ? (
+            <View style={welcomeExtras.closedBanner}>
+              <Feather name="lock" size={16} color="rgba(255,255,255,0.7)" />
+              <Text style={welcomeExtras.closedText}>
+                Inscriptions momentanément fermées — reviens bientôt.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.ctaBlock}>
             <Pressable
               onPress={() => router.push('/(auth)/register')}
@@ -172,7 +201,11 @@ export default function WelcomeScreen() {
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
               />
-              <Text style={styles.ctaPrimaryLabel}>Rejoindre la communauté</Text>
+              <Text style={styles.ctaPrimaryLabel}>
+                {registrationMode === 'invite_only'
+                  ? "Rejoindre (sur invitation)"
+                  : "Rejoindre la communauté"}
+              </Text>
             </Pressable>
 
             <Pressable
@@ -359,5 +392,26 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     fontSize: Typography.sizes.xs,
     fontFamily: 'monospace',
+  },
+});
+
+const welcomeExtras = StyleSheet.create({
+  closedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: Radii.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  closedText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: Typography.sizes.sm,
+    lineHeight: 18,
   },
 });

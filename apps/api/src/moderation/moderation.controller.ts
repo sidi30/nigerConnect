@@ -46,6 +46,13 @@ export class ModerationController {
 
   @UseGuards(RolesGuard)
   @Roles('admin', 'moderator')
+  @Get(':id/target')
+  getTarget(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.moderation.getTarget(id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'moderator')
   @Patch(':id/resolve')
   @HttpCode(HttpStatus.NO_CONTENT)
   async resolve(

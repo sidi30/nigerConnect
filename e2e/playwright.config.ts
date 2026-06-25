@@ -53,7 +53,12 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
-  workers: process.env['CI'] ? 2 : undefined,
+  // Serial in CI: several suites mutate GLOBAL DB singletons (notably
+  // app_settings.registration_mode for the parrainage invite_only/closed
+  // tests). With >1 worker those mutations bleed across concurrently-running
+  // suites (a register in one suite hits "Inscriptions fermées" set by
+  // another). One worker = deterministic global state. Local stays parallel.
+  workers: process.env['CI'] ? 1 : undefined,
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
@@ -188,6 +193,67 @@ export default defineConfig({
     {
       name: 'api-association-posts',
       testMatch: 'api/association-posts.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-parrainage-invitations',
+      testMatch: 'api/parrainage-invitations.spec.ts',
+      // Run sequentially: mode-switching tests (invite_only/closed) mutate a global
+      // DB setting (registration_mode + Redis cache). Parallel workers would race on
+      // this shared state, causing non-deterministic failures. Sequential execution
+      // is the only reliable strategy for this spec.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-parrainage-email-targeted',
+      testMatch: 'api/parrainage-email-targeted.spec.ts',
+      // Sequential for the same reason: several describes flip registration_mode
+      // to invite_only. Running in parallel with itself or with the base spec
+      // would cause non-deterministic failures on shared DB/Redis state.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+
+    {
+      name: 'api-inviter-ban-stops-invites',
+      testMatch: 'api/inviter-ban-stops-invites.spec.ts',
+      // Mutates registration_mode (invite_only) — same serial discipline as the
+      // parrainage specs to avoid racing on the shared global setting.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-invitations-pagination',
+      testMatch: 'api/invitations-pagination.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-email-code-decoupling',
+      testMatch: 'api/email-code-link-decoupling.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-register-avatar-dropped',
+      testMatch: 'api/register-avatar-dropped.spec.ts',
       use: {
         baseURL: API_BASE_URL,
         extraHTTPHeaders: { 'Content-Type': 'application/json' },

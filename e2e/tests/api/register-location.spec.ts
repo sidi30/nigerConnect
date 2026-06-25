@@ -18,14 +18,11 @@
  * Postgres available for email-verification DB mutations (same as other specs).
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 const BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
 const VALID_PASSWORD = 'E2eTest#2026!z';
-
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,18 +89,12 @@ async function registerOk(
 
 /** Mark email verified via direct DB mutation — required by EmailVerifiedGuard. */
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 /** Enable show_on_map so the user appears in /geo/members individual markers. */
 function enableShowOnMap(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET show_on_map = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET show_on_map = true WHERE id = '${userId}';`);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -219,7 +210,7 @@ test.describe('POST /api/auth/register — location fields', () => {
     const suppliedLat = 48.8566;
     const suppliedLng = 2.3522;
 
-    const { user, tokens } = await registerOk(request, {
+    const { user } = await registerOk(request, {
       city: 'Paris',
       countryCode: 'FR',
       latitude: suppliedLat,
@@ -227,6 +218,16 @@ test.describe('POST /api/auth/register — location fields', () => {
     });
     verifyEmailInDb(user.id);
     enableShowOnMap(user.id);
+
+    // Register a second observer user to query the geo endpoint.
+    // The individuals() query always excludes the viewer themselves
+    // (to avoid stacking "you are here" with the client-side marker),
+    // so we must query from a different user's perspective.
+    const { user: observer, tokens: observerTokens } = await registerOk(request, {
+      city: 'Lyon',
+      countryCode: 'FR',
+    });
+    verifyEmailInDb(observer.id);
 
     // Bounding box around Paris (zoom >= 9 → individual markers)
     const north = 49.5;
@@ -237,7 +238,7 @@ test.describe('POST /api/auth/register — location fields', () => {
     const markersRes = await request.get(
       `${BASE_URL}/api/geo/members?north=${north}&south=${south}&east=${east}&west=${west}&zoom=12&type=people`,
       {
-        headers: { Authorization: `Bearer ${tokens.accessToken}`, 'X-Forwarded-For': uniqueIp() },
+        headers: { Authorization: `Bearer ${observerTokens.accessToken}`, 'X-Forwarded-For': uniqueIp() },
       },
     );
     expect(markersRes.status()).toBe(200);

@@ -6,12 +6,12 @@ import { PrismaService } from '../common/prisma/prisma.service';
 
 const TTL_MS: Record<EmailTokenType, number> = {
   reset_password: 60 * 60_000, // 1 hour
-  verify_email: 24 * 60 * 60_000, // 24 hours
+  verify_email: 15 * 60_000, // 15 minutes — short activation window
 };
 
 // A 6-digit code is low-entropy (1M combos) — cap guesses hard so it can't be
-// brute-forced even with the 24h validity window. After this many wrong tries
-// the whole token row is burned and the user must request a fresh code.
+// brute-forced even within the 15-minute validity window. After this many wrong
+// tries the whole token row is burned and the user must request a fresh code.
 const MAX_CODE_ATTEMPTS = 6;
 
 export type CodeOutcome =
@@ -41,9 +41,14 @@ export class EmailTokenService {
   }
 
   /**
-   * Like {@link create} but ALSO mints a 6-digit numeric code stored alongside
-   * the link token in the same row. The email shows the code (typed into the
-   * app) and links the long token (web fallback) — both verify the same row.
+   * Like {@link create} but ALSO mints a 6-digit numeric code. The code and the
+   * web-fallback link are stored in TWO SEPARATE rows (same user/type, both
+   * pending) so that a prefetch of the link — email security scanners
+   * (Gmail/Outlook/Proofpoint) routinely GET every link in an email within
+   * seconds of delivery — consumes only the link row and CANNOT burn the code
+   * the user still has to type. {@link consume} (link) matches by tokenHash and
+   * only ever touches the link row; {@link consumeCode} selects the row WHERE
+   * code_hash IS NOT NULL and is therefore unaffected by the prefetch.
    * Returns the raw link token + the plaintext code (shown once, never stored).
    */
   async createWithCode(
@@ -51,22 +56,26 @@ export class EmailTokenService {
     type: EmailTokenType,
   ): Promise<{ token: string; code: string }> {
     const raw = randomBytes(32).toString('base64url');
+    // The code row still needs a (unique, NOT NULL) tokenHash of its own; it is
+    // never emailed as a link — only its codeHash is ever checked.
+    const codeRowToken = randomBytes(32).toString('base64url');
     const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     const expiresAt = new Date(Date.now() + TTL_MS[type]);
 
+    // Invalidate any previous unused tokens of this type — BOTH shapes
+    // (link rows and code rows) — so a resend starts a clean 15-minute window.
     await this.prisma.emailToken.updateMany({
       where: { userId, type, usedAt: null },
       data: { usedAt: new Date() },
     });
 
-    await this.prisma.emailToken.create({
-      data: {
-        userId,
-        type,
-        tokenHash: this.hash(raw),
-        codeHash: this.hash(code),
-        expiresAt,
-      },
+    await this.prisma.emailToken.createMany({
+      data: [
+        // Link row (web fallback). Prefetch-consumable without collateral damage.
+        { userId, type, tokenHash: this.hash(raw), expiresAt },
+        // Code row (typed into the app). Selected by consumeCode via code_hash.
+        { userId, type, tokenHash: this.hash(codeRowToken), codeHash: this.hash(code), expiresAt },
+      ],
     });
 
     return { token: raw, code };

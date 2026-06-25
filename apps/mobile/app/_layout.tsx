@@ -174,6 +174,8 @@ export default function RootLayout() {
                 <Stack.Screen name="legal/terms" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/community" options={{ presentation: 'card' }} />
+                {/* Invitation deep-link: https://nigerconnect.app/invite/CODE */}
+                <Stack.Screen name="invite/[code]" options={{ presentation: 'card', headerShown: false }} />
               </Stack>
             </PersistQueryClientProvider>
           </ThemeProvider>
@@ -231,6 +233,11 @@ function NotificationDeepLink() {
       else if (proximityUserId) router.push(`/user/${proximityUserId}` as never);
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
         router.push('/friends' as never);
+      } else if (data.type === 'invite_accepted') {
+        // The backend sets actorId = new member — navigate to their profile.
+        const actorId = typeof data.actorId === 'string' ? data.actorId : null;
+        if (actorId) router.push(`/user/${actorId}` as never);
+        else router.push('/(tabs)/invite' as never);
       } else {
         router.push('/settings/notifications' as never);
       }
@@ -272,10 +279,19 @@ function AuthGate() {
     // city/country (the provider doesn't give it) → no map presence. Password
     // signups always set countryCode at registration, so a missing countryCode
     // on a verified account means "OAuth, profile not completed yet".
-    const needsProfile = Boolean(isAuthenticated && user?.emailVerified && !user?.countryCode);
+    // Sign in with Apple / Google is itself a verified authentication (the
+    // provider vouches for the user). Apple's App Store Guideline 4 forbids
+    // asking such users to provide/verify name or email afterward — so OAuth
+    // accounts must NEVER be routed to the email-verification screen, even if a
+    // server hiccup left emailVerified false. Belt-and-suspenders with the
+    // backend (which now marks fresh OAuth accounts verified on creation).
+    const isOAuth = Boolean(user?.oauthProvider);
+    const needsProfile = Boolean(
+      isAuthenticated && (user?.emailVerified || isOAuth) && !user?.countryCode,
+    );
     if (!isAuthenticated && !inAuth && !onResetPassword) {
       router.replace('/(auth)/welcome');
-    } else if (isAuthenticated && user && !user.emailVerified && !onVerifyEmail) {
+    } else if (isAuthenticated && user && !user.emailVerified && !isOAuth && !onVerifyEmail) {
       // Authenticated but email not confirmed → corral them onto the
       // verify-email screen until they confirm (mirrors the API guard).
       router.replace('/verify-email');

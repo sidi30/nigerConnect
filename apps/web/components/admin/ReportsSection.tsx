@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Flag, LifeBuoy } from "lucide-react";
+import { Eye, EyeOff, Flag, LifeBuoy } from "lucide-react";
 import {
   fetchPendingReports,
+  fetchReportTarget,
   resolveReport,
   AdminApiError,
   type Report,
   type ReportAction,
+  type ReportTarget,
 } from "@/lib/adminApi";
 import {
   Avatar,
@@ -65,6 +67,174 @@ const ACTIONS: { value: ReportAction; label: string }[] = [
   { value: "banned", label: "Compte banni" },
 ];
 
+function DeletedBadge() {
+  return <StatusChip tone="amber">Supprimé</StatusChip>;
+}
+
+function AuthorLine({
+  label,
+  author,
+}: {
+  label: string;
+  author: { displayName: string | null; avatarUrl: string | null };
+}) {
+  const name = author.displayName ?? "Utilisateur";
+  return (
+    <div className="flex items-center gap-2 text-sm text-[#5A4634]">
+      <Avatar src={author.avatarUrl} name={name} size={24} />
+      <span>
+        {label} <span className="text-[#1A0F0A]">{name}</span>
+      </span>
+    </div>
+  );
+}
+
+// Renders the resolved reported content. Best-effort preview — moderators need
+// to see WHAT was reported before deciding. Media are reported S3 URLs.
+function TargetPreview({ target }: { target: ReportTarget }) {
+  if (!target.found) {
+    return (
+      <p className="text-sm text-[#8A6B4D] italic">
+        Contenu introuvable (définitivement supprimé).
+      </p>
+    );
+  }
+
+  switch (target.type) {
+    case "post":
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <AuthorLine label="Auteur" author={target.author} />
+            <span className="text-xs text-[#8A6B4D]">
+              {target.isStory ? "Story" : "Publication"} · {target.visibility}
+            </span>
+            {target.deletedAt ? <DeletedBadge /> : null}
+          </div>
+          {target.content ? (
+            <p className="text-sm text-[#1A0F0A] whitespace-pre-wrap break-words">
+              {target.content}
+            </p>
+          ) : (
+            <p className="text-sm text-[#8A6B4D] italic">(sans texte)</p>
+          )}
+          {target.media.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {target.media.map((m) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={m.mediaUrl}
+                  src={m.thumbnailUrl ?? m.mediaUrl}
+                  alt=""
+                  className="h-28 w-28 object-cover rounded-lg border border-[#E8DFD3]"
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      );
+
+    case "comment":
+      return (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <AuthorLine label="Auteur" author={target.author} />
+            {target.deletedAt ? <DeletedBadge /> : null}
+          </div>
+          <p className="text-sm text-[#1A0F0A] whitespace-pre-wrap break-words">
+            {target.content}
+          </p>
+        </div>
+      );
+
+    case "message":
+      return (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <AuthorLine label="Expéditeur" author={target.sender} />
+            {target.deletedAt ? <DeletedBadge /> : null}
+          </div>
+          {target.content ? (
+            <p className="text-sm text-[#1A0F0A] whitespace-pre-wrap break-words">
+              {target.content}
+            </p>
+          ) : (
+            <p className="text-sm text-[#8A6B4D] italic">
+              ({target.messageType === "text" ? "sans texte" : target.messageType})
+            </p>
+          )}
+          {target.mediaUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={target.mediaUrl}
+              alt=""
+              className="h-28 w-28 object-cover rounded-lg border border-[#E8DFD3]"
+            />
+          ) : null}
+        </div>
+      );
+
+    case "user":
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Avatar
+              src={target.avatarUrl}
+              name={target.displayName ?? "Utilisateur"}
+              size={36}
+            />
+            <div>
+              <div className="text-sm font-medium text-[#1A0F0A]">
+                {target.displayName ?? "Utilisateur"}
+              </div>
+              <div className="text-xs text-[#8A6B4D]">
+                {[target.city, target.countryCode].filter(Boolean).join(", ") ||
+                  "—"}{" "}
+                · {target.status}
+              </div>
+            </div>
+          </div>
+          {target.bio ? (
+            <p className="text-sm text-[#1A0F0A] whitespace-pre-wrap break-words">
+              {target.bio}
+            </p>
+          ) : null}
+        </div>
+      );
+
+    case "association":
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Avatar src={target.logoUrl} name={target.name} size={36} />
+            <div>
+              <div className="text-sm font-medium text-[#1A0F0A]">
+                {target.name}
+              </div>
+              <div className="text-xs text-[#8A6B4D]">
+                {target.category} ·{" "}
+                {[target.city, target.countryCode].filter(Boolean).join(", ") ||
+                  "—"}
+              </div>
+            </div>
+          </div>
+          {target.description ? (
+            <p className="text-sm text-[#1A0F0A] whitespace-pre-wrap break-words">
+              {target.description}
+            </p>
+          ) : null}
+        </div>
+      );
+
+    default:
+      return (
+        <p className="text-sm text-[#8A6B4D] italic">
+          Aperçu indisponible pour ce type de contenu.
+        </p>
+      );
+  }
+}
+
 function ReportCard({
   report,
   onResolved,
@@ -77,7 +247,33 @@ function ReportCard({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Lazy-loaded reported-content preview (one fetch per card, on first open).
+  const [showTarget, setShowTarget] = useState(false);
+  const [target, setTarget] = useState<ReportTarget | null>(null);
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [targetError, setTargetError] = useState<string | null>(null);
+
   const reporterName = report.reporter.displayName ?? "Utilisateur";
+
+  async function toggleTarget() {
+    if (showTarget) {
+      setShowTarget(false);
+      return;
+    }
+    setShowTarget(true);
+    if (target || targetLoading) return;
+    setTargetLoading(true);
+    setTargetError(null);
+    try {
+      setTarget(await fetchReportTarget(report.id));
+    } catch (e) {
+      setTargetError(
+        e instanceof AdminApiError ? e.message : "Échec du chargement.",
+      );
+    } finally {
+      setTargetLoading(false);
+    }
+  }
 
   async function submit() {
     setPending(true);
@@ -120,6 +316,33 @@ function ReportCard({
         <span>
           Signalé par <span className="text-[#1A0F0A]">{reporterName}</span>
         </span>
+      </div>
+
+      {/* Reported content preview (lazy) */}
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => void toggleTarget()}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#E05206] hover:underline"
+        >
+          {showTarget ? (
+            <EyeOff size={16} aria-hidden="true" />
+          ) : (
+            <Eye size={16} aria-hidden="true" />
+          )}
+          {showTarget ? "Masquer le contenu" : "Voir le contenu signalé"}
+        </button>
+        {showTarget ? (
+          <div className="mt-3 rounded-lg border border-[#E8DFD3] bg-[#FBF7F1] p-4">
+            {targetLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : targetError ? (
+              <ErrorBanner message={targetError} />
+            ) : target ? (
+              <TargetPreview target={target} />
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {error ? (

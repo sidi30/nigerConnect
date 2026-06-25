@@ -190,6 +190,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      # Proxy hops in front of the API: Cloudflare -> Traefik -> api = 2. Lets
+      # Express derive the real client IP (req.ip) for rate-limit/throttle keys
+      # instead of trusting a spoofable left-most X-Forwarded-For. Override in .env.prod.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       S3_ENDPOINT: http://minio:9000

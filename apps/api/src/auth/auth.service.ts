@@ -26,6 +26,8 @@ import { TokenService } from './token.service';
 import { EmailTokenService } from './email-token.service';
 import { GoogleOAuthService } from './google-oauth.service';
 import { AppleVerifierService, sha256Hex } from './apple-verifier.service';
+import { SettingsService } from '../common/settings/settings.service';
+import { InvitationsService } from '../invitations/invitations.service';
 import type { RegisterDto } from './dto/register.dto';
 import type { LoginDto } from './dto/login.dto';
 
@@ -58,12 +60,15 @@ export class AuthService {
     private readonly google: GoogleOAuthService,
     private readonly apple: AppleVerifierService,
     private readonly config: ConfigService<Env, true>,
+    private readonly settings: SettingsService,
+    private readonly invitations: InvitationsService,
   ) {}
 
   async signInWithGoogle(
     idToken: string,
     deviceName?: string,
     nonce?: string,
+    inviteCode?: string,
   ): Promise<AuthResult> {
     const profile = await this.google.verifyIdToken(idToken, nonce);
     // Refuse unverified Google emails. Google returns email_verified=false for
@@ -83,6 +88,7 @@ export class AuthService {
         avatarUrl: profile.avatarUrl ?? undefined,
       },
       deviceName,
+      inviteCode,
     );
   }
 
@@ -100,6 +106,7 @@ export class AuthService {
     email?: string;
     rawNonce?: string;
     deviceName?: string;
+    inviteCode?: string;
   }): Promise<AuthResult> {
     // Anti-replay: if the client generated a nonce, the token must carry
     // sha256(rawNonce) in its `nonce` claim. Verifier enforces only when set.
@@ -124,11 +131,63 @@ export class AuthService {
         lastName: input.fullName?.familyName,
       },
       input.deviceName,
+      input.inviteCode,
     );
   }
 
   async register(dto: RegisterDto, ip?: string): Promise<AuthResult> {
     await this.enforceRegisterRateLimit(ip);
+
+    // ── Registration mode gate (§4.1) ────────────────────────────────
+    const mode = await this.settings.getRegistrationMode();
+    if (mode === 'closed') {
+      throw new ForbiddenException('Inscriptions fermées pour le moment.');
+    }
+    // Pre-validate invite code OR email-match before expensive ops (uniqueness
+    // check, hash). Precedence: code first; email-match fallback.
+    let invitedById: string | null = null;
+    // Which invitation authorized this registration (network analytics: invitedViaId).
+    let invitedViaId: string | null = null;
+    // Code kind drives the consume path: single_use is consumed (one acceptance);
+    // reusable is never consumed (shareable link, N signups).
+    let inviteKind: 'single_use' | 'reusable' | null = null;
+    // Track which mechanism authorized this registration so the consume step uses
+    // the right path (code-consume vs email-consume).
+    let emailMatchAuthorized = false;
+    if (mode === 'invite_only') {
+      if (dto.inviteCode) {
+        // CODE PATH — single_use or reusable (mass-invite link).
+        const { inviterId, invitationId, kind } =
+          await this.invitations.resolveCodeForRegistration(dto.inviteCode);
+        invitedById = inviterId;
+        invitedViaId = invitationId;
+        inviteKind = kind;
+      } else {
+        // EMAIL-MATCH FALLBACK — soft lookup, no throw on miss (single_use only).
+        const emailMatch = dto.email
+          ? await this.invitations.preValidateEmail(dto.email)
+          : null;
+        if (emailMatch !== null) {
+          invitedById = emailMatch.inviterId;
+          invitedViaId = emailMatch.invitationId;
+          emailMatchAuthorized = true;
+        } else {
+          // Neither a valid code nor a matching targeted invite — block.
+          // SECURITY (résiduel, faible levier) : en invite_only, un appelant non
+          // authentifié peut distinguer "cet email a une invitation ciblée"
+          // (la requête poursuit jusqu'au check d'unicité → 409/succès) de "pas
+          // d'invitation" (403 ici). C'est inhérent à l'UX d'invitation ciblée :
+          // un invité légitime SANS code doit pouvoir s'inscrire. On ne peut donc
+          // pas unifier sans casser ce parcours (cf. parrainage-email-targeted.spec).
+          // Le throttle register par IP borne l'énumération de masse.
+          throw new ForbiddenException({
+            code: 'INVITE_CODE_REQUIRED',
+            message: 'Un code d\'invitation est requis pour créer un compte.',
+          });
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
 
     const existing = await this.prisma.user.findFirst({
       where: { OR: [{ email: dto.email }, dto.phone ? { phone: dto.phone } : { email: '__none__' }] },
@@ -169,22 +228,90 @@ export class AuthService {
       longitude = coords?.lon ?? null;
     }
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        phone: dto.phone ?? null,
-        passwordHash,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        displayName: `${dto.firstName} ${dto.lastName}`.trim(),
-        city: dto.city ?? null,
-        countryCode: dto.countryCode ?? null,
-        bio: dto.bio ?? null,
-        avatarUrl: dto.avatarUrl ?? null,
-        latitude,
-        longitude,
-      },
+    // ── Atomic: create user + consume invite in a single transaction ──
+    // The updateMany is the atomic "last-writer-wins" guard: two concurrent
+    // registrations with the same code both create their user rows in the same
+    // transaction, but only one will see count=1 from the updateMany.
+    // (§4.1.6.b — conditional updateMany)
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: dto.email,
+          phone: dto.phone ?? null,
+          passwordHash,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          displayName: `${dto.firstName} ${dto.lastName}`.trim(),
+          city: dto.city ?? null,
+          countryCode: dto.countryCode ?? null,
+          bio: dto.bio ?? null,
+          // Avatar set post-signup via updateAvatar (S3-bound) — never persist a
+          // raw client URL at registration.
+          avatarUrl: null,
+          latitude,
+          longitude,
+          invitedById,
+          invitedViaId,
+        },
+      });
+
+      if (mode === 'invite_only') {
+        if (dto.inviteCode && !emailMatchAuthorized) {
+          if (inviteKind === 'reusable') {
+            // REUSABLE LINK: nothing to consume — the link stays active for the
+            // next signup. invitedById/invitedViaId already set on the user row.
+          } else {
+            // SINGLE-USE CODE PATH: atomic consume by code.
+            const consumed = await this.invitations.atomicallyConsumeSingleUse(
+              dto.inviteCode,
+              created.id,
+              tx as unknown as PrismaService,
+            );
+            if (consumed === 0) {
+              throw new BadRequestException({
+                code: 'INVITE_CODE_CONSUMED',
+                message: 'Ce code d\'invitation vient d\'être utilisé. Demande un nouveau code.',
+              });
+            }
+          }
+        } else if (emailMatchAuthorized && dto.email) {
+          // EMAIL-MATCH PATH: atomic consume by targetEmail (single_use only).
+          const { count, inviterId: emailInviterId, invitationId: emailInvitationId } =
+            await this.invitations.atomicallyConsumeByEmail(
+              dto.email,
+              created.id,
+              tx as unknown as PrismaService,
+            );
+          if (count === 0) {
+            // Race: another registration consumed the same targeted invite first.
+            throw new BadRequestException({
+              code: 'INVITE_EMAIL_CONSUMED',
+              message: 'L\'invitation pour cet email vient d\'être utilisée.',
+            });
+          }
+          // Reconcile invitedById/invitedViaId with the row we ACTUALLY consumed.
+          // atomicallyConsumeByEmail re-runs its own findFirst and may accept a
+          // different invitation than preValidateEmail picked when 2+ pending
+          // invites target the same email (or the first was revoked in between).
+          // The consumed row is the source of truth — so we sync unconditionally,
+          // not only when invitedById was unset.
+          if (emailInviterId && (emailInviterId !== invitedById || emailInvitationId !== invitedViaId)) {
+            await tx.user.update({
+              where: { id: created.id },
+              data: { invitedById: emailInviterId, invitedViaId: emailInvitationId },
+            });
+            invitedById = emailInviterId;
+            invitedViaId = emailInvitationId;
+          }
+        }
+      }
+      return created;
     });
+
+    // Post-commit: notify inviter (fire & forget) — link or code alike.
+    if (mode === 'invite_only' && invitedById) {
+      this.invitations.notifyInviter(invitedById, user.id, user.firstName);
+    }
 
     // Fire & forget — email verification
     void this.sendVerificationEmail(user.id).catch((e) =>
@@ -385,6 +512,7 @@ export class AuthService {
       avatarUrl?: string;
     },
     deviceName?: string,
+    inviteCode?: string,
   ): Promise<AuthResult> {
     let user = await this.prisma.user.findFirst({
       where: { oauthProvider: provider, oauthProviderId: providerId },
@@ -430,7 +558,54 @@ export class AuthService {
     }
 
     let createdNow = false;
+    let newUserInvitedById: string | null = null;
+    let newUserInvitedViaId: string | null = null;
+    let oauthInviteKind: 'single_use' | 'reusable' | null = null;
+    // Track whether this OAuth creation was authorized via email-match
+    // (vs. a code). Used to select the correct atomic-consume path below.
+    let oauthEmailMatchAuthorized = false;
     if (!user) {
+      // ── Registration mode gate — creation branch only (§4.2) ────────────
+      // ⚠️ This gating must run ONLY here (new-account creation), NEVER on the
+      // existing-account login path above. That is the "point délicat" from spec.
+      const mode = await this.settings.getRegistrationMode();
+      if (mode === 'closed') {
+        throw new ForbiddenException('Inscriptions fermées pour le moment.');
+      }
+      if (mode === 'invite_only') {
+        if (inviteCode) {
+          // CODE PATH — single_use or reusable (mass-invite link).
+          const { inviterId, invitationId, kind } =
+            await this.invitations.resolveCodeForRegistration(inviteCode);
+          newUserInvitedById = inviterId;
+          newUserInvitedViaId = invitationId;
+          oauthInviteKind = kind;
+        } else {
+          // EMAIL-MATCH FALLBACK — soft lookup using the OAuth profile email.
+          // Apple Hide-My-Email relay addresses will not match a stored targetEmail
+          // → falls back gracefully to "no invite found" → 403 (user needs a code).
+          const oauthEmail = profile.email;
+          const emailMatch = oauthEmail
+            ? await this.invitations.preValidateEmail(oauthEmail)
+            : null;
+          if (emailMatch !== null) {
+            newUserInvitedById = emailMatch.inviterId;
+            newUserInvitedViaId = emailMatch.invitationId;
+            oauthEmailMatchAuthorized = true;
+          } else {
+            // SECURITY (résiduel, faible levier) : même résidu que le register
+            // classique — un email avec invitation ciblée poursuit la création
+            // tandis qu'un email sans invitation est bloqué ici (403). Inhérent à
+            // l'UX d'invitation ciblée ; non unifiable sans casser le parcours.
+            throw new ForbiddenException({
+              code: 'INVITE_CODE_REQUIRED',
+              message: 'Un code d\'invitation est requis pour créer un compte.',
+            });
+          }
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       // Concurrent first-sign-ins for the same (provider, providerId) both reach
       // here after seeing `findFirst` return null. The @@unique constraint makes
       // the loser's create fail with P2002 — we catch it and re-read the winning
@@ -438,23 +613,82 @@ export class AuthService {
       // auto-link guard above already ran, so we never silently take over an
       // account on this path.
       try {
-        user = await this.prisma.user.create({
-          data: {
-            email: profile.email ?? null,
-            oauthProvider: provider,
-            oauthProviderId: providerId,
-            firstName: profile.firstName ?? null,
-            lastName: profile.lastName ?? null,
-            displayName: [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
-            avatarUrl: profile.avatarUrl ?? null,
-            // OAuth signup = the provider already authenticated the user and owns
-            // the address (Google rejects unverified upstream; Apple proves
-            // account ownership). Treat the account as email-verified so the user
-            // isn't stuck behind the verification gate / hidden from the map.
-            // Profile completion (city/country) is collected by the client in a
-            // follow-up onboarding step.
-            emailVerified: true,
-          },
+        user = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.user.create({
+            data: {
+              email: profile.email ?? null,
+              oauthProvider: provider,
+              oauthProviderId: providerId,
+              firstName: profile.firstName ?? null,
+              lastName: profile.lastName ?? null,
+              displayName: [profile.firstName, profile.lastName].filter(Boolean).join(' ') || null,
+              avatarUrl: profile.avatarUrl ?? null,
+              // OAuth signup = provider-authenticated → the new account is verified.
+              // Apple HIG / App Store Guideline 4: a Sign-in-with-Apple identity is a
+              // complete, verified authentication — we must NEVER bounce these users to
+              // the email-verification screen afterward (Apple omits the email claim on
+              // re-authorization, which previously left them stuck on verify-email = an
+              // App Store rejection). Safe here: this is the CREATE branch, only reached
+              // when NO existing account owns profile.email (the auto-link takeover guard
+              // above already ran and is the ONLY place that trusts/links by email, and it
+              // stays strict — profile.emailVerified === true). So there is no other owner
+              // to "claim", and Apple/Google only vend emails they themselves verified.
+              // Profile completion (city/country) is collected client-side afterward.
+              emailVerified: true,
+              invitedById: newUserInvitedById,
+              invitedViaId: newUserInvitedViaId,
+            },
+          });
+
+          if (mode === 'invite_only') {
+            if (inviteCode && !oauthEmailMatchAuthorized) {
+              if (oauthInviteKind === 'reusable') {
+                // REUSABLE LINK: nothing to consume — stays active for next signup.
+              } else {
+                // SINGLE-USE CODE PATH.
+                const consumed = await this.invitations.atomicallyConsumeSingleUse(
+                  inviteCode,
+                  created.id,
+                  tx as unknown as PrismaService,
+                );
+                if (consumed === 0) {
+                  throw new BadRequestException({
+                    code: 'INVITE_CODE_CONSUMED',
+                    message: 'Ce code d\'invitation vient d\'être utilisé. Demande un nouveau code.',
+                  });
+                }
+              }
+            } else if (oauthEmailMatchAuthorized && profile.email) {
+              // EMAIL-MATCH PATH (single_use only).
+              const { count, inviterId: emailInviterId, invitationId: emailInvitationId } =
+                await this.invitations.atomicallyConsumeByEmail(
+                  profile.email,
+                  created.id,
+                  tx as unknown as PrismaService,
+                );
+              if (count === 0) {
+                throw new BadRequestException({
+                  code: 'INVITE_EMAIL_CONSUMED',
+                  message: 'L\'invitation pour cet email vient d\'être utilisée.',
+                });
+              }
+              // Sync invitedById/invitedViaId with the row we ACTUALLY consumed
+              // (the consume re-runs findFirst and may pick a different invite
+              // when 2+ target the same email) — sync unconditionally.
+              if (
+                emailInviterId &&
+                (emailInviterId !== newUserInvitedById || emailInvitationId !== newUserInvitedViaId)
+              ) {
+                await tx.user.update({
+                  where: { id: created.id },
+                  data: { invitedById: emailInviterId, invitedViaId: emailInvitationId },
+                });
+                newUserInvitedById = emailInviterId;
+                newUserInvitedViaId = emailInvitationId;
+              }
+            }
+          }
+          return created;
         });
         createdNow = true;
       } catch (e) {
@@ -466,6 +700,14 @@ export class AuthService {
         } else {
           throw e;
         }
+      }
+    }
+
+    // Post-commit notifications for new OAuth users
+    if (createdNow && user) {
+      // Notify inviter if applicable
+      if (newUserInvitedById) {
+        this.invitations.notifyInviter(newUserInvitedById, user.id, user.firstName);
       }
     }
 

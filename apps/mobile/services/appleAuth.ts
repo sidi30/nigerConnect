@@ -7,6 +7,11 @@ import { tokenStore } from './secureStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { User } from '@nigerconnect/shared-types';
 
+interface AppleAuthHookOptions {
+  /** Invitation code to forward on the first Apple sign-in (account creation). */
+  inviteCode?: string;
+}
+
 interface AppleAuthHookResult {
   signIn: () => Promise<void>;
   isLoading: boolean;
@@ -20,7 +25,8 @@ interface AppleAuthHookResult {
  * allow Sign-in-with-Apple on Android officially, and the web flow uses a
  * different OAuth route we don't need for the mobile-first MVP.
  */
-export function useAppleAuth(): AppleAuthHookResult {
+export function useAppleAuth(options: AppleAuthHookOptions = {}): AppleAuthHookResult {
+  const { inviteCode } = options;
   const [isAvailable, setIsAvailable] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +53,8 @@ export function useAppleAuth(): AppleAuthHookResult {
   const signIn = useCallback(async () => {
     setError(null);
     setIsLoading(true);
+    // Capture `inviteCode` from closure at call time.
+    const currentInviteCode = inviteCode;
     try {
       // Anti-replay nonce: we send Apple the SHA-256 of a random raw value, and
       // forward the raw value to our API. The server hashes it and asserts it
@@ -83,6 +91,9 @@ export function useAppleAuth(): AppleAuthHookResult {
               }
             : undefined,
         email: credential.email ?? undefined,
+        // Forwarded only on account creation; ignored by the server if the
+        // account already exists (login branch).
+        inviteCode: currentInviteCode,
       });
       // Server auth succeeded — a Keychain write failure here must not surface as
       // the generic "Connexion Apple impossible". Give a specific, actionable msg.
@@ -107,7 +118,7 @@ export function useAppleAuth(): AppleAuthHookResult {
     } finally {
       setIsLoading(false);
     }
-  }, [setUser]);
+  }, [setUser, inviteCode]);
 
   return { signIn, isLoading, error, isAvailable };
 }

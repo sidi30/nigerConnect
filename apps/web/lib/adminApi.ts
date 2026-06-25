@@ -259,6 +259,85 @@ export interface ReportListResponse {
   nextCursor: string | null;
 }
 
+// GET /reports/:id/target — resolves a report's reported content for preview.
+// Discriminated on `type`; `found: false` when the target was hard-deleted.
+export interface ReportTargetAuthor {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export interface ReportTargetMedia {
+  mediaUrl: string;
+  thumbnailUrl: string | null;
+  mediaType: string;
+}
+
+export type ReportTarget =
+  | { type: "post"; found: false }
+  | {
+      type: "post";
+      found: true;
+      id: string;
+      content: string | null;
+      visibility: string;
+      isStory: boolean;
+      createdAt: string;
+      deletedAt: string | null;
+      author: ReportTargetAuthor;
+      media: ReportTargetMedia[];
+    }
+  | { type: "comment"; found: false }
+  | {
+      type: "comment";
+      found: true;
+      id: string;
+      content: string;
+      createdAt: string;
+      deletedAt: string | null;
+      postId: string;
+      author: ReportTargetAuthor;
+    }
+  | { type: "message"; found: false }
+  | {
+      type: "message";
+      found: true;
+      id: string;
+      content: string | null;
+      mediaUrl: string | null;
+      messageType: string;
+      createdAt: string;
+      deletedAt: string | null;
+      sender: ReportTargetAuthor;
+    }
+  | { type: "user"; found: false }
+  | {
+      type: "user";
+      found: true;
+      id: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      bio: string | null;
+      city: string | null;
+      countryCode: string | null;
+      status: string;
+      createdAt: string;
+    }
+  | { type: "association"; found: false }
+  | {
+      type: "association";
+      found: true;
+      id: string;
+      name: string;
+      description: string | null;
+      logoUrl: string | null;
+      category: string;
+      city: string | null;
+      countryCode: string | null;
+      createdAt: string;
+    }
+  | { type: string; found: false };
+
 export type IdentityDecision = "approved" | "rejected";
 export type ReportAction =
   | "warning"
@@ -344,6 +423,13 @@ export function fetchPendingReports(
   signal?: AbortSignal,
 ): Promise<ReportListResponse> {
   return adminFetch<ReportListResponse>("/reports?status=pending", { signal });
+}
+
+export function fetchReportTarget(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ReportTarget> {
+  return adminFetch<ReportTarget>(`/reports/${id}/target`, { signal });
 }
 
 export function resolveReport(
@@ -463,5 +549,127 @@ export function sendCampaign(
   return adminFetch<{ totalRecipients: number }>(
     `/admin/newsletter/campaigns/${id}/send`,
     { method: "POST" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Invitations / Settings (§5.3)
+// ---------------------------------------------------------------------------
+
+export type RegistrationMode = "open" | "invite_only" | "closed";
+
+export interface AdminSettings {
+  registrationMode: RegistrationMode;
+  defaultInviteQuota: number;
+  inviteExpiryDays: number;
+}
+
+export type InvitationKind = "single_use" | "reusable";
+
+export interface RootInvite {
+  code: string;
+  url: string;
+  /** Always null in v2 (invitations no longer expire). */
+  expiresAt: string | null;
+  kind?: InvitationKind;
+}
+
+export interface InviteMetrics {
+  sent: number;
+  accepted: number;
+  pending: number;
+  expired: number;
+  revoked: number;
+  conversionRate: number;
+  kFactor: number;
+  topInviters: Array<{ name: string; count: number }>;
+}
+
+export function fetchAdminSettings(signal?: AbortSignal): Promise<AdminSettings> {
+  return adminFetch<AdminSettings>("/admin/settings", { signal });
+}
+
+export function patchAdminSettings(
+  body: Partial<{
+    registrationMode: RegistrationMode;
+    defaultInviteQuota: number;
+    inviteExpiryDays: number;
+  }>,
+): Promise<AdminSettings> {
+  return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });
+}
+
+export function generateRootInvites(
+  count: number,
+  options?: { expiresInDays?: number; kind?: InvitationKind },
+): Promise<RootInvite[]> {
+  const payload: {
+    count: number;
+    expiresInDays?: number;
+    kind?: InvitationKind;
+  } = { count };
+  if (options?.expiresInDays !== undefined)
+    payload.expiresInDays = options.expiresInDays;
+  if (options?.kind !== undefined) payload.kind = options.kind;
+  return adminFetch<RootInvite[]>("/admin/invitations/root", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchInviteMetrics(signal?: AbortSignal): Promise<InviteMetrics> {
+  return adminFetch<InviteMetrics>("/admin/invitations/metrics", { signal });
+}
+
+// ---------------------------------------------------------------------------
+// Referral network (v2)
+// ---------------------------------------------------------------------------
+
+/** User node in the referral tree returned by GET /admin/referrals. */
+export interface ReferralNode {
+  id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+  /** Parrain direct — null for root / uninvited accounts. */
+  invitedBy: { id: string; displayName: string | null } | null;
+  /** Via which invitation kind the account registered (null for root accounts). */
+  via: { kind: "single_use" | "reusable" } | null;
+  /** Number of accounts directly sponsored by this user. */
+  inviteesCount: number;
+}
+
+export interface ReferralListResponse {
+  items: ReferralNode[];
+  nextCursor: string | null;
+}
+
+/**
+ * GET /admin/referrals?cursor=&limit=
+ * Paginated list of recent members with their parrain chain.
+ */
+export function listReferrals(
+  cursor?: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<ReferralListResponse> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const qs = params.toString();
+  return adminFetch<ReferralListResponse>(
+    `/admin/referrals${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+}
+
+/** PATCH /admin/users/:id/bulk-invite — grants or revokes the reusable-link right. */
+export function setBulkInviteRight(
+  userId: string,
+  allowed: boolean,
+): Promise<{ id: string; canBulkInvite: boolean }> {
+  return adminFetch<{ id: string; canBulkInvite: boolean }>(
+    `/admin/users/${userId}/bulk-invite`,
+    { method: "PATCH", body: { allowed } },
   );
 }

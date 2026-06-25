@@ -132,6 +132,30 @@ model User {
   reviewsAuthored         Review[]             @relation("ReviewAuthor")
   reviewsReceived         Review[]             @relation("ReviewTargetUser")
 
+  // ── Parrainage ──────────────────────────────────────────────────
+  // Parrain direct (arbre). SetNull si le parrain supprime son compte —
+  // on ne casse pas le filleul, on perd juste le lien de parenté.
+  invitedById      String?      @map("invited_by_id") @db.Uuid
+  invitedBy        User?        @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitees         User[]       @relation("UserInvitedBy")
+  // Droit accordé par l'admin de créer des liens d'invitation RÉUTILISABLES
+  // (1 lien → N inscriptions, partage en masse). L'invitation email/code
+  // single-use reste ouverte à tous les inscrits vérifiés.
+  canBulkInvite    Boolean      @default(false) @map("can_bulk_invite")
+  // Par quelle invitation ce compte s'est inscrit (analytics réseau : permet de
+  // compter les inscriptions par lien réutilisable). Distinct de invitedById
+  // (l'arbre de parenté). SetNull si l'invitation est supprimée.
+  invitedViaId     String?      @map("invited_via_id") @db.Uuid
+  invitedVia       Invitation?  @relation("InvitationSignups", fields: [invitedViaId], references: [id], onDelete: SetNull)
+  // DÉPRÉCIÉ (v2 réseau) : plus de quota dur ni d'expiration. Colonnes conservées
+  // pour éviter une migration destructive ; plus lues ni posées par le code.
+  inviteQuota      Int          @default(3) @map("invite_quota")
+  // Compteur d'abus : +1 quand un filleul est banni. ≥ 3 → création d'invitation gelée.
+  inviteAbuseFlags Int          @default(0) @map("invite_abuse_flags")
+
+  invitesSent      Invitation[] @relation("UserInvitesSent")
+  invitesAccepted  Invitation[] @relation("UserInviteAccepted")
+
   // Unique per OAuth identity so concurrent link-or-create requests can't mint
   // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
   // Both columns are nullable; Postgres treats NULLs as distinct, so the many
@@ -140,6 +164,8 @@ model User {
   @@index([countryCode, city])
   @@index([latitude, longitude])
   @@index([showOnMap, status])
+  @@index([invitedById])
+  @@index([invitedViaId])
   @@map("users")
 }
 
@@ -259,6 +285,24 @@ enum NotificationType {
   poll_new
   review_received
   system
+  invite_accepted
+}
+
+// ── Parrainage ────────────────────────────────────────────────────
+
+enum InvitationStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+enum InvitationKind {
+  // Email/code à usage unique : une seule acceptation (pending → accepted).
+  single_use
+  // Lien partageable réutilisable : N inscriptions, jamais consommé
+  // (status reste pending = actif). Réservé aux users canBulkInvite.
+  reusable
 }
 
 enum ReportTargetType {
@@ -874,4 +918,49 @@ model NewsletterCampaign {
 
   @@index([status])
   @@map("newsletter_campaigns")
+}
+
+// ── Parrainage — Invitation ───────────────────────────────────────
+model Invitation {
+  id           String           @id @default(uuid()) @db.Uuid
+  // Code haute entropie partagé par le parrain. base62, 10+ chars (~59 bits).
+  code         String           @unique @db.VarChar(16)
+  // null = invitation racine générée par l'admin (bootstrap / seeding waitlist).
+  inviterId    String?          @map("inviter_id") @db.Uuid
+  inviter      User?            @relation("UserInvitesSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  // single_use (défaut) = email/code une acceptation ; reusable = lien de masse.
+  kind         InvitationKind   @default(single_use)
+  status       InvitationStatus @default(pending)
+  // Comptes inscrits via cette invitation (surtout utile pour les liens reusable).
+  signups      User[]           @relation("InvitationSignups")
+  // Compte créé en consommant ce code. SetNull si ce compte est supprimé,
+  // pour garder l'historique de l'invitation.
+  acceptedById String?          @map("accepted_by_id") @db.Uuid
+  acceptedBy   User?            @relation("UserInviteAccepted", fields: [acceptedById], references: [id], onDelete: SetNull)
+  // Data-minimization: email du destinataire ciblé par une invitation email.
+  // Normalisé (lowercase+trim) avant stockage. PURGÉ (→ null) dès que
+  // l'invitation quitte 'pending' (accept, revoke, expiry). On ne conserve
+  // jamais l'email d'un tiers au-delà de la durée de vie de l'invitation.
+  targetEmail  String?          @map("target_email") @db.VarChar(254)
+  expiresAt    DateTime?        @map("expires_at") @db.Timestamptz
+  acceptedAt   DateTime?        @map("accepted_at") @db.Timestamptz
+  revokedAt    DateTime?        @map("revoked_at") @db.Timestamptz
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([inviterId, status])
+  @@index([inviterId, kind])
+  @@index([status, expiresAt])
+  @@index([status, targetEmail])
+  @@map("invitations")
+}
+
+// ── Réglages runtime ─────────────────────────────────────────────
+// Réutilisable pour tout futur feature-flag.
+model AppSetting {
+  key         String   @id @db.VarChar(60)        // 'registration_mode', 'default_invite_quota', 'invite_expiry_days'
+  value       String   @db.VarChar(100)
+  updatedById String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("app_settings")
 }

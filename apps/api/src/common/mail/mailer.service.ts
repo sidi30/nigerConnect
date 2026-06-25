@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { type Transporter } from 'nodemailer';
@@ -103,6 +104,11 @@ export class MailerService implements OnModuleInit {
         html: input.html,
         text: input.text,
         replyTo: this.fromAddress,
+        // Pin the Message-ID to the sending domain. By default nodemailer derives
+        // it from the container's os.hostname() (a random hex id), which trips
+        // SpamAssassin's "suspicious message ID" heuristic (FONT_INVIS_MSGID) and
+        // weakens domain alignment. Always emit <uuid@nigerconnect.app>.
+        messageId: `<${randomUUID()}@${this.fromAddress.split('@')[1] ?? 'nigerconnect.app'}>`,
         ...(input.attachments ? { attachments: input.attachments } : {}),
         // List-Unsubscribe improves inbox placement even for transactional mail.
         // Bulk mail (newsletter) passes an HTTPS one-click URL; everything else
@@ -418,6 +424,59 @@ export class MailerService implements OnModuleInit {
       bodyHtml,
     });
     await this.send({ to, subject: 'NigerConnect — Ton identité est vérifiée ✅', html, text });
+  }
+
+  /**
+   * Invitation email — sent when a user provides an invitee's email address.
+   * Contains the one-use invite code and a direct deep-link to the registration
+   * page. Fire-and-forget from the caller; this method logs but does not throw.
+   *
+   * @param to           Invitee's email address (normalized by service before call).
+   * @param inviterName  Inviter's display name or first name (HTML-escaped here).
+   * @param code         The invitation code (base62, 10 chars).
+   * @param inviteUrl    Full deep-link URL: https://nigerconnect.app/invite/{code}
+   */
+  async sendInvitationEmail(
+    to: string,
+    inviterName: string,
+    code: string,
+    inviteUrl: string,
+  ): Promise<void> {
+    const b = MailerService.BRAND;
+    // Strip control chars (CR/LF/tabs) from the inviter name before it reaches
+    // the Subject header and the plain-text body. nodemailer already folds bare
+    // newlines out of header values, but we sanitize here too so a crafted
+    // displayName ("Bob\nBcc: x@y") can never influence header structure, and
+    // the text/plain body stays single-line clean. The HTML body additionally
+    // HTML-escapes via this.esc().
+    const cleanName = inviterName.replace(/[\r\n\t]+/g, ' ').trim() || 'Quelqu\'un';
+    const safeName = this.esc(cleanName);
+    const safeUrl = encodeURI(inviteUrl); // URL already safe, defensive encode
+    const bodyHtml = `
+      <h1 style="margin:0 0 16px;font-size:24px;font-weight:800;color:${b.brown};">Tu es invité·e sur NigerConnect 🇳🇪</h1>
+      <p style="margin:0 0 12px;"><strong>${safeName}</strong> t'invite à rejoindre NigerConnect, le réseau de la diaspora nigérienne.</p>
+      <p style="margin:0 0 20px;">Ton code d'invitation :</p>
+      ${this.codeBlock(code)}
+      <p style="margin:18px 0 24px;text-align:center;font-size:13px;color:${b.tan500};">Saisis-le lors de ton inscription ou clique directement sur le bouton ci-dessous.</p>
+      ${this.button(safeUrl, "Rejoindre NigerConnect")}
+      <p style="margin:24px 0 0;font-size:13px;color:${b.tan500};">Si tu ne connais pas ${safeName} ou ne souhaites pas rejoindre NigerConnect, tu peux ignorer cet email.</p>
+      <p style="margin:18px 0 0;font-size:12px;color:${b.tan400};word-break:break-all;">Lien direct : <a href="${safeUrl}" style="color:${b.orange};">${safeUrl}</a></p>`;
+    const text =
+      `${cleanName} t'invite sur NigerConnect\n\n` +
+      `${cleanName} t'invite à rejoindre NigerConnect, le réseau de la diaspora nigérienne.\n\n` +
+      `Ton code d'invitation : ${code}\n\n` +
+      `Ou clique directement sur ce lien : ${inviteUrl}\n\n` +
+      `Si tu ne connais pas ${cleanName} ou ne souhaites pas rejoindre NigerConnect, ignore cet email.`;
+    const html = this.layout({
+      preheader: `${cleanName} t'invite sur NigerConnect — rejoins la diaspora nigérienne.`,
+      bodyHtml,
+    });
+    await this.send({
+      to,
+      subject: `${cleanName} t'invite sur NigerConnect 🇳🇪`,
+      html,
+      text,
+    });
   }
 
   /**

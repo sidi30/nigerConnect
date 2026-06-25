@@ -40,4 +40,17 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     if (count === 1) await this.client.expire(key, ttlSeconds);
     return count;
   }
+
+  // ── Generic get/set with TTL ─────────────────────────────
+  async get(key: string): Promise<string | null> {
+    return this.client.get(key);
+  }
+
+  async set(key: string, value: string, ttlSeconds: number): Promise<void> {
+    await this.client.set(key, value, 'EX', Math.max(1, ttlSeconds));
+  }
+
+  async del(key: string): Promise<void> {
+    await this.client.del(key);
+  }
 }

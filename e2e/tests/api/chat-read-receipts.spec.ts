@@ -30,17 +30,14 @@
  *   Postgres for email-verification DB mutations
  */
 
-import { execSync } from 'child_process';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { psql } from './_db-exec';
 
 const BASE_URL = process.env['API_BASE_URL'] ?? 'http://localhost:3000';
 // Derive WS URL from base URL: http://localhost:3000 → ws://localhost:3000
 // (socket.io-client handles http:// → ws:// upgrade automatically)
 const WS_URL = BASE_URL;
 const VALID_PASSWORD = 'E2eTest#2026!z';
-
-const PSQL_CMD = (sql: string) =>
-  `docker exec nigerconnect-postgres psql -U nigerconnect -d nigerconnect -c "${sql.replace(/"/g, '\\"')}"`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -76,10 +73,7 @@ async function register(request: APIRequestContext, email: string): Promise<Auth
 }
 
 function verifyEmailInDb(userId: string): void {
-  execSync(
-    PSQL_CMD(`UPDATE users SET email_verified = true WHERE id = '${userId}';`),
-    { stdio: 'pipe' },
-  );
+  psql(`UPDATE users SET email_verified = true WHERE id = '${userId}';`);
 }
 
 function authHeaders(accessToken: string): Record<string, string> {
@@ -454,6 +448,13 @@ test.describe('Chat read receipts — Socket.io', () => {
         }),
       ]);
 
+      // The server's handleConnection is async (it queries the DB to join conv rooms).
+      // The client `connect` event fires when the transport is established, before
+      // the server-side handleConnection has resolved. We wait a short fixed interval
+      // so the server has finished joining both sockets to `conv:{id}` — without
+      // which Alice's socket won't be in the room when Bob emits message:read.
+      await new Promise<void>((r) => setTimeout(r, 500));
+
       // Alice waits for Bob's message:read event
       const readEventPromise = waitForEvent(aliceSocket, 'message:read', 8000);
 
@@ -589,6 +590,13 @@ test.describe('Chat read receipts — Socket.io', () => {
           bobSocket.on('connect_error', (e: Error) => { clearTimeout(t); rej(e); });
         }),
       ]);
+
+      // The server's handleConnection is async (it queries the DB to join conv rooms).
+      // The client `connect` event fires when the transport is established, before
+      // the server-side handleConnection has resolved. We wait a short fixed interval
+      // so the server has finished joining both sockets to `conv:{id}` — without
+      // which Alice's socket won't be in the room to receive message:new from Bob.
+      await new Promise<void>((r) => setTimeout(r, 500));
 
       // Alice listens for message:new
       const messageNewPromise = waitForEvent(aliceSocket, 'message:new', 10000);

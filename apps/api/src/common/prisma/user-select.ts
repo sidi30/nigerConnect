@@ -34,6 +34,11 @@ export const USER_SELF_SELECT = {
   privacyLevel: true,
   emailVerified: true,
   phoneVerified: true,
+  // Which provider the account authenticates with (null = email+password). The
+  // client uses this to never route an OAuth (Apple/Google) user to the
+  // email-verification screen — Apple HIG / App Store Guideline 4. Not sensitive
+  // (it's the user's own account); oauthProviderId stays stripped by the serializer.
+  oauthProvider: true,
   identityStatus: true,
   role: true,
   status: true,
