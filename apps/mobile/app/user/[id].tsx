@@ -18,6 +18,7 @@ import { NCImage } from '@/components/ui/NCImage';
 import { Loader } from '@/components/ui/Loader';
 import { StarRating } from '@/components/ui/StarRating';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
 import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
@@ -366,6 +367,7 @@ export default function UserScreen() {
                 <View style={styles.nameRow}>
                   <Text style={styles.name}>{name}</Text>
                   {u.identityStatus === 'approved' && <VerifiedBadge size={18} />}
+                  {u.isAmbassador && <AmbassadorBadge size={18} />}
                 </View>
                 <Text style={styles.location}>
                   {u.countryCode ? Flags[u.countryCode] ?? '🌍' : '🌍'} {u.city ?? ''}

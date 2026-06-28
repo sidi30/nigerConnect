@@ -19,6 +19,7 @@ const PUBLIC_USER_FIELDS = {
   city: true,
   countryCode: true,
   identityStatus: true,
+  isAmbassador: true,
 } as const satisfies Prisma.UserSelect;
 
 @Injectable()

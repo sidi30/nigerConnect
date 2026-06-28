@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
@@ -300,6 +300,60 @@ export class GeoService implements OnModuleInit {
     return {
       totalMembers: total,
       countryCounts: countries.map((c) => ({ code: c.country_code, count: Number(c.count) })),
+    };
+  }
+
+  /**
+   * Paginated list of the visible members of a country. Honours the SAME privacy
+   * rules as individual map markers — only showOnMap + non-private + unblocked
+   * users, never the viewer themselves. `total` is the count of those visible
+   * members (NOT the anonymous cluster tally, which also counts hidden users).
+   */
+  async getCountryMembers(viewerId: string, code: string, cursor?: string, limit = 30) {
+    const countryCode = code.toUpperCase();
+    if (!/^[A-Z]{2}$/.test(countryCode)) {
+      throw new BadRequestException('Invalid country code');
+    }
+    const blockedIds = await this.blockedIds(viewerId);
+    const excludedIds = blockedIds.includes(viewerId) ? blockedIds : [...blockedIds, viewerId];
+
+    const where = {
+      countryCode,
+      showOnMap: true,
+      status: 'active' as const,
+      emailVerified: true,
+      privacyLevel: { not: 'private' as const },
+      id: { notIn: excludedIds },
+    };
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          displayName: true,
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          city: true,
+          countryCode: true,
+          identityStatus: true,
+          isAmbassador: true,
+        },
+      }),
+      cursor ? Promise.resolve(0) : this.prisma.user.count({ where }),
+    ]);
+
+    const hasMore = users.length > limit;
+    const items = hasMore ? users.slice(0, limit) : users;
+    return {
+      items,
+      nextCursor: hasMore ? items[items.length - 1]!.id : null,
+      // Only computed on the first page (no cursor) — saves a COUNT per scroll.
+      total: cursor ? undefined : total,
     };
   }
 

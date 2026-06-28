@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -23,6 +23,7 @@ import type { Conversation, CursorPage, Message } from '@nigerconnect/shared-typ
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
 import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
@@ -43,6 +44,34 @@ const TYPING_IDLE_MS = 2500;
 // WhatsApp-style window: a sender can edit or delete-for-everyone only within
 // 15 min of sending. Kept in sync with the server (MESSAGE_MUTATION_WINDOW_MS).
 const MUTATION_WINDOW_MS = 15 * 60 * 1000;
+
+// Read-receipt blue (WhatsApp-style): a double-check turns this blue once the
+// peer has read the message. Single grey check = sent-but-unread.
+const RECEIPT_READ_BLUE = '#34B7F1';
+
+/** Local HH:MM for a message's send time (24h, device locale-agnostic). */
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+/**
+ * Read receipt: a single check (sent) or a double check (read). `light` picks
+ * the palette for a coloured/gradient bubble (my messages) vs a light bubble.
+ */
+function Receipt({ read, light }: { read: boolean; light?: boolean }) {
+  const color = read
+    ? RECEIPT_READ_BLUE
+    : light
+      ? 'rgba(255,255,255,0.75)'
+      : Colors.tan400;
+  return (
+    <Ionicons name={read ? 'checkmark-done' : 'checkmark'} size={15} color={color} />
+  );
+}
 
 /** Pull a human-readable message off an axios/UploadError, else a fallback. */
 function errMessage(err: unknown, fallback: string): string {
@@ -67,6 +96,7 @@ function makeOptimisticMessage(args: {
     city: string | null;
     countryCode: string | null;
     identityStatus: Message['sender']['identityStatus'];
+    isAmbassador: boolean;
   };
 }): PendingMessage {
   return {
@@ -81,6 +111,7 @@ function makeOptimisticMessage(args: {
       city: args.me.city,
       countryCode: args.me.countryCode,
       identityStatus: args.me.identityStatus,
+      isAmbassador: args.me.isAmbassador,
       ratingAvg: 0,
       ratingCount: 0,
     },
@@ -189,6 +220,13 @@ export default function ChatScreen() {
     if (!id) return;
     void chatApi.markRead(id).catch(() => null);
     chatSocket?.emit('message:read', { conversationId: id });
+    // Tell the server we're actively viewing this thread so it suppresses
+    // push/notifications for messages that arrive while we're here. The cleanup
+    // (screen left, or socket swapped) emits the matching blur.
+    chatSocket?.emit('conversation:focus', { conversationId: id });
+    return () => {
+      chatSocket?.emit('conversation:blur', { conversationId: id });
+    };
   }, [id, chatSocket]);
 
   // Live updates: subscribe to socket events and update the cache directly.
@@ -719,6 +757,7 @@ export default function ChatScreen() {
                 {peerName}
               </Text>
               {peer.identityStatus === 'approved' && <VerifiedBadge size={13} />}
+              {peer.isAmbassador && <AmbassadorBadge size={13} />}
             </View>
             <Text style={styles.peerStatus} numberOfLines={1}>
               {peer.countryCode ? Flags[peer.countryCode] : ''} {peer.city ?? ''}
@@ -800,7 +839,11 @@ export default function ChatScreen() {
                       (pending || failed) && { opacity: failed ? 0.5 : 0.7 },
                     ]}
                   >
-                    <Pressable onPress={() => item.mediaUrl && setLightbox(item.mediaUrl)}>
+                    <Pressable
+                      onPress={() => item.mediaUrl && setLightbox(item.mediaUrl)}
+                      onLongPress={() => handleLongPress(item)}
+                      delayLongPress={300}
+                    >
                       <Image
                         source={{ uri: item.mediaUrl! }}
                         style={styles.imageContent}
@@ -815,17 +858,16 @@ export default function ChatScreen() {
                     {item.content ? (
                       <View style={styles.imageCaptionRow}>
                         <Text style={styles.imageCaption}>{item.content}</Text>
-                        {isMe && !pending && (
-                          <Text style={[styles.readReceipt, isRead && styles.readReceiptRead]}>
-                            {isRead ? '✓✓' : '✓'}
-                          </Text>
-                        )}
+                        <View style={styles.imageMeta}>
+                          <Text style={styles.imageMetaTime}>{formatTime(item.createdAt)}</Text>
+                          {isMe && !pending && !failed && <Receipt read={isRead} />}
+                        </View>
                       </View>
                     ) : (
-                      isMe &&
-                      !pending && (
-                        <Text style={styles.imageReadReceipt}>{isRead ? '✓✓' : '✓'}</Text>
-                      )
+                      <View style={styles.imageMetaOverlay}>
+                        <Text style={styles.imageOverlayTime}>{formatTime(item.createdAt)}</Text>
+                        {isMe && !pending && !failed && <Receipt read={isRead} light />}
+                      </View>
                     )}
                   </View>
                 ) : (
@@ -846,26 +888,23 @@ export default function ChatScreen() {
                         ⚠️ Echec — touche pour reessayer
                       </Text>
                     )}
-                    {/* Edited badge + read receipt. ✓ = delivered; ✓✓ (teal) = read. */}
-                    {(edited || (isMe && !pending && !failed)) && (
-                      <View style={styles.metaRow}>
-                        {edited && (
-                          <Text
-                            style={[
-                              styles.editedTag,
-                              isMe ? { color: 'rgba(255,255,255,0.7)' } : { color: Colors.tan400 },
-                            ]}
-                          >
-                            modifié
-                          </Text>
-                        )}
-                        {isMe && !pending && !failed && (
-                          <Text style={[styles.readReceipt, isRead && styles.readReceiptRead]}>
-                            {isRead ? '✓✓' : '✓'}
-                          </Text>
-                        )}
-                      </View>
-                    )}
+                    {/* Time · edited · receipt. Single check = sent; blue double = read. */}
+                    <View style={styles.metaRow}>
+                      {edited && (
+                        <Text
+                          style={[
+                            styles.editedTag,
+                            isMe ? { color: 'rgba(255,255,255,0.7)' } : { color: Colors.tan400 },
+                          ]}
+                        >
+                          modifié
+                        </Text>
+                      )}
+                      <Text style={[styles.msgTime, isMe ? styles.msgTimeMine : styles.msgTimeTheirs]}>
+                        {formatTime(item.createdAt)}
+                      </Text>
+                      {isMe && !pending && !failed && <Receipt read={isRead} light />}
+                    </View>
                   </View>
                 )}
               </Pressable>
@@ -1130,6 +1169,27 @@ const styles = StyleSheet.create({
   readReceiptRead: {
     color: Colors.green,
   },
+  // Send time shown in the meta row under a text bubble.
+  msgTime: { fontSize: 10, fontWeight: '600' },
+  msgTimeMine: { color: 'rgba(255,255,255,0.8)' },
+  msgTimeTheirs: { color: Colors.tan400 },
+  // Time + receipt cluster sitting at the end of an image caption row.
+  imageMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  imageMetaTime: { fontSize: 10, fontWeight: '600', color: Colors.tan500 },
+  // Time + receipt floated over a captionless image (dark scrim for legibility).
+  imageMetaOverlay: {
+    position: 'absolute',
+    bottom: 5,
+    right: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radii.full,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  imageOverlayTime: { fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
   // Typing indicator row above the composer.
   typingRow: {
     paddingHorizontal: Spacing.md + 2,

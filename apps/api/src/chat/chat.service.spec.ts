@@ -22,10 +22,19 @@ function makeS3(reject = false) {
   };
 }
 
+/** Presence stub: nobody is actively viewing the conversation by default. */
+function makePresence() {
+  return {
+    activeInConversation: jest.fn(async () => [] as string[]),
+    setActiveConversation: jest.fn(async () => undefined),
+    clearActiveConversation: jest.fn(async () => undefined),
+  };
+}
+
 describe('ChatService', () => {
   it('refuses to create conversation with only self', async () => {
     const prisma = { conversation: {}, conversationMember: {}, user: {} } as never;
-    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.createConversation('me', ['me'])).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -33,7 +42,7 @@ describe('ChatService', () => {
     const prisma = {
       conversationMember: { findUnique: jest.fn(async () => null) },
     } as never;
-    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.sendMessage('me', 'c1', { content: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -47,7 +56,7 @@ describe('ChatService', () => {
         create: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     const result = await svc.createConversation('me', ['other']);
     expect((result as { id: string }).id).toBe('existing-convo');
     expect(prisma.conversation.create).not.toHaveBeenCalled();
@@ -60,7 +69,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -78,7 +87,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
@@ -98,7 +107,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.editMessage('me', 'm1', 'hi')).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
@@ -118,7 +127,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.editMessage('me', 'm1', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
@@ -128,7 +137,7 @@ describe('ChatService', () => {
       user: { findMany: jest.fn(async () => []) },
       conversation: { findFirst: jest.fn(), create: jest.fn() },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.createConversation('me', ['ghost'])).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -156,6 +165,7 @@ describe('ChatService', () => {
       makeBlocks(true) as never,
       makeNotifications() as never,
       makeS3() as never,
+      makePresence() as never,
     );
     await expect(
       svc.sendMessage('me', 'c1', { content: 'hi' }),
@@ -184,7 +194,7 @@ describe('ChatService', () => {
       user: { findUnique: jest.fn(async () => ({ displayName: 'Me' })) },
       $transaction: jest.fn(async () => [created, {}, {}]),
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never, makePresence() as never);
     await svc.sendMessage('me', 'c1', {
       messageType: 'image',
       mediaUrl: 'https://attacker.example/track.gif',
@@ -207,6 +217,7 @@ describe('ChatService', () => {
       makeBlocks() as never,
       makeNotifications() as never,
       makeS3(true) as never,
+      makePresence() as never,
     );
     await expect(
       svc.sendMessage('me', 'c1', { messageType: 'image', mediaUrl: 'https://evil.test/x.jpg' }),
@@ -220,7 +231,7 @@ describe('ChatService', () => {
       conversation: { findUnique: jest.fn(async () => ({ type: 'group', members: [{ userId: 'me' }] })) },
       message: { create: jest.fn() },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(
       svc.sendMessage('me', 'c1', { messageType: 'image', content: 'caption' }),
     ).rejects.toBeInstanceOf(BadRequestException);

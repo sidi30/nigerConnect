@@ -57,6 +57,26 @@ export interface GeoStats {
   countryCounts: Array<{ code: string; count: number }>;
 }
 
+/** A visible member returned by GET /geo/country/:code (privacy-filtered). */
+export interface CountryMember {
+  id: string;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  city: string | null;
+  countryCode: string | null;
+  identityStatus: 'not_submitted' | 'pending' | 'approved' | 'rejected';
+  isAmbassador: boolean;
+}
+
+export interface CountryMembersPage {
+  items: CountryMember[];
+  nextCursor: string | null;
+  /** Total visible members in the country (first page only). */
+  total?: number;
+}
+
 export const geoApi = {
   /**
    * Search world cities for the registration autocomplete.
@@ -89,6 +109,13 @@ export const geoApi = {
   },
   async stats(): Promise<GeoStats> {
     const { data } = await api.get<GeoStats>('/geo/stats');
+    return data;
+  },
+  /** List the visible members of a country (paginated). */
+  async countryMembers(code: string, cursor?: string): Promise<CountryMembersPage> {
+    const { data } = await api.get<CountryMembersPage>(`/geo/country/${code}`, {
+      params: cursor ? { cursor } : undefined,
+    });
     return data;
   },
   async nearby(params: { lat: number; lon: number; radius?: number; limit?: number }) {

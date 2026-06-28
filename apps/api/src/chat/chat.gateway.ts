@@ -123,6 +123,9 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   async handleDisconnect(client: Socket): Promise<void> {
     const authed = client as AuthedSocket;
     if (!authed.userId) return;
+    // A dropped socket (incl. app backgrounded) means the user is no longer
+    // actively viewing any conversation → resume sending them push/notifications.
+    await this.presence.clearActiveConversation(authed.userId);
     await this.presence.markOfflineDelayed(authed.userId);
     // Same scoping as 'user:online' — only conv co-members get notified.
     // We can read the rooms the socket was in directly off the socket; by
@@ -218,6 +221,9 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       this.logger.warn(`message:read rejected for ${authed.userId}: ${String(error)}`);
       return;
     }
+    // A read implies the user is looking at this thread — refresh their
+    // active-conversation marker so incoming messages stay suppressed (no push).
+    await this.presence.setActiveConversation(authed.userId, payload.conversationId);
     // Broadcast to all conversation members (including the reader themselves
     // so they can sync across multiple devices). The `lastReadAt` ISO string
     // allows the recipient's sender-side to compute ✓✓ by comparing it against
@@ -229,6 +235,35 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
         userId: authed.userId,
         lastReadAt: lastReadAt.toISOString(),
       });
+  }
+
+  /**
+   * The chat screen emits this when it opens (and on reconnect): the user is now
+   * actively viewing the conversation, so messages arriving here should NOT
+   * trigger a push/notification. Gated by room membership to stop spoofing.
+   */
+  @SubscribeMessage('conversation:focus')
+  async onConversationFocus(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ): Promise<void> {
+    const authed = client as AuthedSocket;
+    if (!authed.userId) return;
+    if (!payload?.conversationId) return;
+    if (!client.rooms.has(`conv:${payload.conversationId}`)) return;
+    await this.presence.setActiveConversation(authed.userId, payload.conversationId);
+  }
+
+  /** Emitted when the chat screen unmounts — the user left the conversation. */
+  @SubscribeMessage('conversation:blur')
+  async onConversationBlur(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { conversationId: string },
+  ): Promise<void> {
+    const authed = client as AuthedSocket;
+    if (!authed.userId) return;
+    if (!payload?.conversationId) return;
+    await this.presence.clearActiveConversation(authed.userId, payload.conversationId);
   }
 
   @SubscribeMessage('typing:start')

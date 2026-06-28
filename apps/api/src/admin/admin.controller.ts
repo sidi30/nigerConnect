@@ -41,6 +41,15 @@ type GenerateRootInvitesDto = z.infer<typeof generateRootInvitesSchema>;
 const bulkInviteSchema = z.object({ allowed: z.boolean() }).strict();
 type BulkInviteDto = z.infer<typeof bulkInviteSchema>;
 
+const searchUsersSchema = z.object({
+  q: z.string().trim().min(2).max(100),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+type SearchUsersDto = z.infer<typeof searchUsersSchema>;
+
+const ambassadorSchema = z.object({ value: z.boolean() }).strict();
+type AmbassadorDto = z.infer<typeof ambassadorSchema>;
+
 const listReferralsSchema = z.object({
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
@@ -135,6 +144,32 @@ export class AdminController {
     @Body(new ZodValidationPipe(bulkInviteSchema)) dto: BulkInviteDto,
   ) {
     return this.admin.setBulkInviteRight(id, dto.allowed);
+  }
+
+  /**
+   * GET /admin/users/search?q=&limit=
+   * Recherche d'utilisateurs (nom / email) pour la gestion des badges ambassadeur.
+   * Admin-only : l'attribution du badge est une distinction curatée.
+   */
+  @Get('users/search')
+  @Roles('admin')
+  searchUsers(@Query(new ZodValidationPipe(searchUsersSchema)) dto: SearchUsersDto) {
+    return this.admin.searchUsers(dto.q, dto.limit);
+  }
+
+  /**
+   * PATCH /admin/users/:id/ambassador
+   * Active/désactive le badge ambassadeur (indépendant de la vérification
+   * d'identité). Admin-only. Idempotent.
+   */
+  @Patch('users/:id/ambassador')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  setAmbassador(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ambassadorSchema)) dto: AmbassadorDto,
+  ) {
+    return this.admin.setAmbassador(id, dto.value);
   }
 
   /**

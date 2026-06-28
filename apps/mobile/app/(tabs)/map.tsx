@@ -653,6 +653,20 @@ function SelectedSheet({
     );
   }
 
+  // Country clusters open a LIST of the visible members in that country (so the
+  // user can browse who's there without zooming in pin-by-pin). City/orphan
+  // clusters keep the lightweight "zoom to members" sheet.
+  if (marker.kind === 'country' && marker.countryCode) {
+    return (
+      <CountrySheet
+        marker={marker}
+        onClose={onClose}
+        onOpenProfile={onOpenProfile}
+        onZoomToCluster={onZoomToCluster}
+      />
+    );
+  }
+
   const title =
     marker.kind === 'country'
       ? CountryNames[marker.countryCode] ?? marker.countryCode
@@ -771,6 +785,104 @@ function IndividualSheet({
           <Text style={styles.sheetBtnSecondaryLabel}>{friendLabel}</Text>
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+// Gold matches the mobile AmbassadorBadge so the map list reads consistently.
+const AMBASSADOR_GOLD = '#E8A300';
+
+function CountrySheet({
+  marker,
+  onClose,
+  onOpenProfile,
+  onZoomToCluster,
+}: {
+  marker: Extract<MapMarker, { kind: 'country' }>;
+  onClose: () => void;
+  onOpenProfile: (userId: string) => void;
+  onZoomToCluster: (lat: number, lon: number, zoom: number) => void;
+}) {
+  const membersQuery = useQuery({
+    queryKey: ['geo', 'country', marker.countryCode],
+    queryFn: () => geoApi.countryMembers(marker.countryCode),
+  });
+  const countryName = CountryNames[marker.countryCode] ?? marker.countryCode;
+  const items = membersQuery.data?.items ?? [];
+
+  return (
+    <View style={[styles.sheet, styles.countrySheet]}>
+      <View style={styles.sheetHandle} />
+      <View style={styles.sheetTop}>
+        <View style={styles.sheetIcon}>
+          <Text style={{ fontSize: 22 }}>{Flags[marker.countryCode] ?? '🌍'}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sheetName}>{countryName}</Text>
+          <Text style={styles.sheetMeta}>
+            {marker.count} {marker.count > 1 ? 'membres' : 'membre'}
+          </Text>
+        </View>
+        <Pressable onPress={onClose} style={styles.sheetClose}>
+          <Feather name="x" size={16} color={Colors.tan500} />
+        </Pressable>
+      </View>
+
+      {membersQuery.isLoading ? (
+        <Loader style={{ marginTop: Spacing.lg }} />
+      ) : items.length === 0 ? (
+        <Text style={styles.countryEmpty}>
+          Personne n&apos;a encore choisi d&apos;être visible publiquement ici.
+        </Text>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(u) => u.id}
+          style={styles.countryList}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => {
+            const name =
+              item.displayName ??
+              `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() ??
+              'Anonyme';
+            return (
+              <Pressable
+                onPress={() => onOpenProfile(item.id)}
+                style={styles.countryRow}
+                android_ripple={{ color: Colors.tan100 }}
+              >
+                <Avatar uri={item.avatarUrl} name={name} size={40} borderColor={Colors.orange} />
+                <View style={{ flex: 1 }}>
+                  <View style={styles.countryNameRow}>
+                    <Text style={styles.resultName} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    {item.identityStatus === 'approved' && (
+                      <Feather name="check-circle" size={13} color={Colors.green} />
+                    )}
+                    {item.isAmbassador && (
+                      <Feather name="star" size={13} color={AMBASSADOR_GOLD} />
+                    )}
+                  </View>
+                  <Text style={styles.resultMeta} numberOfLines={1}>
+                    {Flags[item.countryCode ?? ''] ?? '🌍'}{' '}
+                    {[item.city, item.countryCode].filter(Boolean).join(', ')}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={Colors.tan400} />
+              </Pressable>
+            );
+          }}
+        />
+      )}
+
+      <Pressable
+        onPress={() => onZoomToCluster(marker.lat, marker.lon, 9)}
+        style={styles.sheetBtnSecondary}
+      >
+        <Feather name="map" size={16} color={Colors.orange} />
+        <Text style={styles.sheetBtnSecondaryLabel}>Voir sur la carte</Text>
+      </Pressable>
     </View>
   );
 }
@@ -957,5 +1069,23 @@ const styles = StyleSheet.create({
     color: Colors.orange,
     fontSize: Typography.sizes.md,
     fontWeight: '700',
+  },
+  // Country member-list sheet.
+  countrySheet: { maxHeight: '78%' },
+  countryList: { marginTop: Spacing.sm, maxHeight: 360 },
+  countryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.tan100,
+  },
+  countryNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  countryEmpty: {
+    textAlign: 'center',
+    color: Colors.tan500,
+    fontSize: Typography.sizes.sm,
+    paddingVertical: Spacing.lg,
   },
 });

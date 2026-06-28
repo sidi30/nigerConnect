@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { ConversationSkeletonList } from '@/components/ui/Skeleton';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
@@ -130,6 +131,7 @@ export default function MessagesTab() {
                           {title}
                         </Text>
                         {peer.identityStatus === 'approved' && <VerifiedBadge size={12} />}
+                        {peer.isAmbassador && <AmbassadorBadge size={12} />}
                       </View>
                       <Text
                         style={[

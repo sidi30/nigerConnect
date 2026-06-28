@@ -540,6 +540,52 @@ export class AdminService {
   }
 
   /**
+   * GET /admin/users/search
+   * Recherche d'utilisateurs par nom / email pour la gestion du badge ambassadeur.
+   * Insensible à la casse ; renvoie un résumé léger (pas de données sensibles).
+   */
+  async searchUsers(q: string, limit: number) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { displayName: { contains: q, mode: 'insensitive' } },
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        city: true,
+        countryCode: true,
+        identityStatus: true,
+        isAmbassador: true,
+        createdAt: true,
+      },
+    });
+    return { items: users };
+  }
+
+  /**
+   * PATCH /admin/users/:id/ambassador
+   * Active/désactive le badge ambassadeur. Idempotent.
+   */
+  async setAmbassador(userId: string, value: boolean): Promise<{ id: string; isAmbassador: boolean }> {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isAmbassador: value },
+      select: { id: true, isAmbassador: true },
+    });
+  }
+
+  /**
    * GET /admin/referrals
    * Arbre de parrainage (vue plate paginée) : chaque membre récemment inscrit
    * avec SON parrain et le type d'invitation utilisé. Curseur sur user.id.

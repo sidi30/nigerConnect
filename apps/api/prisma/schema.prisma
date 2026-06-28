@@ -94,6 +94,11 @@ model User {
   emailVerified  Boolean        @default(false) @map("email_verified")
   phoneVerified  Boolean        @default(false) @map("phone_verified")
   identityStatus IdentityStatus @default(not_submitted) @map("identity_status")
+  // Ambassador badge: a curated, admin-managed distinction (community leaders /
+  // official ambassadors) shown ALONGSIDE the identity-verified badge — they are
+  // independent (a user can be identity-verified, an ambassador, both, or neither).
+  // Toggled only from the tenant admin console; never self-assigned.
+  isAmbassador   Boolean        @default(false) @map("is_ambassador")
   role           UserRole       @default(user)
   status         UserStatus     @default(active)
 

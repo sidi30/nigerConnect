@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Award,
   LayoutDashboard,
   LifeBuoy,
   Mail,
@@ -22,6 +23,7 @@ import ReportsSection from "@/components/admin/ReportsSection";
 import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
 import ReferralsSection from "@/components/admin/ReferralsSection";
+import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
 type Tab =
@@ -30,7 +32,8 @@ type Tab =
   | "reports"
   | "newsletter"
   | "invitations"
-  | "referrals";
+  | "referrals"
+  | "ambassadors";
 
 // Newsletter is admin-only on the API. A moderator hitting it would 403 →
 // adminFetch bounces to login, so the tab is gated to admins below.
@@ -46,6 +49,7 @@ const NAV: NavEntry[] = [
 ];
 
 const ADMIN_ONLY_NAV: NavEntry[] = [
+  { id: "ambassadors", label: "Ambassadeurs", icon: Award },
   { id: "newsletter", label: "Newsletter", icon: Mail },
 ];
 
@@ -112,6 +116,7 @@ export default function AdminDashboardPage() {
         {tab === "newsletter" ? <NewsletterSection /> : null}
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
         {tab === "referrals" ? <ReferralsSection /> : null}
+        {tab === "ambassadors" ? <AmbassadorsSection /> : null}
       </main>
     </div>
   );

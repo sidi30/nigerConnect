@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { z } from 'zod';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -14,6 +15,12 @@ import {
   type ProximityPingDto,
 } from './dto/geo.dto';
 
+const countryMembersSchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(30),
+});
+type CountryMembersDto = z.infer<typeof countryMembersSchema>;
+
 @Controller('geo')
 export class GeoController {
   constructor(private readonly geo: GeoService) {}
@@ -24,6 +31,22 @@ export class GeoController {
     @Query(new ZodValidationPipe(boundsSchema)) dto: BoundsDto,
   ) {
     return this.geo.getMarkers(me.sub, dto);
+  }
+
+  /**
+   * Paginated list of the VISIBLE members (showOnMap, non-private, unblocked) in
+   * a country — backs the "see the list of Nigeriens in country X" sheet when
+   * the map is zoomed out. Privacy-preserving: only opted-in members are listed
+   * (so this can be fewer than the anonymous cluster count, which includes hidden
+   * users by design).
+   */
+  @Get('country/:code')
+  countryMembers(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('code') code: string,
+    @Query(new ZodValidationPipe(countryMembersSchema)) dto: CountryMembersDto,
+  ) {
+    return this.geo.getCountryMembers(me.sub, code, dto.cursor, dto.limit);
   }
 
   @Public()

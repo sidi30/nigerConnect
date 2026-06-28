@@ -40,6 +40,7 @@ export const USER_SELF_SELECT = {
   // (it's the user's own account); oauthProviderId stays stripped by the serializer.
   oauthProvider: true,
   identityStatus: true,
+  isAmbassador: true,
   role: true,
   status: true,
   mfaEnabled: true,
@@ -76,6 +77,7 @@ export const USER_PUBLIC_SELECT = {
   languages: true,
   privacyLevel: true,
   identityStatus: true,
+  isAmbassador: true,
   ratingAvg: true,
   ratingCount: true,
   createdAt: true,

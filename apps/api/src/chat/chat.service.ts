@@ -9,6 +9,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
 import { NotificationService } from '../notification/notification.service';
+import { PresenceService } from './presence.service';
 
 /**
  * Hard cap on a single message. Matches our DTO validation but also guards
@@ -56,6 +57,11 @@ const MEMBER_SELECT = {
   avatarUrl: true,
   city: true,
   countryCode: true,
+  // Needed so the chat header / message list can render the verified + ambassador
+  // badges next to a peer's name (they were previously absent from this select,
+  // so the badges silently never showed in chat).
+  identityStatus: true,
+  isAmbassador: true,
 } as const satisfies Prisma.UserSelect;
 
 @Injectable()
@@ -65,6 +71,7 @@ export class ChatService {
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
     private readonly s3: S3Service,
+    private readonly presence: PresenceService,
   ) {}
 
   async listConversations(userId: string, cursor?: string, limit = 30) {
@@ -256,6 +263,20 @@ export class ChatService {
       throw new BadRequestException('mediaUrl is required for media messages');
     }
 
+    const members = await this.prisma.conversationMember.findMany({
+      where: { conversationId },
+      select: { userId: true, muted: true },
+    });
+    const otherIds = members.filter((m) => m.userId !== userId).map((m) => m.userId);
+
+    // Recipients currently *viewing* this conversation see the message live over
+    // the socket — they must NOT get an unread bump (the badge would lie) nor a
+    // notification/push (it'd ping for something they're already reading). The
+    // others are incremented and notified as usual. Active set is read from
+    // Redis presence before the write so the increment can exclude them.
+    const activeIds = new Set(await this.presence.activeInConversation(otherIds, conversationId));
+    const toIncrement = otherIds.filter((id) => !activeIds.has(id));
+
     const [message] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
@@ -277,16 +298,15 @@ export class ChatService {
           lastMessagePreview: cleanContent ? cleanContent.slice(0, 140) : '[media]',
         },
       }),
-      this.prisma.conversationMember.updateMany({
-        where: { conversationId, userId: { not: userId } },
-        data: { unreadCount: { increment: 1 } },
-      }),
+      ...(toIncrement.length
+        ? [
+            this.prisma.conversationMember.updateMany({
+              where: { conversationId, userId: { in: toIncrement } },
+              data: { unreadCount: { increment: 1 } },
+            }),
+          ]
+        : []),
     ]);
-
-    const members = await this.prisma.conversationMember.findMany({
-      where: { conversationId },
-      select: { userId: true, muted: true },
-    });
 
     // Notify every other member — fire-and-forget so the HTTP response stays
     // fast. NotificationService.create persists the row + dispatches the push.
@@ -306,6 +326,9 @@ export class ChatService {
       // Muted members still get the live socket message (they're in memberIds
       // below) but no notification row and no push.
       if (m.muted) continue;
+      // Skip recipients actively viewing this conversation — they're reading it
+      // live; a bell notification would be noise.
+      if (activeIds.has(m.userId)) continue;
       void this.notifications
         .create({
           userId: m.userId,
@@ -335,6 +358,19 @@ export class ChatService {
     await this.prisma.conversationMember.update({
       where: { conversationId_userId: { conversationId, userId } },
       data: { unreadCount: 0, lastReadAt: now },
+    });
+    // Also clear the notification-bell entries for THIS conversation: opening a
+    // chat must dismiss the "X new messages" notifications it produced, not just
+    // the messages-tab badge. Scoped by the conversationId we stamped into each
+    // message notification's JSON `data` payload.
+    await this.prisma.notification.updateMany({
+      where: {
+        userId,
+        type: 'message',
+        read: false,
+        data: { path: ['conversationId'], equals: conversationId },
+      },
+      data: { read: true },
     });
     return now;
   }

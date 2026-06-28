@@ -663,6 +663,49 @@ export function listReferrals(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Ambassador badge management (admin-only)
+// ---------------------------------------------------------------------------
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  city: string | null;
+  countryCode: string | null;
+  identityStatus: IdentityDistStatus;
+  isAmbassador: boolean;
+  createdAt: string;
+}
+
+/** GET /admin/users/search?q= — search members by name/email for badge management. */
+export function searchAdminUsers(
+  q: string,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<{ items: AdminUserSummary[] }> {
+  const params = new URLSearchParams({ q });
+  if (limit !== undefined) params.set("limit", String(limit));
+  return adminFetch<{ items: AdminUserSummary[] }>(
+    `/admin/users/search?${params.toString()}`,
+    { signal },
+  );
+}
+
+/** PATCH /admin/users/:id/ambassador — grants or revokes the ambassador badge. */
+export function setAmbassador(
+  userId: string,
+  value: boolean,
+): Promise<{ id: string; isAmbassador: boolean }> {
+  return adminFetch<{ id: string; isAmbassador: boolean }>(
+    `/admin/users/${userId}/ambassador`,
+    { method: "PATCH", body: { value } },
+  );
+}
+
 /** PATCH /admin/users/:id/bulk-invite — grants or revokes the reusable-link right. */
 export function setBulkInviteRight(
   userId: string,

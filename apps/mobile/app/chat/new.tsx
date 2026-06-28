@@ -15,6 +15,7 @@ import type { PublicUser } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
@@ -65,6 +66,7 @@ export default function NewChatScreen() {
               {name}
             </Text>
             {item.identityStatus === 'approved' && <VerifiedBadge size={12} />}
+            {item.isAmbassador && <AmbassadorBadge size={12} />}
           </View>
           {item.city || item.countryCode ? (
             <Text style={styles.meta} numberOfLines={1}>

@@ -12,6 +12,8 @@ export interface PublicUser {
   city: string | null;
   countryCode: string | null;
   identityStatus: IdentityStatus;
+  /** Admin-curated ambassador distinction, independent of identity verification. */
+  isAmbassador: boolean;
   ratingAvg: number;
   ratingCount: number;
 }

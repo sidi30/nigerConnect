@@ -26,6 +26,7 @@ const AUTHOR_SELECT = {
   city: true,
   countryCode: true,
   identityStatus: true,
+  isAmbassador: true,
 } as const satisfies Prisma.UserSelect;
 
 /**

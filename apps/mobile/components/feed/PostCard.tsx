@@ -6,6 +6,7 @@ import type { Post, SharedPost } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
 import { NCImage } from '../ui/NCImage';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
+import { AmbassadorBadge } from '../ui/AmbassadorBadge';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
@@ -89,6 +90,7 @@ function PostCardImpl({
               {author.displayName ?? `${author.firstName ?? ''} ${author.lastName ?? ''}`.trim()}
             </Text>
             {author.identityStatus === 'approved' && <VerifiedBadge />}
+            {author.isAmbassador && <AmbassadorBadge />}
           </View>
           <Text style={styles.meta}>
             {author.city ? `${author.city} · ` : ''}
@@ -219,6 +221,7 @@ function SharedPostPreview({
           {name}
         </Text>
         {author.identityStatus === 'approved' && <VerifiedBadge size={11} />}
+        {author.isAmbassador && <AmbassadorBadge size={11} />}
         <Text style={styles.sharedTime}>· {relativeTime(shared.createdAt)}</Text>
       </View>
       {shared.content ? (
