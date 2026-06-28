@@ -350,10 +350,16 @@ export type ReportAction =
 // Public login call (no token required — used before a session exists).
 // ---------------------------------------------------------------------------
 
+/** Login may resolve to a TOTP challenge instead of a session. */
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  mfaToken: string;
+}
+
 export async function login(
   email: string,
   password: string,
-): Promise<LoginResponse> {
+): Promise<LoginResponse | MfaChallengeResponse> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login`, {
@@ -368,7 +374,53 @@ export async function login(
   if (!res.ok) {
     throw new AdminApiError(res.status, await extractError(res));
   }
+  return (await res.json()) as LoginResponse | MfaChallengeResponse;
+}
+
+/** Second login step — exchange the MFA challenge + a TOTP/recovery code for a session. */
+export async function verifyMfa(mfaToken: string, code: string): Promise<LoginResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/auth/mfa/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ mfaToken, code }),
+      cache: "no-store",
+    });
+  } catch {
+    throw new AdminApiError(0, "Impossible de joindre le serveur. Réessaie.");
+  }
+  if (!res.ok) {
+    throw new AdminApiError(res.status, await extractError(res));
+  }
   return (await res.json()) as LoginResponse;
+}
+
+// ---------------------------------------------------------------------------
+// MFA / TOTP management (authenticated)
+// ---------------------------------------------------------------------------
+
+/** Begin TOTP enrollment — returns the secret + otpauth URL to render as a QR. */
+export function mfaEnroll(): Promise<{ secret: string; otpauthUrl: string }> {
+  return adminFetch<{ secret: string; otpauthUrl: string }>("/auth/mfa/enroll", { method: "POST" });
+}
+
+/** Confirm enrollment with a live code → enables MFA, returns one-time recovery codes. */
+export function mfaConfirm(code: string): Promise<{ recoveryCodes: string[] }> {
+  return adminFetch<{ recoveryCodes: string[] }>("/auth/mfa/confirm", {
+    method: "POST",
+    body: { code },
+  });
+}
+
+/** Disable MFA — requires a valid TOTP or recovery code. */
+export function mfaDisable(code: string): Promise<void> {
+  return adminFetch<void>("/auth/mfa/disable", { method: "POST", body: { code } });
+}
+
+/** Whether the current session's user has MFA enabled. */
+export function mfaStatus(): Promise<{ mfaEnabled: boolean }> {
+  return adminFetch<{ mfaEnabled: boolean }>("/auth/mfa/status");
 }
 
 // ---------------------------------------------------------------------------
@@ -562,6 +614,8 @@ export interface AdminSettings {
   registrationMode: RegistrationMode;
   defaultInviteQuota: number;
   inviteExpiryDays: number;
+  /** When true, staff (admin/moderator) without TOTP enrolled cannot log in. */
+  adminMfaRequired: boolean;
 }
 
 export type InvitationKind = "single_use" | "reusable";
@@ -594,6 +648,7 @@ export function patchAdminSettings(
     registrationMode: RegistrationMode;
     defaultInviteQuota: number;
     inviteExpiryDays: number;
+    adminMfaRequired: boolean;
   }>,
 ): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });

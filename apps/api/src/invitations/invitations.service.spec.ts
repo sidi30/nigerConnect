@@ -611,6 +611,7 @@ describe('AuthService — registration mode gating', () => {
       { get: jest.fn(() => 'nigerconnect-private') } as never,
       makeSettingsAuth(mode) as never,
       invites as never,
+      { verifyForUser: jest.fn(async () => true) } as never, // MfaService
     );
   }
 

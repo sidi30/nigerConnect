@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import type { Env } from '../common/config/env.validation';
@@ -353,13 +353,21 @@ export class AdminService {
     registrationMode: string;
     defaultInviteQuota: number;
     inviteExpiryDays: number;
+    adminMfaRequired: boolean;
   }> {
-    const [registrationMode, defaultInviteQuota, inviteExpiryDays] = await Promise.all([
-      this.settings.getRegistrationMode(),
-      this.settings.getDefaultInviteQuota(),
-      this.settings.getInviteExpiryDays(),
-    ]);
-    return { registrationMode, defaultInviteQuota, inviteExpiryDays };
+    const [registrationMode, defaultInviteQuota, inviteExpiryDays, adminMfaRequired] =
+      await Promise.all([
+        this.settings.getRegistrationMode(),
+        this.settings.getDefaultInviteQuota(),
+        this.settings.getInviteExpiryDays(),
+        this.settings.getSetting('admin_mfa_required', 'false'),
+      ]);
+    return {
+      registrationMode,
+      defaultInviteQuota,
+      inviteExpiryDays,
+      adminMfaRequired: adminMfaRequired === 'true',
+    };
   }
 
   /**
@@ -367,9 +375,34 @@ export class AdminService {
    * Writes one or more settings through SettingsService (DB + Redis write-through).
    */
   async patchSettings(
-    dto: { registrationMode?: string; defaultInviteQuota?: number; inviteExpiryDays?: number },
+    dto: {
+      registrationMode?: string;
+      defaultInviteQuota?: number;
+      inviteExpiryDays?: number;
+      adminMfaRequired?: boolean;
+    },
     adminId: string,
-  ): Promise<{ registrationMode: string; defaultInviteQuota: number; inviteExpiryDays: number }> {
+  ): Promise<{
+    registrationMode: string;
+    defaultInviteQuota: number;
+    inviteExpiryDays: number;
+    adminMfaRequired: boolean;
+  }> {
+    // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
+    // have enrolled — otherwise their own next login is refused. Enforced
+    // server-side (the web toggle is only a hint).
+    if (dto.adminMfaRequired === true) {
+      const me = await this.prisma.user.findUnique({
+        where: { id: adminId },
+        select: { mfaEnabled: true },
+      });
+      if (!me?.mfaEnabled) {
+        throw new BadRequestException(
+          "Active d'abord ta double authentification avant de la rendre obligatoire pour le staff.",
+        );
+      }
+    }
+
     const writes: Promise<void>[] = [];
     if (dto.registrationMode !== undefined) {
       writes.push(this.settings.setSetting('registration_mode', dto.registrationMode, adminId));
@@ -379,6 +412,11 @@ export class AdminService {
     }
     if (dto.inviteExpiryDays !== undefined) {
       writes.push(this.settings.setSetting('invite_expiry_days', String(dto.inviteExpiryDays), adminId));
+    }
+    if (dto.adminMfaRequired !== undefined) {
+      writes.push(
+        this.settings.setSetting('admin_mfa_required', dto.adminMfaRequired ? 'true' : 'false', adminId),
+      );
     }
     await Promise.all(writes);
     return this.getSettings();

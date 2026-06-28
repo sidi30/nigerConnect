@@ -21,10 +21,24 @@ import { AllowUnverified } from '../common/decorators/allow-unverified.decorator
 import { CurrentUser, JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { z } from 'zod';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthService } from './auth.service';
+import { MfaService } from './mfa.service';
 import { appleSchema, loginSchema, oauthSchema, refreshSchema } from './dto/login.dto';
 import type { AppleDto, LoginDto, OAuthDto, RefreshDto } from './dto/login.dto';
+
+// ── MFA (TOTP) DTOs ──────────────────────────────────────────────────────────
+const mfaCodeSchema = z.object({ code: z.string().trim().min(6).max(20) }).strict();
+type MfaCodeDto = z.infer<typeof mfaCodeSchema>;
+const mfaVerifySchema = z
+  .object({
+    mfaToken: z.string().min(10),
+    code: z.string().trim().min(6).max(20),
+    deviceName: z.string().max(100).optional(),
+  })
+  .strict();
+type MfaVerifyDto = z.infer<typeof mfaVerifySchema>;
 import { registerSchema } from './dto/register.dto';
 import type { RegisterDto } from './dto/register.dto';
 import { reviewIdentitySchema, submitIdentitySchema } from './dto/verify-identity.dto';
@@ -45,6 +59,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly config: ConfigService<Env, true>,
     private readonly settingsService: SettingsService,
+    private readonly mfa: MfaService,
   ) {}
 
   @Public()
@@ -72,10 +87,66 @@ export class AuthController {
   ) {
     const ip = this.getIp(req);
     const result = await this.auth.login(dto, ip);
+    // MFA-enabled accounts get a challenge instead of tokens — the client then
+    // calls POST /auth/mfa/verify with a TOTP/recovery code.
+    if ('mfaRequired' in result) {
+      return { mfaRequired: true, mfaToken: result.mfaToken };
+    }
     return {
       user: serializeUser(result.user),
       tokens: { accessToken: result.accessToken, refreshToken: result.refreshToken },
     };
+  }
+
+  /**
+   * Second step of an MFA login: exchange the challenge token + a TOTP or
+   * recovery code for real tokens. Public + throttled (it's pre-auth).
+   */
+  @Public()
+  @Throttle({ short: { limit: 8, ttl: 60_000 }, medium: { limit: 30, ttl: 900_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('mfa/verify')
+  async mfaVerify(@Body(new ZodValidationPipe(mfaVerifySchema)) dto: MfaVerifyDto, @Req() req: Request) {
+    const result = await this.auth.verifyMfaLogin(dto, this.getIp(req));
+    return {
+      user: serializeUser(result.user),
+      tokens: { accessToken: result.accessToken, refreshToken: result.refreshToken },
+    };
+  }
+
+  // ── MFA enrollment / management (authenticated) ─────────────────────────────
+
+  /** Start TOTP enrollment — returns the secret + otpauth URL (render as QR). */
+  @Post('mfa/enroll')
+  @HttpCode(HttpStatus.OK)
+  mfaEnroll(@CurrentUser() me: JwtUserPayload) {
+    return this.mfa.beginEnrollment(me.sub);
+  }
+
+  /** Confirm enrollment with a live code → enables MFA, returns recovery codes once. */
+  @Post('mfa/confirm')
+  @HttpCode(HttpStatus.OK)
+  mfaConfirm(
+    @CurrentUser() me: JwtUserPayload,
+    @Body(new ZodValidationPipe(mfaCodeSchema)) dto: MfaCodeDto,
+  ) {
+    return this.mfa.confirmEnrollment(me.sub, dto.code);
+  }
+
+  /** Disable MFA — requires a valid TOTP or recovery code. */
+  @Post('mfa/disable')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async mfaDisable(
+    @CurrentUser() me: JwtUserPayload,
+    @Body(new ZodValidationPipe(mfaCodeSchema)) dto: MfaCodeDto,
+  ): Promise<void> {
+    await this.mfa.disable(me.sub, dto.code);
+  }
+
+  /** Whether the current user has MFA enabled. */
+  @Get('mfa/status')
+  mfaStatus(@CurrentUser() me: JwtUserPayload) {
+    return this.mfa.status(me.sub);
   }
 
   @Public()

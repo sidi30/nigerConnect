@@ -121,6 +121,7 @@ model User {
   reviewedDocuments       IdentityDocument[]   @relation("DocumentReviewer")
   refreshTokens           RefreshToken[]
   pushTokens              PushToken[]
+  mfaRecoveryCodes        MfaRecoveryCode[]
   emailTokens             EmailToken[]
   photos                  UserPhoto[]
   friendshipsSent         Friendship[]         @relation("FriendshipRequester")
@@ -746,6 +747,20 @@ model PushToken {
 
   @@unique([userId, token])
   @@map("push_tokens")
+}
+
+// Single-use TOTP recovery codes. Stored hashed (sha256); the plaintext is
+// shown to the user exactly once at MFA enrollment. usedAt marks consumption.
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @map("code_hash") @db.VarChar(255)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
 }
 
 // ── Pages (Feature: créer une page) ──────────────────────────────

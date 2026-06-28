@@ -81,6 +81,42 @@ export class TokenService {
     return this.audience;
   }
 
+  /**
+   * Short-lived (5 min) signed token issued after the password step when a user
+   * has MFA enabled. It proves "password verified, awaiting second factor" and is
+   * exchanged at /auth/mfa/verify for real tokens. A DISTINCT audience
+   * ({@link MFA_CHALLENGE_AUDIENCE}) means it can never be used as an access token
+   * nor an access token used as a challenge.
+   */
+  async signMfaChallenge(userId: string): Promise<string> {
+    return this.jwt.signAsync(
+      { sub: userId, typ: 'mfa' },
+      {
+        algorithm: 'RS256',
+        privateKey: this.privateKey,
+        expiresIn: '5m',
+        issuer: this.issuer,
+        audience: `${this.audience}:mfa`,
+        keyid: this.kid,
+      },
+    );
+  }
+
+  /** Verify an MFA challenge token; returns the userId or null. */
+  async verifyMfaChallenge(token: string): Promise<string | null> {
+    try {
+      const payload = await this.jwt.verifyAsync<{ sub?: string; typ?: string }>(token, {
+        publicKey: this.publicKey,
+        algorithms: ['RS256'],
+        issuer: this.issuer,
+        audience: `${this.audience}:mfa`,
+      });
+      return payload?.typ === 'mfa' && payload.sub ? payload.sub : null;
+    } catch {
+      return null;
+    }
+  }
+
   async issueTokens(
     userId: string,
     role: UserRole,

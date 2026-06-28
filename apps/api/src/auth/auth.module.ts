@@ -10,6 +10,7 @@ import { EmailTokenService } from './email-token.service';
 import { GoogleOAuthService } from './google-oauth.service';
 import { AppleVerifierService } from './apple-verifier.service';
 import { MfaSecretService } from './mfa-secret.service';
+import { MfaService } from './mfa.service';
 import { IdentityCleanupCron } from './identity-cleanup.cron';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -27,6 +28,7 @@ import { InvitationsModule } from '../invitations/invitations.module';
     GoogleOAuthService,
     AppleVerifierService,
     MfaSecretService,
+    MfaService,
     IdentityCleanupCron,
     JwtStrategy,
     // Order matters: APP_GUARD providers run in declaration order. JwtAuthGuard
@@ -35,6 +37,6 @@ import { InvitationsModule } from '../invitations/invitations.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
   ],
-  exports: [AuthService, TokenService, PasswordService, MfaSecretService],
+  exports: [AuthService, TokenService, PasswordService, MfaSecretService, MfaService],
 })
 export class AuthModule {}

@@ -6,6 +6,7 @@ import {
   Award,
   LayoutDashboard,
   LifeBuoy,
+  Lock,
   Mail,
   Network,
   ShieldCheck,
@@ -26,6 +27,7 @@ import InvitationsSection from "@/components/admin/InvitationsSection";
 import ReferralsSection from "@/components/admin/ReferralsSection";
 import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
 import UsersSection from "@/components/admin/UsersSection";
+import SecuritySection from "@/components/admin/SecuritySection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
 type Tab =
@@ -36,7 +38,8 @@ type Tab =
   | "newsletter"
   | "invitations"
   | "referrals"
-  | "ambassadors";
+  | "ambassadors"
+  | "security";
 
 // Newsletter is admin-only on the API. A moderator hitting it would 403 →
 // adminFetch bounces to login, so the tab is gated to admins below.
@@ -50,6 +53,7 @@ const NAV: NavEntry[] = [
   { id: "reports", label: "Support & Modération", icon: LifeBuoy },
   { id: "invitations", label: "Invitations", icon: Users },
   { id: "referrals", label: "Réseau", icon: Network },
+  { id: "security", label: "Sécurité", icon: Lock },
 ];
 
 const ADMIN_ONLY_NAV: NavEntry[] = [
@@ -122,6 +126,7 @@ export default function AdminDashboardPage() {
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
         {tab === "referrals" ? <ReferralsSection /> : null}
         {tab === "ambassadors" ? <AmbassadorsSection /> : null}
+        {tab === "security" ? <SecuritySection role={role} /> : null}
       </main>
     </div>
   );

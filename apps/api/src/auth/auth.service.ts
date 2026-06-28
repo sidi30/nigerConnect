@@ -23,6 +23,7 @@ import {
 } from '../common/geo/city-coords';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
+import { MfaService } from './mfa.service';
 import { EmailTokenService } from './email-token.service';
 import { GoogleOAuthService } from './google-oauth.service';
 import { AppleVerifierService, sha256Hex } from './apple-verifier.service';
@@ -46,6 +47,12 @@ export type AuthResult = {
   refreshToken: string;
 };
 
+/** A login that resolved to a second-factor challenge instead of tokens. */
+export type MfaChallenge = { mfaRequired: true; mfaToken: string };
+
+/** Login either issues tokens or asks for the TOTP second factor. */
+export type LoginResult = AuthResult | MfaChallenge;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -62,6 +69,7 @@ export class AuthService {
     private readonly config: ConfigService<Env, true>,
     private readonly settings: SettingsService,
     private readonly invitations: InvitationsService,
+    private readonly mfa: MfaService,
   ) {}
 
   async signInWithGoogle(
@@ -443,7 +451,7 @@ export class AuthService {
     ]);
   }
 
-  async login(dto: LoginDto, ip?: string): Promise<AuthResult> {
+  async login(dto: LoginDto, ip?: string): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (!user || !user.passwordHash) {
       await this.fakeVerify();
@@ -463,16 +471,35 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Password is correct → clear the lockout counters now. lastLoginAt is only
+    // stamped once the login fully completes (after MFA, if any).
     await this.prisma.user.update({
       where: { id: user.id },
-      data: {
-        failedLoginCount: 0,
-        lockedUntil: null,
-        lastLoginAt: new Date(),
-        lastLoginIp: ip ?? null,
-      },
+      data: { failedLoginCount: 0, lockedUntil: null },
     });
 
+    // Second factor: if the user enabled TOTP, return a short-lived challenge
+    // instead of tokens. The client exchanges it at /auth/mfa/verify with a code.
+    if (user.mfaEnabled) {
+      const mfaToken = await this.tokens.signMfaChallenge(user.id);
+      return { mfaRequired: true, mfaToken };
+    }
+
+    // Policy enforcement: when 'admin_mfa_required' is on, staff (admin/moderator)
+    // who have NOT enrolled TOTP are refused — they must enroll first (an admin
+    // turns the policy on only after enrolling). Regular users are unaffected.
+    if (user.role === 'admin' || user.role === 'moderator') {
+      const required = await this.settings.getSetting('admin_mfa_required', 'false');
+      if (required === 'true') {
+        throw new ForbiddenException({
+          code: 'MFA_REQUIRED_NOT_ENROLLED',
+          message:
+            "La double authentification est obligatoire pour le staff. Active l'authentificateur pour te connecter.",
+        });
+      }
+    }
+
+    await this.stampLogin(user.id, ip);
     const issued = await this.tokens.issueTokens(
       user.id,
       user.role,
@@ -480,6 +507,57 @@ export class AuthService {
       dto.deviceName,
     );
     return { user, accessToken: issued.accessToken, refreshToken: issued.refreshToken };
+  }
+
+  /**
+   * Second step of an MFA login: exchange the challenge token + a TOTP/recovery
+   * code for real tokens. Re-checks account status (it could have changed in the
+   * 5-min window) and stamps the login on success.
+   */
+  async verifyMfaLogin(
+    dto: { mfaToken: string; code: string; deviceName?: string },
+    ip?: string,
+  ): Promise<AuthResult> {
+    const userId = await this.tokens.verifyMfaChallenge(dto.mfaToken);
+    if (!userId) throw new UnauthorizedException('Challenge MFA invalide ou expiré.');
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.mfaEnabled) throw new UnauthorizedException('Challenge MFA invalide.');
+    if (user.status === 'banned') throw new ForbiddenException('Account banned');
+    if (user.status === 'suspended') throw new ForbiddenException('Account suspended');
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new ForbiddenException(`Account locked until ${user.lockedUntil.toISOString()}`);
+    }
+
+    const ok = await this.mfa.verifyForUser(userId, dto.code);
+    if (!ok) {
+      // Repeated bad second factors count toward the same escalating lockout as
+      // bad passwords — bounds brute-force of the 6-digit TOTP even across IPs.
+      await this.registerFailedLogin(user.id, user.failedLoginCount);
+      throw new UnauthorizedException('Code incorrect.');
+    }
+
+    await this.stampLogin(userId, ip);
+    const issued = await this.tokens.issueTokens(
+      user.id,
+      user.role,
+      user.identityStatus,
+      dto.deviceName,
+    );
+    return { user, accessToken: issued.accessToken, refreshToken: issued.refreshToken };
+  }
+
+  /** Record a successful login (timestamp + IP) and clear any lock counters. */
+  private async stampLogin(userId: string, ip?: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date(),
+        lastLoginIp: ip ?? null,
+      },
+    });
   }
 
   async refresh(refreshToken: string, deviceName?: string): Promise<AuthResult> {

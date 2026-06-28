@@ -139,6 +139,7 @@ describe('AuthService', () => {
     config = makeConfig(),
     settings = makeSettings(),
     invitations = makeInvitationsService(),
+    mfa = { verifyForUser: jest.fn(async () => true) },
   }: {
     prisma?: ReturnType<typeof makePrisma>;
     tokens?: ReturnType<typeof makeTokens>;
@@ -148,6 +149,7 @@ describe('AuthService', () => {
     config?: ReturnType<typeof makeConfig>;
     settings?: ReturnType<typeof makeSettings>;
     invitations?: ReturnType<typeof makeInvitationsService>;
+    mfa?: { verifyForUser: jest.Mock };
   } = {}) {
     return new AuthService(
       prisma as never,
@@ -161,6 +163,7 @@ describe('AuthService', () => {
       config as never,
       settings as never,
       invitations as never,
+      mfa as never,
     );
   }
 
@@ -219,7 +222,8 @@ describe('AuthService', () => {
     });
     const svc = makeSvc({ prisma });
     const result = await svc.login({ email: 'a@b.com', password: 'Str0ng!Password' });
-    expect(result.accessToken).toBeDefined();
+    // No mfaEnabled on the mock → tokens are issued (not an MFA challenge).
+    expect('accessToken' in result && result.accessToken).toBeDefined();
     expect(prisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ failedLoginCount: 0, lockedUntil: null }),

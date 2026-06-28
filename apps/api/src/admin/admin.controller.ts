@@ -25,6 +25,8 @@ const patchSettingsSchema = z
     registrationMode: z.enum(['open', 'invite_only', 'closed']).optional(),
     defaultInviteQuota: z.coerce.number().int().min(1).max(1000).optional(),
     inviteExpiryDays: z.coerce.number().int().min(1).max(365).optional(),
+    // Once on, staff (admin/moderator) without TOTP enrolled cannot log in.
+    adminMfaRequired: z.boolean().optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field is required' });
