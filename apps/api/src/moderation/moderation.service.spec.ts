@@ -41,12 +41,14 @@ describe('ModerationService', () => {
         update: jest.fn(async () => ({})),
       },
       post: { update: jest.fn() },
+      // Banning revokes the user's active reusable invite links (parrainage §11).
+      invitation: { updateMany: jest.fn(async () => ({})) },
     };
     const svc = new ModerationService(prisma as never);
     await svc.resolve('admin', 'r1', { action: 'banned' });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { status: 'banned' },
+      data: { status: 'banned', canBulkInvite: false },
     });
     // No inviter → no abuse flag increment (single status update only).
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
@@ -63,6 +65,7 @@ describe('ModerationService', () => {
         update: jest.fn(async () => ({})),
       },
       post: { update: jest.fn() },
+      invitation: { updateMany: jest.fn(async () => ({})) },
     };
     const svc = new ModerationService(prisma as never);
     await svc.resolve('admin', 'r1', { action: 'banned' });

@@ -313,7 +313,7 @@ describe('InvitationsService — checkInvitation', () => {
     const prisma = makePrisma();
     prisma.invitation.findUnique = jest.fn(async () => ({
       ...makeInvitationRow({ status: 'pending', kind: 'single_use' }),
-      inviter: { displayName: 'Aïcha Maïga', firstName: 'Aïcha' },
+      inviter: { displayName: 'Aïcha Maïga', firstName: 'Aïcha', status: 'active', inviteAbuseFlags: 0 },
     }));
     const svc = makeSvc(prisma);
     const result = await svc.checkInvitation('TESTCODE10');
@@ -324,7 +324,7 @@ describe('InvitationsService — checkInvitation', () => {
     const prisma = makePrisma();
     prisma.invitation.findUnique = jest.fn(async () => ({
       ...makeInvitationRow({ status: 'pending', kind: 'reusable' }),
-      inviter: { displayName: 'Moussa', firstName: 'Moussa' },
+      inviter: { displayName: 'Moussa', firstName: 'Moussa', status: 'active', inviteAbuseFlags: 0 },
     }));
     const svc = makeSvc(prisma);
     const result = await svc.checkInvitation('LINKCODE10');

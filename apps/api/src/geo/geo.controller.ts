@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -77,7 +77,10 @@ export class GeoController {
     return this.geo.getNearby(me.sub, dto);
   }
 
+  // A proximity ping returns the current matches; it's an action, not a resource
+  // creation — respond 200 (not the POST-default 201), matching the API contract.
   @Post('proximity/ping')
+  @HttpCode(HttpStatus.OK)
   proximityPing(
     @CurrentUser() me: JwtUserPayload,
     @Body(new ZodValidationPipe(proximityPingSchema)) dto: ProximityPingDto,
