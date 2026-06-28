@@ -63,7 +63,8 @@ describe('Proximity alerts (e2e)', () => {
       .post('/api/geo/proximity/ping')
       .set(auth(user.accessToken))
       .send({ lat: coords.latitude, lon: coords.longitude })
-      .expect(201);
+      // Ping is an action returning matches → 200 (endpoint sets @HttpCode(200)).
+      .expect(200);
     return res.body;
   }
 
