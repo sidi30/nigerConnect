@@ -53,6 +53,17 @@ describe('Proximity alerts (e2e)', () => {
         showOnMap: opts.showOnMap ?? true,
       })
       .expect(200);
+
+    // Matching keys off the PRIVATE proximity_lat/lon, which are written ONLY by
+    // a ping (and only for opted-in + map-visible users — the server gates the
+    // write). So a user must ping once to become discoverable to others. This is
+    // a no-op write for opted-out / hidden users (the ping early-returns), which
+    // is exactly what the privacy tests below expect.
+    await request(app.getHttpServer())
+      .post('/api/geo/proximity/ping')
+      .set(auth(user.accessToken))
+      .send({ lat: coords.latitude, lon: coords.longitude })
+      .expect(200);
   }
 
   async function ping(
