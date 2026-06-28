@@ -11,11 +11,22 @@ import {
 } from '../common/prisma/user-select';
 import { BlockService } from '../social/block.service';
 import { MailerService } from '../common/mail/mailer.service';
-import { geocode } from '../common/geo/city-coords';
+import {
+  geocode,
+  haversineKm,
+  jitterCoord,
+  resolveCityCentroid,
+} from '../common/geo/city-coords';
 import type { UpdateProfileDto } from './dto/update-profile.dto';
 import type { CreatePhotoDto, SearchDto } from './dto/photo.dto';
 
 const CACHE_TTL_SECONDS = 300;
+
+// Max distance (km) a client-supplied coordinate may sit from the resolved city
+// centroid before we reject it and fall back to the server geocode. Mirrors the
+// register guard (auth.service) so the map pin can never be moved to the device's
+// exact GPS — latitude/longitude stay a city-coarse, public-safe position.
+const MAX_CLIENT_COORD_DISTANCE_KM = 150;
 
 /**
  * Réseau de parrainage exposé publiquement sur le profil (décision proprio v2) :
@@ -92,24 +103,37 @@ export class ProfileService {
     if (dto.bio !== undefined) data.bio = dto.bio;
     if (dto.city !== undefined) data.city = dto.city;
     if (dto.countryCode !== undefined) data.countryCode = dto.countryCode;
-    if (dto.latitude !== undefined) data.latitude = dto.latitude;
-    if (dto.longitude !== undefined) data.longitude = dto.longitude;
     if (dto.showOnMap !== undefined) data.showOnMap = dto.showOnMap;
     if (dto.proximityAlerts !== undefined) data.proximityAlerts = dto.proximityAlerts;
     if (dto.proximityRadius !== undefined) data.proximityRadius = dto.proximityRadius;
     if (dto.languages !== undefined) data.languages = dto.languages;
     if (dto.privacyLevel !== undefined) data.privacyLevel = dto.privacyLevel;
 
-    // When the user moves (city or country changes) but doesn't send explicit
-    // coordinates, recompute lat/lon from the resolved city/country — otherwise
-    // their pin on the map stays at the old location. We need the *effective*
-    // values: a field the DTO doesn't touch keeps its stored value, so fetch
-    // the current row when only one of the two is being updated.
-    const locationChanged =
-      (dto.city !== undefined || dto.countryCode !== undefined) &&
-      dto.latitude === undefined &&
-      dto.longitude === undefined;
-    if (locationChanged) {
+    // Location pin. users.latitude/longitude are a CITY-coarse, publicly read
+    // position (centroid + jitter). We must never persist the device's raw GPS
+    // here — that would leak the user's exact location on the map. Two triggers
+    // recompute the pin:
+    //   1. The client sends explicit coords (map auto-locate / city pick): we
+    //      validate them against the claimed city centroid and jitter — mirroring
+    //      the register guard — instead of trusting them verbatim.
+    //   2. The city/country changes without coords: recompute from the centroid
+    //      so the pin follows the move instead of staying at the old location.
+    // An explicit null clears the pin.
+    const clearsCoords = dto.latitude === null || dto.longitude === null;
+    const hasClientCoords =
+      dto.latitude !== undefined &&
+      dto.longitude !== undefined &&
+      dto.latitude !== null &&
+      dto.longitude !== null;
+    const cityChanged = dto.city !== undefined || dto.countryCode !== undefined;
+
+    if (clearsCoords) {
+      data.latitude = null;
+      data.longitude = null;
+    } else if (hasClientCoords || cityChanged) {
+      // Resolve the *effective* city/country after this update: a field the DTO
+      // doesn't touch keeps its stored value, so fetch the current row when one
+      // of the two isn't supplied.
       const current =
         dto.city !== undefined && dto.countryCode !== undefined
           ? null
@@ -120,10 +144,31 @@ export class ProfileService {
       const city = dto.city !== undefined ? dto.city : current?.city ?? null;
       const countryCode =
         dto.countryCode !== undefined ? dto.countryCode : current?.countryCode ?? null;
-      const coords = geocode(city, countryCode);
-      if (coords) {
-        data.latitude = coords.lat;
-        data.longitude = coords.lon;
+
+      if (hasClientCoords) {
+        const clientCoord = { lat: dto.latitude!, lon: dto.longitude! };
+        const centroid = resolveCityCentroid(city, countryCode);
+        if (centroid && haversineKm(centroid, clientCoord) > MAX_CLIENT_COORD_DISTANCE_KM) {
+          // Coords don't match the claimed city — fall back to the server
+          // geocode (jittered centroid) rather than trusting the client.
+          const coords = geocode(city, countryCode);
+          if (coords) {
+            data.latitude = coords.lat;
+            data.longitude = coords.lon;
+          }
+        } else {
+          // Trusted (or free-text city with no centroid to check against):
+          // jitter so the stored pin is city-coarse, never the exact device GPS.
+          const jittered = jitterCoord(clientCoord);
+          data.latitude = jittered.lat;
+          data.longitude = jittered.lon;
+        }
+      } else {
+        const coords = geocode(city, countryCode);
+        if (coords) {
+          data.latitude = coords.lat;
+          data.longitude = coords.lon;
+        }
       }
     }
 

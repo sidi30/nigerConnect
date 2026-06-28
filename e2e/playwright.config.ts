@@ -259,6 +259,14 @@ export default defineConfig({
         extraHTTPHeaders: { 'Content-Type': 'application/json' },
       },
     },
+    {
+      name: 'api-geo-location-privacy',
+      testMatch: 'api/geo-location-privacy.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
 
     // ── Browser tests against the Next.js web app ────────────────────────────
     {

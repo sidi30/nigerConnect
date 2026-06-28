@@ -12,6 +12,12 @@ const CLUSTER_TTL = 300;
 // Max users notified by a single ping — caps the notification fan-out in dense
 // areas (a crowd at an event must not trigger hundreds of pushes per ping).
 const PROXIMITY_MATCH_LIMIT = 50;
+// How long a ping's reported position stays usable for matching. Proximity is a
+// live, foreground-only feature: only users who pinged within this window are
+// candidates. This position is kept in the PRIVATE proximity_lat/lon columns
+// (never the public city-coarse latitude/longitude), and a stale fix simply
+// drops out of matching instead of lingering as a public pin at the user's home.
+const PROXIMITY_FRESHNESS_SECONDS = 5 * 60; // 5 min
 
 // Proximity notification dedup tuning.
 //  - ZONE_TTL: one notification per (direction, geohash zone) within this
@@ -384,12 +390,16 @@ export class GeoService implements OnModuleInit {
     )
       return { matches: [] };
 
-    // Persist the pinger's location — conditionally, so a user who flipped
-    // either flag off between the read and the write is not written. We never
-    // store live GPS for someone not currently broadcasting on the map.
+    // Persist the pinger's live position for matching — in the PRIVATE
+    // proximity_lat/lon columns, NEVER the city-coarse latitude/longitude read
+    // by the public map (markers/nearby/clusters). Conditional, so a user who
+    // flipped either flag off between the read and the write is not written: we
+    // never store live GPS for someone not currently broadcasting on the map.
+    // proximity_updated_at gates freshness — a stale fix drops out of matching
+    // rather than lingering as a public pin at the user's home.
     await this.prisma.user.updateMany({
       where: { id: viewerId, proximityAlerts: true, showOnMap: true },
-      data: { latitude: dto.lat, longitude: dto.lon },
+      data: { proximityLat: dto.lat, proximityLon: dto.lon, proximityUpdatedAt: new Date() },
     });
 
     const blockedIds = await this.blockedIds(viewerId);
@@ -399,18 +409,22 @@ export class GeoService implements OnModuleInit {
       ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
       : Prisma.empty;
 
-    // Same Haversine (great-circle km) expression style as getNearby. The
-    // pinger's radius is in meters → convert to km for the comparison.
+    // Same Haversine (great-circle km) expression style as getNearby, but over
+    // the PRIVATE proximity_lat/lon (the live matching position) — not the
+    // city-coarse latitude/longitude. The pinger's radius is in meters → convert
+    // to km for the comparison.
     const radiusKm = pinger.proximityRadius / 1000;
+    const freshCutoff = new Date(Date.now() - PROXIMITY_FRESHNESS_SECONDS * 1000);
     const distanceExpr = Prisma.sql`
       (6371 * acos(
-        LEAST(1, cos(radians(${dto.lat})) * cos(radians(latitude)) *
-          cos(radians(longitude) - radians(${dto.lon})) +
-          sin(radians(${dto.lat})) * sin(radians(latitude)))
+        LEAST(1, cos(radians(${dto.lat})) * cos(radians(proximity_lat)) *
+          cos(radians(proximity_lon) - radians(${dto.lon})) +
+          sin(radians(${dto.lat})) * sin(radians(proximity_lat)))
       ))`;
 
     // Cap fan-out: one ping in a dense area must not notify hundreds. The
-    // nearest MATCH_LIMIT opted-in, map-visible, non-blocked users only.
+    // nearest MATCH_LIMIT opted-in, map-visible, non-blocked users who pinged
+    // recently (proximity_updated_at within the freshness window) only.
     const candidates = await this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -427,8 +441,9 @@ export class GeoService implements OnModuleInit {
         AND status = 'active'
         AND email_verified = TRUE
         AND privacy_level <> 'private'
-        AND latitude IS NOT NULL
-        AND longitude IS NOT NULL
+        AND proximity_lat IS NOT NULL
+        AND proximity_lon IS NOT NULL
+        AND proximity_updated_at > ${freshCutoff}
         AND id::text <> ${viewerId}
         ${blockedClause}
         AND ${distanceExpr} <= ${radiusKm}

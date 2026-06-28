@@ -23,7 +23,7 @@ export default function PrivacyScreen() {
   const setUser = useAuthStore((s) => s.setUser);
   const qc = useQueryClient();
   const [privacyLevel, setPrivacyLevel] = useState(user?.privacyLevel ?? 'friends');
-  const [showOnMap, setShowOnMap] = useState(user?.showOnMap ?? true);
+  const [showOnMap, setShowOnMap] = useState(user?.showOnMap ?? false);
   const [proximityAlerts, setProximityAlerts] = useState(user?.proximityAlerts ?? false);
   const [proximityRadius, setProximityRadius] = useState(user?.proximityRadius ?? 500);
 

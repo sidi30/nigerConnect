@@ -72,9 +72,21 @@ model User {
   countryCode     String?  @map("country_code") @db.Char(2)
   latitude        Decimal? @db.Decimal(10, 7)
   longitude       Decimal? @db.Decimal(10, 7)
-  showOnMap       Boolean  @default(true) @map("show_on_map")
+  // Map visibility is OFF by default (safety-by-default, RGPD art.25): a member
+  // only appears on the public map after an explicit opt-in. Mirrors
+  // proximityAlerts, which is likewise opt-in.
+  showOnMap       Boolean  @default(false) @map("show_on_map")
   proximityAlerts Boolean  @default(false) @map("proximity_alerts")
   proximityRadius Int      @default(100) @map("proximity_radius")
+
+  // Ephemeral, PRIVATE proximity-matching position. Written by the foreground
+  // proximity ping and used ONLY by the Haversine matcher (filtered by
+  // proximityUpdatedAt freshness). NEVER selected by the public map surfaces
+  // (markers / nearby / clusters) so live GPS never leaks through the
+  // city-coarse latitude/longitude pin.
+  proximityLat       Decimal?  @db.Decimal(10, 7) @map("proximity_lat")
+  proximityLon       Decimal?  @db.Decimal(10, 7) @map("proximity_lon")
+  proximityUpdatedAt DateTime? @map("proximity_updated_at") @db.Timestamptz
 
   languages    String[]     @default(["fr"])
   privacyLevel PrivacyLevel @default(friends) @map("privacy_level")

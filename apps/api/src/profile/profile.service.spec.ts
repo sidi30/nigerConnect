@@ -74,7 +74,10 @@ describe('ProfileService', () => {
     expect(data.longitude).toBeLessThan(4.9);
   });
 
-  it('does not overwrite explicit coordinates sent alongside a city change', async () => {
+  it('rejects client coordinates that do not match the claimed city (anti-spoof) and uses the city centroid', async () => {
+    // Security: latitude/longitude are a city-coarse, publicly read pin. A client
+    // sending (1, 2) while claiming Lyon must NOT move the pin to those coords —
+    // we fall back to the jittered Lyon centroid (mirrors the register guard).
     const update = jest.fn(async (args: { data: { latitude?: number; longitude?: number } }) => ({
       id: 'u1',
       ...args.data,
@@ -83,8 +86,32 @@ describe('ProfileService', () => {
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never);
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR', latitude: 1, longitude: 2 });
     const data = update.mock.calls[0]![0].data;
-    expect(data.latitude).toBe(1);
-    expect(data.longitude).toBe(2);
+    expect(data.latitude).toBeGreaterThan(45.7);
+    expect(data.latitude).toBeLessThan(45.8);
+    expect(data.longitude).toBeGreaterThan(4.8);
+    expect(data.longitude).toBeLessThan(4.9);
+  });
+
+  it('jitters raw client coordinates so the stored pin is never the exact device GPS', async () => {
+    // BUG 3 scenario: a user with no resolvable city (e.g. OAuth sign-up) sends a
+    // live GPS fix. There is no centroid to validate against, but the value is
+    // still jittered (±0.02°) so the public pin never equals the precise location.
+    const update = jest.fn(async (args: { data: { latitude?: number; longitude?: number } }) => ({
+      id: 'u1',
+      ...args.data,
+    }));
+    const findUnique = jest.fn(async () => ({ city: null, countryCode: null }));
+    const prisma = { user: { update, findUnique } };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never);
+    const exactLat = 48.86543;
+    const exactLon = 2.33456;
+    await svc.updateMe('u1', { latitude: exactLat, longitude: exactLon });
+    const data = update.mock.calls[0]![0].data;
+    expect(data.latitude).not.toBe(exactLat);
+    expect(data.longitude).not.toBe(exactLon);
+    // Jitter stays within ±half the COORD_JITTER span (0.04° → ±0.02°).
+    expect(Math.abs(data.latitude! - exactLat)).toBeLessThanOrEqual(0.02);
+    expect(Math.abs(data.longitude! - exactLon)).toBeLessThanOrEqual(0.02);
   });
 
   it('reads the stored country when only the city changes, to geocode the move', async () => {
