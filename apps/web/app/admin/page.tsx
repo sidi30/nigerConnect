@@ -9,6 +9,7 @@ import {
   Mail,
   Network,
   ShieldCheck,
+  UserCog,
   Users,
 } from "lucide-react";
 import {
@@ -24,11 +25,13 @@ import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
 import ReferralsSection from "@/components/admin/ReferralsSection";
 import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
+import UsersSection from "@/components/admin/UsersSection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
 type Tab =
   | "overview"
   | "identity"
+  | "users"
   | "reports"
   | "newsletter"
   | "invitations"
@@ -43,6 +46,7 @@ type Tab =
 const NAV: NavEntry[] = [
   { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
   { id: "identity", label: "Identité", icon: ShieldCheck },
+  { id: "users", label: "Utilisateurs", icon: UserCog },
   { id: "reports", label: "Support & Modération", icon: LifeBuoy },
   { id: "invitations", label: "Invitations", icon: Users },
   { id: "referrals", label: "Réseau", icon: Network },
@@ -112,6 +116,7 @@ export default function AdminDashboardPage() {
       <main className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1400px] mx-auto">
         {tab === "overview" ? <OverviewSection /> : null}
         {tab === "identity" ? <IdentitySection /> : null}
+        {tab === "users" ? <UsersSection role={role} /> : null}
         {tab === "reports" ? <ReportsSection /> : null}
         {tab === "newsletter" ? <NewsletterSection /> : null}
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}

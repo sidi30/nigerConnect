@@ -58,7 +58,7 @@ export class EmailVerifiedGuard implements CanActivate {
 
     const record = await this.prisma.user.findUnique({
       where: { id: user.sub },
-      select: { emailVerified: true },
+      select: { emailVerified: true, status: true },
     });
 
     if (record?.emailVerified === false) {
@@ -68,7 +68,26 @@ export class EmailVerifiedGuard implements CanActivate {
       });
     }
 
-    // Verified (or user no longer exists — JwtAuthGuard's concern, not ours).
+    // An admin can block an account at any time; enforce it here so a banned /
+    // suspended user is cut off on their next request (within the short positive
+    // cache TTL) without waiting for their access token to expire. Login already
+    // refuses these statuses, and the ban also revokes their refresh tokens, so
+    // they cannot mint new tokens either. Never cached (we throw), so lifting a
+    // suspension unblocks immediately — same rationale as the unverified case.
+    if (record?.status === 'banned') {
+      throw new ForbiddenException({
+        code: 'ACCOUNT_BANNED',
+        message: 'Votre compte a été banni.',
+      });
+    }
+    if (record?.status === 'suspended') {
+      throw new ForbiddenException({
+        code: 'ACCOUNT_SUSPENDED',
+        message: 'Votre compte est suspendu.',
+      });
+    }
+
+    // Verified + active (or user no longer exists — JwtAuthGuard's concern).
     this.verifiedCache.set(user.sub, Date.now());
     return true;
   }

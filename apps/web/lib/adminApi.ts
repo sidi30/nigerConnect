@@ -706,6 +706,79 @@ export function setAmbassador(
   );
 }
 
+// ---------------------------------------------------------------------------
+// User management (list / block / edit / delete)
+// ---------------------------------------------------------------------------
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  city: string | null;
+  countryCode: string | null;
+  role: UserRole;
+  status: UserStatus;
+  emailVerified: boolean;
+  identityStatus: IdentityDistStatus;
+  isAmbassador: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface AdminUserList {
+  items: AdminUser[];
+  nextCursor: string | null;
+}
+
+/** GET /admin/users — paginated list with optional name/email search + status filter. */
+export function listAdminUsers(
+  params: { q?: string; status?: UserStatus; cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<AdminUserList> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.status) qs.set("status", params.status);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  const s = qs.toString();
+  return adminFetch<AdminUserList>(`/admin/users${s ? `?${s}` : ""}`, { signal });
+}
+
+/** PATCH /admin/users/:id/status — block/unblock (active|suspended|banned). */
+export function setUserStatus(
+  userId: string,
+  status: UserStatus,
+): Promise<{ id: string; status: UserStatus }> {
+  return adminFetch<{ id: string; status: UserStatus }>(`/admin/users/${userId}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
+}
+
+/** PATCH /admin/users/:id — edit profile fields and/or role (admin-only). */
+export function updateAdminUser(
+  userId: string,
+  patch: Partial<{
+    displayName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    city: string | null;
+    countryCode: string | null;
+    bio: string | null;
+    role: UserRole;
+  }>,
+): Promise<AdminUser> {
+  return adminFetch<AdminUser>(`/admin/users/${userId}`, { method: "PATCH", body: patch });
+}
+
+/** DELETE /admin/users/:id — permanently delete a user (admin-only). */
+export function deleteAdminUser(userId: string): Promise<void> {
+  return adminFetch<void>(`/admin/users/${userId}`, { method: "DELETE" });
+}
+
 /** PATCH /admin/users/:id/bulk-invite — grants or revokes the reusable-link right. */
 export function setBulkInviteRight(
   userId: string,

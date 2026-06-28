@@ -29,9 +29,10 @@ function makeService(): {
 
   const admin = new AdminService(
     prisma as never,
-    {} as never,
-    {} as never,
-    { get: jest.fn(() => 'private-bucket') } as never,
+    {} as never, // s3
+    {} as never, // settings
+    {} as never, // profile (ProfileService — unused in these tests)
+    { get: jest.fn(() => 'private-bucket') } as never, // config
   );
   return { admin, userUpdate, invitationUpdateMany, transaction };
 }

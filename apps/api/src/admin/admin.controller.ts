@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -49,6 +49,33 @@ type SearchUsersDto = z.infer<typeof searchUsersSchema>;
 
 const ambassadorSchema = z.object({ value: z.boolean() }).strict();
 type AmbassadorDto = z.infer<typeof ambassadorSchema>;
+
+const listUsersSchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+  status: z.enum(['active', 'suspended', 'banned']).optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+type ListUsersDto = z.infer<typeof listUsersSchema>;
+
+const userStatusSchema = z
+  .object({ status: z.enum(['active', 'suspended', 'banned']) })
+  .strict();
+type UserStatusDto = z.infer<typeof userStatusSchema>;
+
+const updateUserSchema = z
+  .object({
+    displayName: z.string().trim().max(100).nullable().optional(),
+    firstName: z.string().trim().max(100).nullable().optional(),
+    lastName: z.string().trim().max(100).nullable().optional(),
+    city: z.string().trim().max(100).nullable().optional(),
+    countryCode: z.string().trim().length(2).toUpperCase().nullable().optional(),
+    bio: z.string().trim().max(2000).nullable().optional(),
+    role: z.enum(['user', 'moderator', 'admin']).optional(),
+  })
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, { message: 'At least one field is required' });
+type UpdateUserDto = z.infer<typeof updateUserSchema>;
 
 const listReferralsSchema = z.object({
   cursor: z.string().uuid().optional(),
@@ -170,6 +197,55 @@ export class AdminController {
     @Body(new ZodValidationPipe(ambassadorSchema)) dto: AmbassadorDto,
   ) {
     return this.admin.setAmbassador(id, dto.value);
+  }
+
+  // ── User management (§ admin console) ───────────────────────────────────────
+
+  /**
+   * GET /admin/users — paginated list of registered users (name/email search +
+   * status filter). Admin + moderator (the moderation queue needs to see users).
+   */
+  @Get('users')
+  listUsers(@Query(new ZodValidationPipe(listUsersSchema)) dto: ListUsersDto) {
+    return this.admin.listUsers(dto);
+  }
+
+  /**
+   * PATCH /admin/users/:id/status — block/unblock (active|suspended|banned).
+   * Admin + moderator. Self-status and acting on staff are refused in the service.
+   */
+  @Patch('users/:id/status')
+  @HttpCode(HttpStatus.OK)
+  setUserStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(userStatusSchema)) dto: UserStatusDto,
+    @CurrentUser() me: JwtUserPayload,
+  ) {
+    return this.admin.setUserStatus({ id: me.sub, role: me.role }, id, dto.status);
+  }
+
+  /**
+   * PATCH /admin/users/:id — edit profile fields and/or role. Admin-only.
+   */
+  @Patch('users/:id')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  updateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(updateUserSchema)) dto: UpdateUserDto,
+    @CurrentUser() me: JwtUserPayload,
+  ) {
+    return this.admin.updateUser({ id: me.sub, role: me.role }, id, dto);
+  }
+
+  /**
+   * DELETE /admin/users/:id — permanently delete a user (cascade + S3). Admin-only.
+   */
+  @Delete('users/:id')
+  @Roles('admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteUser(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() me: JwtUserPayload) {
+    return this.admin.deleteUser({ id: me.sub }, id);
   }
 
   /**

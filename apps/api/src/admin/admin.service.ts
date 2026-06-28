@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import type { Env } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
+import { ProfileService } from '../profile/profile.service';
 
 const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const CODE_LENGTH = 10;
@@ -84,6 +85,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly s3: S3Service,
     private readonly settings: SettingsService,
+    private readonly profile: ProfileService,
     config: ConfigService<Env, true>,
   ) {
     this.privateBucket = config.get('S3_PRIVATE_BUCKET', { infer: true });
@@ -583,6 +585,158 @@ export class AdminService {
       data: { isAmbassador: value },
       select: { id: true, isAmbassador: true },
     });
+  }
+
+  // Fields surfaced to the admin user-management console. Never selects secrets
+  // (passwordHash, mfaSecret, oauthProviderId, …) — those stay out of the DTO.
+  private static readonly ADMIN_USER_SELECT = {
+    id: true,
+    email: true,
+    displayName: true,
+    firstName: true,
+    lastName: true,
+    avatarUrl: true,
+    city: true,
+    countryCode: true,
+    role: true,
+    status: true,
+    emailVerified: true,
+    identityStatus: true,
+    isAmbassador: true,
+    createdAt: true,
+    lastLoginAt: true,
+  } as const satisfies Prisma.UserSelect;
+
+  /**
+   * GET /admin/users — paginated, filterable list of registered users for the
+   * admin console. Cursor on id; optional name/email search + status filter.
+   */
+  async listUsers(opts: {
+    q?: string;
+    status?: 'active' | 'suspended' | 'banned';
+    cursor?: string;
+    limit: number;
+  }) {
+    const where: Prisma.UserWhereInput = {};
+    if (opts.status) where.status = opts.status;
+    if (opts.q) {
+      where.OR = [
+        { displayName: { contains: opts.q, mode: 'insensitive' } },
+        { firstName: { contains: opts.q, mode: 'insensitive' } },
+        { lastName: { contains: opts.q, mode: 'insensitive' } },
+        { email: { contains: opts.q, mode: 'insensitive' } },
+      ];
+    }
+    const rows = await this.prisma.user.findMany({
+      where,
+      take: opts.limit + 1,
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      orderBy: { createdAt: 'desc' },
+      select: AdminService.ADMIN_USER_SELECT,
+    });
+    const hasMore = rows.length > opts.limit;
+    const items = hasMore ? rows.slice(0, opts.limit) : rows;
+    return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null };
+  }
+
+  /**
+   * Block / unblock a user. Suspending or banning revokes their refresh tokens so
+   * no new access token can be minted; the global guard then cuts off the
+   * existing access token on its next use, and login already refuses these
+   * statuses. Guards: nobody can change their OWN status here, and a moderator
+   * cannot act on staff (admin/moderator) — only an admin can.
+   */
+  async setUserStatus(
+    actor: { id: string; role: string },
+    targetId: string,
+    status: 'active' | 'suspended' | 'banned',
+  ): Promise<{ id: string; status: string }> {
+    if (targetId === actor.id) {
+      throw new ForbiddenException('Vous ne pouvez pas changer votre propre statut.');
+    }
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true, role: true },
+    });
+    if (!target) throw new NotFoundException('Utilisateur introuvable');
+    if ((target.role === 'admin' || target.role === 'moderator') && actor.role !== 'admin') {
+      throw new ForbiddenException("Seul un admin peut modifier le statut d'un membre du staff.");
+    }
+
+    const ops: Prisma.PrismaPromise<unknown>[] = [
+      this.prisma.user.update({ where: { id: targetId }, data: { status }, select: { id: true } }),
+    ];
+    if (status !== 'active') {
+      // Force-logout across devices: revoke every live refresh token.
+      ops.push(
+        this.prisma.refreshToken.updateMany({
+          where: { userId: targetId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        }),
+      );
+    }
+    await this.prisma.$transaction(ops);
+    return { id: targetId, status };
+  }
+
+  /**
+   * Edit a user's profile fields and/or role (admin-only). Email is intentionally
+   * NOT editable here (it's the auth identity). A user cannot change their OWN
+   * role (anti-lockout). Only the provided keys are written.
+   */
+  async updateUser(
+    actor: { id: string; role: string },
+    targetId: string,
+    dto: {
+      displayName?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      city?: string | null;
+      countryCode?: string | null;
+      bio?: string | null;
+      role?: 'user' | 'moderator' | 'admin';
+    },
+  ) {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('Utilisateur introuvable');
+    if (dto.role !== undefined && targetId === actor.id) {
+      throw new ForbiddenException('Vous ne pouvez pas changer votre propre rôle.');
+    }
+
+    const data: Prisma.UserUpdateInput = {};
+    if (dto.displayName !== undefined) data.displayName = dto.displayName;
+    if (dto.firstName !== undefined) data.firstName = dto.firstName;
+    if (dto.lastName !== undefined) data.lastName = dto.lastName;
+    if (dto.city !== undefined) data.city = dto.city;
+    if (dto.countryCode !== undefined) data.countryCode = dto.countryCode;
+    if (dto.bio !== undefined) data.bio = dto.bio;
+    if (dto.role !== undefined) data.role = dto.role;
+
+    return this.prisma.user.update({
+      where: { id: targetId },
+      data,
+      select: AdminService.ADMIN_USER_SELECT,
+    });
+  }
+
+  /**
+   * Permanently delete a user (admin-only). Reuses ProfileService.deleteAccount so
+   * the cascade (posts, messages, …) + S3 asset cleanup is identical to
+   * self-service RGPD deletion. Cannot delete your own account from here.
+   */
+  async deleteUser(actor: { id: string }, targetId: string): Promise<void> {
+    if (targetId === actor.id) {
+      throw new ForbiddenException('Vous ne pouvez pas supprimer votre propre compte ici.');
+    }
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('Utilisateur introuvable');
+    await this.profile.deleteAccount(targetId);
   }
 
   /**
