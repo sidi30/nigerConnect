@@ -11,7 +11,11 @@
  * Or in dev:
  *   pnpm --filter @nigerconnect/api exec ts-node --transpile-only scripts/seed-reviewer.ts
  *
- * Credentials matched against `docs/STORE_SUBMISSION.md` §6 — keep them in sync.
+ * Reviewer passwords are NOT hardcoded — they're read from the environment so
+ * the secrets never live in the repo:
+ *   REVIEWER_PASSWORD=… DELETION_REVIEWER_PASSWORD=… node dist/scripts/seed-reviewer
+ * The seed is idempotent: re-running with a new password rotates the live
+ * accounts. See `docs/STORE_SUBMISSION.md` §6.
  */
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
@@ -19,9 +23,19 @@ import argon2 from 'argon2';
 const prisma = new PrismaClient();
 
 const REVIEWER_EMAIL = 'reviewer@nigerconnect.ne';
-const REVIEWER_PASSWORD = 'ReviewPlay2026!';
 const DELETION_REVIEWER_EMAIL = 'reviewer-deletion@nigerconnect.ne';
-const DELETION_REVIEWER_PASSWORD = 'DeletePlay2026!';
+
+/** Read a required secret from the environment, with a clear error if missing. */
+function requiredEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) {
+    throw new Error(
+      `${name} is required — reviewer passwords are no longer hardcoded. ` +
+        `Run: ${name}=… node dist/scripts/seed-reviewer`,
+    );
+  }
+  return v;
+}
 
 const FAKE_FRIENDS = [
   {
@@ -126,10 +140,14 @@ async function upsertUser(args: {
 export async function run(): Promise<void> {
   console.log('Seeding reviewer accounts…');
 
+  // Passwords come from the environment (never the repo).
+  const reviewerPassword = requiredEnv('REVIEWER_PASSWORD');
+  const deletionReviewerPassword = requiredEnv('DELETION_REVIEWER_PASSWORD');
+
   // Main reviewer (gets fake friends + posts + conversations).
   const reviewer = await upsertUser({
     email: REVIEWER_EMAIL,
-    password: REVIEWER_PASSWORD,
+    password: reviewerPassword,
     firstName: 'Reviewer',
     lastName: 'Play',
     displayName: 'Reviewer Play',
@@ -143,7 +161,7 @@ export async function run(): Promise<void> {
   // slate every time so the deletion test isn't blocked by leftover state.
   const delReviewer = await upsertUser({
     email: DELETION_REVIEWER_EMAIL,
-    password: DELETION_REVIEWER_PASSWORD,
+    password: deletionReviewerPassword,
     firstName: 'Reviewer',
     lastName: 'Deletion',
     displayName: 'Reviewer Deletion',

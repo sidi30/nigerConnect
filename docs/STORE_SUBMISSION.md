@@ -73,21 +73,27 @@ Fournir des credentials de test :
 
 ```
 Email    : reviewer@nigerconnect.ne
-Password : ReviewPlay2026!
+Password : <le mot de passe passé à REVIEWER_PASSWORD lors du seed>
 Notes    : Compte test pré-rempli (3 amis fictifs, 2 conversations, 5 posts).
            Email pré-vérifié, identité non vérifiée.
            Pour tester la suppression : utilisez le compte
-           reviewer-deletion@nigerconnect.ne / DeletePlay2026!
-           (jetable, sera recréé après chaque review).
+           reviewer-deletion@nigerconnect.ne
+           (mot de passe = DELETION_REVIEWER_PASSWORD ; jetable, recréé après chaque review).
 ```
 
-⚠️ **Action requise** : exécuter le seed pour créer ces comptes :
+> 🔒 Les mots de passe ne sont **pas** stockés dans le repo. Tu les choisis au
+> moment du seed (`REVIEWER_PASSWORD` / `DELETION_REVIEWER_PASSWORD`) et tu les
+> recopies dans la fiche store. Garde-les dans ton gestionnaire de secrets.
+
+⚠️ **Action requise** : exécuter le seed pour créer ces comptes (mots de passe via env) :
 
 ```bash
-# Sur le VPS, après le 1er deploy
-docker exec -it nigerconnect-api node -e "require('./dist/scripts/seed-reviewer').run()"
+# Sur le VPS, après le 1er deploy — remplace les valeurs par tes mots de passe
+docker exec -i nigerconnect-api \
+  env REVIEWER_PASSWORD='…' DELETION_REVIEWER_PASSWORD='…' \
+  node -e "require('./dist/scripts/seed-reviewer').run()"
 # OU en dev
-pnpm --filter @nigerconnect/api seed:reviewer
+REVIEWER_PASSWORD='…' DELETION_REVIEWER_PASSWORD='…' pnpm --filter @nigerconnect/api seed:reviewer
 ```
 
 Le script crée les deux comptes + 3 amis fictifs + 5 posts + 1 conversation pour que le reviewer ait un environnement déjà rempli (idempotent).
@@ -275,11 +281,11 @@ Le code est **prêt pour les deux options** : un seul flag (`extra.appleSignInEn
 ```
 Demo account
 Email    : reviewer@nigerconnect.ne
-Password : ReviewApple2026!
+Password : <REVIEWER_PASSWORD chosen at seed time>
 
 Account deletion test
 Email    : reviewer-deletion@nigerconnect.ne
-Password : DeleteApple2026!
+Password : <DELETION_REVIEWER_PASSWORD chosen at seed time>
 
 Notes
 NigerConnect is a social network for the Nigerien diaspora (~62k people across
@@ -385,17 +391,21 @@ Contact : contact@nigerconnect.app
 
 Le script `apps/api/scripts/seed-reviewer.ts` crée tout d'un coup et est idempotent (rerun sans problème) :
 
+Les mots de passe sont fournis via env (`REVIEWER_PASSWORD` / `DELETION_REVIEWER_PASSWORD`) — jamais en dur dans le repo. Rerun avec un nouveau mot de passe = rotation des comptes.
+
 ```bash
-# Production (depuis le VPS)
-docker exec -it nigerconnect-api node -e "require('./dist/scripts/seed-reviewer').run()"
+# Production (depuis le VPS) — remplace les … par tes mots de passe
+docker exec -i nigerconnect-api \
+  env REVIEWER_PASSWORD='…' DELETION_REVIEWER_PASSWORD='…' \
+  node -e "require('./dist/scripts/seed-reviewer').run()"
 
 # Dev local
-pnpm --filter @nigerconnect/api seed:reviewer
+REVIEWER_PASSWORD='…' DELETION_REVIEWER_PASSWORD='…' pnpm --filter @nigerconnect/api seed:reviewer
 ```
 
 Ce qu'il provisionne :
-- `reviewer@nigerconnect.ne` / `ReviewPlay2026!` — compte principal pour la review
-- `reviewer-deletion@nigerconnect.ne` / `DeletePlay2026!` — compte jetable pour le test de suppression
+- `reviewer@nigerconnect.ne` (mdp = `REVIEWER_PASSWORD`) — compte principal pour la review
+- `reviewer-deletion@nigerconnect.ne` (mdp = `DELETION_REVIEWER_PASSWORD`) — compte jetable pour le test de suppression
 - 3 amis fictifs reliés au reviewer (Aminata Niamey, Ousmane Paris, Fatima Montréal)
 - 5 posts variés du reviewer (mix `public` / `friends`)
 - 1 conversation reviewer ↔ Aminata avec 2 messages
