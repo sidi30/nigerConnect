@@ -616,6 +616,8 @@ export interface AdminSettings {
   inviteExpiryDays: number;
   /** When true, staff (admin/moderator) without TOTP enrolled cannot log in. */
   adminMfaRequired: boolean;
+  /** Support override: when true, an admin sees everyone on the map + every profile. */
+  adminFullVisibility: boolean;
 }
 
 export type InvitationKind = "single_use" | "reusable";
@@ -649,6 +651,7 @@ export function patchAdminSettings(
     defaultInviteQuota: number;
     inviteExpiryDays: number;
     adminMfaRequired: boolean;
+    adminFullVisibility: boolean;
   }>,
 ): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });

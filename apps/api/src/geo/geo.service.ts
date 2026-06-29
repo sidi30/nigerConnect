@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, OnModuleInit, Optional } from 
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
+import { SettingsService } from '../common/settings/settings.service';
 import { NotificationService } from '../notification/notification.service';
 import { geocode, setWorldCitiesLookup } from '../common/geo/city-coords';
 import { geohashEncode } from '../common/geo/geohash';
@@ -101,6 +102,7 @@ export class GeoService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly notifications: NotificationService,
+    private readonly settings: SettingsService,
     // @Optional() + default null so the existing unit-test spec (geo.service.spec.ts)
     // can instantiate GeoService with 3 args. In the real DI container,
     // WorldCitiesService is always provided via GeoModule, so this is never null
@@ -138,10 +140,17 @@ export class GeoService implements OnModuleInit {
     return this.worldCities.search(dto.q, dto.country, dto.limit);
   }
 
-  async getMarkers(viewerId: string, dto: BoundsDto): Promise<MapMarker[]> {
+  async getMarkers(viewerId: string, dto: BoundsDto, viewerRole?: string): Promise<MapMarker[]> {
+    // Admin support override: when enabled, an admin sees EVERY member as an
+    // individual pin (bypassing the showOnMap opt-in + private gate). Never cached
+    // (it's privacy-sensitive and low-volume) so toggling it off takes effect at once.
+    const fullVis = await this.settings.isAdminFullVisibility(viewerRole);
+
     const cacheKey = this.cacheKey(viewerId, dto);
-    const cached = await this.redis.client.get(cacheKey);
-    if (cached) return JSON.parse(cached) as MapMarker[];
+    if (!fullVis) {
+      const cached = await this.redis.client.get(cacheKey);
+      if (cached) return JSON.parse(cached) as MapMarker[];
+    }
 
     const blockedIds = await this.blockedIds(viewerId);
     const markers: MapMarker[] = [];
@@ -163,7 +172,7 @@ export class GeoService implements OnModuleInit {
         markers.push(...(await this.cityClusters(dto, blockedIds)));
         markers.push(...(await this.orphanClusters(dto, blockedIds, 4)));
       } else {
-        markers.push(...(await this.individuals(dto, blockedIds, viewerId)));
+        markers.push(...(await this.individuals(dto, blockedIds, viewerId, fullVis)));
       }
     }
 
@@ -172,7 +181,9 @@ export class GeoService implements OnModuleInit {
       markers.push(...(await this.pages(dto)));
     }
 
-    await this.redis.client.set(cacheKey, JSON.stringify(markers), 'EX', CLUSTER_TTL);
+    if (!fullVis) {
+      await this.redis.client.set(cacheKey, JSON.stringify(markers), 'EX', CLUSTER_TTL);
+    }
     return markers;
   }
 
@@ -723,6 +734,7 @@ export class GeoService implements OnModuleInit {
     dto: BoundsDto,
     blockedIds: string[],
     viewerId: string,
+    fullVis = false,
   ): Promise<MapMarker[]> {
     // Exclude the viewer themselves: their own "you are here" marker is drawn
     // client-side, so returning a second individual pin at their position just
@@ -730,14 +742,11 @@ export class GeoService implements OnModuleInit {
     const excludedIds = blockedIds.includes(viewerId) ? blockedIds : [...blockedIds, viewerId];
     const users = await this.prisma.user.findMany({
       where: {
-        showOnMap: true,
+        // Admin full-visibility override drops the opt-in + private gates so a
+        // support admin sees everyone; the default path keeps both (privacy).
+        ...(fullVis ? {} : { showOnMap: true, privacyLevel: { not: 'private' } }),
         status: 'active',
         emailVerified: true,
-        // A 'private' profile is invisible in discovery (profile/search/photos
-        // already 404). It must not surface as an individual map pin either —
-        // the pin exposes name/avatar/city. Such users are still counted
-        // anonymously in the country/city clusters.
-        privacyLevel: { not: 'private' },
         latitude: { gte: dto.south, lte: dto.north },
         longitude: { gte: dto.west, lte: dto.east },
         id: { notIn: excludedIds },

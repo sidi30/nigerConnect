@@ -354,19 +354,27 @@ export class AdminService {
     defaultInviteQuota: number;
     inviteExpiryDays: number;
     adminMfaRequired: boolean;
+    adminFullVisibility: boolean;
   }> {
-    const [registrationMode, defaultInviteQuota, inviteExpiryDays, adminMfaRequired] =
-      await Promise.all([
-        this.settings.getRegistrationMode(),
-        this.settings.getDefaultInviteQuota(),
-        this.settings.getInviteExpiryDays(),
-        this.settings.getSetting('admin_mfa_required', 'false'),
-      ]);
+    const [
+      registrationMode,
+      defaultInviteQuota,
+      inviteExpiryDays,
+      adminMfaRequired,
+      adminFullVisibility,
+    ] = await Promise.all([
+      this.settings.getRegistrationMode(),
+      this.settings.getDefaultInviteQuota(),
+      this.settings.getInviteExpiryDays(),
+      this.settings.getSetting('admin_mfa_required', 'false'),
+      this.settings.getSetting('admin_full_visibility', 'false'),
+    ]);
     return {
       registrationMode,
       defaultInviteQuota,
       inviteExpiryDays,
       adminMfaRequired: adminMfaRequired === 'true',
+      adminFullVisibility: adminFullVisibility === 'true',
     };
   }
 
@@ -380,6 +388,7 @@ export class AdminService {
       defaultInviteQuota?: number;
       inviteExpiryDays?: number;
       adminMfaRequired?: boolean;
+      adminFullVisibility?: boolean;
     },
     adminId: string,
   ): Promise<{
@@ -387,6 +396,7 @@ export class AdminService {
     defaultInviteQuota: number;
     inviteExpiryDays: number;
     adminMfaRequired: boolean;
+    adminFullVisibility: boolean;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -416,6 +426,15 @@ export class AdminService {
     if (dto.adminMfaRequired !== undefined) {
       writes.push(
         this.settings.setSetting('admin_mfa_required', dto.adminMfaRequired ? 'true' : 'false', adminId),
+      );
+    }
+    if (dto.adminFullVisibility !== undefined) {
+      writes.push(
+        this.settings.setSetting(
+          'admin_full_visibility',
+          dto.adminFullVisibility ? 'true' : 'false',
+          adminId,
+        ),
       );
     }
     await Promise.all(writes);

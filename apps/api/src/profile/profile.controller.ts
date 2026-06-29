@@ -147,7 +147,7 @@ export class ProfileController {
     @CurrentUser() viewer: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
-    const user = await this.profile.getById(viewer.sub, id);
+    const user = await this.profile.getById(viewer.sub, id, viewer.role);
     return { user: serializeUser(user) };
   }
 

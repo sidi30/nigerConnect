@@ -31,7 +31,7 @@ export class GeoController {
     @CurrentUser() me: JwtUserPayload,
     @Query(new ZodValidationPipe(boundsSchema)) dto: BoundsDto,
   ) {
-    return this.geo.getMarkers(me.sub, dto);
+    return this.geo.getMarkers(me.sub, dto, me.role);
   }
 
   /**

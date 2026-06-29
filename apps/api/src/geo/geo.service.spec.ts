@@ -42,7 +42,7 @@ function makeMocks() {
 describe('GeoService', () => {
   it('scopes the marker cache key to the viewer (no cross-viewer bleed)', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
     await svc.getMarkers('viewer-A', BOUNDS);
     await svc.getMarkers('viewer-B', BOUNDS);
@@ -70,7 +70,7 @@ describe('GeoService', () => {
     redis.client.get.mockImplementation(async (key) =>
       key.includes('viewer-A') ? cachedForA : null,
     );
-    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
     const resultForB = await svc.getMarkers('viewer-B', BOUNDS);
 
@@ -81,7 +81,7 @@ describe('GeoService', () => {
 
   it('counts map-hidden users in country clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
     // zoom 3 (< 4) -> country clusters branch.
     await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 3 });
@@ -97,7 +97,7 @@ describe('GeoService', () => {
 
   it('counts map-hidden users in city clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
     // zoom 5 (>= 4, < 9) -> city clusters branch.
     await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 5 });
@@ -110,7 +110,7 @@ describe('GeoService', () => {
 
   it('getNearby caps results to the requested radius (km)', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
     await svc.getNearby('viewer-A', { lat: 13.5, lon: 2.1, radius: 25, limit: 30 });
 
@@ -134,7 +134,7 @@ describe('GeoService', () => {
         proximityRadius: 100,
         showOnMap: true,
       });
-      const svc = new GeoService(prisma as never, redis as never, notifications as never);
+      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
@@ -151,7 +151,7 @@ describe('GeoService', () => {
         proximityRadius: 100,
         showOnMap: false,
       });
-      const svc = new GeoService(prisma as never, redis as never, notifications as never);
+      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
@@ -173,7 +173,7 @@ describe('GeoService', () => {
       ]);
       // Per-zone dedup key already set -> SET NX returns null.
       redis.client.set.mockResolvedValueOnce(null);
-      const svc = new GeoService(prisma as never, redis as never, notifications as never);
+      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
@@ -193,7 +193,7 @@ describe('GeoService', () => {
       ]);
       // 3rd distinct day in the same zone -> crosses HABITUAL_DAYS -> muted.
       redis.client.scard.mockResolvedValueOnce(3);
-      const svc = new GeoService(prisma as never, redis as never, notifications as never);
+      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
@@ -216,7 +216,7 @@ describe('GeoService', () => {
       prisma.$queryRaw.mockResolvedValueOnce([
         { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.12 },
       ]);
-      const svc = new GeoService(prisma as never, redis as never, notifications as never);
+      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 

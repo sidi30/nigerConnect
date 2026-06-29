@@ -22,6 +22,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
   const [loading, setLoading] = useState(true);
   const [mfaEnabled, setMfaEnabled] = useState(false);
   const [required, setRequired] = useState(false);
+  const [fullVis, setFullVis] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // enrollment flow
@@ -44,6 +45,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
       if (isAdmin) {
         const settings = await fetchAdminSettings();
         setRequired(settings.adminMfaRequired);
+        setFullVis(settings.adminFullVisibility);
       }
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Chargement impossible.");
@@ -110,6 +112,19 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
     try {
       const s = await patchAdminSettings({ adminMfaRequired: next });
       setRequired(s.adminMfaRequired);
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleFullVis(next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await patchAdminSettings({ adminFullVisibility: next });
+      setFullVis(s.adminFullVisibility);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
     } finally {
@@ -264,6 +279,47 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
                   <span
                     className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
                       required ? "translate-x-5" : ""
+                    }`}
+                  />
+                </button>
+              </div>
+            </Card>
+          ) : null}
+
+          {/* ── Support override: see everyone / every profile (admin only) ── */}
+          {isAdmin ? (
+            <Card className="p-5 border border-amber-300/60 bg-amber-50/40">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-[#1A0F0A] flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    Visibilité totale (support)
+                  </h3>
+                  <p className="text-sm text-[#8A6B4D] mt-1 max-w-xl">
+                    Quand c&apos;est activé, <strong>ton compte admin</strong> voit{" "}
+                    <strong>tous les membres sur la carte</strong> (même ceux qui n&apos;ont pas
+                    activé leur visibilité) et peut <strong>ouvrir n&apos;importe quel profil</strong>,
+                    même privé — pour résoudre des problèmes à la demande.
+                  </p>
+                  <p className="text-xs text-amber-700 mt-2 max-w-xl">
+                    ⚠️ Contourne la vie privée des membres. À n&apos;activer que le temps d&apos;une
+                    intervention, puis à <strong>remettre sur OFF</strong>. Réservé au rôle admin ;
+                    l&apos;action est tracée.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={fullVis}
+                  disabled={busy}
+                  onClick={() => toggleFullVis(!fullVis)}
+                  className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-40 ${
+                    fullVis ? "bg-amber-500" : "bg-[#D9CBB8]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                      fullVis ? "translate-x-5" : ""
                     }`}
                   />
                 </button>

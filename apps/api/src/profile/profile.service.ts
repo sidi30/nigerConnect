@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
+import { SettingsService } from '../common/settings/settings.service';
 import {
   USER_PUBLIC_SELECT,
   USER_SELF_SELECT,
@@ -46,6 +47,7 @@ export class ProfileService {
     private readonly s3: S3Service,
     private readonly blocks: BlockService,
     private readonly mailer: MailerService,
+    private readonly settings: SettingsService,
   ) {}
 
   /**
@@ -217,9 +219,17 @@ export class ProfileService {
   async getById(
     viewerId: string,
     targetId: string,
+    viewerRole?: string,
   ): Promise<(SelfUser | PublicUser) & ProfileNetwork> {
     if (viewerId === targetId) return this.getMe(targetId);
-    if (await this.blocks.isBlocked(viewerId, targetId)) throw new NotFoundException('User not found');
+
+    // Admin support override: an admin (with the setting on) may open any profile
+    // — including a blocked or 'private' one — to resolve issues.
+    const fullVis = await this.settings.isAdminFullVisibility(viewerRole);
+
+    if (!fullVis && (await this.blocks.isBlocked(viewerId, targetId))) {
+      throw new NotFoundException('User not found');
+    }
 
     const cached = await this.redis.client.get(this.cacheKey(targetId));
     let target: PublicUser | null = null;
@@ -238,7 +248,9 @@ export class ProfileService {
       );
     }
 
-    if (target.privacyLevel === 'private') throw new NotFoundException('User not found');
+    if (!fullVis && target.privacyLevel === 'private') {
+      throw new NotFoundException('User not found');
+    }
 
     // `friends`-only users still appear in search and on the map, so 404ing
     // their *profile header* (avatar, name, city, country) when a stranger

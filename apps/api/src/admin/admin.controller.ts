@@ -27,6 +27,9 @@ const patchSettingsSchema = z
     inviteExpiryDays: z.coerce.number().int().min(1).max(365).optional(),
     // Once on, staff (admin/moderator) without TOTP enrolled cannot log in.
     adminMfaRequired: z.boolean().optional(),
+    // Support override: when on, an admin sees every member on the map + can open
+    // any (even private) profile. Privacy-sensitive — off by default.
+    adminFullVisibility: z.boolean().optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field is required' });

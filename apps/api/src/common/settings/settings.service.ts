@@ -80,4 +80,16 @@ export class SettingsService {
     const val = await this.getSetting('invite_expiry_days', '30');
     return parseInt(val, 10) || 30;
   }
+
+  /**
+   * "Admin full visibility" override for support: when the `admin_full_visibility`
+   * setting is ON, an admin (only the admin role — never moderator) bypasses the
+   * map opt-in (showOnMap) and the private-profile gate, so they can see every
+   * member on the map and open any profile to resolve issues. OFF by default;
+   * privacy-sensitive, audited via the setting's updatedById.
+   */
+  async isAdminFullVisibility(role: string | undefined): Promise<boolean> {
+    if (role !== 'admin') return false;
+    return (await this.getSetting('admin_full_visibility', 'false')) === 'true';
+  }
 }
