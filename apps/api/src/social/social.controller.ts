@@ -9,6 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { FriendsService } from './friends.service';
 import { BlockService } from './block.service';
@@ -65,6 +66,8 @@ export class SocialController {
   }
 
   /** Type-ahead for @mentions: search the user's accepted friends by name. */
+  // Per-keystroke endpoint (client already debounces) — cap bursts per user.
+  @Throttle({ short: { limit: 30, ttl: 10_000 } })
   @Get('friends/search')
   searchFriends(@CurrentUser() me: JwtUserPayload, @Query('q') q?: string) {
     const query = (q ?? '').trim();
