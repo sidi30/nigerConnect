@@ -96,6 +96,8 @@ Se retrouver, s'entraider, rester connectés.
 **Le seul service séparé** : le serveur Socket.io pour le chat temps réel 
 peut tourner dans le même process NestJS (Gateway) ou être extrait plus tard.
 
+**Web & Admin = une seule app Next.js** : le site public et la console d'administration (tenant) sont servis par le même conteneur `nigerconnect-web`. Un *middleware* réécrit l'hôte `tenant.nigerconnect.app` vers le groupe de routes `/admin` (et l'apex `nigerconnect.app` renvoie 404 sur `/admin`). La console pilote la gestion des utilisateurs, le badge ambassadeur, les réglages et la sécurité MFA du staff.
+
 ---
 
 # 3. STACK TECHNOLOGIQUE
@@ -118,9 +120,10 @@ peut tourner dans le même process NestJS (Gateway) ou être extrait plus tard.
 | **Queues (background jobs)** | BullMQ + Redis | Traitement images, emails, notifications. Fiable. |
 | **Validation** | Zod | Validation et typage partagés front/back. |
 | **Tests** | Jest + Supertest | Standard NestJS. |
-| **CI/CD** | GitHub Actions | Gratuit, simple. |
+| **CI/CD** | GitHub Actions | Pipeline `deploy.yml` (quality-api/web → docker-build → e2e Playwright → deploy-vps SSH → smoke). Builds mobile EAS `--local` sur runners (pas de quota cloud). |
 | **Conteneurs** | Docker + Docker Compose | Dev local identique à la prod. |
-| **Hébergement** | Railway ou Render (MVP) → AWS/GCP (scale) | Simple au début, migration possible. |
+| **Hébergement** | **VPS dédié (46.224.193.109)** : Docker Compose derrière **Traefik**, **Cloudflare** devant | MVP réel en prod. Stockage S3 = **MinIO** auto-hébergé (`cdn.nigerconnect.app`). |
+| **Sauvegarde / DR** | `pg_dump` quotidien (Tier-2) + **pgBackRest PITR** (Tier-1, WAL continu → S3 chiffré off-site) | RPO ~1min, restauration point-in-time. Roadmap : hot standby 2ᵉ VPS. |
 | **Monitoring** | Sentry (errors) + Axiom (logs) | Services managés, pas d'infra à gérer. |
 
 ---
@@ -694,18 +697,20 @@ CREATE TABLE reports (
 ## Couches de protection
 
 ```
-Couche 1  │ HTTPS/TLS 1.3 partout (certificat Let's Encrypt)
-Couche 2  │ Rate limiting : 100 req/min par IP, 1000/min par user
-Couche 3  │ Auth : JWT RS256 (15min) + refresh token rotatif (30j)
-Couche 4  │ Guards NestJS : JwtAuthGuard sur toutes les routes
-Couche 5  │ Validation : Zod sur chaque DTO, strip unknown fields
-Couche 6  │ Helmet.js : security headers automatiques
-Couche 7  │ CORS : origines whitelistées uniquement
-Couche 8  │ Argon2id : hash des mots de passe (pas bcrypt)
-Couche 9  │ Documents identité : chiffrés AES-256 at rest sur S3
-Couche 10 │ SQL injection : impossible (Prisma ORM, pas de raw SQL)
-Couche 11 │ XSS : sanitisation des inputs (class-validator)
-Couche 12 │ Brute force : lock après 5 échecs, backoff exponentiel
+Couche 1  │ HTTPS/TLS 1.3 partout (Cloudflare + Let's Encrypt via Traefik)
+Couche 2  │ Cloudflare-only : Traefik n'accepte que les IP egress Cloudflare
+Couche 3  │ Rate limiting : @Throttle() buckets short/medium/long par IP & user
+Couche 4  │ Auth : JWT RS256 (~15min, iss/aud, jti) + refresh rotatif (~7j) + reuse detection
+Couche 5  │ Guards NestJS globaux : JwtAuthGuard + EmailVerifiedGuard (+ statut) + RolesGuard
+Couche 6  │ MFA TOTP (staff) : 2ᵉ facteur, secret AES-256-GCM, codes de récupération
+Couche 7  │ Validation : Zod sur chaque body (ZodValidationPipe), rejouée côté WS
+Couche 8  │ Helmet.js : security headers automatiques
+Couche 9  │ CORS : origines whitelistées (web + admin), pas de wildcard en prod
+Couche 10 │ Argon2id : hash des mots de passe (pas bcrypt)
+Couche 11 │ Documents identité : chiffrés AES-256 at rest (bucket S3 privé)
+Couche 12 │ SQL injection : impossible (Prisma ORM, pas de raw SQL)
+Couche 13 │ XSS / homographes : sanitisation des inputs (control/zero-width/bidi)
+Couche 14 │ Brute force : lock escaladé après 5/10/15 échecs (mdp ET code MFA)
 ```
 
 ## Vérification diaspora
@@ -720,10 +725,42 @@ Upload document → Scan antivirus → Chiffrement AES-256 → Stockage S3
 ## Tokens
 
 ```
-Access Token :  JWT RS256, 15 min, payload = { sub, role, identity_status }
-Refresh Token : Opaque (UUID), 30 jours, hashé en base
+Access Token :  JWT RS256, ~15 min, payload = { sub, role, identityStatus, jti }
+                iss/aud vérifiés ; jti blacklisté en Redis au logout
+Refresh Token : Opaque, ~7 jours, hashé en base
                 Rotation à chaque usage (ancien invalidé)
+                Reuse detection : un refresh déjà consommé → révocation de TOUS
+                  les tokens du user (vol potentiel)
                 Stocké côté mobile dans Expo SecureStore
+mfaToken :      Challenge RS256 court (audience <aud>:mfa), émis au login d'un
+                compte mfaEnabled — non échangeable contre un access token,
+                consommé uniquement par POST /auth/mfa/verify
+```
+
+## MFA & double authentification (staff)
+
+```
+- TOTP (Google Authenticator) : enroll → confirm (10 codes de récupération
+  hashés SHA-256, usage unique) → verify au 2ᵉ facteur ; disable ; status
+- Secret stocké chiffré AES-256-GCM (mfa-secret.service)
+- Login 2 étapes : password OK → { mfaRequired, mfaToken } → /auth/mfa/verify
+  (TOTP 6 chiffres OU code de récupération)
+- Politique admin_mfa_required (AppSetting) : refuse au login tout admin/
+  moderator non enrôlé (MFA_REQUIRED_NOT_ENROLLED) ; garde anti-auto-lockout
+  (impossible d'activer le réglage sans avoir soi-même enrôlé)
+- Mauvais codes MFA → registerFailedLogin() (même escalade que le mot de passe)
+```
+
+## Statut de compte (appliqué globalement)
+
+```
+- status ∈ { active | suspended | banned }
+- EmailVerifiedGuard (global) rejette banned (ACCOUNT_BANNED) / suspended
+  (ACCOUNT_SUSPENDED) à chaque requête — verdict NÉGATIF jamais caché
+  (levée de sanction immédiate) ; seul l'état vérifié est mis en cache ~60s
+- Suspendre/bannir révoque tous les refresh tokens (atomique) → déconnexion
+- Modération & admin : un moderator ne peut pas sanctionner le staff,
+  pas d'auto-action (statut/role/suppression sur soi-même)
 ```
 
 ---
@@ -742,25 +779,74 @@ services:
   # Le mobile tourne directement via Expo sur la machine hôte
 ```
 
-## Production (MVP)
+## Production (VPS auto-hébergé)
+
+VPS unique `46.224.193.109`, **Docker Compose derrière Traefik**, **Cloudflare** devant
+(`docker-compose.prod.yml`). Conteneurs :
 
 ```
-Railway ou Render :
-  - 1 instance API (NestJS)      → scale horizontal facile
-  - 1 PostgreSQL managé          → backups auto
-  - 1 Redis managé               → sessions + cache
-  - AWS S3                        → médias
-  - CloudFront CDN                → performance mondiale
-  - Sentry                        → error tracking
-  - GitHub Actions                → CI/CD auto-deploy
+  nigerconnect-postgres  PostgreSQL 16 + PostGIS   réseau interne uniquement
+  nigerconnect-redis     Redis 7 (requirepass, AOF) réseau interne uniquement
+  nigerconnect-minio     MinIO (S3) + buckets pub/privé  interne + Traefik (CDN)
+  nigerconnect-api       NestJS (port 3000)         derrière Traefik
+  nigerconnect-web       Next.js (public + admin)   derrière Traefik
 ```
 
-## CI/CD
+Hôtes (A records Cloudflare → VPS, proxied ; TLS Let's Encrypt DNS-challenge via Traefik) :
 
 ```
-Push sur main → pnpm install → lint → test → build → deploy staging
-Tag vX.Y.Z → deploy production (après tests E2E sur staging)
+  nigerconnect.app          → web (vitrine publique)
+  api.nigerconnect.app      → API + Socket.io
+  cdn.nigerconnect.app      → MinIO bucket public (médias, Cache-Control immutable)
+  tenant.nigerconnect.app   → console admin (middleware → /admin ; 404 sur l'apex)
 ```
+
+PostgreSQL / Redis / MinIO sont sur un réseau Docker **privé** (aucun port hôte publié) ;
+seuls `api` et `web` sont exposés via le réseau `traefik-public`. `TRUST_PROXY_HOPS=2`
+(Cloudflare → Traefik → api). Middleware Traefik `cloudflare-only` : seules les IP
+egress Cloudflare atteignent l'origine.
+
+**Déploiement** (`scripts/deploy-vps.sh`, dossier VPS = repo git sur `main`) :
+sanity checks → génère le keypair JWT RS256 + `DATA_ENCRYPTION_KEY` si absents →
+`docker compose build` → démarre postgres/redis/minio → `prisma migrate deploy`
+(one-shot, abort si échec) → (re)démarre api + web → résumé/health.
+
+## Sauvegarde & Disaster Recovery
+
+```
+Tier-2 (logique)   scripts/backup-pg.sh : pg_dump quotidien → gzip, rétention
+                   14 j + dimanches 8 sem, miroir rclone off-host optionnel,
+                   webhook de notification. RPO ~24 h.
+Tier-1 (PITR)      pgBackRest (docker/postgres/Dockerfile, docker-compose.pitr.yml,
+                   scripts/pitr-setup.sh + pitr-backup.sh, docs/DISASTER_RECOVERY.md) :
+                   archivage WAL continu + base/diff/incr vers un dépôt S3-compatible
+                   off-site chiffré (AES-256). RPO ~1 min, restauration point-in-time.
+Roadmap            hot standby sur un 2ᵉ VPS (réplication streaming).
+```
+
+## CI/CD (GitHub Actions)
+
+```
+deploy.yml (push main / dispatch) :
+  quality-api  → typecheck + prisma + tests unit + e2e (jest) + build
+  quality-web  → typecheck + lint + build Next standalone
+  e2e          → Playwright full-stack
+  docker-build → valide le build des images api & web
+  deploy-vps   → SSH : git fetch/checkout/pull --ff-only + scripts/deploy-vps.sh
+  smoke        → health checks web & api post-déploiement
+
+Mobile :
+  android-build.yml / ios-build.yml → eas build --local sur runners
+       (pas de quota cloud EAS) → APK/AAB Play (track internal) / .ipa TestFlight
+  mobile.yml → typecheck + OTA `eas update --channel production` sur push main
+```
+
+**Android App Links** (`apps/web/public/.well-known/assetlinks.json`) : DEUX empreintes
+SHA-256 (clé d'upload **et** Play App Signing) → les liens `nigerconnect.app` ouvrent l'app.
+
+**Garde de sécurité pre-push** (réinstallable : `scripts/hooks/pre-push` + `scripts/setup-hooks.sh`) :
+lance l'agent **gwani-pentest** en lecture seule sur le diff, bloque uniquement sur un
+verdict réel `BLOCK_DEPLOY` (fail-open sinon ; bypass `SKIP_PENTEST=1 git push`).
 
 ---
 

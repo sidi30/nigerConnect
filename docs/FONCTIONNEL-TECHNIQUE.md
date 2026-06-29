@@ -1,7 +1,7 @@
 # NigerConnect — Documentation fonctionnelle & technique
 
 > Source de vérité = **le code** (`apps/api/src`, `apps/api/prisma/schema.prisma`, `apps/mobile/app`).
-> Ce document est généré par lecture exhaustive du code (2026-06-15). Pour l'architecture/plan
+> Ce document est généré par lecture exhaustive du code (2026-06-29). Pour l'architecture/plan
 > de conception, voir [`NigerConnect-Architecture-v2.md`](./NigerConnect-Architecture-v2.md) ;
 > pour le déploiement, [`DEPLOY_PLAYBOOK.md`](../DEPLOY_PLAYBOOK.md).
 
@@ -36,21 +36,24 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 - Connexion email/password, OAuth, refresh token rotation
 - Envoi/vérification email (code 6 chiffres ou lien token)
 - Soumission et revue de documents d'identité (passeport, carte ID, permis, titre de séjour)
-- MFA (secret TOTP stocké), compte lockdown après tentatives échouées
+- **MFA TOTP** (Google Authenticator) pour le staff : enroll → confirm (10 codes de récupération à usage unique) → verify au 2ᵉ facteur · disable · status. Secret chiffré AES-256-GCM. Login d'un compte `mfaEnabled` retourne `{ mfaRequired, mfaToken }` (challenge RS256 court, audience `<aud>:mfa`) au lieu des tokens
+- Compte lockdown escaladé après tentatives échouées (mauvais mot de passe ET mauvais code MFA partagent `failedLoginCount` : 5→15min, 10→30min, 15→60min)
 - Export RGPD (art. 20) + suppression compte
 - Logout révoque token et jti en Redis
 
 **Règles métier / AuthZ**:
 - `EmailVerifiedGuard` par défaut sauf endpoints `@Public` et `@AllowUnverified`
+- **Statut compte appliqué globalement** : `EmailVerifiedGuard` rejette désormais `banned` (`ACCOUNT_BANNED`) / `suspended` (`ACCOUNT_SUSPENDED`) — verdict jamais caché (levée de sanction immédiate) ; seul l'état *vérifié* est mis en cache positif ~60s
+- **MFA staff** : le réglage admin `admin_mfa_required` refuse au login (`MFA_REQUIRED_NOT_ENROLLED`) tout admin/moderator non enrôlé ; garde serveur anti-auto-lockout (impossible d'activer le réglage si soi-même non enrôlé). Le 2ᵉ facteur re-vérifie `status`/`lockedUntil` (fenêtre de 5min)
 - Ownership strict : userId JWT vs paramètres
 - Password : min 12 chars, 1 majuscule, 1 chiffre, 1 spécial (Zod)
 - OAuth Google/Apple : vérifie email_verified avant auto-link
 - Anti-takeover : ne link OAuth que si email non-propriétaire ou stub account (no password, no other provider)
 - Identity documents : fileUrl doit pointer `s3://S3_PRIVATE_BUCKET/users/{userId}/identity/`
 - Identité temporaire : expiresAt = approval + 30j
-- Rate limits : register 3/min long 5/h | login 5/min | refresh 5/min | forgot 3/min
+- Rate limits : register 3/min long 5/h | login 5/min | refresh 5/min | forgot 3/min | mfa/verify 8/min
 
-**Entités Prisma**: User, RefreshToken, EmailToken, IdentityDocument
+**Entités Prisma**: User (mfaEnabled, mfaSecret, failedLoginCount, lockedUntil, isAmbassador), RefreshToken, EmailToken, IdentityDocument, MfaRecoveryCode
 
 ### Profile
 
@@ -86,6 +89,7 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 - DELETE /friends/:userId
 - GET /friends (liste acceptées, cursor) ; GET /friends/requests (incoming), /requests/sent (outgoing)
 - GET /friends/mutual/:userId, /relationship/:userId, /suggestions
+- GET /friends/search (type-ahead amis acceptés pour les @mentions ; exclut bloqués ; throttle 30/10s)
 - POST /blocks/:userId, DELETE /blocks/:userId, GET /blocks
 
 **Règles métier / AuthZ**:
@@ -110,6 +114,7 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 - POST /posts/:id/comments (content, parentId), GET/PATCH/DELETE comments
 - POST /posts/:id/share (caption optionnelle)
 - POST /stories, GET /stories/feed, DELETE /stories/:id
+- **@mentions** : `MentionsService` parse les tokens `@[Name](uuid)` du contenu post/commentaire et notifie (type `mention`) UNIQUEMENT les amis acceptés (cap fan-out 20)
 
 **Règles métier / AuthZ**:
 - Visibility : public (tous) | friends (amis) | association (membres approuvés)
@@ -120,6 +125,7 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 - Stories : isStory=true, storyExpiresAt = now+24h, cron cleanup ; visibilité forcée 'friends'
 - Cache feed principal (Redis ~2min), invalidé quand auteur/amis/membres postent
 - Compteurs like/comment/share dénormalisés (transactionnel)
+- @mentions : UUID dans `@[Name](uuid)` = source de vérité (le nom affiché est cosmétique, re-dérivé au rendu) ; seuls les amis acceptés mentionnés sont notifiés (jamais d'inconnu/bloqué), cap 20
 
 **Entités Prisma**: Post, PostMedia, Like, Comment, Association (membership)
 
@@ -129,7 +135,9 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 
 **Fonctionnalités (REST)**: GET /conversations, POST /conversations, GET /conversations/:id, /messages (cursor), POST /messages, PATCH /messages/:id (edit), DELETE /messages/:id (soft), POST /conversations/:id/read.
 
-**Fonctionnalités (WebSocket /chat)**: auth JWT au handshake ; events in `message:send`, `message:read`, `typing:start`, `heartbeat` ; events out `user:online/offline`, `message:*` ; rooms `user:{userId}` (présence) + `conv:{conversationId}` (membres).
+**Fonctionnalités (WebSocket /chat)**: auth JWT au handshake ; events in `message:send`, `message:read`, `typing:start`, `conversation:focus`, `conversation:blur`, `heartbeat` ; events out `user:online/offline`, `message:*` ; rooms `user:{userId}` (présence) + `conv:{conversationId}` (membres).
+
+**Suppression push en conversation (côté serveur)**: présence "conversation active" en Redis (`PresenceService.setActiveConversation` TTL 120s / `clearActiveConversation` / `activeInConversation`), pilotée par `conversation:focus`/`blur`. `sendMessage` saute l'incrément `unreadCount` ET la notification pour les destinataires en train de regarder la conversation. Ouvrir une conversation (`markAsRead`) marque aussi lues ses notifications `type='message'` → vide le badge cloche. Le `MEMBER_SELECT` chat inclut désormais `identityStatus` + `isAmbassador` (badges vérifié/ambassadeur dans l'en-tête et la liste).
 
 **Règles métier / AuthZ**:
 - Ownership : send/edit/delete = sender only
@@ -149,10 +157,11 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 
 **Rôle**: Localisation (markers carte, autocomplete villes, alertes de proximité).
 
-**Fonctionnalités**: GET /geo/members (bounds), /geo/stats (public), /geo/cities (public, autocomplete), /geo/nearby, POST /geo/proximity/ping.
+**Fonctionnalités**: GET /geo/members (bounds), /geo/stats (public), /geo/cities (public, autocomplete), /geo/country/:code (liste paginée des membres visibles d'un pays, filtre `?city=` optionnel), /geo/nearby, POST /geo/proximity/ping.
 
 **Règles métier / AuthZ**:
 - Endpoints publics : /stats, /cities
+- /geo/country/:code : code ISO-3166-1 alpha-2 (sinon 400) ; même filtre de confidentialité que les pins (`showOnMap`, `status='active'`, `emailVerified`, `privacyLevel≠'private'`, non bloqué, hors soi-même) ; renvoie `identityStatus`+`isAmbassador` par membre
 - Villes : min 2 chars, country ISO-3166-1 alpha-2 optionnel
 - Bounds : zoom 1–20, type (all|people|associations)
 - Nearby/proximity radius max 20km
@@ -206,7 +215,7 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 - Expiration 24h par défaut (expiresAt), purge à chaque list()
 - Push fire-and-forget via Expo (n'échoue pas l'API)
 - PushToken unique (userId, token)
-- Types : friend_request, friend_accepted, like, comment, message, service_response, association_invite, association_join_*, identity_*, proximity, page_follow, poll_new, review_received, system
+- Types : friend_request, friend_accepted, like, comment, mention, message, service_response, association_invite, association_join_*, identity_*, proximity, page_follow, poll_new, review_received, system
 
 **Entités Prisma**: Notification, PushToken
 
@@ -242,15 +251,25 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 
 ### Admin
 
-**Rôle**: Tableau de bord interne (métriques, documents d'identité).
+**Rôle**: Console interne (web `tenant.nigerconnect.app`) : métriques, documents d'identité, **gestion des utilisateurs**, **badge ambassadeur**, **réglages** et **sécurité (MFA staff)**.
 
-**Fonctionnalités**: GET /admin/metrics, /metrics/timeseries?days=, /metrics/breakdowns, /admin/identity (par statut).
+**Fonctionnalités**:
+- Métriques : GET /admin/metrics, /metrics/timeseries?days=, /metrics/breakdowns
+- Identité : GET /admin/identity (par statut, URLs presigned)
+- **Utilisateurs** : GET /admin/users (paginé, recherche `q` + filtre `status`), GET /admin/users/search (type-ahead léger pour le badge), PATCH /admin/users/:id/status (active|suspended|banned), PATCH /admin/users/:id (édite champs profil + role), DELETE /admin/users/:id, PATCH /admin/users/:id/ambassador
+- **Réglages** : GET/PATCH /admin/settings (registrationMode, defaultInviteQuota, inviteExpiryDays, adminMfaRequired)
 
 **Règles métier / AuthZ**:
-- RolesGuard : admin/moderator only
+- RolesGuard : admin/moderator ; opérations sensibles (édition champ+role, delete, ambassador, PATCH settings, users/search) = **admin only**
+- **Gardes anti-abus** : pas d'auto-action (statut/role/delete sur soi-même) ; un moderator ne peut pas toucher le staff (admin/moderator)
+- Statut : `suspended`/`banned` révoque tous les refresh tokens de l'utilisateur (atomique)
+- Champs éditables : displayName, firstName, lastName, city, countryCode, bio, role (email NON éditable)
+- DELETE réutilise `ProfileService.deleteAccount` (cascade FK + nettoyage S3)
+- **Badge ambassadeur** (`isAmbassador`) : distinction curatée admin, INDÉPENDANTE du badge identité-vérifiée (affiché à côté)
+- **Sécurité MFA** : activer `adminMfaRequired` exige que l'admin ait lui-même enrôlé son TOTP (anti-auto-lockout)
 - Identity view : URLs S3 presigned GET (privé, courte durée)
 
-**Entités Prisma**: User, IdentityDocument, Report, Post
+**Entités Prisma**: User (isAmbassador, status, role, mfaEnabled), IdentityDocument, Report, Post, AppSetting (clé/valeur : admin_mfa_required, registration_mode, default_invite_quota, invite_expiry_days)
 
 ### Review (avis)
 
@@ -324,8 +343,15 @@ Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
 | POST | /api/auth/identity/submit | JWT (EmailVerified) | `{ documentType, fileUrl }` | 202 `{ status: "pending" }` | 400 (bad fileUrl) |
 | GET | /api/auth/identity/status | JWT (EmailVerified) | — | `{ status, latestSubmission, rejectionReason }` | — |
 | PATCH | /api/auth/identity/review | JWT (Admin/Moderator) | `{ userId, decision, reason? }` | `{ status }` | 404, 403 |
+| POST | /api/auth/mfa/verify | Public | `{ mfaToken, code, deviceName? }` (2ᵉ facteur) | `{ user, tokens }` | 401 (bad code / locked / banned) |
+| POST | /api/auth/mfa/enroll | JWT | — | `{ secret, otpauthUrl }` | — |
+| POST | /api/auth/mfa/confirm | JWT | `{ code }` (6–20) | `{ recoveryCodes: string[] }` (×10, montrés une seule fois) | 400 |
+| POST | /api/auth/mfa/disable | JWT | `{ code }` (TOTP ou code de récupération) | 204 | 400 |
+| GET | /api/auth/mfa/status | JWT | — | `{ mfaEnabled }` | — |
 
-**Rate limits** : register 3/min 5/h · login 5/min 20/15min · google/apple 10/min 60/h · refresh 5/min 30/15min · forgot 3/min 10/h · verify-email/code 5/min 20/h.
+`POST /api/auth/login` d'un compte `mfaEnabled` renvoie `{ mfaRequired: true, mfaToken }` (challenge RS256, audience `<aud>:mfa`) au lieu de `{ user, tokens }` → le client poursuit sur `/api/auth/mfa/verify`.
+
+**Rate limits** : register 3/min 5/h · login 5/min 20/15min · google/apple 10/min 60/h · refresh 5/min 30/15min · forgot 3/min 10/h · verify-email/code 5/min 20/h · mfa/verify 8/min 30/15min.
 
 ### Profile
 
@@ -362,6 +388,7 @@ Pagination cursor-based, limit clampé 1–100.
 | GET | /api/friends/mutual/:userId | JWT | `{ items: [PublicUser] }` | — |
 | GET | /api/friends/relationship/:userId | JWT | `{ status, direction? }` | — |
 | GET | /api/friends/suggestions | JWT | `{ items: [PublicUser] }` | — |
+| GET | /api/friends/search | JWT | `?q=` → `{ items: [PublicUser] }` (amis acceptés, exclut bloqués ; throttle 30/10s) | — |
 | POST | /api/blocks/:userId | JWT | 204 | 400 (self), 404 |
 | DELETE | /api/blocks/:userId | JWT | 204 | — |
 | GET | /api/blocks | JWT | `{ items: [PublicUser] }` | — |
@@ -427,6 +454,7 @@ Fenêtre edit/delete : 15min.
 | GET | /api/geo/members | JWT | `?north=&south=&east=&west=&zoom=&type=` | 400 |
 | GET | /api/geo/stats | Public | — | — |
 | GET | /api/geo/cities | Public | `?q=(min 2)&country=&limit=` | 400 |
+| GET | /api/geo/country/:code | JWT | `?city=&cursor=&limit=(1–50)` → `{ items, nextCursor?, total? }` (membres visibles) | 400 (code ≠ ISO-2) |
 | GET | /api/geo/nearby | JWT | `?lat=&lon=&radius=(≤20km)&limit=` | 400 |
 | POST | /api/geo/proximity/ping | JWT | `{ lat, lon }` | 400 |
 
@@ -503,6 +531,14 @@ Rate limit subscribe : 5/min 20/h.
 | GET | /api/admin/metrics/timeseries | JWT (Admin/Mod) | `?days=(7–90)` | 403, 400 |
 | GET | /api/admin/metrics/breakdowns | JWT (Admin/Mod) | — | 403 |
 | GET | /api/admin/identity | JWT (Admin/Mod) | `?status=&cursor=&limit=` (fileUrl presigned) | 403 |
+| GET | /api/admin/users | JWT (Admin/Mod) | `?q=&status=&cursor=&limit=(1–100)` → `{ items, nextCursor }` | 403 |
+| GET | /api/admin/users/search | JWT (Admin) | `?q=(min 2)&limit=(1–50)` | 403 |
+| PATCH | /api/admin/users/:id/status | JWT (Admin/Mod) | `{ status: active\|suspended\|banned }` (révoque refresh tokens si ≠ active) | 403 (self / moderator vs staff), 404 |
+| PATCH | /api/admin/users/:id | JWT (Admin) | `{ displayName?, firstName?, lastName?, city?, countryCode?, bio?, role? }` | 403 (self role), 404 |
+| DELETE | /api/admin/users/:id | JWT (Admin) | — (cascade + S3) | 403 (self), 404 |
+| PATCH | /api/admin/users/:id/ambassador | JWT (Admin) | `{ value: boolean }` → `{ id, isAmbassador }` | 403, 404 |
+| GET | /api/admin/settings | JWT (Admin/Mod) | — → `{ registrationMode, defaultInviteQuota, inviteExpiryDays, adminMfaRequired }` | 403 |
+| PATCH | /api/admin/settings | JWT (Admin) | `{ registrationMode?, defaultInviteQuota?, inviteExpiryDays?, adminMfaRequired? }` | 400 (MFA non enrôlé), 403 |
 
 ### Review
 
@@ -670,12 +706,36 @@ SUPPRESSION:
 ```
 **Sécurité** : jamais d'export de passwords/MFA/oauthProviderId · messages des pairs référencés par id+nom · suppression cascade complète.
 
+## 7. Connexion staff avec MFA TOTP (double authentification)
+
+```
+ENRÔLEMENT (console admin, une fois) :
+1. POST /api/auth/mfa/enroll → { secret, otpauthUrl } ; le web rend un QR (qrcode) scanné dans Google Authenticator
+2. POST /api/auth/mfa/confirm { code } → vérifie le code live, mfaEnabled=true, renvoie 10 codes de récupération (hashés SHA-256, usage unique) montrés UNE fois
+   └─ secret stocké chiffré AES-256-GCM (mfa-secret.service)
+
+LOGIN EN 2 ÉTAPES :
+1. POST /api/auth/login { email, password } → AuthService détecte mfaEnabled
+   └─ NE renvoie PAS les tokens → { mfaRequired: true, mfaToken } (challenge RS256 court, audience <aud>:mfa)
+2. POST /api/auth/mfa/verify { mfaToken, code, deviceName? } :
+   ├─ valide le challenge + accepte TOTP 6 chiffres (fenêtre ±1) OU code de récupération (consommé, usedAt)
+   ├─ re-vérifie status (banned/suspended) + lockedUntil (la fenêtre de 5min a pu changer)
+   ├─ mauvais code → registerFailedLogin() (même escalade que le mot de passe : 5→15min, 10→30min, 15→60min)
+   └─ succès → TokenService.issueTokens() (format normal { user, tokens })
+
+POLITIQUE admin_mfa_required :
+- Réglage activable via PATCH /api/admin/settings { adminMfaRequired:true } — refusé si l'admin courant n'a pas lui-même enrôlé (anti-auto-lockout)
+- Une fois actif : tout admin/moderator sans MFA est refusé au login → 403 MFA_REQUIRED_NOT_ENROLLED
+```
+**Sécurité** : secret chiffré AES-256-GCM · codes de récupération hashés à usage unique · challenge dédié (audience `:mfa`) non échangeable contre un access token · mauvais codes alimentent le lockout · re-check statut au 2ᵉ facteur.
+
 ### Récap gardes/validation par flux
 
 | Flux | Garde principale | Détail |
 |------|-----------------|--------|
 | Inscription | Zod + Argon2id + rate limit IP | token 24h, code lock |
 | OAuth | JWKS RS256 + email_verified + anti-takeover | nonce anti-replay |
+| MFA staff | challenge `:mfa` + TOTP/recovery + re-check statut | secret AES-256-GCM, mauvais codes → lockout |
 | Posts | EmailVerifiedGuard + S3 ownership + visibilité | private caché, association membres-only, 404 not 403 |
 | Chat | JWT handshake + membership + ownership | rate 30/60s, sanitize, edit 15min |
 | Geo | exclusion `private` + blocks | dedup proximité anti-spam |
@@ -750,12 +810,12 @@ apps/mobile/app/
 | complete-profile.tsx | /complete-profile | Post-OAuth: ville/pays | PATCH /profile/me | Oui |
 | reset-password.tsx | /reset-password | Nouveau mdp (email link) | POST /auth/reset-password | Non |
 | (tabs)/index.tsx | /(tabs)/ | Feed infini + stories + demandes | GET /feed, /stories/feed, /friends/requests | Oui |
-| (tabs)/map.tsx | /(tabs)/map | Carte Leaflet + clustering | GET /geo/members, POST /geo/proximity/ping | Oui |
+| (tabs)/map.tsx | /(tabs)/map | Carte Leaflet + clustering (tap cluster pays/ville → liste membres, sans auto-zoom ; pinch = pins) | GET /geo/members, /geo/country/:code, POST /geo/proximity/ping | Oui |
 | (tabs)/services.tsx | /(tabs)/services | Entraide (filtres) | GET /services | Oui |
 | (tabs)/messages.tsx | /(tabs)/messages | Conversations + amis online | GET /conversations, /friends | Oui |
 | (tabs)/profile.tsx | /(tabs)/profile | Mon profil + menu | GET /profile/me, /friends, /profile/:id/photos, /associations/mine | Oui |
 | chat/new.tsx | /chat/new | Créer conversation | GET /friends | Oui |
-| chat/[id].tsx | /chat/[id] | Thread + média + typing | GET /conversations/:id, /messages | Oui |
+| chat/[id].tsx | /chat/[id] | Thread + média + typing + accusés de lecture (✓ gris/✓✓ bleu) + heure d'envoi ; émet `conversation:focus`/`blur` | GET /conversations/:id, /messages | Oui |
 | post/new.tsx | /post/new | Composer (visibilité) | POST /posts, /profile/me/photos/presign | Oui |
 | post/edit/[id].tsx | /post/edit/[id] | Éditer post | PATCH /posts/:id | Oui |
 | post/[id].tsx | /post/[id] | Post + commentaires | GET /posts/:id, /comments | Oui |
@@ -827,6 +887,9 @@ Permissions `app.json` : iOS NSCamera/NSPhotoLibrary/NSLocationWhenInUse · Andr
 - **Pipeline upload** : pickImage → manipulate (resize/quality par kind) → presign → PUT S3 → publicUrl → POST API.
 - **Prefetch images** : avatars amis après auth (fire-and-forget).
 - **Offline** : `onlineManager` ↔ NetInfo, queries pausées hors-ligne, OfflineBanner.
-- **Typing / read receipts** : `typing:start/stop` (timeout 2.5s), `message:read` (lastReadAt → ✓✓).
+- **Typing / read receipts** : `typing:start/stop` (timeout 2.5s) ; `message:read` → `peerLastReadAt` (monotone) : `createdAt ≤ peerLastReadAt` ⇒ lu (✓✓ bleu `#34B7F1`), sinon envoyé (✓ gris) ; heure `HH:MM`. Fenêtre édition/suppression image 15min (alignée serveur).
+- **Présence en conversation** : `chat/[id].tsx` émet `conversation:focus` à l'ouverture et `conversation:blur` au démontage → le serveur supprime push + badge non-lu tant qu'on regarde le fil.
+- **@mentions** : `MentionInput` (déclencheur `@`, recherche amis debounced 200ms via `GET /friends/search`, sérialise `@[Name](uuid)`) dans le composer post et l'input commentaire ; `MentionText` rend les tokens en liens oranges tappables dans `PostCard`/`CommentItem` (`utils/mentions.ts`).
+- **Badge ambassadeur** : `components/ui/AmbassadorBadge` (étoile dorée `#E8A300`) rendu à côté du badge vérifié partout où `user.isAmbassador` (profil, map, messages, chat, amis, services, posts).
 
 **Build** : Expo SDK 54 · expo-router v6 (typed routes) · bundleId `com.nigerconnect.app` · version 1.3.0 · supportsTablet false · newArchEnabled true · scheme `nigerconnect://` · OAuth Apple+Google · push Expo · EAS Update (runtimeVersion=appVersion) · Sentry initialisé avant le render.
