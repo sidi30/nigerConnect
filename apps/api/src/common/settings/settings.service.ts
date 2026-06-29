@@ -90,6 +90,25 @@ export class SettingsService {
    */
   async isAdminFullVisibility(role: string | undefined): Promise<boolean> {
     if (role !== 'admin') return false;
-    return (await this.getSetting('admin_full_visibility', 'false')) === 'true';
+    return this.isFullVisibilityActive();
+  }
+
+  /**
+   * Effective state of the support override: enabled AND not expired. The toggle
+   * auto-expires (`admin_full_visibility_until`) so it can't be left on forever —
+   * fail-closed: enabled without a future expiry counts as OFF.
+   */
+  async isFullVisibilityActive(): Promise<boolean> {
+    if ((await this.getSetting('admin_full_visibility', 'false')) !== 'true') return false;
+    const until = await this.getSetting('admin_full_visibility_until', '');
+    if (!until) return false;
+    const ts = Date.parse(until);
+    return Number.isFinite(ts) && ts > Date.now();
+  }
+
+  /** ISO expiry of the override (or null when off/expired). */
+  async fullVisibilityUntil(): Promise<string | null> {
+    if (!(await this.isFullVisibilityActive())) return null;
+    return (await this.getSetting('admin_full_visibility_until', '')) || null;
   }
 }

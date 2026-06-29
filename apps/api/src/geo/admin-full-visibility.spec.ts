@@ -21,6 +21,7 @@ function makeGeo(full: boolean, findMany: jest.Mock) {
     redis as never,
     {} as never,
     settings(full) as never,
+    { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
   );
 }
 
@@ -68,6 +69,7 @@ function makeProfile(full: boolean, target: { privacyLevel: string } | null) {
     blocks as never,
     {} as never,
     settings(full) as never,
+    { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
   );
   // loadNetwork hits prisma; stub it so getById resolves.
   jest.spyOn(svc as never, 'loadNetwork').mockResolvedValue({} as never);

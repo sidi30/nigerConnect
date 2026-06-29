@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
+import { AdminAuditService } from '../common/audit/audit.service';
 import {
   USER_PUBLIC_SELECT,
   USER_SELF_SELECT,
@@ -48,6 +49,7 @@ export class ProfileService {
     private readonly blocks: BlockService,
     private readonly mailer: MailerService,
     private readonly settings: SettingsService,
+    private readonly audit: AdminAuditService,
   ) {}
 
   /**
@@ -251,6 +253,9 @@ export class ProfileService {
     if (!fullVis && target.privacyLevel === 'private') {
       throw new NotFoundException('User not found');
     }
+
+    // Audit a profile opened under the support override.
+    if (fullVis) void this.audit.log(viewerId, 'profile_view_override', targetId);
 
     // `friends`-only users still appear in search and on the map, so 404ing
     // their *profile header* (avatar, name, city, country) when a stranger

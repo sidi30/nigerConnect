@@ -26,6 +26,7 @@ function makeService(overrides: {
     {} as never,
     {} as never,
     profile as never,
+    { log: jest.fn(), recent: jest.fn(async () => []) } as never, // audit
     { get: jest.fn(() => 'private-bucket') } as never,
   );
   return { admin, userUpdate, refreshUpdateMany, transaction, findUnique, profile };

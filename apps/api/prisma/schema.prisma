@@ -750,6 +750,21 @@ model PushToken {
   @@map("push_tokens")
 }
 
+// Audit trail of privileged "admin full visibility" support accesses — written
+// when an admin browses the god-mode map or opens a profile that the override
+// (not normal permissions) made visible. adminId stored as a bare uuid (no FK)
+// so the log survives the account's deletion.
+model AdminAccessLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  adminId   String   @map("admin_id") @db.Uuid
+  action    String   @db.VarChar(50) // 'map_full_visibility' | 'profile_view_override'
+  targetId  String?  @map("target_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([action, createdAt])
+  @@map("admin_access_logs")
+}
+
 // Single-use TOTP recovery codes. Stored hashed (sha256); the plaintext is
 // shown to the user exactly once at MFA enrollment. usedAt marks consumption.
 model MfaRecoveryCode {

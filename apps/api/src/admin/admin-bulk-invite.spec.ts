@@ -32,6 +32,7 @@ function makeService(): {
     {} as never, // s3
     {} as never, // settings
     {} as never, // profile (ProfileService — unused in these tests)
+    { log: jest.fn(), recent: jest.fn(async () => []) } as never, // audit
     { get: jest.fn(() => 'private-bucket') } as never, // config
   );
   return { admin, userUpdate, invitationUpdateMany, transaction };

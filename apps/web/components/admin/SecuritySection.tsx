@@ -10,8 +10,10 @@ import {
   mfaDisable,
   fetchAdminSettings,
   patchAdminSettings,
+  fetchFullVisibilityLog,
   AdminApiError,
   type AdminRole,
+  type AdminAccessLogRow,
 } from "@/lib/adminApi";
 import { Card, ErrorBanner, GhostButton, PrimaryButton, Skeleton, StatusChip } from "./ui";
 
@@ -23,6 +25,8 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
   const [mfaEnabled, setMfaEnabled] = useState(false);
   const [required, setRequired] = useState(false);
   const [fullVis, setFullVis] = useState(false);
+  const [fullVisUntil, setFullVisUntil] = useState<string | null>(null);
+  const [accessLog, setAccessLog] = useState<AdminAccessLogRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // enrollment flow
@@ -46,6 +50,12 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
         const settings = await fetchAdminSettings();
         setRequired(settings.adminMfaRequired);
         setFullVis(settings.adminFullVisibility);
+        setFullVisUntil(settings.adminFullVisibilityUntil);
+        if (isAdmin) {
+          fetchFullVisibilityLog(20)
+            .then(setAccessLog)
+            .catch(() => setAccessLog([]));
+        }
       }
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Chargement impossible.");
@@ -125,6 +135,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
     try {
       const s = await patchAdminSettings({ adminFullVisibility: next });
       setFullVis(s.adminFullVisibility);
+      setFullVisUntil(s.adminFullVisibilityUntil);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
     } finally {
@@ -324,6 +335,46 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
                   />
                 </button>
               </div>
+
+              {fullVis && fullVisUntil ? (
+                <p className="text-xs font-semibold text-amber-700 mt-3">
+                  Actif — expire automatiquement à{" "}
+                  {new Date(fullVisUntil).toLocaleString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    day: "2-digit",
+                    month: "short",
+                  })}
+                  .
+                </p>
+              ) : null}
+
+              {accessLog.length > 0 ? (
+                <div className="mt-4 border-t border-[#E8DFD3] pt-3">
+                  <p className="text-xs font-semibold text-[#8A6B4D] mb-2">
+                    Derniers accès en visibilité totale
+                  </p>
+                  <ul className="space-y-1 max-h-48 overflow-auto">
+                    {accessLog.map((r) => (
+                      <li key={r.id} className="text-xs text-[#5A4634] flex justify-between gap-3">
+                        <span>
+                          {r.action === "map_full_visibility"
+                            ? "🗺️ Carte (tout le monde)"
+                            : `👤 Profil ${r.targetId?.slice(0, 8) ?? ""}`}
+                        </span>
+                        <span className="text-[#8A6B4D] tabular-nums shrink-0">
+                          {new Date(r.createdAt).toLocaleString("fr-FR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            day: "2-digit",
+                            month: "short",
+                          })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </Card>
           ) : null}
         </div>

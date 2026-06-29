@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { SettingsService } from '../common/settings/settings.service';
+import { AdminAuditService } from '../common/audit/audit.service';
 import { NotificationService } from '../notification/notification.service';
 import { geocode, setWorldCitiesLookup } from '../common/geo/city-coords';
 import { geohashEncode } from '../common/geo/geohash';
@@ -103,6 +104,7 @@ export class GeoService implements OnModuleInit {
     private readonly redis: RedisService,
     private readonly notifications: NotificationService,
     private readonly settings: SettingsService,
+    private readonly audit: AdminAuditService,
     // @Optional() + default null so the existing unit-test spec (geo.service.spec.ts)
     // can instantiate GeoService with 3 args. In the real DI container,
     // WorldCitiesService is always provided via GeoModule, so this is never null
@@ -145,6 +147,9 @@ export class GeoService implements OnModuleInit {
     // individual pin (bypassing the showOnMap opt-in + private gate). Never cached
     // (it's privacy-sensitive and low-volume) so toggling it off takes effect at once.
     const fullVis = await this.settings.isAdminFullVisibility(viewerRole);
+    // Audit the privileged map browsing (debounced; only at the individual zoom
+    // where the override actually reveals hidden people).
+    if (fullVis && dto.zoom >= 9) void this.audit.logMapOverride(viewerId);
 
     const cacheKey = this.cacheKey(viewerId, dto);
     if (!fullVis) {

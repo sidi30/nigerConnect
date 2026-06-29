@@ -204,6 +204,18 @@ export class AdminController {
     return this.admin.setAmbassador(id, dto.value);
   }
 
+  /**
+   * GET /admin/audit/full-visibility — recent accesses made under the "full
+   * visibility" support override (god-mode map browsing + private-profile opens).
+   * Admin-only.
+   */
+  @Get('audit/full-visibility')
+  @Roles('admin')
+  fullVisibilityLog(@Query('limit') limit?: string) {
+    const lim = limit ? Math.min(200, Math.max(1, Number(limit) || 50)) : 50;
+    return this.admin.fullVisibilityLog(lim);
+  }
+
   // ── User management (§ admin console) ───────────────────────────────────────
 
   /**

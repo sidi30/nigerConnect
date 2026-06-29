@@ -618,6 +618,24 @@ export interface AdminSettings {
   adminMfaRequired: boolean;
   /** Support override: when true, an admin sees everyone on the map + every profile. */
   adminFullVisibility: boolean;
+  /** ISO time the override auto-expires (null when off). */
+  adminFullVisibilityUntil: string | null;
+}
+
+export interface AdminAccessLogRow {
+  id: string;
+  adminId: string;
+  action: "map_full_visibility" | "profile_view_override" | string;
+  targetId: string | null;
+  createdAt: string;
+}
+
+/** GET /admin/audit/full-visibility — recent accesses made under the support override. */
+export function fetchFullVisibilityLog(
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<AdminAccessLogRow[]> {
+  return adminFetch<AdminAccessLogRow[]>(`/admin/audit/full-visibility?limit=${limit}`, { signal });
 }
 
 export type InvitationKind = "single_use" | "reusable";

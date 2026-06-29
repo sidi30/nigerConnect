@@ -10,6 +10,7 @@ import { StorageModule } from './common/storage/storage.module';
 import { MailModule } from './common/mail/mail.module';
 import { AppThrottleModule } from './common/throttle/throttle.module';
 import { SettingsModule } from './common/settings/settings.module';
+import { AuditModule } from './common/audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
@@ -38,6 +39,7 @@ import { InvitationsModule } from './invitations/invitations.module';
     MailModule,
     AppThrottleModule,
     SettingsModule,
+    AuditModule,
     HealthModule,
     AuthModule,
     ProfileModule,

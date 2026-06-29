@@ -6,7 +6,12 @@ import type { Env } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
+import { AdminAuditService } from '../common/audit/audit.service';
 import { ProfileService } from '../profile/profile.service';
+
+// The "full visibility" support override auto-expires after this long so it's
+// never left on by accident. The admin re-toggles it for a fresh window.
+const FULL_VIS_TTL_HOURS = 2;
 
 const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const CODE_LENGTH = 10;
@@ -86,6 +91,7 @@ export class AdminService {
     private readonly s3: S3Service,
     private readonly settings: SettingsService,
     private readonly profile: ProfileService,
+    private readonly audit: AdminAuditService,
     config: ConfigService<Env, true>,
   ) {
     this.privateBucket = config.get('S3_PRIVATE_BUCKET', { infer: true });
@@ -355,6 +361,7 @@ export class AdminService {
     inviteExpiryDays: number;
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
+    adminFullVisibilityUntil: string | null;
   }> {
     const [
       registrationMode,
@@ -362,19 +369,22 @@ export class AdminService {
       inviteExpiryDays,
       adminMfaRequired,
       adminFullVisibility,
+      adminFullVisibilityUntil,
     ] = await Promise.all([
       this.settings.getRegistrationMode(),
       this.settings.getDefaultInviteQuota(),
       this.settings.getInviteExpiryDays(),
       this.settings.getSetting('admin_mfa_required', 'false'),
-      this.settings.getSetting('admin_full_visibility', 'false'),
+      this.settings.isFullVisibilityActive(),
+      this.settings.fullVisibilityUntil(),
     ]);
     return {
       registrationMode,
       defaultInviteQuota,
       inviteExpiryDays,
       adminMfaRequired: adminMfaRequired === 'true',
-      adminFullVisibility: adminFullVisibility === 'true',
+      adminFullVisibility,
+      adminFullVisibilityUntil,
     };
   }
 
@@ -397,6 +407,7 @@ export class AdminService {
     inviteExpiryDays: number;
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
+    adminFullVisibilityUntil: string | null;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -436,6 +447,11 @@ export class AdminService {
           adminId,
         ),
       );
+      // Enabling stamps a fresh auto-expiry window; disabling clears it.
+      const until = dto.adminFullVisibility
+        ? new Date(Date.now() + FULL_VIS_TTL_HOURS * 3_600_000).toISOString()
+        : '';
+      writes.push(this.settings.setSetting('admin_full_visibility_until', until, adminId));
     }
     await Promise.all(writes);
     return this.getSettings();
@@ -630,6 +646,11 @@ export class AdminService {
       },
     });
     return { items: users };
+  }
+
+  /** GET /admin/audit/full-visibility — recent privileged-access audit rows. */
+  async fullVisibilityLog(limit: number) {
+    return this.audit.recent(limit);
   }
 
   /**

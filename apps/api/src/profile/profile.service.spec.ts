@@ -39,7 +39,7 @@ describe('ProfileService', () => {
     const prisma = {
       user: { findUnique: jest.fn(async () => null), update: jest.fn() },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await expect(svc.getMe('u1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -51,7 +51,7 @@ describe('ProfileService', () => {
         update: jest.fn(async () => ({ id: 'u1', bio: 'hello', privacyLevel: 'friends' })),
       },
     };
-    const svc = new ProfileService(prisma as never, redis as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, redis as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.updateMe('u1', { bio: 'hello' });
     expect(result.bio).toBe('hello');
     expect(redis.client.del).toHaveBeenCalledWith('profile:u1');
@@ -63,7 +63,7 @@ describe('ProfileService', () => {
       ...args.data,
     }));
     const prisma = { user: { update } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     // City + country both provided → no need to read the current row.
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR' });
     const data = update.mock.calls[0]![0].data;
@@ -83,7 +83,7 @@ describe('ProfileService', () => {
       ...args.data,
     }));
     const prisma = { user: { update } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR', latitude: 1, longitude: 2 });
     const data = update.mock.calls[0]![0].data;
     expect(data.latitude).toBeGreaterThan(45.7);
@@ -102,7 +102,7 @@ describe('ProfileService', () => {
     }));
     const findUnique = jest.fn(async () => ({ city: null, countryCode: null }));
     const prisma = { user: { update, findUnique } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const exactLat = 48.86543;
     const exactLon = 2.33456;
     await svc.updateMe('u1', { latitude: exactLat, longitude: exactLon });
@@ -121,7 +121,7 @@ describe('ProfileService', () => {
     }));
     const findUnique = jest.fn(async () => ({ city: 'Paris', countryCode: 'FR' }));
     const prisma = { user: { update, findUnique } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await svc.updateMe('u1', { city: 'Marseille' });
     expect(findUnique).toHaveBeenCalled();
     const data = update.mock.calls[0]![0].data;
@@ -140,7 +140,7 @@ describe('ProfileService', () => {
         })),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await expect(svc.getById('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -154,7 +154,7 @@ describe('ProfileService', () => {
         })),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
   });
@@ -173,7 +173,7 @@ describe('ProfileService', () => {
         })),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
     expect(result.privacyLevel).toBe('friends');
@@ -194,7 +194,7 @@ describe('ProfileService', () => {
       },
       block: { findMany: jest.fn(async () => []) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await expect(svc.listFriendsOf('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
     // We must NOT have queried the friendship list — the privacy gate
     // short-circuits before any data is read.
@@ -216,7 +216,7 @@ describe('ProfileService', () => {
       },
       block: { findMany: jest.fn(async () => []) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.listFriendsOf('viewer', 'other');
     expect(result.items).toEqual([]);
     expect(prisma.friendship.findMany).toHaveBeenCalled();
@@ -227,7 +227,7 @@ describe('ProfileService', () => {
     const prisma = {
       user: { update: jest.fn(async (args: { data: { avatarUrl: string | null } }) => ({ id: 'u1', avatarUrl: args.data.avatarUrl })) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.updateAvatar('u1', 'https://cdn.example/users/u1/avatar/a.jpg');
     expect(s3.assertOwnedPublicImage).toHaveBeenCalledWith(
       'https://cdn.example/users/u1/avatar/a.jpg',
@@ -240,7 +240,7 @@ describe('ProfileService', () => {
   it('clears the avatar without hitting S3 when null is passed', async () => {
     const s3 = makeS3();
     const prisma = { user: { update: jest.fn(async () => ({ id: 'u1', avatarUrl: null })) } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await svc.updateAvatar('u1', null);
     expect(s3.assertOwnedPublicImage).not.toHaveBeenCalled();
   });
@@ -252,7 +252,7 @@ describe('ProfileService', () => {
       user: { findMany },
       block: { findMany: jest.fn(async () => []) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await svc.search('viewer', { q: 'foo@bar.com', limit: 20 } as never);
     const where = findMany.mock.calls[0]![0].where;
     const orClause = where.AND.find((c: { OR?: unknown[] }) => Array.isArray(c.OR))!.OR as Array<
@@ -269,7 +269,7 @@ describe('ProfileService', () => {
         delete: jest.fn(),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await expect(svc.deletePhoto('me', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
