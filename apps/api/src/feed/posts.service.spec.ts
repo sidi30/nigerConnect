@@ -36,7 +36,7 @@ function makeS3() {
 describe('PostsService', () => {
   it('rejects association post without associationId', async () => {
     const prisma = { post: {}, friendship: {} } as never;
-    const svc = new PostsService(prisma, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(
       svc.create('u1', { content: 'x', visibility: 'association' } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -48,7 +48,7 @@ describe('PostsService', () => {
       friendship: { findMany: jest.fn(async () => []) },
     };
     const s3 = makeS3();
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never, { notify: jest.fn(async () => undefined) } as never);
     const result = await svc.create('u1', {
       content: 'hello',
       visibility: 'friends',
@@ -64,7 +64,7 @@ describe('PostsService', () => {
       associationMember: { count: jest.fn(async () => 0) },
       post: { create: jest.fn() },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(
       svc.create('u1', { visibility: 'association', associationId: 'a1' } as never),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -78,7 +78,7 @@ describe('PostsService', () => {
         throw new BadRequestException('bad');
       }),
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(
       svc.create('u1', {
         visibility: 'friends',
@@ -102,7 +102,7 @@ describe('PostsService', () => {
     };
     // Sharer is the author so assertCanViewPost passes, isolating the
     // public-only restriction under test.
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(svc.share('u1', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.post.create).not.toHaveBeenCalled();
   });
@@ -119,7 +119,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(svc.update('u1', 'p1', { content: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -135,7 +135,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(svc.softDelete('u1', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -154,7 +154,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks(true) as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks(true) as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(svc.getById('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -170,7 +170,7 @@ describe('PostsService', () => {
       },
       friendship: { count: jest.fn() },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     const result = await svc.assertCanViewPost('me', 'p1');
     expect(result.id).toBe('p1');
     // Must short-circuit — counting friendships against yourself would be
@@ -190,7 +190,7 @@ describe('PostsService', () => {
       },
       friendship: { count: jest.fn(async () => 0) },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(svc.assertCanViewPost('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -206,7 +206,7 @@ describe('PostsService', () => {
       },
       associationMember: { count: jest.fn(async () => 0) },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     await expect(svc.assertCanViewPost('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -221,7 +221,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never);
     const result = await svc.assertCanViewPost('viewer', 'p1');
     expect(result.id).toBe('p1');
   });

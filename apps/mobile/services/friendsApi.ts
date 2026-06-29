@@ -24,6 +24,11 @@ export const friendsApi = {
     const { data } = await api.get<CursorPage<PublicUser>>('/friends', { params: { cursor } });
     return data;
   },
+  /** Type-ahead for @mentions: accepted friends matching a name query. */
+  async search(q: string): Promise<PublicUser[]> {
+    const { data } = await api.get<{ items: PublicUser[] }>('/friends/search', { params: { q } });
+    return data.items;
+  },
   async incoming(): Promise<FriendRequest[]> {
     const { data } = await api.get<FriendRequest[]>('/friends/requests');
     return data;

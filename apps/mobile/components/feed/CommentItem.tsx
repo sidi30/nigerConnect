@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { Comment } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
+import { MentionText } from '../ui/MentionText';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
@@ -89,7 +90,7 @@ export function CommentItem({
               maxLength={1000}
             />
           ) : (
-            <Text style={styles.content}>{comment.content}</Text>
+            <MentionText content={comment.content} style={styles.content} />
           )}
         </View>
         <View style={styles.actions}>

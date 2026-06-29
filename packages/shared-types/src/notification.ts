@@ -18,7 +18,8 @@ export type NotificationType =
   | 'poll_new'
   | 'review_received'
   | 'system'
-  | 'invite_accepted';
+  | 'invite_accepted'
+  | 'mention';
 
 export interface Notification {
   id: string;

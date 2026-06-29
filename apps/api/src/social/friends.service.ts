@@ -159,6 +159,36 @@ export class FriendsService {
     };
   }
 
+  /**
+   * Search a user's ACCEPTED friends by name prefix — backs the @mention
+   * autocomplete (you can only tag people you're friends with). Returns a small
+   * capped list, no pagination (it's a type-ahead).
+   */
+  async searchFriends(userId: string, q: string, limit = 8) {
+    const nameMatch = [
+      { displayName: { contains: q, mode: 'insensitive' as const } },
+      { firstName: { contains: q, mode: 'insensitive' as const } },
+      { lastName: { contains: q, mode: 'insensitive' as const } },
+    ];
+    const friendships = await this.prisma.friendship.findMany({
+      where: {
+        status: 'accepted',
+        OR: [
+          { requesterId: userId, addressee: { OR: nameMatch } },
+          { addresseeId: userId, requester: { OR: nameMatch } },
+        ],
+      },
+      take: limit,
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        requester: { select: PUBLIC_USER_FIELDS },
+        addressee: { select: PUBLIC_USER_FIELDS },
+      },
+    });
+    const items = friendships.map((f) => (f.requesterId === userId ? f.addressee : f.requester));
+    return { items };
+  }
+
   async pendingIncoming(userId: string) {
     return this.prisma.friendship.findMany({
       where: { addresseeId: userId, status: 'pending' },

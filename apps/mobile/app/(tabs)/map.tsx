@@ -188,13 +188,9 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
         const size = m.kind==='country'?60:50;
         const icon = L.divIcon({ html: html, className: '', iconSize: [size,size], iconAnchor: [size/2,size/2] });
         const mk = L.marker([m.lat, m.lon], { icon });
-        mk.on('click', () => {
-          // Country clusters jump straight to the individual-marker threshold
-          // (zoom 9) so members become tappable avatars; city goes one closer.
-          if (m.kind === 'country') map.setView([m.lat, m.lon], 9);
-          else if (m.kind === 'city') map.setView([m.lat, m.lon], 10);
-          post({ type:'select', marker: m });
-        });
+        // Tapping a cluster opens the member LIST (no auto-zoom) — the user zooms
+        // (pinch) only when they want to see people placed on the map.
+        mk.on('click', () => post({ type:'select', marker: m }));
         mk.addTo(markerLayer);
       }
     }
@@ -313,9 +309,17 @@ export default function MapTab() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Debounce the viewport before fetching: a pinch/pan fires many moveend events,
+  // and refetching markers on each one makes the map stutter. 250 ms lets the
+  // gesture settle, so we fetch once when movement stops — smoother, fewer calls.
+  const debouncedBounds = useDebouncedValue(bounds, 250);
   const markersQuery = useQuery({
-    queryKey: ['geo', 'members', bounds, filter],
-    queryFn: () => geoApi.members({ ...bounds, type: filter }),
+    queryKey: ['geo', 'members', debouncedBounds, filter],
+    queryFn: () => geoApi.members({ ...debouncedBounds, type: filter }),
+    // Keep the previous markers on screen while the next tile loads (no flash
+    // of an empty map between viewports).
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
   });
   const statsQuery = useQuery({ queryKey: ['geo', 'stats'], queryFn: () => geoApi.stats() });
 
@@ -653,12 +657,12 @@ function SelectedSheet({
     );
   }
 
-  // Country clusters open a LIST of the visible members in that country (so the
-  // user can browse who's there without zooming in pin-by-pin). City/orphan
-  // clusters keep the lightweight "zoom to members" sheet.
-  if (marker.kind === 'country' && marker.countryCode) {
+  // Country AND city clusters open a LIST of the visible members (browse who's
+  // there without zooming pin-by-pin). Only orphan clusters (no countryCode)
+  // fall back to the lightweight "zoom to members" sheet.
+  if ((marker.kind === 'country' || marker.kind === 'city') && marker.countryCode) {
     return (
-      <CountrySheet
+      <ClusterListSheet
         marker={marker}
         onClose={onClose}
         onOpenProfile={onOpenProfile}
@@ -792,22 +796,28 @@ function IndividualSheet({
 // Gold matches the mobile AmbassadorBadge so the map list reads consistently.
 const AMBASSADOR_GOLD = '#E8A300';
 
-function CountrySheet({
+function ClusterListSheet({
   marker,
   onClose,
   onOpenProfile,
   onZoomToCluster,
 }: {
-  marker: Extract<MapMarker, { kind: 'country' }>;
+  marker: Extract<MapMarker, { kind: 'country' }> | Extract<MapMarker, { kind: 'city' }>;
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
   onZoomToCluster: (lat: number, lon: number, zoom: number) => void;
 }) {
+  const city = marker.kind === 'city' ? marker.city : undefined;
   const membersQuery = useQuery({
-    queryKey: ['geo', 'country', marker.countryCode],
-    queryFn: () => geoApi.countryMembers(marker.countryCode),
+    queryKey: ['geo', 'cluster', marker.countryCode, city ?? ''],
+    queryFn: () => geoApi.countryMembers(marker.countryCode, city ? { city } : undefined),
   });
-  const countryName = CountryNames[marker.countryCode] ?? marker.countryCode;
+  // City clusters show the city name; country clusters the country name.
+  const title = city ?? CountryNames[marker.countryCode] ?? marker.countryCode;
+  const subtitle =
+    marker.kind === 'city'
+      ? `${Flags[marker.countryCode] ?? '🌍'} ${CountryNames[marker.countryCode] ?? marker.countryCode}`
+      : null;
   const items = membersQuery.data?.items ?? [];
 
   return (
@@ -818,8 +828,9 @@ function CountrySheet({
           <Text style={{ fontSize: 22 }}>{Flags[marker.countryCode] ?? '🌍'}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.sheetName}>{countryName}</Text>
+          <Text style={styles.sheetName}>{title}</Text>
           <Text style={styles.sheetMeta}>
+            {subtitle ? `${subtitle} · ` : ''}
             {marker.count} {marker.count > 1 ? 'membres' : 'membre'}
           </Text>
         </View>
@@ -877,7 +888,7 @@ function CountrySheet({
       )}
 
       <Pressable
-        onPress={() => onZoomToCluster(marker.lat, marker.lon, 9)}
+        onPress={() => onZoomToCluster(marker.lat, marker.lon, city ? 12 : 9)}
         style={styles.sheetBtnSecondary}
       >
         <Feather name="map" size={16} color={Colors.orange} />

@@ -38,6 +38,7 @@ describe('CommentsService', () => {
       makeBlocks() as never,
       makeNotifs() as never,
       posts as never,
+      { notify: jest.fn(async () => undefined) } as never,
     );
     await expect(svc.create('u1', 'p1', 'hello')).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -63,6 +64,7 @@ describe('CommentsService', () => {
       makeBlocks() as never,
       makeNotifs() as never,
       makePostsStub() as never,
+      { notify: jest.fn(async () => undefined) } as never,
     );
     await expect(svc.create('u1', 'p1', 'hi', 'c-parent')).rejects.toBeInstanceOf(
       BadRequestException,
@@ -88,6 +90,7 @@ describe('CommentsService', () => {
       makeBlocks() as never,
       makeNotifs() as never,
       makePostsStub() as never,
+      { notify: jest.fn(async () => undefined) } as never,
     );
     const result = await svc.create('u1', 'p1', 'hello');
     expect(result.id).toBe('c1');
@@ -106,6 +109,7 @@ describe('CommentsService', () => {
       makeBlocks() as never,
       makeNotifs() as never,
       posts as never,
+      { notify: jest.fn(async () => undefined) } as never,
     );
     await expect(svc.list('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
     // Must not reach the DB if the gate refused.

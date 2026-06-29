@@ -9,6 +9,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
+import { MentionsService } from './mentions.service';
 import type { CreatePostDto, CreateStoryDto, UpdatePostDto } from './dto/post.dto';
 
 const FEED_CACHE_TTL = 120;
@@ -46,6 +47,7 @@ export class PostsService {
     private readonly redis: RedisService,
     private readonly blocks: BlockService,
     private readonly s3: S3Service,
+    private readonly mentions: MentionsService,
   ) {}
 
   async create(authorId: string, dto: CreatePostDto) {
@@ -103,6 +105,18 @@ export class PostsService {
       });
       await this.invalidateFeedForUsers(memberRows.map((m) => m.userId));
     }
+
+    // Ping any friends @mentioned in the body — best-effort: a notification
+    // failure must never 500 a post that's already been written.
+    await this.mentions
+      .notify({
+        authorId,
+        authorName: post.author?.displayName || post.author?.firstName || 'Un membre',
+        content: post.content,
+        preview: 'vous a mentionné dans une publication',
+        data: { postId: post.id },
+      })
+      .catch(() => undefined);
     return post;
   }
 

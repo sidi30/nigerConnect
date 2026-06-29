@@ -64,6 +64,14 @@ export class SocialController {
     return this.friends.listFriends(me.sub, cursor, lim);
   }
 
+  /** Type-ahead for @mentions: search the user's accepted friends by name. */
+  @Get('friends/search')
+  searchFriends(@CurrentUser() me: JwtUserPayload, @Query('q') q?: string) {
+    const query = (q ?? '').trim();
+    if (query.length < 1) return { items: [] };
+    return this.friends.searchFriends(me.sub, query.slice(0, 100));
+  }
+
   @Get('friends/requests')
   incoming(@CurrentUser() me: JwtUserPayload) {
     return this.friends.pendingIncoming(me.sub);

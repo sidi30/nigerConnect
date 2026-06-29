@@ -8,6 +8,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { BlockService } from '../social/block.service';
 import { NotificationService } from '../notification/notification.service';
 import { PostsService } from './posts.service';
+import { MentionsService } from './mentions.service';
 
 const AUTHOR_SELECT = {
   id: true,
@@ -24,6 +25,7 @@ export class CommentsService {
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
     private readonly posts: PostsService,
+    private readonly mentions: MentionsService,
   ) {}
 
   async create(userId: string, postId: string, content: string, parentId?: string) {
@@ -105,6 +107,19 @@ export class CommentsService {
         });
       }
     }
+
+    // Ping any friends @mentioned in the comment (deduped against the author/
+    // parent-author notifications above is not needed — they get a 'comment'
+    // notif, mentioned friends get a distinct 'mention' one).
+    await this.mentions
+      .notify({
+        authorId: userId,
+        authorName: commenterName,
+        content,
+        preview: 'vous a mentionné dans un commentaire',
+        data: { postId, commentId: comment.id, ...(parentId ? { parentId } : {}) },
+      })
+      .catch(() => undefined);
 
     await this.posts.invalidateFeedCache(post.authorId);
     if (userId !== post.authorId) {

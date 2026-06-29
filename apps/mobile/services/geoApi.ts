@@ -111,10 +111,16 @@ export const geoApi = {
     const { data } = await api.get<GeoStats>('/geo/stats');
     return data;
   },
-  /** List the visible members of a country (paginated). */
-  async countryMembers(code: string, cursor?: string): Promise<CountryMembersPage> {
+  /** List the visible members of a country, optionally narrowed to a city (paginated). */
+  async countryMembers(
+    code: string,
+    opts?: { city?: string; cursor?: string },
+  ): Promise<CountryMembersPage> {
+    const params: Record<string, string> = {};
+    if (opts?.city) params.city = opts.city;
+    if (opts?.cursor) params.cursor = opts.cursor;
     const { data } = await api.get<CountryMembersPage>(`/geo/country/${code}`, {
-      params: cursor ? { cursor } : undefined,
+      params: Object.keys(params).length ? params : undefined,
     });
     return data;
   },

@@ -304,6 +304,7 @@ enum NotificationType {
   review_received
   system
   invite_accepted
+  mention
 }
 
 // ── Parrainage ────────────────────────────────────────────────────

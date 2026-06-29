@@ -16,6 +16,7 @@ import {
 } from './dto/geo.dto';
 
 const countryMembersSchema = z.object({
+  city: z.string().trim().min(1).max(100).optional(),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(30),
 });
@@ -46,7 +47,11 @@ export class GeoController {
     @Param('code') code: string,
     @Query(new ZodValidationPipe(countryMembersSchema)) dto: CountryMembersDto,
   ) {
-    return this.geo.getCountryMembers(me.sub, code, dto.cursor, dto.limit);
+    return this.geo.getCountryMembers(me.sub, code, {
+      city: dto.city,
+      cursor: dto.cursor,
+      limit: dto.limit,
+    });
   }
 
   @Public()

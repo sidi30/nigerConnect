@@ -27,6 +27,7 @@ function routeForNotification(n: Notification): string | null {
       return '/friends';
     case 'like':
     case 'comment':
+    case 'mention':
     case 'poll_new': {
       const p = str('postId');
       return p ? `/post/${p}` : null;
@@ -69,6 +70,7 @@ const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
   friend_accepted: { icon: 'user-check', color: Colors.green },
   like: { icon: 'heart', color: Colors.danger },
   comment: { icon: 'message-circle', color: Colors.info },
+  mention: { icon: 'at-sign', color: Colors.orange },
   message: { icon: 'mail', color: Colors.orange },
   service_response: { icon: 'briefcase', color: Colors.orange },
   association_invite: { icon: 'home', color: Colors.info },

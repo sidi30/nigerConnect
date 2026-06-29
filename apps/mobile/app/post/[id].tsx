@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Comment, CursorPage } from '@nigerconnect/shared-types';
 import { PostCard } from '@/components/feed/PostCard';
 import { CommentItem } from '@/components/feed/CommentItem';
+import { MentionInput } from '@/components/ui/MentionInput';
 import { FeedCardSkeleton, CommentSkeletonList } from '@/components/ui/Skeleton';
 import { feedApi } from '@/services/feedApi';
 import { api } from '@/services/api';
@@ -34,6 +35,8 @@ export default function PostScreen() {
   const inputRef = useRef<TextInput>(null);
 
   const [draft, setDraft] = useState('');
+  // Bumped after a successful send to clear the MentionInput's internal text.
+  const [composerReset, setComposerReset] = useState(0);
   const [replyTo, setReplyTo] = useState<{ id: string; author: string } | null>(null);
 
   const postQuery = useQuery({
@@ -52,6 +55,7 @@ export default function PostScreen() {
       feedApi.comment(id!, input.content, input.parentId),
     onSuccess: () => {
       setDraft('');
+      setComposerReset((n) => n + 1);
       setReplyTo(null);
       void qc.invalidateQueries({ queryKey: ['post', id, 'comments'] });
       void qc.invalidateQueries({ queryKey: ['post', id] });
@@ -215,13 +219,14 @@ export default function PostScreen() {
         ) : null}
 
         <View style={styles.composer}>
-          <TextInput
-            ref={inputRef}
+          <MentionInput
+            inputRef={inputRef}
+            containerStyle={{ flex: 1 }}
             style={styles.input}
-            placeholder={replyTo ? 'Écris une réponse…' : 'Ajouter un commentaire…'}
+            placeholder={replyTo ? 'Écris une réponse… (@ pour mentionner)' : 'Ajouter un commentaire… (@ pour mentionner)'}
             placeholderTextColor={Colors.tan400}
-            value={draft}
-            onChangeText={setDraft}
+            onChangeContent={setDraft}
+            resetSignal={composerReset}
             multiline
             maxLength={1000}
           />

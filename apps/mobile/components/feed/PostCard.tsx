@@ -7,6 +7,7 @@ import { Avatar } from '../ui/Avatar';
 import { NCImage } from '../ui/NCImage';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { AmbassadorBadge } from '../ui/AmbassadorBadge';
+import { MentionText } from '../ui/MentionText';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
@@ -156,7 +157,7 @@ function PostCardImpl({
         </View>
       </View>
 
-      {post.content ? <Text style={styles.content}>{post.content}</Text> : null}
+      {post.content ? <MentionText content={post.content} style={styles.content} /> : null}
 
       {post.media.length > 0 ? (
         <PhotoGallery

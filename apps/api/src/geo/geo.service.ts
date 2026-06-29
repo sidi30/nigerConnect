@@ -304,12 +304,19 @@ export class GeoService implements OnModuleInit {
   }
 
   /**
-   * Paginated list of the visible members of a country. Honours the SAME privacy
-   * rules as individual map markers — only showOnMap + non-private + unblocked
-   * users, never the viewer themselves. `total` is the count of those visible
-   * members (NOT the anonymous cluster tally, which also counts hidden users).
+   * Paginated list of the visible members of a country (optionally narrowed to a
+   * city). Honours the SAME privacy rules as individual map markers — only
+   * showOnMap + non-private + unblocked users, never the viewer themselves.
+   * `total` is the count of those visible members (NOT the anonymous cluster
+   * tally, which also counts hidden users).
    */
-  async getCountryMembers(viewerId: string, code: string, cursor?: string, limit = 30) {
+  async getCountryMembers(
+    viewerId: string,
+    code: string,
+    opts: { city?: string; cursor?: string; limit?: number } = {},
+  ) {
+    const { city, cursor } = opts;
+    const limit = opts.limit ?? 30;
     const countryCode = code.toUpperCase();
     if (!/^[A-Z]{2}$/.test(countryCode)) {
       throw new BadRequestException('Invalid country code');
@@ -319,6 +326,7 @@ export class GeoService implements OnModuleInit {
 
     const where = {
       countryCode,
+      ...(city ? { city } : {}),
       showOnMap: true,
       status: 'active' as const,
       emailVerified: true,

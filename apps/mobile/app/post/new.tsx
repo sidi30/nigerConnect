@@ -10,7 +10,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -20,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { MentionInput } from '@/components/ui/MentionInput';
 import { feedApi } from '@/services/feedApi';
 import { associationsApi } from '@/services/associationsApi';
 import { pickAndUploadImage } from '@/services/uploadService';
@@ -212,12 +212,11 @@ export default function NewPostScreen() {
             </View>
           </View>
 
-          <TextInput
+          <MentionInput
             style={styles.textarea}
-            placeholder="Que veux-tu partager avec la diaspora ?"
+            placeholder="Que veux-tu partager avec la diaspora ? Tape @ pour mentionner un ami"
             placeholderTextColor={Colors.tan400}
-            value={content}
-            onChangeText={setContent}
+            onChangeContent={setContent}
             multiline
             maxLength={MAX_CHARS}
             autoFocus
