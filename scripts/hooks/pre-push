@@ -1,0 +1,86 @@
+#!/bin/sh
+# ─────────────────────────────────────────────────────────────────────────────
+# gwani-pentest — pre-push security gate (repo-managed template)
+# Runs the gwani-pentest agent (READ-ONLY) on the commits being pushed and
+# blocks the push ONLY if the audit's FINAL verdict is BLOCK_DEPLOY (open
+# critical/high).
+#
+# Install/update:  ./scripts/setup-hooks.sh   (copies this into .git/hooks)
+#   Bypass once:   SKIP_PENTEST=1 git push
+#   Disable:       rm .git/hooks/pre-push
+#
+# Fail-open by design: if the `claude` CLI is missing or the audit errors out,
+# the push is allowed (a broken tool must never wedge your workflow). Only an
+# explicit BLOCK_DEPLOY final verdict aborts the push.
+# ─────────────────────────────────────────────────────────────────────────────
+set -u
+
+if [ "${SKIP_PENTEST:-0}" = "1" ]; then
+  echo "[gwani-pentest] skipped (SKIP_PENTEST=1)."
+  exit 0
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[gwani-pentest] 'claude' CLI not on PATH — skipping audit (push allowed)."
+  exit 0
+fi
+
+# Norton MITM root CA so the agent's Node TLS calls (WebSearch/deps) don't fail.
+# Machine-specific; the guard makes it a no-op where the file is absent.
+CA="${NODE_EXTRA_CA_CERTS:-/c/Users/ramzi/.certs/norton-root.pem}"
+[ -f "$CA" ] && export NODE_EXTRA_CA_CERTS="$CA"
+
+ZERO="0000000000000000000000000000000000000000"
+RANGE=""
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha> (one line per ref).
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue                  # branch deletion
+  if [ -z "${remote_sha:-}" ] || [ "$remote_sha" = "$ZERO" ]; then
+    RANGE="${local_sha}~5..${local_sha}"                  # new remote branch
+  else
+    RANGE="${remote_sha}..${local_sha}"
+  fi
+done
+
+[ -z "$RANGE" ] && { echo "[gwani-pentest] nothing to audit."; exit 0; }
+
+echo "[gwani-pentest] auditing $RANGE … (bypass with SKIP_PENTEST=1)"
+
+PROMPT="Use the gwani-pentest subagent to run a READ-ONLY security audit (Mode A) of the git range ${RANGE} in this repository. STRICT report-only: do NOT edit, write code, or commit anything — only read, grep, and safe non-destructive checks. Write SECURITY_REPORT.md at the repo root, then end your final message with EXACTLY one token on its own: BLOCK_DEPLOY if there is any open critical or high finding, otherwise OK_TO_DEPLOY."
+
+OUT="$(claude -p "$PROMPT" \
+        --permission-mode bypassPermissions \
+        --allowedTools "Read,Grep,Glob,Bash,WebSearch,WebFetch" \
+        < /dev/null 2>&1)"
+STATUS=$?
+
+echo "$OUT" | tail -40
+
+if [ "$STATUS" -ne 0 ]; then
+  echo "[gwani-pentest] audit did not complete cleanly — push allowed (fail-open)."
+  exit 0
+fi
+
+# Decide on the FINAL verdict token only. The report body legitimately mentions
+# both tokens in prose ("BLOCK_DEPLOY → not triggered", "verdict: OK_TO_DEPLOY"),
+# so a naive `grep BLOCK_DEPLOY` false-positives. Take the LAST occurrence of
+# either token — the agent is instructed to end its message with exactly one.
+VERDICT="$(printf '%s' "$OUT" | grep -oE 'BLOCK_DEPLOY|OK_TO_DEPLOY' | tail -n1)"
+
+if [ "$VERDICT" = "BLOCK_DEPLOY" ]; then
+  echo ""
+  echo "❌ [gwani-pentest] open critical/high finding(s) — PUSH BLOCKED."
+  echo "   See SECURITY_REPORT.md. Push anyway with: SKIP_PENTEST=1 git push"
+  exit 1
+fi
+
+if [ -z "$VERDICT" ]; then
+  # No clear verdict emitted — fail-open, consistent with the rest of the hook.
+  echo "[gwani-pentest] no verdict token found — push allowed (fail-open)."
+  exit 0
+fi
+
+echo "✅ [gwani-pentest] OK_TO_DEPLOY — push allowed."
+exit 0
