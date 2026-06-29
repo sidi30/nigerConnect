@@ -1,0 +1,52 @@
+# =============================================================================
+# PITR overlay — adds off-site Point-In-Time Recovery to the prod Postgres.
+# =============================================================================
+# Opt-in: this file OVERRIDES the postgres service from docker-compose.prod.yml
+# to use the pgBackRest-enabled image and inject the repo config. It does NOT
+# change anything else. Apply it explicitly:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.pitr.yml --env-file .env.prod up -d postgres
+#
+# Then run the one-time setup (enables archiving + creates the stanza + first
+# backup): ./scripts/pitr-setup.sh   — see docs/DISASTER_RECOVERY.md.
+#
+# Required .env.prod values (the repo is an EXTERNAL S3 bucket, never the local
+# MinIO — a backup on the same VPS dies with the VPS):
+#   PGBACKREST_S3_ENDPOINT   e.g. s3.eu-central-003.backblazeb2.com  OR  <acct>.r2.cloudflarestorage.com
+#   PGBACKREST_S3_BUCKET     e.g. nigerconnect-pgbackup
+#   PGBACKREST_S3_REGION     e.g. eu-central-003 (B2) / auto (R2) / eu-west-1 (S3)
+#   PGBACKREST_S3_KEY        repo access key id
+#   PGBACKREST_S3_KEY_SECRET repo secret
+#   PGBACKREST_S3_URI_STYLE  path (B2/MinIO/R2) or host (AWS S3)
+#   PGBACKREST_CIPHER_PASS   a long random passphrase — encrypts the repo at rest
+# =============================================================================
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
+    image: nigerconnect-postgres:16-pgbackrest
+    environment:
+      # pgBackRest reads PGBACKREST_<OPTION> env vars (dashes -> underscores).
+      PGBACKREST_REPO1_TYPE: s3
+      PGBACKREST_REPO1_PATH: ${PGBACKREST_REPO1_PATH:-/nigerconnect}
+      PGBACKREST_REPO1_S3_ENDPOINT: ${PGBACKREST_S3_ENDPOINT:-}
+      PGBACKREST_REPO1_S3_BUCKET: ${PGBACKREST_S3_BUCKET:-}
+      PGBACKREST_REPO1_S3_REGION: ${PGBACKREST_S3_REGION:-us-east-1}
+      PGBACKREST_REPO1_S3_KEY: ${PGBACKREST_S3_KEY:-}
+      PGBACKREST_REPO1_S3_KEY_SECRET: ${PGBACKREST_S3_KEY_SECRET:-}
+      PGBACKREST_REPO1_S3_URI_STYLE: ${PGBACKREST_S3_URI_STYLE:-path}
+      # Repo encryption at rest (AES-256). A wrong/missing pass makes the repo
+      # unreadable — store PGBACKREST_CIPHER_PASS somewhere safe + off-machine.
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${PGBACKREST_CIPHER_PASS:-}
+      # Retention: keep 4 full backups; expire diffs after 14. WAL needed to
+      # reach the oldest retained full is kept automatically.
+      PGBACKREST_REPO1_RETENTION_FULL: ${PGBACKREST_RETENTION_FULL:-4}
+      PGBACKREST_REPO1_RETENTION_DIFF: ${PGBACKREST_RETENTION_DIFF:-14}
+      PGBACKREST_COMPRESS_TYPE: zst
+      PGBACKREST_PROCESS_MAX: ${PGBACKREST_PROCESS_MAX:-2}
+      PGBACKREST_PG1_PATH: /var/lib/postgresql/data/pgdata
+      PGBACKREST_LOG_PATH: /var/log/pgbackrest
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: detail
