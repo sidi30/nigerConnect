@@ -20,6 +20,7 @@ import {
   fetchSubscribers,
   sendCampaign,
   sendTestCampaign,
+  type CampaignAudience,
   type CampaignStatus,
   type NewsletterCampaign,
   type NewsletterStats,
@@ -254,6 +255,8 @@ export default function NewsletterSection() {
 function Composer({ onCreated }: { onCreated: () => void }) {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [audience, setAudience] = useState<CampaignAudience>("app_users");
+  const [critical, setCritical] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -269,9 +272,13 @@ function Composer({ onCreated }: { onCreated: () => void }) {
         subject: subject.trim(),
         bodyHtml: textToHtml(message),
         bodyText: message.trim(),
+        audience,
+        // critical only meaningful for app users
+        critical: audience === "app_users" ? critical : false,
       });
       setSubject("");
       setMessage("");
+      setCritical(false);
       onCreated();
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Échec de la création.");
@@ -324,6 +331,62 @@ function Composer({ onCreated }: { onCreated: () => void }) {
             Laisse une ligne vide pour séparer les paragraphes.
           </p>
         </div>
+        <div>
+          <label className="block text-xs font-semibold text-[#5A4634] mb-1">
+            Destinataires
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setAudience("app_users")}
+              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                audience === "app_users"
+                  ? "border-[#E05206] bg-[#FFF4EC] text-[#1A0F0A]"
+                  : "border-[#E8DFD3] bg-[#FDFBF7] text-[#5A4634]"
+              }`}
+            >
+              <span className="font-semibold">Utilisateurs de l&apos;app</span>
+              <span className="block text-xs text-[#8A6B4D]">
+                Notification in-app + push + email
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAudience("subscribers");
+                setCritical(false);
+              }}
+              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                audience === "subscribers"
+                  ? "border-[#E05206] bg-[#FFF4EC] text-[#1A0F0A]"
+                  : "border-[#E8DFD3] bg-[#FDFBF7] text-[#5A4634]"
+              }`}
+            >
+              <span className="font-semibold">Liste email (waitlist)</span>
+              <span className="block text-xs text-[#8A6B4D]">
+                Abonnés publics, email uniquement
+              </span>
+            </button>
+          </div>
+        </div>
+        {audience === "app_users" ? (
+          <label className="flex items-start gap-2 rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={critical}
+              onChange={(e) => setCritical(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[#E05206]"
+            />
+            <span className="text-sm text-[#1A0F0A]">
+              <span className="font-semibold">Message important (service)</span>
+              <span className="block text-xs text-[#8A6B4D]">
+                Touche TOUS les comptes actifs, même ceux qui ont désactivé les
+                newsletters. À réserver aux annonces critiques (sécurité,
+                maintenance).
+              </span>
+            </span>
+          </label>
+        ) : null}
         {error ? <ErrorBanner message={error} /> : null}
         <div className="flex justify-end">
           <PrimaryButton onClick={create} disabled={busy}>
@@ -365,9 +428,15 @@ function CampaignRow({
   }
 
   async function onSend() {
+    const target =
+      campaign.audience === "app_users"
+        ? campaign.critical
+          ? "TOUS les comptes actifs (message important, ignore les désinscriptions)"
+          : "les utilisateurs de l'app ayant accepté les newsletters"
+        : "tous les abonnés email";
     if (
       !window.confirm(
-        `Envoyer « ${campaign.subject} » à tous les abonnés ? Action irréversible.`,
+        `Envoyer « ${campaign.subject} » à ${target} ? Action irréversible.`,
       )
     )
       return;
@@ -414,6 +483,12 @@ function CampaignRow({
             <StatusChip tone={STATUS_TONE[campaign.status]}>
               {STATUS_LABEL[campaign.status]}
             </StatusChip>
+            <StatusChip tone={campaign.audience === "app_users" ? "amber" : "neutral"}>
+              {campaign.audience === "app_users" ? "App" : "Email"}
+            </StatusChip>
+            {campaign.critical ? (
+              <StatusChip tone="red">Important</StatusChip>
+            ) : null}
           </div>
           <p className="text-xs text-[#8A6B4D] mt-1">
             Créée le {formatDate(campaign.createdAt)}

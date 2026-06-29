@@ -84,6 +84,7 @@ const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
   poll_new: { icon: 'bar-chart-2', color: Colors.info },
   review_received: { icon: 'star', color: Colors.orange },
   invite_accepted: { icon: 'gift', color: Colors.green },
+  announcement: { icon: 'volume-2', color: Colors.orange },
   system: { icon: 'volume-2', color: Colors.tan500 },
 };
 

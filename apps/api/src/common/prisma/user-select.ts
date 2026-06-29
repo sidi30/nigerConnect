@@ -30,6 +30,7 @@ export const USER_SELF_SELECT = {
   showOnMap: true,
   proximityAlerts: true,
   proximityRadius: true,
+  newsletterOptIn: true,
   languages: true,
   privacyLevel: true,
   emailVerified: true,

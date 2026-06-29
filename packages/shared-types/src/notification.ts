@@ -19,7 +19,8 @@ export type NotificationType =
   | 'review_received'
   | 'system'
   | 'invite_accepted'
-  | 'mention';
+  | 'mention'
+  | 'announcement';
 
 export interface Notification {
   id: string;

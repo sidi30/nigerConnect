@@ -28,6 +28,8 @@ export interface User extends PublicUser {
   showOnMap: boolean;
   proximityAlerts: boolean;
   proximityRadius: number;
+  /** Receive NigerConnect announcements & newsletter (opt-out, default true). */
+  newsletterOptIn: boolean;
   languages: string[];
   privacyLevel: PrivacyLevel;
   emailVerified: boolean;

@@ -3,8 +3,10 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import {
+  appUnsubscribeSchema,
   subscribeSchema,
   unsubscribeSchema,
+  type AppUnsubscribeDto,
   type SubscribeDto,
   type UnsubscribeDto,
 } from './dto/newsletter.dto';
@@ -41,6 +43,46 @@ export class NewsletterController {
     return ok ? this.page(SUCCESS_TITLE, SUCCESS_BODY) : this.page(ERROR_TITLE, ERROR_BODY);
   }
 
+  // RFC 8058 one-click: Gmail/Outlook POST to the List-Unsubscribe URL (body
+  // List-Unsubscribe=One-Click). Same effect as the GET, no HTML body needed.
+  @Public()
+  @Post('unsubscribe')
+  @HttpCode(200)
+  async unsubscribePost(
+    @Query(new ZodValidationPipe(unsubscribeSchema)) dto: UnsubscribeDto,
+  ): Promise<{ ok: boolean }> {
+    const ok = await this.newsletter.unsubscribe(dto.token);
+    return { ok };
+  }
+
+  /**
+   * App-user opt-out from the link in announcement emails — flips
+   * newsletterOptIn off. Critical service notices ignore this flag, so security
+   * and outage messages still reach the user.
+   */
+  @Public()
+  @Get('app-unsubscribe')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async appUnsubscribe(
+    @Query(new ZodValidationPipe(appUnsubscribeSchema)) dto: AppUnsubscribeDto,
+  ): Promise<string> {
+    const ok = await this.newsletter.appUnsubscribe(dto.token);
+    return ok
+      ? this.page(SUCCESS_TITLE, APP_SUCCESS_BODY)
+      : this.page(ERROR_TITLE, ERROR_BODY);
+  }
+
+  // RFC 8058 one-click POST counterpart of app-unsubscribe.
+  @Public()
+  @Post('app-unsubscribe')
+  @HttpCode(200)
+  async appUnsubscribePost(
+    @Query(new ZodValidationPipe(appUnsubscribeSchema)) dto: AppUnsubscribeDto,
+  ): Promise<{ ok: boolean }> {
+    const ok = await this.newsletter.appUnsubscribe(dto.token);
+    return { ok };
+  }
+
   /** Minimal self-contained branded confirmation page (no external assets). */
   private page(title: string, body: string): string {
     return `<!DOCTYPE html>
@@ -60,6 +102,8 @@ export class NewsletterController {
 const SUCCESS_TITLE = 'Désinscription confirmée';
 const SUCCESS_BODY =
   "Tu ne recevras plus d'emails de la newsletter NigerConnect. À bientôt&nbsp;! 🇳🇪";
+const APP_SUCCESS_BODY =
+  "Tu ne recevras plus les annonces et nouveautés de NigerConnect par email. Tu peux réactiver ce choix à tout moment dans Réglages&nbsp;› Notifications. Les messages importants de sécurité te seront toujours envoyés. 🇳🇪";
 const ERROR_TITLE = 'Lien invalide';
 const ERROR_BODY =
   'Ce lien de désinscription est invalide ou a expiré. Contacte-nous si le problème persiste.';

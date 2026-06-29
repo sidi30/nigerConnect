@@ -77,6 +77,12 @@ model User {
   // proximityAlerts, which is likewise opt-in.
   showOnMap       Boolean  @default(false) @map("show_on_map")
   proximityAlerts Boolean  @default(false) @map("proximity_alerts")
+  // Receive NigerConnect news/announcements (in-app + push + email). Opt-OUT:
+  // ON by default; the user toggles it in settings. Critical service messages
+  // (security/outage/RGPD) ignore this flag. newsletterToken backs the one-click
+  // email unsubscribe that flips this off.
+  newsletterOptIn Boolean  @default(true) @map("newsletter_opt_in")
+  newsletterToken String?  @unique @map("newsletter_token") @db.VarChar(64)
   proximityRadius Int      @default(100) @map("proximity_radius")
 
   // Ephemeral, PRIVATE proximity-matching position. Written by the foreground
@@ -305,6 +311,7 @@ enum NotificationType {
   system
   invite_accepted
   mention
+  announcement
 }
 
 // ── Parrainage ────────────────────────────────────────────────────
@@ -956,6 +963,12 @@ model NewsletterCampaign {
   // Inner HTML body (wrapped in the branded layout at send time) + plain-text part.
   bodyHtml        String         @map("body_html") @db.Text
   bodyText        String         @map("body_text") @db.Text
+  // 'subscribers' = the standalone landing email list (default, legacy behaviour);
+  // 'app_users'   = registered app users — delivered as in-app notification + push
+  //                 + branded email, gated by User.newsletterOptIn unless critical.
+  audience        String         @default("subscribers") @db.VarChar(20)
+  // Critical service message: reaches ALL active users regardless of opt-in.
+  critical        Boolean        @default(false)
   status          CampaignStatus @default(draft)
   totalRecipients Int            @default(0) @map("total_recipients")
   sentCount       Int            @default(0) @map("sent_count")

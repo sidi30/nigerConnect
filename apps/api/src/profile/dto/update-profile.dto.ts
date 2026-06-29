@@ -23,6 +23,7 @@ export const updateProfileSchema = z.object({
     .optional(),
   languages: z.array(z.string().min(2).max(5)).max(10).optional(),
   privacyLevel: z.enum(['public', 'friends', 'private']).optional(),
+  newsletterOptIn: z.boolean().optional(),
 });
 
 export type UpdateProfileDto = z.infer<typeof updateProfileSchema>;

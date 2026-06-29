@@ -26,6 +26,7 @@ export default function PrivacyScreen() {
   const [showOnMap, setShowOnMap] = useState(user?.showOnMap ?? false);
   const [proximityAlerts, setProximityAlerts] = useState(user?.proximityAlerts ?? false);
   const [proximityRadius, setProximityRadius] = useState(user?.proximityRadius ?? 500);
+  const [newsletterOptIn, setNewsletterOptIn] = useState(user?.newsletterOptIn ?? true);
 
   const blocksQuery = useQuery({
     queryKey: ['blocks'],
@@ -48,10 +49,22 @@ export default function PrivacyScreen() {
     },
   });
 
+  const saveNewsletterMut = useMutation({
+    mutationFn: (input: { newsletterOptIn: boolean }) => profileApi.updateMe(input),
+    onSuccess: (updated) => {
+      setUser(updated);
+    },
+  });
+
   const unblockMut = useMutation({
     mutationFn: (userId: string) => blocksApi.unblock(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['blocks'] }),
   });
+
+  function saveNewsletter(optIn: boolean) {
+    setNewsletterOptIn(optIn);
+    saveNewsletterMut.mutate({ newsletterOptIn: optIn });
+  }
 
   function savePrivacy(level: 'public' | 'friends' | 'private', mapVisible: boolean) {
     setPrivacyLevel(level);
@@ -175,6 +188,25 @@ export default function PrivacyScreen() {
             </Pressable>
           );
         })}
+      </View>
+
+      <Text style={styles.section}>Annonces & nouveautés</Text>
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.switchLabel}>Recevoir les annonces NigerConnect</Text>
+          <Text style={styles.switchHint}>
+            Nouveautés, événements et infos de la communauté (notification dans
+            l&apos;app et par email). Les messages importants de sécurité te seront
+            toujours envoyés.
+          </Text>
+        </View>
+        <Switch
+          value={newsletterOptIn}
+          disabled={saveNewsletterMut.isPending}
+          onValueChange={saveNewsletter}
+          trackColor={{ false: Colors.tan300, true: Colors.orange }}
+          thumbColor={Colors.white}
+        />
       </View>
 
       <Text style={styles.section}>Mes données (RGPD)</Text>

@@ -525,12 +525,16 @@ export interface NewsletterStats {
 }
 
 export type CampaignStatus = "draft" | "sending" | "sent" | "failed";
+/** 'subscribers' = public email list; 'app_users' = registered accounts (notif+push+email). */
+export type CampaignAudience = "subscribers" | "app_users";
 
 export interface NewsletterCampaign {
   id: string;
   subject: string;
   bodyHtml: string;
   bodyText: string;
+  audience: CampaignAudience;
+  critical: boolean;
   status: CampaignStatus;
   totalRecipients: number;
   sentCount: number;
@@ -575,6 +579,8 @@ export function createCampaign(input: {
   subject: string;
   bodyHtml: string;
   bodyText: string;
+  audience: CampaignAudience;
+  critical: boolean;
 }): Promise<NewsletterCampaign> {
   return adminFetch<NewsletterCampaign>("/admin/newsletter/campaigns", {
     method: "POST",
