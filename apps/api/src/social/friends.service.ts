@@ -170,22 +170,35 @@ export class FriendsService {
       { firstName: { contains: q, mode: 'insensitive' as const } },
       { lastName: { contains: q, mode: 'insensitive' as const } },
     ];
-    const friendships = await this.prisma.friendship.findMany({
-      where: {
-        status: 'accepted',
-        OR: [
-          { requesterId: userId, addressee: { OR: nameMatch } },
-          { addresseeId: userId, requester: { OR: nameMatch } },
-        ],
-      },
-      take: limit,
-      orderBy: { updatedAt: 'desc' },
-      include: {
-        requester: { select: PUBLIC_USER_FIELDS },
-        addressee: { select: PUBLIC_USER_FIELDS },
-      },
-    });
-    const items = friendships.map((f) => (f.requesterId === userId ? f.addressee : f.requester));
+    const [friendships, blockedRows] = await Promise.all([
+      this.prisma.friendship.findMany({
+        where: {
+          status: 'accepted',
+          OR: [
+            { requesterId: userId, addressee: { OR: nameMatch } },
+            { addresseeId: userId, requester: { OR: nameMatch } },
+          ],
+        },
+        take: limit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          requester: { select: PUBLIC_USER_FIELDS },
+          addressee: { select: PUBLIC_USER_FIELDS },
+        },
+      }),
+      // Defense-in-depth: never suggest someone in a block relationship with the
+      // viewer (either direction), even if a stale friendship row survived.
+      this.prisma.block.findMany({
+        where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+        select: { blockerId: true, blockedId: true },
+      }),
+    ]);
+    const blocked = new Set(
+      blockedRows.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId)),
+    );
+    const items = friendships
+      .map((f) => (f.requesterId === userId ? f.addressee : f.requester))
+      .filter((u) => !blocked.has(u.id));
     return { items };
   }
 
