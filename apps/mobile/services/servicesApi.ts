@@ -7,6 +7,7 @@ export const servicesApi = {
     country?: string;
     urgency?: ServiceUrgency;
     status?: ServiceStatus;
+    q?: string;
     sort?: 'recent' | 'urgent_first';
     cursor?: string;
     limit?: number;

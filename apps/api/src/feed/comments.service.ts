@@ -157,10 +157,110 @@ export class CommentsService {
     });
     const hasMore = roots.length > limit;
     const items = hasMore ? roots.slice(0, limit) : roots;
+
+    // Annotate every comment in the (≤3-level) tree with isLikedByMe in a single
+    // query: collect all ids, fetch the viewer's likes, then map onto the tree.
+    const ids: string[] = [];
+    for (const root of items) {
+      ids.push(root.id);
+      for (const lvl2 of root.replies) {
+        ids.push(lvl2.id);
+        for (const lvl3 of lvl2.replies) ids.push(lvl3.id);
+      }
+    }
+    const likedSet = await this.likedCommentIds(viewerId, ids);
+    const decorate = <T extends { id: string }>(c: T) => ({
+      ...c,
+      isLikedByMe: likedSet.has(c.id),
+    });
+    const decorated = items.map((root) => ({
+      ...decorate(root),
+      replies: root.replies.map((lvl2) => ({
+        ...decorate(lvl2),
+        replies: lvl2.replies.map((lvl3) => decorate(lvl3)),
+      })),
+    }));
+
     return {
-      items,
+      items: decorated,
       nextCursor: hasMore ? items[items.length - 1]!.id : null,
     };
+  }
+
+  /** Subset of `commentIds` the viewer has liked (empty set if none/no ids). */
+  private async likedCommentIds(
+    viewerId: string,
+    commentIds: string[],
+  ): Promise<Set<string>> {
+    if (commentIds.length === 0) return new Set();
+    const rows = await this.prisma.commentLike.findMany({
+      where: { userId: viewerId, commentId: { in: commentIds } },
+      select: { commentId: true },
+    });
+    return new Set(rows.map((r) => r.commentId));
+  }
+
+  /**
+   * Toggle the viewer's like on a comment. Visibility-gated like everything else
+   * (you must be able to see the parent post). Atomic: the CommentLike row and
+   * the denormalised likeCount move together, so the counter can't drift.
+   */
+  async toggleLike(
+    userId: string,
+    commentId: string,
+  ): Promise<{ liked: boolean; count: number }> {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true, postId: true, authorId: true, deletedAt: true },
+    });
+    if (!comment || comment.deletedAt) throw new NotFoundException('Comment not found');
+    await this.posts.assertCanViewPost(userId, comment.postId);
+
+    const existing = await this.prisma.commentLike.findUnique({
+      where: { userId_commentId: { userId, commentId } },
+    });
+
+    if (existing) {
+      const [, updated] = await this.prisma.$transaction([
+        this.prisma.commentLike.delete({
+          where: { userId_commentId: { userId, commentId } },
+        }),
+        this.prisma.comment.update({
+          where: { id: commentId },
+          data: { likeCount: { decrement: 1 } },
+          select: { likeCount: true },
+        }),
+      ]);
+      return { liked: false, count: updated.likeCount };
+    }
+
+    const [, updated] = await this.prisma.$transaction([
+      this.prisma.commentLike.create({ data: { userId, commentId } }),
+      this.prisma.comment.update({
+        where: { id: commentId },
+        data: { likeCount: { increment: 1 } },
+        select: { likeCount: true },
+      }),
+    ]);
+
+    // Notify the comment author (engagement), never self.
+    if (comment.authorId !== userId) {
+      const liker = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, firstName: true },
+      });
+      const likerName = liker?.displayName || liker?.firstName || 'Un membre';
+      await this.notifications
+        .create({
+          userId: comment.authorId,
+          actorId: userId,
+          type: 'like',
+          title: `${likerName} a aimé votre commentaire`,
+          data: { postId: comment.postId, commentId },
+        })
+        .catch(() => undefined);
+    }
+    return { liked: true, count: updated.likeCount };
   }
 
   async edit(userId: string, commentId: string, content: string) {

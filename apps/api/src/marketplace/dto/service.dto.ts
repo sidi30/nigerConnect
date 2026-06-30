@@ -27,6 +27,9 @@ export const listServicesSchema = z.object({
   country: z.string().length(2).toUpperCase().optional(),
   urgency: z.enum(['urgent', 'normal']).optional(),
   status: z.enum(['open', 'in_progress', 'resolved', 'closed']).optional(),
+  // Free-text search over title/description/city (case-insensitive). Trimmed,
+  // bounded; combinable with the category/country filters.
+  q: z.string().trim().min(1).max(100).optional(),
   sort: z.enum(['recent', 'urgent_first']).default('recent'),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),

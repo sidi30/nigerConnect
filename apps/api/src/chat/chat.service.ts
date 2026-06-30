@@ -64,6 +64,24 @@ const MEMBER_SELECT = {
   isAmbassador: true,
 } as const satisfies Prisma.UserSelect;
 
+// Nested snippet of the quoted message for swipe-to-reply. Just enough to render
+// the quote bubble (author + short excerpt); content is nulled for deleted ones
+// by the tombstone logic on the client.
+const REPLY_TO_INCLUDE = {
+  select: {
+    id: true,
+    content: true,
+    messageType: true,
+    deletedAt: true,
+    sender: { select: MEMBER_SELECT },
+  },
+} as const;
+
+const MESSAGE_INCLUDE = {
+  sender: { select: MEMBER_SELECT },
+  replyTo: REPLY_TO_INCLUDE,
+} as const;
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -125,9 +143,7 @@ export class ChatService {
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },
-      include: {
-        sender: { select: MEMBER_SELECT },
-      },
+      include: MESSAGE_INCLUDE,
     });
     const hasMore = messages.length > limit;
     const items = hasMore ? messages.slice(0, limit) : messages;
@@ -287,7 +303,7 @@ export class ChatService {
           mediaUrl: cleanMediaUrl ?? null,
           replyToId: payload.replyToId ?? null,
         },
-        include: { sender: { select: MEMBER_SELECT } },
+        include: MESSAGE_INCLUDE,
       }),
       this.prisma.conversation.update({
         where: { id: conversationId },
@@ -394,7 +410,7 @@ export class ChatService {
     const message = await this.prisma.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), content: null, mediaUrl: null },
-      include: { sender: { select: MEMBER_SELECT } },
+      include: MESSAGE_INCLUDE,
     });
     await this.syncPreview(msg.conversationId);
     const memberIds = await this.getMemberIds(msg.conversationId);
@@ -435,7 +451,7 @@ export class ChatService {
     const message = await this.prisma.message.update({
       where: { id: messageId },
       data: { content: clean && clean.length > 0 ? clean : null, editedAt: new Date() },
-      include: { sender: { select: MEMBER_SELECT } },
+      include: MESSAGE_INCLUDE,
     });
     await this.syncPreview(msg.conversationId);
     const memberIds = await this.getMemberIds(msg.conversationId);

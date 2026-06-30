@@ -158,6 +158,14 @@ export class FeedController {
     await this.comments.softDelete(me.sub, id);
   }
 
+  @Post('comments/:id/like')
+  likeComment(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.comments.toggleLike(me.sub, id);
+  }
+
   @Post('posts/:id/share')
   share(
     @CurrentUser() me: JwtUserPayload,

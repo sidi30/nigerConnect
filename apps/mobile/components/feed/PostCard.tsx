@@ -8,6 +8,7 @@ import { NCImage } from '../ui/NCImage';
 import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { AmbassadorBadge } from '../ui/AmbassadorBadge';
 import { MentionText } from '../ui/MentionText';
+import { LikersSheet } from './LikersSheet';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
@@ -61,6 +62,7 @@ function PostCardImpl({
   const [liked, setLiked] = useState(post.isLikedByMe);
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [likersOpen, setLikersOpen] = useState(false);
 
   const isOwn = currentUserId && currentUserId === author.id;
   const goToAuthor = () => router.push(`/user/${author.id}`);
@@ -196,6 +198,24 @@ function PostCardImpl({
         />
         <ActionButton name="share-2" accessibilityLabel="Partager" />
       </View>
+
+      {likeCount > 0 ? (
+        <Pressable
+          onPress={() => setLikersOpen(true)}
+          hitSlop={6}
+          accessibilityLabel="Voir qui a aimé"
+        >
+          <Text style={styles.likersLink}>
+            {likeCount === 1 ? '1 j’aime' : `${likeCount} j’aime`}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      <LikersSheet
+        postId={post.id}
+        visible={likersOpen}
+        onClose={() => setLikersOpen(false)}
+      />
     </View>
   );
 }
@@ -368,6 +388,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.tan200,
     marginTop: Spacing.sm,
+  },
+  likersLink: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: '700',
+    color: Colors.brown,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
   action: {
     flexDirection: 'row',

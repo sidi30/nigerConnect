@@ -44,6 +44,13 @@ export class ServicesService {
     if (dto.category) where.category = dto.category;
     if (dto.country) where.countryCode = dto.country;
     if (dto.urgency) where.urgency = dto.urgency;
+    if (dto.q) {
+      where.OR = [
+        { title: { contains: dto.q, mode: 'insensitive' } },
+        { description: { contains: dto.q, mode: 'insensitive' } },
+        { city: { contains: dto.q, mode: 'insensitive' } },
+      ];
+    }
     where.status = dto.status ?? 'open';
 
     const orderBy: Prisma.ServiceRequestOrderByWithRelationInput[] =

@@ -6,6 +6,12 @@ export interface StoryGroup {
   stories: Post[];
 }
 
+/** Minimal user shape returned by the post-likers endpoint. */
+export type LikerUser = Pick<
+  PublicUser,
+  'id' | 'displayName' | 'firstName' | 'lastName' | 'avatarUrl'
+>;
+
 export const feedApi = {
   async stories(): Promise<StoryGroup[]> {
     const { data } = await api.get<StoryGroup[]>('/stories/feed');
@@ -37,8 +43,22 @@ export const feedApi = {
     return data;
   },
 
+  async getLikers(postId: string, cursor?: string): Promise<CursorPage<LikerUser>> {
+    const { data } = await api.get<CursorPage<LikerUser>>(`/posts/${postId}/likes`, {
+      params: { cursor },
+    });
+    return data;
+  },
+
   async comment(postId: string, content: string, parentId?: string): Promise<Comment> {
     const { data } = await api.post<Comment>(`/posts/${postId}/comments`, { content, parentId });
+    return data;
+  },
+
+  async toggleCommentLike(commentId: string): Promise<{ liked: boolean; count: number }> {
+    const { data } = await api.post<{ liked: boolean; count: number }>(
+      `/comments/${commentId}/like`,
+    );
     return data;
   },
 

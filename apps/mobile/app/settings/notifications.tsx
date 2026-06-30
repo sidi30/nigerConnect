@@ -22,9 +22,16 @@ function routeForNotification(n: Notification): string | null {
       const c = str('conversationId');
       return c ? `/chat/${c}` : null;
     }
-    case 'friend_request':
-    case 'friend_accepted':
-      return '/friends';
+    case 'friend_request': {
+      // Open the requester's profile (accept/refuse lives there); fall back to
+      // the friends list for legacy notifications without requesterId.
+      const r = str('requesterId') ?? str('actorId');
+      return r ? `/user/${r}` : '/friends';
+    }
+    case 'friend_accepted': {
+      const a = str('actorId');
+      return a ? `/user/${a}` : '/friends';
+    }
     case 'like':
     case 'comment':
     case 'mention':

@@ -136,6 +136,7 @@ model User {
   blocksReceived          Block[]              @relation("BlockBlocked")
   posts                   Post[]
   likes                   Like[]
+  commentLikes            CommentLike[]
   comments                Comment[]
   conversationMemberships ConversationMember[]
   conversationsCreated    Conversation[]       @relation("ConversationCreator")
@@ -483,12 +484,25 @@ model Comment {
   replies   Comment[] @relation("CommentReplies")
   content   String    @db.Text
   likeCount Int       @default(0) @map("like_count")
+  likes     CommentLike[]
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([postId, createdAt])
   @@index([parentId])
   @@map("comments")
+}
+
+model CommentLike {
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String   @map("comment_id") @db.Uuid
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([userId, commentId])
+  @@index([commentId])
+  @@map("comment_likes")
 }
 
 model Notification {

@@ -34,6 +34,15 @@ export interface Conversation {
   createdAt: string;
 }
 
+/** Lightweight snippet of the quoted message, for the swipe-to-reply quote bubble. */
+export interface MessageReplyPreview {
+  id: string;
+  content: string | null;
+  messageType: MessageType;
+  deletedAt: string | null;
+  sender: PublicUser;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -42,6 +51,8 @@ export interface Message {
   messageType: MessageType;
   mediaUrl: string | null;
   replyToId: string | null;
+  /** Hydrated quoted message when replyToId is set (absent on older payloads). */
+  replyTo?: MessageReplyPreview | null;
   deletedAt: string | null;
   editedAt: string | null;
   createdAt: string;

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -47,27 +48,41 @@ export default function ServicesTab() {
   const [countryFilter, setCountryFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<SortOption>('recent');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [search, setSearch] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+
+  // Debounce the text input so we don't hit the API on every keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQ(search.trim()), 350);
+    return () => clearTimeout(id);
+  }, [search]);
 
   const servicesQuery = useQuery({
-    queryKey: ['services', { cat: selectedCat, urg: urgencyFilter, country: countryFilter, sort }],
+    queryKey: [
+      'services',
+      { cat: selectedCat, urg: urgencyFilter, country: countryFilter, sort, q: debouncedQ },
+    ],
     queryFn: () =>
       servicesApi.list({
         category: selectedCat ?? undefined,
         urgency: urgencyFilter ?? undefined,
         country: countryFilter ?? undefined,
+        q: debouncedQ || undefined,
         sort,
       }),
   });
 
   const services = servicesQuery.data?.items ?? [];
 
-  const hasFilters = selectedCat || urgencyFilter || countryFilter;
+  const hasFilters = selectedCat || urgencyFilter || countryFilter || debouncedQ;
 
   function resetFilters() {
     setSelectedCat(null);
     setUrgencyFilter(null);
     setCountryFilter(null);
     setSort('recent');
+    setSearch('');
+    setDebouncedQ('');
   }
 
   return (
@@ -85,6 +100,24 @@ export default function ServicesTab() {
           />
           <Text style={styles.sortLabel}>{sort === 'recent' ? 'Récent' : 'Urgent'}</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.searchRow}>
+        <Feather name="search" size={16} color={Colors.tan500} />
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Rechercher un service…"
+          placeholderTextColor={Colors.tan400}
+          style={styles.searchInput}
+          returnKeyType="search"
+          autoCorrect={false}
+        />
+        {search.length > 0 ? (
+          <Pressable onPress={() => setSearch('')} hitSlop={8}>
+            <Feather name="x-circle" size={16} color={Colors.tan400} />
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -321,6 +354,25 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.tan100,
   },
   sortLabel: { fontSize: Typography.sizes.xs + 1, fontWeight: '700', color: Colors.tan600 },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: Typography.sizes.md,
+    color: Colors.brown,
+    padding: 0,
+  },
   catStrip: { marginTop: Spacing.sm },
   catStripContent: {
     paddingHorizontal: Spacing.md,

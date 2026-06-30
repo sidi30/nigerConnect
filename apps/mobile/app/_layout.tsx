@@ -232,7 +232,13 @@ function NotificationDeepLink() {
       else if (requestId) router.push(`/services/${requestId}` as never);
       else if (proximityUserId) router.push(`/user/${proximityUserId}` as never);
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
-        router.push('/friends' as never);
+        // Deep-link to the other user's profile (accept/refuse for a request
+        // lives there). requesterId on a request, actorId otherwise; legacy
+        // payloads without either fall back to the friends list.
+        const friendUserId =
+          (typeof data.requesterId === 'string' ? data.requesterId : null) ??
+          (typeof data.actorId === 'string' ? data.actorId : null);
+        router.push((friendUserId ? `/user/${friendUserId}` : '/friends') as never);
       } else if (data.type === 'invite_accepted') {
         // The backend sets actorId = new member — navigate to their profile.
         const actorId = typeof data.actorId === 'string' ? data.actorId : null;

@@ -13,6 +13,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { Image } from 'expo-image';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -98,6 +101,7 @@ function makeOptimisticMessage(args: {
     identityStatus: Message['sender']['identityStatus'];
     isAmbassador: boolean;
   };
+  replyTo?: Message | null;
 }): PendingMessage {
   return {
     id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -118,12 +122,52 @@ function makeOptimisticMessage(args: {
     content: args.content,
     mediaUrl: args.mediaUrl ?? null,
     messageType: args.messageType,
-    replyToId: null,
+    replyToId: args.replyTo?.id ?? null,
+    replyTo: args.replyTo
+      ? {
+          id: args.replyTo.id,
+          content: args.replyTo.content,
+          messageType: args.replyTo.messageType,
+          deletedAt: args.replyTo.deletedAt,
+          sender: args.replyTo.sender,
+        }
+      : null,
     deletedAt: null,
     editedAt: null,
     createdAt: new Date().toISOString(),
     __pending: true,
   };
+}
+
+/**
+ * Wraps a message bubble with a swipe-to-reply gesture (WhatsApp/Instagram).
+ * Dragging the row past the threshold fires onReply, then the row snaps back.
+ * Owns its own ref so it can close itself after triggering.
+ */
+function SwipeToReply({
+  onReply,
+  children,
+}: {
+  onReply: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<SwipeableMethods>(null);
+  return (
+    <ReanimatedSwipeable
+      ref={ref}
+      friction={2}
+      leftThreshold={40}
+      renderLeftActions={() => (
+        <View style={styles.replyAction}>
+          <Feather name="corner-up-left" size={18} color={Colors.orange} />
+        </View>
+      )}
+      onSwipeableWillOpen={onReply}
+      onSwipeableOpen={() => ref.current?.close()}
+    >
+      {children}
+    </ReanimatedSwipeable>
+  );
 }
 
 export default function ChatScreen() {
@@ -145,6 +189,8 @@ export default function ChatScreen() {
   const [uploading, setUploading] = useState(false);
   // Id of the message currently being edited (composer switches to "edit" mode).
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Message the composer is replying to (swipe-to-reply), or null.
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   // Picked-but-not-yet-sent image awaiting confirmation + optional caption.
   const [preview, setPreview] = useState<PickedImage | null>(null);
   const [caption, setCaption] = useState('');
@@ -418,6 +464,7 @@ export default function ChatScreen() {
       mediaUrl?: string;
       messageType: 'text' | 'image';
       tempId: string;
+      replyToId?: string;
     }) => {
       // Always go through REST: socket emit doesn't return the saved row,
       // and we want a single source of truth for replacing the optimistic entry.
@@ -426,6 +473,7 @@ export default function ChatScreen() {
       const sent = await chatApi.sendMessage(id!, vars.content ?? '', {
         messageType: vars.messageType,
         mediaUrl: vars.mediaUrl,
+        replyToId: vars.replyToId,
       });
       return { sent, tempId: vars.tempId };
     },
@@ -538,6 +586,8 @@ export default function ChatScreen() {
 
     if (!text) return;
     setDraft('');
+    const reply = replyingTo;
+    setReplyingTo(null);
 
     // Stop typing indicator immediately when sending.
     const socket = getChatSocket();
@@ -552,12 +602,18 @@ export default function ChatScreen() {
       content: text,
       messageType: 'text',
       me,
+      replyTo: reply,
     });
     qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
       prev ? { ...prev, items: [optimistic, ...prev.items] } : { items: [optimistic], nextCursor: null },
     );
-    sendMut.mutate({ content: text, messageType: 'text', tempId: optimistic.id });
-  }, [draft, id, me, editingId, editMut, messages, messagesKey, qc, sendMut]);
+    sendMut.mutate({
+      content: text,
+      messageType: 'text',
+      tempId: optimistic.id,
+      replyToId: reply?.id,
+    });
+  }, [draft, id, me, editingId, editMut, messages, messagesKey, qc, sendMut, replyingTo]);
 
   // Tap a failed TEXT bubble to retry it: flip it back to pending and re-send
   // under the same tempId so onSuccess/onError can reconcile it as usual.
@@ -799,8 +855,9 @@ export default function ChatScreen() {
               peerLastReadAt !== null &&
               Date.parse(item.createdAt) <= Date.parse(peerLastReadAt);
             const edited = !deleted && !!item.editedAt;
+            const canReply = !deleted && !pending && !failed;
 
-            return (
+            const row = (
               <Pressable
                 onPress={() => { if (item.__failed) handleRetry(item); }}
                 onLongPress={() => handleLongPress(item)}
@@ -880,6 +937,28 @@ export default function ChatScreen() {
                     ]}
                   >
                     {isMe && <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />}
+                    {item.replyTo ? (
+                      <View style={[styles.quote, isMe && styles.quoteMine]}>
+                        <Text
+                          style={[styles.quoteName, isMe && { color: 'rgba(255,255,255,0.95)' }]}
+                          numberOfLines={1}
+                        >
+                          {item.replyTo.sender.displayName ??
+                            item.replyTo.sender.firstName ??
+                            'Membre'}
+                        </Text>
+                        <Text
+                          style={[styles.quoteText, isMe && { color: 'rgba(255,255,255,0.8)' }]}
+                          numberOfLines={1}
+                        >
+                          {item.replyTo.deletedAt
+                            ? 'Message supprimé'
+                            : item.replyTo.messageType === 'image'
+                              ? '📷 Photo'
+                              : item.replyTo.content ?? ''}
+                        </Text>
+                      </View>
+                    ) : null}
                     <Text style={[styles.bubbleText, isMe && { color: Colors.white }]}>
                       {item.content}
                     </Text>
@@ -908,6 +987,11 @@ export default function ChatScreen() {
                   </View>
                 )}
               </Pressable>
+            );
+
+            if (!canReply) return row;
+            return (
+              <SwipeToReply onReply={() => setReplyingTo(item)}>{row}</SwipeToReply>
             );
           }}
           ListEmptyComponent={
@@ -941,6 +1025,29 @@ export default function ChatScreen() {
               </Text>
             </View>
             <Pressable onPress={cancelEdit} hitSlop={8}>
+              <Feather name="x" size={18} color={Colors.tan500} />
+            </Pressable>
+          </View>
+        )}
+
+        {/* Reply banner above the composer (swipe-to-reply target). */}
+        {replyingTo && !editingId && (
+          <View style={styles.replyBanner}>
+            <View style={styles.replyBannerBar} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.replyBannerTitle} numberOfLines={1}>
+                Réponse à{' '}
+                {replyingTo.sender.id === me?.id
+                  ? 'vous-même'
+                  : replyingTo.sender.displayName ?? replyingTo.sender.firstName ?? 'Membre'}
+              </Text>
+              <Text style={styles.replyBannerHint} numberOfLines={1}>
+                {replyingTo.messageType === 'image'
+                  ? '📷 Photo'
+                  : replyingTo.content ?? ''}
+              </Text>
+            </View>
+            <Pressable onPress={() => setReplyingTo(null)} hitSlop={8}>
               <Feather name="x" size={18} color={Colors.tan500} />
             </Pressable>
           </View>
@@ -1277,6 +1384,41 @@ const styles = StyleSheet.create({
   editBannerTitle: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.brown },
   editBannerHint: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 1 },
   editBannerCancel: { fontSize: 18, color: Colors.tan500, fontWeight: '700' },
+  // Swipe-to-reply: the reply icon revealed behind the bubble while dragging.
+  replyAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 56,
+    paddingLeft: Spacing.md,
+  },
+  // Reply banner above the composer.
+  replyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md + 2,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.tan100,
+  },
+  replyBannerBar: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    backgroundColor: Colors.orange,
+  },
+  replyBannerTitle: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.orange },
+  replyBannerHint: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 1 },
+  // Quoted message rendered inside a reply bubble.
+  quote: {
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.orange,
+    paddingLeft: Spacing.sm,
+    marginBottom: 4,
+    opacity: 0.95,
+  },
+  quoteMine: { borderLeftColor: 'rgba(255,255,255,0.9)' },
+  quoteName: { fontSize: Typography.sizes.xs, fontWeight: '700', color: Colors.brown },
+  quoteText: { fontSize: Typography.sizes.xs, color: Colors.tan600, marginTop: 1 },
 
   // ── Image confirmation sheet ──────────────────────────────────────────────
   previewBackdrop: { flex: 1, backgroundColor: '#0B0B0D' },

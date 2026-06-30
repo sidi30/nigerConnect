@@ -1,0 +1,25 @@
+{
+  "current": "SPRINT_PLANNED",
+  "updatedAt": "2026-06-30",
+  "sprint": {
+    "id": "S1",
+    "goal": "Booster l'engagement du feed/chat à parité Instagram et réparer le flux d'acceptation d'ami, livrable en OTA iOS sans rebuild.",
+    "deliveryNote": "JS-only cote mobile => OTA iOS uniquement (rien sur Android sans accord). NE PAS bumper app.json version (le bump changerait runtimeVersion et orphelinerait l'OTA des builds existants). API: deploy du dernier commit (B3 inclut une migration Prisma).",
+    "items": [
+      { "id": "B7", "title": "BUG: notif friend_request ouvre le profil du demandeur (accept/refuse)", "priority": 3.3, "status": "todo", "type": "bug", "surfaces": ["api/social", "mobile/notifications", "mobile/_layout"] },
+      { "id": "B1", "title": "Liste des likers d'un post (qui a like)", "priority": 4.0, "status": "todo", "type": "quick-win", "surfaces": ["mobile/feedApi", "mobile/PostCard", "shared-types"] },
+      { "id": "B6", "title": "Barre de recherche plein-texte section Services", "priority": 2.0, "status": "todo", "type": "story", "surfaces": ["api/marketplace", "mobile/services", "shared-types"] },
+      { "id": "B3", "title": "Liker un commentaire (modele CommentLike + migration)", "priority": 1.6, "status": "todo", "type": "story", "surfaces": ["api/feed", "prisma", "mobile/CommentItem", "shared-types"] },
+      { "id": "B2", "title": "Swipe-to-reply dans le chat", "priority": 1.6, "status": "todo", "type": "story", "surfaces": ["api/chat", "mobile/chat", "shared-types"] }
+    ]
+  },
+  "backlog_deferred": [
+    { "id": "B5a", "title": "Liker une story (cœur anime reanimated)" },
+    { "id": "B5b", "title": "Repondre a une story (-> DM auteur)" },
+    { "id": "B4", "title": "EPIC: reactions multi-emoji sur post (architect d'abord)" },
+    { "id": "P-04", "title": "Snap Map: anneau de story autour de l'avatar (differenciateur)" }
+  ],
+  "agents": {},
+  "checkpoints": { "deploy_approved": false },
+  "iterations": {}
+}

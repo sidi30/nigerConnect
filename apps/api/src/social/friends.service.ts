@@ -85,7 +85,9 @@ export class FriendsService {
       actorId: requesterId,
       type: 'friend_request',
       title: `${requesterName} veut être votre ami`,
-      data: { friendshipId: friendship.id },
+      // requesterId lets the client deep-link straight to the requester's profile
+      // (where accept/refuse lives), not the generic friends list.
+      data: { friendshipId: friendship.id, requesterId },
     });
     return friendship;
   }
@@ -105,7 +107,9 @@ export class FriendsService {
       actorId: userId,
       type: 'friend_accepted',
       title: `${accepterName} a accepté votre demande`,
-      data: { friendshipId: f.id },
+      // actorId in data too (push only forwards data, not the actorId param) so
+      // tapping opens the accepter's profile.
+      data: { friendshipId: f.id, actorId: userId },
     });
     return updated;
   }

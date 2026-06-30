@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { Comment } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
@@ -13,6 +14,7 @@ interface Props {
   onReply?: (commentId: string) => void;
   onDelete?: (commentId: string) => void;
   onEdit?: (commentId: string, content: string) => Promise<void> | void;
+  onLike?: (commentId: string) => void;
   currentUserId?: string;
 }
 
@@ -27,6 +29,7 @@ export function CommentItem({
   onReply,
   onDelete,
   onEdit,
+  onLike,
   currentUserId,
 }: Props) {
   const router = useRouter();
@@ -39,6 +42,17 @@ export function CommentItem({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.content);
   const [saving, setSaving] = useState(false);
+  const [liked, setLiked] = useState(!!comment.isLikedByMe);
+  const [likeCount, setLikeCount] = useState(comment.likeCount);
+
+  function handleLike() {
+    setLiked((prev) => {
+      const next = !prev;
+      setLikeCount((c) => Math.max(0, c + (next ? 1 : -1)));
+      return next;
+    });
+    onLike?.(comment.id);
+  }
 
   async function submitEdit() {
     if (!onEdit) return;
@@ -114,6 +128,23 @@ export function CommentItem({
             </>
           ) : (
             <>
+              <Pressable
+                onPress={handleLike}
+                hitSlop={8}
+                style={styles.likeBtn}
+                accessibilityLabel={liked ? "Je n'aime plus ce commentaire" : "J'aime ce commentaire"}
+              >
+                <Feather
+                  name="heart"
+                  size={13}
+                  color={liked ? Colors.danger : Colors.tan500}
+                />
+                {likeCount > 0 ? (
+                  <Text style={[styles.actionBtn, liked && { color: Colors.danger }]}>
+                    {likeCount}
+                  </Text>
+                ) : null}
+              </Pressable>
               {depth < MAX_DEPTH && onReply ? (
                 <Pressable onPress={() => onReply(comment.id)} hitSlop={8}>
                   <Text style={styles.actionBtn}>Répondre</Text>
@@ -144,6 +175,7 @@ export function CommentItem({
             onReply={onReply}
             onDelete={onDelete}
             onEdit={onEdit}
+            onLike={onLike}
             currentUserId={currentUserId}
           />
         ))}
@@ -207,6 +239,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   time: { fontSize: Typography.sizes.xxs, color: Colors.tan400 },
+  likeBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   actionBtn: {
     fontSize: Typography.sizes.xxs,
     fontWeight: '700',

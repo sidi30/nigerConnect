@@ -115,4 +115,68 @@ describe('CommentsService', () => {
     // Must not reach the DB if the gate refused.
     expect(prisma.comment.findMany).not.toHaveBeenCalled();
   });
+
+  it('toggleLike is visibility-gated: refuses a comment on a post the viewer cannot see', async () => {
+    // IDOR guard for B3 — liking a comment must inherit the parent post's
+    // visibility. If assertCanViewPost refuses, no like row may be written.
+    const prisma = {
+      comment: {
+        findUnique: jest.fn(async () => ({
+          id: 'c1',
+          postId: 'p1',
+          authorId: 'u2',
+          deletedAt: null,
+        })),
+      },
+      commentLike: { findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
+      $transaction: jest.fn(),
+    };
+    const posts = makePostsStub({
+      assert: async () => {
+        throw new NotFoundException('Post not found');
+      },
+    });
+    const svc = new CommentsService(
+      prisma as never,
+      makeBlocks() as never,
+      makeNotifs() as never,
+      posts as never,
+      { notify: jest.fn(async () => undefined) } as never,
+    );
+    await expect(svc.toggleLike('viewer', 'c1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.commentLike.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('toggleLike never self-notifies when liker is the comment author', async () => {
+    const notifs = makeNotifs();
+    const prisma = {
+      comment: {
+        findUnique: jest.fn(async () => ({
+          id: 'c1',
+          postId: 'p1',
+          authorId: 'u1', // same as liker
+          deletedAt: null,
+        })),
+        update: jest.fn(async () => ({ likeCount: 1 })),
+      },
+      commentLike: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(),
+        delete: jest.fn(),
+      },
+      user: { findUnique: jest.fn() },
+      $transaction: jest.fn(async () => [undefined, { likeCount: 1 }]),
+    };
+    const svc = new CommentsService(
+      prisma as never,
+      makeBlocks() as never,
+      notifs as never,
+      makePostsStub() as never,
+      { notify: jest.fn(async () => undefined) } as never,
+    );
+    const res = await svc.toggleLike('u1', 'c1');
+    expect(res).toEqual({ liked: true, count: 1 });
+    expect(notifs.create).not.toHaveBeenCalled();
+  });
 });
