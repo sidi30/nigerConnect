@@ -53,6 +53,8 @@ export interface Message {
   replyToId: string | null;
   /** Hydrated quoted message when replyToId is set (absent on older payloads). */
   replyTo?: MessageReplyPreview | null;
+  /** Emoji reactions on this message (one per user). Client aggregates by emoji. */
+  reactions?: { userId: string; emoji: string }[];
   deletedAt: string | null;
   editedAt: string | null;
   createdAt: string;

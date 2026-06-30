@@ -46,6 +46,12 @@ export const chatApi = {
     return data;
   },
 
+  /** Add / switch / remove the viewer's emoji reaction on a message. */
+  async reactToMessage(messageId: string, emoji: string): Promise<Message> {
+    const { data } = await api.post<Message>(`/messages/${messageId}/react`, { emoji });
+    return data;
+  },
+
   /** Delete a message for everyone (sender-only, within 15 min server-side). */
   async deleteMessage(messageId: string): Promise<Message> {
     const { data } = await api.delete<Message>(`/messages/${messageId}`);

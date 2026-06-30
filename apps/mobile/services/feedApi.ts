@@ -61,9 +61,13 @@ export const feedApi = {
     return data;
   },
 
-  async toggleCommentLike(commentId: string): Promise<{ liked: boolean; count: number }> {
-    const { data } = await api.post<{ liked: boolean; count: number }>(
+  async toggleCommentLike(
+    commentId: string,
+    emoji?: string,
+  ): Promise<{ liked: boolean; count: number; myReaction: string | null }> {
+    const { data } = await api.post<{ liked: boolean; count: number; myReaction: string | null }>(
       `/comments/${commentId}/like`,
+      emoji ? { emoji } : {},
     );
     return data;
   },

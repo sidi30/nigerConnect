@@ -168,10 +168,11 @@ export class CommentsService {
         for (const lvl3 of lvl2.replies) ids.push(lvl3.id);
       }
     }
-    const likedSet = await this.likedCommentIds(viewerId, ids);
+    const reactions = await this.myCommentReactions(viewerId, ids);
     const decorate = <T extends { id: string }>(c: T) => ({
       ...c,
-      isLikedByMe: likedSet.has(c.id),
+      isLikedByMe: reactions.has(c.id),
+      myReaction: reactions.get(c.id) ?? null,
     });
     const decorated = items.map((root) => ({
       ...decorate(root),
@@ -187,17 +188,17 @@ export class CommentsService {
     };
   }
 
-  /** Subset of `commentIds` the viewer has liked (empty set if none/no ids). */
-  private async likedCommentIds(
+  /** Map of commentId → the viewer's reaction emoji, for the given comment ids. */
+  private async myCommentReactions(
     viewerId: string,
     commentIds: string[],
-  ): Promise<Set<string>> {
-    if (commentIds.length === 0) return new Set();
+  ): Promise<Map<string, string>> {
+    if (commentIds.length === 0) return new Map();
     const rows = await this.prisma.commentLike.findMany({
       where: { userId: viewerId, commentId: { in: commentIds } },
-      select: { commentId: true },
+      select: { commentId: true, emoji: true },
     });
-    return new Set(rows.map((r) => r.commentId));
+    return new Map(rows.map((r) => [r.commentId, r.emoji ?? '❤️']));
   }
 
   /**
@@ -208,7 +209,8 @@ export class CommentsService {
   async toggleLike(
     userId: string,
     commentId: string,
-  ): Promise<{ liked: boolean; count: number }> {
+    emoji = '❤️',
+  ): Promise<{ liked: boolean; count: number; myReaction: string | null }> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
       select: { id: true, postId: true, authorId: true, deletedAt: true },
@@ -221,21 +223,33 @@ export class CommentsService {
     });
 
     if (existing) {
-      const [, updated] = await this.prisma.$transaction([
-        this.prisma.commentLike.delete({
-          where: { userId_commentId: { userId, commentId } },
-        }),
-        this.prisma.comment.update({
-          where: { id: commentId },
-          data: { likeCount: { decrement: 1 } },
-          select: { likeCount: true },
-        }),
-      ]);
-      return { liked: false, count: updated.likeCount };
+      if (existing.emoji === emoji) {
+        const [, updated] = await this.prisma.$transaction([
+          this.prisma.commentLike.delete({
+            where: { userId_commentId: { userId, commentId } },
+          }),
+          this.prisma.comment.update({
+            where: { id: commentId },
+            data: { likeCount: { decrement: 1 } },
+            select: { likeCount: true },
+          }),
+        ]);
+        return { liked: false, count: updated.likeCount, myReaction: null };
+      }
+      const updated = await this.prisma.comment.update({
+        where: { id: commentId },
+        data: {}, // count unchanged on a switch
+        select: { likeCount: true },
+      });
+      await this.prisma.commentLike.update({
+        where: { userId_commentId: { userId, commentId } },
+        data: { emoji },
+      });
+      return { liked: true, count: updated.likeCount, myReaction: emoji };
     }
 
     const [, updated] = await this.prisma.$transaction([
-      this.prisma.commentLike.create({ data: { userId, commentId } }),
+      this.prisma.commentLike.create({ data: { userId, commentId, emoji } }),
       this.prisma.comment.update({
         where: { id: commentId },
         data: { likeCount: { increment: 1 } },
@@ -260,7 +274,7 @@ export class CommentsService {
         })
         .catch(() => undefined);
     }
-    return { liked: true, count: updated.likeCount };
+    return { liked: true, count: updated.likeCount, myReaction: emoji };
   }
 
   async edit(userId: string, commentId: string, content: string) {

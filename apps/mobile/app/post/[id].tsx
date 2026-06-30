@@ -118,7 +118,8 @@ export default function PostScreen() {
   // CommentItem owns the optimistic UI; this just persists the toggle and
   // reconciles on error (refetch restores the true server state).
   const commentLikeMut = useMutation({
-    mutationFn: (commentId: string) => feedApi.toggleCommentLike(commentId),
+    mutationFn: ({ commentId, emoji }: { commentId: string; emoji?: string }) =>
+      feedApi.toggleCommentLike(commentId, emoji),
     onError: () => {
       toast.error("Action impossible");
       void qc.invalidateQueries({ queryKey: ['post', id, 'comments'] });
@@ -201,7 +202,7 @@ export default function PostScreen() {
                 onEdit={(commentId, content) =>
                   editMut.mutateAsync({ commentId, content }).then(() => undefined)
                 }
-                onLike={(commentId) => commentLikeMut.mutate(commentId)}
+                onLike={(commentId, emoji) => commentLikeMut.mutate({ commentId, emoji })}
                 currentUserId={me?.id}
               />
               {/* Nested replies (levels 2 & 3) are rendered recursively inside CommentItem. */}

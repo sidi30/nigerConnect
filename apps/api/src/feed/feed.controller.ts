@@ -165,8 +165,9 @@ export class FeedController {
   likeComment(
     @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(reactSchema)) dto: ReactDto,
   ) {
-    return this.comments.toggleLike(me.sub, id);
+    return this.comments.toggleLike(me.sub, id, dto.emoji);
   }
 
   @Post('posts/:id/share')

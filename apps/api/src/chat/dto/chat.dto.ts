@@ -23,3 +23,8 @@ export const editMessageSchema = z.object({
   content: z.string().max(5000),
 });
 export type EditMessageDto = z.infer<typeof editMessageSchema>;
+
+export const reactMessageSchema = z.object({
+  emoji: z.string().trim().min(1).max(16),
+});
+export type ReactMessageDto = z.infer<typeof reactMessageSchema>;

@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { HeartBurst } from '../ui/HeartBurst';
+import { ReactionBar } from './ReactionBar';
 import type { Comment } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
 import { MentionText } from '../ui/MentionText';
@@ -22,7 +23,7 @@ interface Props {
   onReply?: (commentId: string) => void;
   onDelete?: (commentId: string) => void;
   onEdit?: (commentId: string, content: string) => Promise<void> | void;
-  onLike?: (commentId: string) => void;
+  onLike?: (commentId: string, emoji?: string) => void;
   currentUserId?: string;
 }
 
@@ -50,27 +51,37 @@ export function CommentItem({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.content);
   const [saving, setSaving] = useState(false);
-  const [liked, setLiked] = useState(!!comment.isLikedByMe);
+  const [myReaction, setMyReaction] = useState<string | null>(
+    comment.myReaction ?? (comment.isLikedByMe ? '❤️' : null),
+  );
   const [likeCount, setLikeCount] = useState(comment.likeCount);
   const [burst, setBurst] = useState(0);
+  const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const heartScale = useSharedValue(1);
+  const liked = myReaction !== null;
 
   const heartAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: heartScale.value }],
   }));
 
-  function handleLike() {
-    setLiked((prev) => {
-      const next = !prev;
-      setLikeCount((c) => Math.max(0, c + (next ? 1 : -1)));
+  function react(emoji: string) {
+    setReactionBarOpen(false);
+    setMyReaction((prev) => {
+      const up = prev !== emoji;
+      if (prev === emoji) setLikeCount((c) => Math.max(0, c - 1));
+      else if (prev === null) setLikeCount((c) => c + 1);
       heartScale.value = withSequence(
-        withTiming(next ? 1.35 : 0.85, { duration: 110 }),
+        withTiming(up ? 1.35 : 0.85, { duration: 110 }),
         withSpring(1, { damping: 6, stiffness: 220 }),
       );
-      if (next) setBurst((n) => n + 1);
-      return next;
+      if (up && emoji === '❤️') setBurst((n) => n + 1);
+      onLike?.(comment.id, emoji);
+      return prev === emoji ? null : emoji;
     });
-    onLike?.(comment.id);
+  }
+
+  function handleLike() {
+    react(myReaction ?? '❤️');
   }
 
   async function submitEdit() {
@@ -147,26 +158,39 @@ export function CommentItem({
             </>
           ) : (
             <>
-              <Pressable
-                onPress={handleLike}
-                hitSlop={8}
-                style={styles.likeBtn}
-                accessibilityLabel={liked ? "Je n'aime plus ce commentaire" : "J'aime ce commentaire"}
-              >
-                <View>
-                  <Animated.View style={heartAnimStyle}>
-                    <Feather name="heart" size={13} color={liked ? Colors.danger : Colors.tan500} />
-                  </Animated.View>
-                  <View pointerEvents="none" style={styles.commentBurst}>
-                    <HeartBurst trigger={burst} size={13} particles={false} />
+              <View style={styles.likeWrap}>
+                <ReactionBar
+                  visible={reactionBarOpen}
+                  onSelect={react}
+                  onClose={() => setReactionBarOpen(false)}
+                />
+                <Pressable
+                  onPress={handleLike}
+                  onLongPress={() => setReactionBarOpen(true)}
+                  delayLongPress={220}
+                  hitSlop={8}
+                  style={styles.likeBtn}
+                  accessibilityLabel={liked ? 'Retirer ma réaction' : 'Réagir au commentaire'}
+                >
+                  <View>
+                    <Animated.View style={heartAnimStyle}>
+                      {myReaction ? (
+                        <Text style={styles.commentReactionEmoji}>{myReaction}</Text>
+                      ) : (
+                        <Feather name="heart" size={13} color={Colors.tan500} />
+                      )}
+                    </Animated.View>
+                    <View pointerEvents="none" style={styles.commentBurst}>
+                      <HeartBurst trigger={burst} size={13} particles={false} />
+                    </View>
                   </View>
-                </View>
-                {likeCount > 0 ? (
-                  <Text style={[styles.actionBtn, liked && { color: Colors.danger }]}>
-                    {likeCount}
-                  </Text>
-                ) : null}
-              </Pressable>
+                  {likeCount > 0 ? (
+                    <Text style={[styles.actionBtn, liked && { color: Colors.danger }]}>
+                      {likeCount}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              </View>
               {depth < MAX_DEPTH && onReply ? (
                 <Pressable onPress={() => onReply(comment.id)} hitSlop={8}>
                   <Text style={styles.actionBtn}>Répondre</Text>
@@ -261,6 +285,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   time: { fontSize: Typography.sizes.xxs, color: Colors.tan400 },
+  likeWrap: { position: 'relative' },
+  commentReactionEmoji: { fontSize: 13, lineHeight: 16 },
   likeBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   commentBurst: {
     position: 'absolute',

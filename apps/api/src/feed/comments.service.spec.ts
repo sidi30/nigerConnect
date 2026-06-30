@@ -176,7 +176,7 @@ describe('CommentsService', () => {
       { notify: jest.fn(async () => undefined) } as never,
     );
     const res = await svc.toggleLike('u1', 'c1');
-    expect(res).toEqual({ liked: true, count: 1 });
+    expect(res).toEqual({ liked: true, count: 1, myReaction: '❤️' });
     expect(notifs.create).not.toHaveBeenCalled();
   });
 });

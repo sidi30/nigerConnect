@@ -135,6 +135,7 @@ model User {
   proximityEncountersA    ProximityEncounter[] @relation("EncounterUserA")
   proximityEncountersB    ProximityEncounter[] @relation("EncounterUserB")
   proximityEncountersReq  ProximityEncounter[] @relation("EncounterRequester")
+  messageReactions        MessageReaction[]
   blocksMade              Block[]              @relation("BlockBlocker")
   blocksReceived          Block[]              @relation("BlockBlocked")
   posts                   Post[]
@@ -540,6 +541,7 @@ model CommentLike {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   commentId String   @map("comment_id") @db.Uuid
   comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  emoji     String   @default("❤️") @db.VarChar(16)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@id([userId, commentId])
@@ -761,10 +763,26 @@ model Message {
   deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
   editedAt       DateTime?    @map("edited_at") @db.Timestamptz
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  reactions      MessageReaction[]
 
   @@index([conversationId, createdAt(sort: Desc)])
   @@index([senderId])
   @@map("messages")
+}
+
+/// One emoji reaction per user per message (Messenger-style). Re-reacting with
+/// the same emoji removes it; a different emoji switches it.
+model MessageReaction {
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId String   @map("message_id") @db.Uuid
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([userId, messageId])
+  @@index([messageId])
+  @@map("message_reactions")
 }
 
 model IdentityDocument {

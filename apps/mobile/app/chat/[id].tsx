@@ -16,6 +16,7 @@ import {
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import EmojiPicker from 'rn-emoji-keyboard';
 import { Image } from 'expo-image';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -170,6 +171,40 @@ function SwipeToReply({
   );
 }
 
+/** Aggregated emoji reaction chips shown under a message bubble. */
+function ReactionPills({
+  reactions,
+  myId,
+  onPress,
+}: {
+  reactions: { userId: string; emoji: string }[] | undefined;
+  myId: string | undefined;
+  onPress: (emoji: string) => void;
+}) {
+  if (!reactions || reactions.length === 0) return null;
+  const counts = new Map<string, { count: number; mine: boolean }>();
+  for (const r of reactions) {
+    const c = counts.get(r.emoji) ?? { count: 0, mine: false };
+    c.count += 1;
+    if (r.userId === myId) c.mine = true;
+    counts.set(r.emoji, c);
+  }
+  return (
+    <View style={styles.reactionPills}>
+      {Array.from(counts.entries()).map(([emoji, { count, mine }]) => (
+        <Pressable
+          key={emoji}
+          onPress={() => onPress(emoji)}
+          style={[styles.reactionPill, mine && styles.reactionPillMine]}
+        >
+          <Text style={styles.reactionPillEmoji}>{emoji}</Text>
+          {count > 1 ? <Text style={styles.reactionPillCount}>{count}</Text> : null}
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -191,6 +226,8 @@ export default function ChatScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   // Message the composer is replying to (swipe-to-reply), or null.
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  // Message id the emoji reaction picker is open for, or null.
+  const [reactPickerFor, setReactPickerFor] = useState<string | null>(null);
   // Picked-but-not-yet-sent image awaiting confirmation + optional caption.
   const [preview, setPreview] = useState<PickedImage | null>(null);
   const [caption, setCaption] = useState('');
@@ -545,6 +582,26 @@ export default function ChatScreen() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['conversations'] }),
   });
 
+  // Emoji reaction on a message. Server returns the updated message with its
+  // reactions; the socket 'message:updated' echo keeps the peer's bubble in sync.
+  const reactMut = useMutation({
+    mutationFn: ({ messageId, emoji }: { messageId: string; emoji: string }) =>
+      chatApi.reactToMessage(messageId, emoji),
+    onSuccess: (updated) => {
+      qc.setQueryData<MessagesPage>(messagesKey, (prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((m) =>
+                m.id === updated.id ? { ...m, reactions: updated.reactions } : m,
+              ),
+            }
+          : prev,
+      );
+    },
+    onError: (err: unknown) => Alert.alert('Réaction impossible', errMessage(err, 'Réessaie.')),
+  });
+
   const conversation = conversationQuery.data;
   const peer = conversation?.members.find((m) => m.id !== me?.id) ?? conversation?.members[0];
 
@@ -736,6 +793,8 @@ export default function ChatScreen() {
       const withinWindow = Date.now() - Date.parse(item.createdAt) < MUTATION_WINDOW_MS;
 
       const buttons: AlertButton[] = [];
+      // Reaction is the primary action — open the emoji picker for this message.
+      buttons.push({ text: 'Réagir…', onPress: () => setReactPickerFor(item.id) });
       if (isImage && item.mediaUrl) {
         buttons.push({ text: 'Télécharger', onPress: () => void handleDownload(item.mediaUrl!) });
       }
@@ -984,6 +1043,11 @@ export default function ChatScreen() {
                       </Text>
                       {isMe && !pending && !failed && <Receipt read={isRead} light />}
                     </View>
+                    <ReactionPills
+                      reactions={item.reactions}
+                      myId={me?.id}
+                      onPress={(emoji) => reactMut.mutate({ messageId: item.id, emoji })}
+                    />
                   </View>
                 )}
               </Pressable>
@@ -1087,6 +1151,17 @@ export default function ChatScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Emoji reaction picker (any emoji) for the long-pressed message. */}
+      <EmojiPicker
+        open={!!reactPickerFor}
+        onClose={() => setReactPickerFor(null)}
+        onEmojiSelected={(e) => {
+          if (reactPickerFor) reactMut.mutate({ messageId: reactPickerFor, emoji: e.emoji });
+          setReactPickerFor(null);
+        }}
+        enableSearchBar
+      />
 
       {/* ── Image confirmation sheet: preview + caption before sending ────── */}
       <Modal
@@ -1358,6 +1433,19 @@ const styles = StyleSheet.create({
   tombstone: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontStyle: 'italic' },
   // Row holding the "modifié" tag + read receipt under a text bubble.
   metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5, marginTop: 2 },
+  reactionPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 5 },
+  reactionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  reactionPillMine: { backgroundColor: 'rgba(255,255,255,0.32)' },
+  reactionPillEmoji: { fontSize: 13 },
+  reactionPillCount: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.9)' },
   editedTag: { fontSize: 10, fontStyle: 'italic' },
   // Caption under an image message.
   imageCaptionRow: {

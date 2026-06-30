@@ -58,6 +58,8 @@ export interface Comment {
   content: string;
   likeCount: number;
   isLikedByMe?: boolean;
+  /** The viewer's chosen reaction emoji on this comment, or null. */
+  myReaction?: string | null;
   replies?: Comment[];
   createdAt: string;
 }

@@ -18,9 +18,11 @@ import { ChatGateway } from './chat.gateway';
 import {
   createConversationSchema,
   editMessageSchema,
+  reactMessageSchema,
   sendMessageSchema,
   type CreateConversationDto,
   type EditMessageDto,
+  type ReactMessageDto,
   type SendMessageDto,
 } from './dto/chat.dto';
 
@@ -99,6 +101,23 @@ export class ChatController {
       id,
       dto.content,
     );
+    this.gateway.broadcastMessageUpdated(conversationId, message, memberIds);
+    return message;
+  }
+
+  @Post('messages/:id/react')
+  @HttpCode(HttpStatus.OK)
+  async reactMessage(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(reactMessageSchema)) dto: ReactMessageDto,
+  ) {
+    const { message, conversationId, memberIds } = await this.chat.reactToMessage(
+      me.sub,
+      id,
+      dto.emoji,
+    );
+    // Reuse the message-updated broadcast so the thread refreshes the bubble live.
     this.gateway.broadcastMessageUpdated(conversationId, message, memberIds);
     return message;
   }

@@ -80,6 +80,7 @@ const REPLY_TO_INCLUDE = {
 const MESSAGE_INCLUDE = {
   sender: { select: MEMBER_SELECT },
   replyTo: REPLY_TO_INCLUDE,
+  reactions: { select: { userId: true, emoji: true } },
 } as const;
 
 @Injectable()
@@ -454,6 +455,45 @@ export class ChatService {
       include: MESSAGE_INCLUDE,
     });
     await this.syncPreview(msg.conversationId);
+    const memberIds = await this.getMemberIds(msg.conversationId);
+    return { message, conversationId: msg.conversationId, memberIds };
+  }
+
+  /**
+   * Add / switch / remove the viewer's emoji reaction on a message (Messenger-
+   * style, one per user per message). Membership-gated. Returns the updated
+   * message (with reactions) so the controller can broadcast it to the thread.
+   */
+  async reactToMessage(userId: string, messageId: string, emoji: string) {
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, conversationId: true, deletedAt: true },
+    });
+    if (!msg || msg.deletedAt) throw new NotFoundException('Message not found');
+    await this.assertMember(userId, msg.conversationId);
+
+    const existing = await this.prisma.messageReaction.findUnique({
+      where: { userId_messageId: { userId, messageId } },
+    });
+    if (existing) {
+      if (existing.emoji === emoji) {
+        await this.prisma.messageReaction.delete({
+          where: { userId_messageId: { userId, messageId } },
+        });
+      } else {
+        await this.prisma.messageReaction.update({
+          where: { userId_messageId: { userId, messageId } },
+          data: { emoji },
+        });
+      }
+    } else {
+      await this.prisma.messageReaction.create({ data: { userId, messageId, emoji } });
+    }
+
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: MESSAGE_INCLUDE,
+    });
     const memberIds = await this.getMemberIds(msg.conversationId);
     return { message, conversationId: msg.conversationId, memberIds };
   }
