@@ -1084,11 +1084,16 @@ export class GeoService implements OnModuleInit {
 
     const placed = users.filter((u) => u.latitude !== null && u.longitude !== null);
     const ids = placed.map((u) => u.id);
-    // Live presence (Redis 60s TTL) for the pulsing halo + active-story set for
-    // the story ring (P-04). Both privacy-safe booleans, both fail-open.
+    // Presence (halo) and story ring are FRIENDS-ONLY metadata: stories are
+    // friends-scoped by product design (getStoriesFeed), and real-time online
+    // status is a friend-level signal — neither must leak to non-friends who
+    // merely share the map. So enrich only the viewer's accepted friends; every
+    // other marker gets both bits false. Both fail-open (no enrichment) on error.
+    const friends = await this.friendIds(viewerId);
+    const friendIds = ids.filter((id) => friends.has(id));
     const [online, withStory] = await Promise.all([
-      this.onlinePresence(ids),
-      this.activeStoryAuthors(ids),
+      this.onlinePresence(friendIds),
+      this.activeStoryAuthors(friendIds),
     ]);
 
     return placed.map<IndividualMarker>((u) => ({
@@ -1103,6 +1108,21 @@ export class GeoService implements OnModuleInit {
       activeRecently: online.has(u.id),
       hasActiveStory: withStory.has(u.id),
     }));
+  }
+
+  /** The viewer's accepted-friend ids. Fail-open: empty set on error (no enrichment). */
+  private async friendIds(userId: string): Promise<Set<string>> {
+    try {
+      const rows = await this.prisma.friendship.findMany({
+        where: { status: 'accepted', OR: [{ requesterId: userId }, { addresseeId: userId }] },
+        select: { requesterId: true, addresseeId: true },
+      });
+      const s = new Set<string>();
+      for (const r of rows) s.add(r.requesterId === userId ? r.addresseeId : r.requesterId);
+      return s;
+    } catch {
+      return new Set();
+    }
   }
 
   /** Subset of userIds who currently have an unexpired story. Fail-open: {} on error. */

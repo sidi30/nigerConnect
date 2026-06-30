@@ -21,6 +21,18 @@ function makeMocks() {
       sadd: jest.fn<Promise<number>, unknown[]>(async () => 1),
       scard: jest.fn<Promise<number>, [string]>(async () => 1),
       expire: jest.fn<Promise<number>, unknown[]>(async () => 1),
+      // pipeline().exists(k)...exec() → 1 (online) for every queried key.
+      pipeline: jest.fn(() => {
+        const calls: string[] = [];
+        const p = {
+          exists: (k: string) => {
+            calls.push(k);
+            return p;
+          },
+          exec: async () => calls.map(() => [null, 1]),
+        };
+        return p;
+      }),
     },
   };
   const prisma = {
@@ -36,6 +48,8 @@ function makeMocks() {
     proximityEncounter: {
       upsert: jest.fn(async () => ({ id: 'enc-1', status: 'active' }) as unknown),
     },
+    friendship: { findMany: jest.fn(async () => [] as unknown[]) },
+    post: { findMany: jest.fn(async () => [] as unknown[]) },
     $queryRaw: jest.fn(async () => [] as unknown[]),
   };
   const notifications = { create: jest.fn(async () => ({ id: 'n1' })) };
@@ -127,6 +141,36 @@ describe('GeoService', () => {
     // lat/lon are bound too (appear twice: distance expr in SELECT + WHERE).
     expect(sql.values).toContain(13.5);
     expect(sql.values).toContain(2.1);
+  });
+
+  it('story ring + online halo are FRIENDS-ONLY on the map (no leak to non-friends)', async () => {
+    const { redis, prisma, notifications } = makeMocks();
+    // Two map-visible individuals at the same spot: a friend and a stranger.
+    prisma.user.findMany.mockResolvedValueOnce([
+      { id: 'friend-1', displayName: 'F', avatarUrl: null, city: null, countryCode: null, latitude: 1, longitude: 1 },
+      { id: 'stranger-1', displayName: 'S', avatarUrl: null, city: null, countryCode: null, latitude: 1, longitude: 1 },
+    ]);
+    // Viewer is friends with friend-1 only.
+    prisma.friendship.findMany.mockResolvedValueOnce([
+      { requesterId: 'viewer', addresseeId: 'friend-1' },
+    ]);
+    // activeStoryAuthors is only ever called with the friend ids → returns friend-1.
+    prisma.post.findMany.mockResolvedValueOnce([{ authorId: 'friend-1' }]);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+
+    // zoom 9 → individual markers branch.
+    const markers = await svc.getMarkers('viewer', { ...BOUNDS, type: 'people', zoom: 9 });
+    const friend = markers.find((m) => 'userId' in m && m.userId === 'friend-1') as unknown as Record<string, unknown>;
+    const stranger = markers.find((m) => 'userId' in m && m.userId === 'stranger-1') as unknown as Record<string, unknown>;
+
+    // Friend: enriched. Stranger: both bits false (no friends-only metadata leak).
+    expect(friend.hasActiveStory).toBe(true);
+    expect(friend.activeRecently).toBe(true);
+    expect(stranger.hasActiveStory).toBe(false);
+    expect(stranger.activeRecently).toBe(false);
+    // The story query must never be asked about the stranger.
+    const storyWhere = (prisma.post.findMany as jest.Mock).mock.calls[0]?.[0]?.where;
+    expect(storyWhere.authorId.in).toEqual(['friend-1']);
   });
 
   describe('proximityPing', () => {
