@@ -33,14 +33,26 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService<Env, true>);
 
-  // Trust the reverse proxy in front of us (prod: Traefik, itself behind
-  // Cloudflare) so Express derives `req.ip` / `X-Forwarded-For` from the real
-  // client instead of the proxy's address. Without this, every request appears
-  // to come from the proxy and all clients share one per-IP rate-limit bucket —
-  // defeating the OAuth/login throttles. The deploy has exactly one proxy hop
-  // reaching the container (Traefik → api), so a hop count of 1 is correct;
-  // override via TRUST_PROXY_HOPS if the topology changes.
-  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? '1');
+  // Trust the reverse proxy chain in front of us so Express derives `req.ip` /
+  // `X-Forwarded-For` from the real client instead of a proxy's address. Without
+  // this, every request appears to come from the proxy and all clients share one
+  // per-IP rate-limit bucket — defeating the OAuth/login throttles.
+  //
+  // The hop count MUST match the real topology (prod: Cloudflare → Traefik → api
+  // = 2 hops). A wrong value silently mis-buckets the rate limiter, so we refuse
+  // to guess in production: TRUST_PROXY_HOPS must be set explicitly there. Local
+  // dev (no proxy) falls back to 1.
+  const rawTrustProxyHops = process.env.TRUST_PROXY_HOPS;
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (rawTrustProxyHops === undefined || rawTrustProxyHops === '')
+  ) {
+    throw new Error(
+      'TRUST_PROXY_HOPS must be set in production (e.g. 2 for Cloudflare → Traefik → api). ' +
+        'Refusing to start with a guessed default that would mis-bucket the rate limiter.',
+    );
+  }
+  const trustProxyHops = Number(rawTrustProxyHops ?? '1');
   const expressInstance = app.getHttpAdapter().getInstance() as {
     set(setting: string, val: unknown): void;
   };
