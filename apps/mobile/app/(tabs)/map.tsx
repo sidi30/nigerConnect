@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,6 +21,13 @@ import { friendsApi } from '@/services/friendsApi';
 import { geoApi, type MapMarker } from '@/services/geoApi';
 import { profileApi } from '@/services/profileApi';
 import { useAuthStore } from '@/stores/authStore';
+import { MapCanvas, type MapCanvasHandle } from '@/components/map/MapCanvas';
+
+// Feature flag (ADR-001): native react-native-maps renderer vs the Leaflet
+// WebView. ON for the 1.8.0 validation build so testers evaluate the native map
+// on-device. OTA-revertible: publishing this file with `false` at runtime 1.8.0
+// instantly falls back to Leaflet — no rebuild needed.
+const USE_NATIVE_MAP = true;
 
 type Filter = 'all' | 'people' | 'associations';
 
@@ -248,6 +255,7 @@ export default function MapTab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
+  const mapCanvasRef = useRef<MapCanvasHandle>(null);
   const [bounds, setBounds] = useState(INITIAL_BOUNDS);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -275,9 +283,14 @@ export default function MapTab() {
       const lat = pos.coords.latitude;
       const lon = pos.coords.longitude;
       setMyLocation({ lat, lon });
-      webRef.current?.injectJavaScript(
-        `window.drawMe(${lat}, ${lon}, ${ZONE_RADIUS_KM}); window.flyTo(${lat}, ${lon}, ${ZONE_ZOOM}); true;`,
-      );
+      if (USE_NATIVE_MAP) {
+        // The "me" marker + zone circle render from the myLocation prop; just fly.
+        mapCanvasRef.current?.animateTo(lat, lon, ZONE_ZOOM);
+      } else {
+        webRef.current?.injectJavaScript(
+          `window.drawMe(${lat}, ${lon}, ${ZONE_RADIUS_KM}); window.flyTo(${lat}, ${lon}, ${ZONE_ZOOM}); true;`,
+        );
+      }
       // Persist the fresh GPS position so this user shows up on other people's
       // maps at their real spot — but only if they've opted into map visibility.
       // Skipped silently when showOnMap is off (privacy) or the coords barely
@@ -324,7 +337,11 @@ export default function MapTab() {
   // FAB: recenter on the existing fix, or (re)try locating if we have none yet.
   function recenterOnMe() {
     if (myLocation) {
-      webRef.current?.injectJavaScript(`window.recenterMe(${ZONE_ZOOM}); true;`);
+      if (USE_NATIVE_MAP) {
+        mapCanvasRef.current?.animateTo(myLocation.lat, myLocation.lon, ZONE_ZOOM);
+      } else {
+        webRef.current?.injectJavaScript(`window.recenterMe(${ZONE_ZOOM}); true;`);
+      }
     } else {
       void locateAndDraw.current();
     }
@@ -358,43 +375,40 @@ export default function MapTab() {
   });
   const statsQuery = useQuery({ queryKey: ['geo', 'stats'], queryFn: () => geoApi.stats() });
 
+  // Markers to display = server markers filtered by the local search box. Shared
+  // by both renderers (native MapCanvas reads it directly; the WebView path
+  // serialises it below).
+  const filteredMarkers = useMemo<MapMarker[]>(() => {
+    const data = markersQuery.data;
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return data;
+    const matches = (...fields: Array<string | null | undefined>): boolean =>
+      fields.some((f) => f && f.toLowerCase().includes(q));
+    return data.filter((m) => {
+      const country = m.countryCode ? CountryNames[m.countryCode] : null;
+      if (m.kind === 'individual' || m.kind === 'association' || m.kind === 'page') {
+        return matches(m.name, m.city, m.countryCode, country);
+      }
+      return matches(m.kind === 'city' ? m.city : null, m.countryCode, country);
+    });
+  }, [markersQuery.data, search]);
+
+  // WebView (Leaflet) path only: push markers into the injected JS.
   useEffect(() => {
-    if (webReady && markersQuery.data && webRef.current) {
-      const q = search.trim().toLowerCase();
-      const matches = (
-        ...fields: Array<string | null | undefined>
-      ): boolean => fields.some((f) => f && f.toLowerCase().includes(q));
-      const filtered = q
-        ? markersQuery.data.filter((m) => {
-            if (m.kind === 'individual') {
-              const country = m.countryCode ? CountryNames[m.countryCode] : null;
-              return matches(m.name, m.city, m.countryCode, country);
-            }
-            if (m.kind === 'association' || m.kind === 'page') {
-              const country = m.countryCode ? CountryNames[m.countryCode] : null;
-              return matches(m.name, m.city, m.countryCode, country);
-            }
-            // For country / city clusters, match the cluster's own label.
-            const country = m.countryCode ? CountryNames[m.countryCode] : null;
-            return matches(
-              m.kind === 'city' ? m.city : null,
-              m.countryCode,
-              country,
-            );
-          })
-        : markersQuery.data;
-      const payload = filtered.map((m) =>
-        m.kind === 'country' || m.kind === 'city'
-          ? { ...m, flag: Flags[m.countryCode] ?? '🌍' }
-          : m.kind === 'page'
-            ? { ...m, emoji: PAGE_KIND_EMOJI[m.pageKind] ?? '📣' }
-            : m,
-      );
-      webRef.current.injectJavaScript(
-        `window.renderMarkers(${JSON.stringify(payload)}); true;`,
-      );
-    }
-  }, [webReady, markersQuery.data, search]);
+    if (USE_NATIVE_MAP) return;
+    if (!webReady || !webRef.current) return;
+    const payload = filteredMarkers.map((m) =>
+      m.kind === 'country' || m.kind === 'city'
+        ? { ...m, flag: Flags[m.countryCode] ?? '🌍' }
+        : m.kind === 'page'
+          ? { ...m, emoji: PAGE_KIND_EMOJI[m.pageKind] ?? '📣' }
+          : m,
+    );
+    webRef.current.injectJavaScript(
+      `window.renderMarkers(${JSON.stringify(payload)}); true;`,
+    );
+  }, [webReady, filteredMarkers]);
 
   function onMessage(e: WebViewMessageEvent) {
     try {
@@ -416,16 +430,28 @@ export default function MapTab() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <WebView
-        ref={webRef}
-        originWhitelist={['*']}
-        source={{ html: LEAFLET_HTML }}
-        onMessage={onMessage}
-        style={StyleSheet.absoluteFill}
-        javaScriptEnabled
-        domStorageEnabled
-        startInLoadingState
-      />
+      {USE_NATIVE_MAP ? (
+        <MapCanvas
+          ref={mapCanvasRef}
+          markers={filteredMarkers}
+          me={myLocation}
+          zoneRadiusKm={ZONE_RADIUS_KM}
+          onReady={() => setWebReady(true)}
+          onBounds={(b) => setBounds(b)}
+          onSelect={(m) => setSelected(m)}
+        />
+      ) : (
+        <WebView
+          ref={webRef}
+          originWhitelist={['*']}
+          source={{ html: LEAFLET_HTML }}
+          onMessage={onMessage}
+          style={StyleSheet.absoluteFill}
+          javaScriptEnabled
+          domStorageEnabled
+          startInLoadingState
+        />
+      )}
 
       <View style={[styles.topBar, { top: insets.top + Spacing.md }]}>
         <View style={styles.filtersRow}>
@@ -581,9 +607,13 @@ export default function MapTab() {
           }}
           onZoomToCluster={(lat, lon, zoom) => {
             setSelected(null);
-            webRef.current?.injectJavaScript(
-              `window.flyTo(${lat}, ${lon}, ${zoom}); true;`,
-            );
+            if (USE_NATIVE_MAP) {
+              mapCanvasRef.current?.animateTo(lat, lon, zoom);
+            } else {
+              webRef.current?.injectJavaScript(
+                `window.flyTo(${lat}, ${lon}, ${zoom}); true;`,
+              );
+            }
           }}
         />
       )}

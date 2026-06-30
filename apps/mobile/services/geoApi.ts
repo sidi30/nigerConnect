@@ -32,6 +32,8 @@ export type MapMarker =
       lon: number;
       /** Online now (Redis presence) — drives the live pulsing halo on the map. */
       activeRecently?: boolean;
+      /** Has an unexpired story — drives the story ring around the avatar (P-04). */
+      hasActiveStory?: boolean;
     }
   | {
       kind: 'association';

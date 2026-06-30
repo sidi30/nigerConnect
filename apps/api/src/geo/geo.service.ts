@@ -98,6 +98,8 @@ export interface IndividualMarker {
   lon: number;
   /** True if the user is online right now (Redis presence) — drives the live halo. */
   activeRecently?: boolean;
+  /** True if the user has an unexpired story — drives the story ring (P-04). */
+  hasActiveStory?: boolean;
 }
 export interface AssociationMarker {
   kind: 'association';
@@ -1081,10 +1083,13 @@ export class GeoService implements OnModuleInit {
     });
 
     const placed = users.filter((u) => u.latitude !== null && u.longitude !== null);
-    // Live presence: which of these are online right now (Redis, 60s TTL). Used
-    // for the pulsing "alive" halo. Privacy-safe: only a boolean leaves the
-    // server, never a last-seen timestamp. Fail-open to no-halo on Redis error.
-    const online = await this.onlinePresence(placed.map((u) => u.id));
+    const ids = placed.map((u) => u.id);
+    // Live presence (Redis 60s TTL) for the pulsing halo + active-story set for
+    // the story ring (P-04). Both privacy-safe booleans, both fail-open.
+    const [online, withStory] = await Promise.all([
+      this.onlinePresence(ids),
+      this.activeStoryAuthors(ids),
+    ]);
 
     return placed.map<IndividualMarker>((u) => ({
       kind: 'individual',
@@ -1096,7 +1101,28 @@ export class GeoService implements OnModuleInit {
       lat: Number(u.latitude),
       lon: Number(u.longitude),
       activeRecently: online.has(u.id),
+      hasActiveStory: withStory.has(u.id),
     }));
+  }
+
+  /** Subset of userIds who currently have an unexpired story. Fail-open: {} on error. */
+  private async activeStoryAuthors(userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    try {
+      const rows = await this.prisma.post.findMany({
+        where: {
+          authorId: { in: userIds },
+          isStory: true,
+          deletedAt: null,
+          storyExpiresAt: { gt: new Date() },
+        },
+        select: { authorId: true },
+        distinct: ['authorId'],
+      });
+      return new Set(rows.map((r) => r.authorId));
+    } catch {
+      return new Set();
+    }
   }
 
   /** Set of the given userIds currently online (Redis presence). Fail-open: {} on error. */
