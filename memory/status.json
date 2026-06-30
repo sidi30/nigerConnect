@@ -23,6 +23,38 @@
   "completed_sprints": [
     { "id": "S1", "goal": "Booster l'engagement feed/chat a parite Instagram + reparer le flux d'acceptation d'ami (OTA iOS).", "items": ["B7", "B1", "B6", "B3", "B2"], "status": "delivered" }
   ],
+  "plannedSprints": [
+    {
+      "id": "S-ANIM-1",
+      "title": "Sprint Animations v1 (Vague A = OTA-safe, axes 1 + 3)",
+      "status": "planned",
+      "goal": "Rendre NigerConnect vivant et premium facon Snapchat SANS rebuild: carte Leaflet animee (entree des pins, pulsation actif-recent, transitions de cluster douces) + micro-anims d'icones reanimated (heart-burst feed/commentaire/story, double-tap-to-like, tab bar bounce, badges animes). Livre 100% OTA iOS, ZERO bump app.json version (reste 1.7.0).",
+      "deliveryNote": "Vague A entiere = OTA iOS, PAS de bump (reanimated 4.1.7 + worklets 0.5.1 deja dans le build; carte = CSS/JS WebView). ANIM-2 a un petit ajout backend (champ activeRecently sur le marqueur geo) = deploy dernier commit sans migration, front degrade proprement si absent. Vague B (natifs) repoussee a un seul build 1.8.0. Aucun build/submit sans GO proprio.",
+      "items": [
+        { "id": "ANIM-1", "title": "Carte vivante: entree des pins (drop+fade+stagger)", "priority": 4.0, "status": "todo", "axis": 1, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/app/(tabs)/map.tsx (LEAFLET_HTML l.58-201, renderMarkers l.135-197)"] },
+        { "id": "ANIM-2", "title": "Pulsation actif-recent + halo de proximite", "priority": 3.5, "status": "todo", "axis": 1, "delivery": "OTA+petitAPI", "agent": "gwani-frontend(+gwani-backend champ activeRecently)", "files": ["apps/mobile/app/(tabs)/map.tsx", "apps/mobile/services/geoApi.ts:25-28", "apps/api/src/geo/geo.service.ts ~l.258-286"], "apiNote": "ajoute activeRecently:boolean, pas de migration a priori, jamais d'horodatage fin expose" },
+        { "id": "ANIM-3", "title": "Transitions de cluster douces + recentrage premium", "priority": 3.0, "status": "todo", "axis": 1, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/app/(tabs)/map.tsx (renderMarkers, flyTo l.107-127)"] },
+        { "id": "ANIM-4", "title": "Heart-burst au like (feed+commentaire+story) + double-tap-to-like (P-09)", "priority": 4.5, "status": "todo", "axis": 3, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/components/ui/HeartBurst.tsx (new)", "components/feed/PostCard.tsx l.70-77,288-315", "components/feed/CommentItem.tsx l.48-55,137-141", "app/stories/[authorId].tsx"] },
+        { "id": "ANIM-5", "title": "Tab bar animee: bounce onglet actif + badge anime", "priority": 3.5, "status": "todo", "axis": 3, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/app/(tabs)/_layout.tsx TabIcon l.18-39"] },
+        { "id": "ANIM-6", "title": "Badges animes (verifie/ambassadeur) + transitions d'icones", "priority": 2.5, "status": "todo", "axis": 3, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/components/ui/AmbassadorBadge.tsx", "VerifiedBadge.tsx", "map.tsx friendIcon l.734-741"] }
+      ],
+      "validation": { "agents": ["bug-hunter->fixer", "e2e-tester"], "pentest": "non requis (pas de surface API sensible; ANIM-2 backend = champ booleen non identifiant -> revue suffit)" },
+      "dod": ["60fps demontre (capture/video)", "aucune regression npx tsc --noEmit (api+mobile)", "OTA-only confirme: app.json version reste 1.7.0", "reduce-motion respecte"]
+    },
+    {
+      "id": "S-ANIM-2",
+      "title": "Sprint Animations v2 (Vague B = natifs, axes 2 + 4) -- UN seul rebuild 1.8.0",
+      "status": "blocked",
+      "blockedBy": "ANIM-7 ADR valide proprio + GO build (action sortante)",
+      "goal": "Carte native facon Snap Map (react-native-maps/@rnmapbox) + Lottie premium, groupes en UN SEUL rebuild EAS + UN bump app.json 1.7.0->1.8.0.",
+      "items": [
+        { "id": "ANIM-7", "title": "ADR carte native: react-native-maps vs @rnmapbox/maps", "priority": 4.0, "status": "todo", "axis": 2, "delivery": "ADR", "agent": "gwani-architect", "gate": "ADR valide proprio avant tout code" },
+        { "id": "ANIM-8", "title": "Carte native: pins 60fps + anneau story (P-04) + Snap-glide + clustering natif", "priority": 3.5, "status": "todo", "axis": 2, "delivery": "REBUILD+bump", "agent": "gwani-frontend", "dependsOn": "ANIM-7" },
+        { "id": "ANIM-9", "title": "Premium Lottie: like premium + ecrans succes + empty-states animes", "priority": 3.0, "status": "todo", "axis": 4, "delivery": "REBUILD+bump", "agent": "gwani-frontend" }
+      ],
+      "deliveryNote": "react-native-maps ET lottie-react-native = 2 modules natifs -> 1 build EAS + 1 bump couvre les deux. STOP avant build = approbation proprio (Norton CA + EAS sidi30). Validation bug-hunter->fixer->e2e-tester."
+    }
+  ],
   "backlog_deferred": [
     { "id": "B5a", "title": "Liker une story (coeur anime reanimated)" },
     { "id": "B5b", "title": "Repondre a une story (-> DM auteur)" },

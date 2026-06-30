@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+import { HeartBurst } from '../ui/HeartBurst';
 import type { Comment } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
 import { MentionText } from '../ui/MentionText';
@@ -44,11 +52,22 @@ export function CommentItem({
   const [saving, setSaving] = useState(false);
   const [liked, setLiked] = useState(!!comment.isLikedByMe);
   const [likeCount, setLikeCount] = useState(comment.likeCount);
+  const [burst, setBurst] = useState(0);
+  const heartScale = useSharedValue(1);
+
+  const heartAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+  }));
 
   function handleLike() {
     setLiked((prev) => {
       const next = !prev;
       setLikeCount((c) => Math.max(0, c + (next ? 1 : -1)));
+      heartScale.value = withSequence(
+        withTiming(next ? 1.35 : 0.85, { duration: 110 }),
+        withSpring(1, { damping: 6, stiffness: 220 }),
+      );
+      if (next) setBurst((n) => n + 1);
       return next;
     });
     onLike?.(comment.id);
@@ -134,11 +153,14 @@ export function CommentItem({
                 style={styles.likeBtn}
                 accessibilityLabel={liked ? "Je n'aime plus ce commentaire" : "J'aime ce commentaire"}
               >
-                <Feather
-                  name="heart"
-                  size={13}
-                  color={liked ? Colors.danger : Colors.tan500}
-                />
+                <View>
+                  <Animated.View style={heartAnimStyle}>
+                    <Feather name="heart" size={13} color={liked ? Colors.danger : Colors.tan500} />
+                  </Animated.View>
+                  <View pointerEvents="none" style={styles.commentBurst}>
+                    <HeartBurst trigger={burst} size={13} particles={false} />
+                  </View>
+                </View>
                 {likeCount > 0 ? (
                   <Text style={[styles.actionBtn, liked && { color: Colors.danger }]}>
                     {likeCount}
@@ -240,6 +262,15 @@ const styles = StyleSheet.create({
   },
   time: { fontSize: Typography.sizes.xxs, color: Colors.tan400 },
   likeBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  commentBurst: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   actionBtn: {
     fontSize: Typography.sizes.xxs,
     fontWeight: '700',

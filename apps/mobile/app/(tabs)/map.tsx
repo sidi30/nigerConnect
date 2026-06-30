@@ -74,6 +74,13 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .marker-me{width:22px;height:22px;border-radius:50%;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3),0 2px 6px rgba(0,0,0,.4)}
   .leaflet-marker-icon{background:none;border:none}
   .leaflet-container{background:#E8F4F8}
+  /* ANIM-1/3 — lively entrance (GPU transform/opacity only). New markers drop +
+     fade in with a slight stagger; existing markers are reused (no re-anim). */
+  @keyframes markerDrop{from{opacity:0;transform:translateY(-16px) scale(.55)}60%{opacity:1;transform:translateY(0) scale(1.08)}to{transform:translateY(0) scale(1)}}
+  @keyframes clusterPop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.14)}100%{transform:scale(1)}}
+  .enter{animation:markerDrop .42s cubic-bezier(.2,.8,.3,1.1) both;will-change:transform,opacity}
+  .enter-cluster{animation:clusterPop .4s ease both;will-change:transform,opacity}
+  @media (prefers-reduced-motion: reduce){.enter,.enter-cluster{animation:none}}
 </style>
 </head><body>
 <div id="map"></div>
@@ -157,34 +164,53 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
       }
     });
 
+    // Diff vs the previous render so only NEW markers play the entrance anim
+    // (existing pins stay put on pan/zoom — no re-flash). Stagger is bounded so
+    // a dense viewport still holds 60fps.
+    var prevKeys = window.__seenKeys || {};
+    var nextKeys = {};
+    var staggerN = 0;
+    function entry(key){
+      var isNew = !prevKeys[key];
+      nextKeys[key] = 1;
+      if (!isNew) return { cls:'', style:'' };
+      var delay = Math.min(staggerN * 16, 520); // cap the cascade
+      staggerN++;
+      return { cls:' enter', cluster:' enter-cluster', style:';animation-delay:' + delay + 'ms' };
+    }
+
     for (const m of markers) {
       if (m.kind === 'individual') {
         const off = offset[m.userId] || { dLat:0, dLon:0 };
+        const e = entry('i:' + m.userId);
         const inner = m.avatarUrl
-          ? '<div class="marker-ind" style="background-image:url(\\'' + m.avatarUrl + '\\')"></div>'
-          : '<div class="marker-ind marker-ind-initials">' + initials(m.name) + '</div>';
+          ? '<div class="marker-ind' + e.cls + '" style="background-image:url(\\'' + m.avatarUrl + '\\')' + e.style + '"></div>'
+          : '<div class="marker-ind marker-ind-initials' + e.cls + '" style="' + e.style.replace(/^;/,'') + '">' + initials(m.name) + '</div>';
         const icon = L.divIcon({ html: inner, className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
         const mk = L.marker([m.lat + off.dLat, m.lon + off.dLon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
         mk.addTo(markerLayer);
       } else if (m.kind === 'association') {
+        const e = entry('a:' + (m.id || (m.lat + ',' + m.lon)));
         const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
-        const html = '<div class="marker-assoc">🏛️' + verif + '</div>';
+        const html = '<div class="marker-assoc' + e.cls + '" style="' + e.style.replace(/^;/,'') + '">🏛️' + verif + '</div>';
         const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
         const mk = L.marker([m.lat, m.lon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
         mk.addTo(markerLayer);
       } else if (m.kind === 'page') {
+        const e = entry('p:' + (m.id || (m.lat + ',' + m.lon)));
         const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
-        const html = '<div class="marker-page">' + (m.emoji || '📣') + verif + '</div>';
+        const html = '<div class="marker-page' + e.cls + '" style="' + e.style.replace(/^;/,'') + '">' + (m.emoji || '📣') + verif + '</div>';
         const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
         const mk = L.marker([m.lat, m.lon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));
         mk.addTo(markerLayer);
       } else {
-        const cls = 'marker-cluster ' + m.kind;
+        const e = entry('c:' + m.kind + ':' + m.lat.toFixed(2) + ':' + m.lon.toFixed(2));
+        const cls = 'marker-cluster ' + m.kind + (e.cluster || '');
         const flag = m.flag || '';
-        const html = '<div class="' + cls + '"><div>' + m.count + '</div><div class="flag">' + flag + '</div></div>';
+        const html = '<div class="' + cls + '" style="' + e.style.replace(/^;/,'') + '"><div>' + m.count + '</div><div class="flag">' + flag + '</div></div>';
         const size = m.kind==='country'?60:50;
         const icon = L.divIcon({ html: html, className: '', iconSize: [size,size], iconAnchor: [size/2,size/2] });
         const mk = L.marker([m.lat, m.lon], { icon });
@@ -194,6 +220,7 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
         mk.addTo(markerLayer);
       }
     }
+    window.__seenKeys = nextKeys;
   };
 
   post({ type:'ready' });

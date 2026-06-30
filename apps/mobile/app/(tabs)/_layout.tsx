@@ -3,6 +3,14 @@ import { Platform } from 'react-native';
 import { Tabs, usePathname } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
@@ -26,13 +34,50 @@ function TabIcon({
   focused: boolean;
   badge?: number;
 }) {
+  const reduce = useReducedMotion();
+  const scale = useSharedValue(1);
+  const badgeScale = useSharedValue(badge && badge > 0 ? 1 : 0);
+  const prevBadge = useRef(badge ?? 0);
+
+  // Bounce the icon when this tab becomes focused.
+  useEffect(() => {
+    if (reduce || !focused) return;
+    scale.value = withSequence(
+      withTiming(1.25, { duration: 120 }),
+      withSpring(1, { damping: 6, stiffness: 220 }),
+    );
+  }, [focused, reduce, scale]);
+
+  // Pop the badge when its count goes up; settle in/out otherwise.
+  useEffect(() => {
+    const b = badge ?? 0;
+    if (reduce) {
+      badgeScale.value = b > 0 ? 1 : 0;
+    } else if (b > 0 && b > prevBadge.current) {
+      badgeScale.value = withSequence(
+        withTiming(1.4, { duration: 130 }),
+        withSpring(1, { damping: 6, stiffness: 220 }),
+      );
+    } else if (b > 0) {
+      badgeScale.value = withSpring(1);
+    } else {
+      badgeScale.value = withTiming(0, { duration: 160 });
+    }
+    prevBadge.current = b;
+  }, [badge, reduce, badgeScale]);
+
+  const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const badgeStyle = useAnimatedStyle(() => ({ transform: [{ scale: badgeScale.value }] }));
+
   return (
     <View style={styles.iconWrap}>
-      <Feather name={name} size={23} color={color} style={!focused && { opacity: 0.9 }} />
+      <Animated.View style={iconStyle}>
+        <Feather name={name} size={23} color={color} style={!focused && { opacity: 0.9 }} />
+      </Animated.View>
       {badge && badge > 0 ? (
-        <View style={styles.badge}>
+        <Animated.View style={[styles.badge, badgeStyle]}>
           <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
-        </View>
+        </Animated.View>
       ) : null}
     </View>
   );

@@ -292,3 +292,138 @@
 **Périmètre** : déanonymisation (peut-on relier `encounterId`→user avant accept ?), IDOR sur `:id` (non-participant), rejeu (re-`connect`/`accept`), race (double connect, lock optimiste), fuite DOB, timing/oracle (404 vs 403), abus plafonds/cooldown, kill-switch contournable.
 **Livraison** : verdict `BLOCK_DEPLOY`/`OK_TO_DEPLOY` (corrige+teste). **Gate dur** avant READY_FOR_DEPLOY.
 **DoD** : verdict `OK_TO_DEPLOY`, 0 critical/high non résolu.
+
+---
+
+# Sprint Animations — « façon Snapchat » (4 axes validés proprio)
+
+> Demande proprio : système d'animation **sur la carte ET sur les icônes** — fluide, original, beau, façon Snapchat.
+> Les 4 axes sont VALIDÉS (tout). Découpage en **2 vagues** selon le critère de livraison mobile :
+> **Vague A = OTA-safe** (axes 1 + 3) : reanimated 4.1.7 + worklets 0.5.1 sont DÉJÀ dans le build, animations
+> webview = CSS/JS pur ⇒ **aucun module natif ⇒ OTA iOS, PAS de bump** `app.json version` (sinon l'OTA
+> orpheline les builds existants). **Vague B = natifs** (axes 2 + 4) : `react-native-maps` ET `lottie-react-native`
+> = 2 modules natifs ⇒ **UN SEUL rebuild EAS + UN SEUL bump** (1.7.0 → 1.8.0) couvrant les deux (cf. justif §Vagues).
+>
+> **Socle réel vérifié (file:line)** : carte = WebView Leaflet `apps/mobile/app/(tabs)/map.tsx`, HTML/JS injecté
+> l.58-201 (`renderMarkers` l.135-197 avec `markerLayer.clearLayers()` l.136 = flash actuel ; classes CSS pins
+> l.62-77 ; `flyTo` l.107-109 déjà animé ; `drawMe`/zone l.115-124 ; injection l.358-360). Like feed =
+> `components/feed/PostCard.tsx` `ActionButton` l.288-315 (Feather heart statique), `handleLike` l.70-77.
+> Like commentaire = `components/feed/CommentItem.tsx` heart l.137-141, `handleLike` l.48-55. Tab bar =
+> `app/(tabs)/_layout.tsx` `TabIcon` l.18-39 (statique), badge l.32-36. Stories = `app/stories/[authorId].tsx`
+> (PAS de like/reply aujourd'hui). `GestureHandlerRootView` au root `app/_layout.tsx:123`. reanimated réellement
+> utilisé : `components/ui/Skeleton.tsx`, `Toast.tsx` ; `ReanimatedSwipeable` en prod dans le chat.
+>
+> **Contraintes perf transverses (à porter dans CHAQUE item, = critères DoD)** :
+> - **60fps, zéro jank**. reanimated : tout sur le **thread UI/worklet** (`useSharedValue`/`withSpring`/`withTiming`),
+>   JAMAIS de re-render React par frame, pas de `setState` dans une boucle d'anim.
+> - **WebView Leaflet** : animer uniquement `transform`/`opacity` (composités GPU), pas de `width/height/top/left`
+>   (reflow). Keyframes CSS, `will-change:transform`. **Plafonner** : pas d'anim d'entrée au-delà de ~60 pins
+>   visibles (stagger borné), réutiliser/differ les markers au lieu de `clearLayers()` global.
+> - Respecter **reduce-motion** (désactiver/raccourcir si l'OS le demande) et dégrader proprement sur entrée de gamme.
+> - **Aucune régression `npx tsc --noEmit`** (api + mobile). Démo visuelle obligatoire (capture/vidéo) à la review.
+
+## VAGUE A — OTA-safe (axes 1 + 3) = Sprint Animations v1
+
+### ANIM-1 — [OTA] Carte vivante : entrée des pins (drop + fade + stagger)  · Prio 4.0 (V4/E1)
+**Story** : En tant qu'utilisateur ouvrant la carte, je veux que les pins avatars apparaissent en tombant/fondu de façon échelonnée, afin d'une première impression vivante et premium façon Snap Map.
+**Given/When/Then**
+- Given un viewport avec des pins, When `renderMarkers` s'exécute, Then chaque pin entre par un drop (translateY) + fade (opacity 0→1) avec un léger stagger ; au repos, transform/opacity stables (pas de boucle).
+- Given un re-render (pan/zoom léger), When les mêmes pins restent visibles, Then ils ne re-jouent PAS l'entrée (anti-clignotement — diff au lieu de clear global).
+- Given > ~60 pins, When ils entrent, Then le stagger est borné/désactivé pour tenir 60fps.
+**Contraintes perf** : CSS `@keyframes` sur `transform: translateY()` + `opacity` uniquement ; `animation` posée à l'ajout du divIcon ; ne PAS animer si le pin existait déjà.
+**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` — bloc `LEAFLET_HTML` : ajouter keyframes dans `<style>` (l.62-77), classe d'entrée sur `.marker-ind`/`.marker-assoc`/`.marker-page`/`.marker-cluster`, et logique de diff dans `renderMarkers` (l.135-197) pour ne pas `clearLayers()` aveuglément (l.136).
+**Livraison** : **[OTA]** front-only (CSS/JS dans la WebView). Pas de bump.
+**DoD** : entrée fluide 60fps prouvée (démo) ; pas de re-jeu sur pan ; cap > 60 pins respecté ; tsc vert.
+
+### ANIM-2 — [OTA front + petit ajout API] Pulsation « actif récemment » + halo de proximité  · Prio 3.5 (V4/E1.5)
+**Story** : En tant qu'utilisateur, je veux qu'un halo pulsé entoure les personnes actives récemment (et un anneau de proximité autour de « moi »), afin de repérer qui est vivant sur la carte façon Snapchat.
+**Given/When/Then**
+- Given un membre actif < N min (`activeRecently`), When il est rendu, Then un halo pulse en boucle douce (scale+opacity) sous son avatar ; les inactifs n'ont PAS de halo.
+- Given mon marqueur « moi » (`drawMe` l.115-124), When la carte se localise, Then un anneau de proximité animé apparaît (pulse une fois à la localisation, puis statique discret).
+- Given le champ d'activité absent (vieux client/API), When je rends, Then dégradation propre = pas de halo (jamais de crash).
+**Contraintes** : la pulsation infinie = 1 seul élément CSS animé par pin actif (GPU). **Dépendance backend** (n'empêche PAS l'OTA front, déployée indépendamment) : exposer `activeRecently:boolean` (ou `lastActiveAt`) sur le marqueur individuel — `MapMarker.individual` ne l'a PAS (`apps/mobile/services/geoApi.ts:25-28`). Source : `apps/api/src/geo/geo.service.ts` (select + build marqueur ~l.258-286, dériver de `lastSeenAt`/`updatedAt`). **Pas de migration** si le champ existe déjà sur `User` ; sinon arbitrer. Privacy : ne JAMAIS exposer un horodatage fin — juste un booléen.
+**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` (`<style>` keyframe `pulse`, `.marker-ind` halo conditionnel dans `renderMarkers` l.160-169 ; `drawMe` l.115-124 anneau animé) ; `apps/mobile/services/geoApi.ts:25-28` (type) ; `apps/api/src/geo/geo.service.ts` (champ `activeRecently`) ; `packages/shared-types` si le type marqueur y est partagé.
+**Livraison** : **[OTA]** front. Backend = deploy dernier commit (pas de migration a priori). Pas de bump mobile.
+**DoD** : halo seulement sur actifs ; dégradation si champ absent ; 60fps ; pas de fuite d'horodatage (revue) ; tsc vert.
+
+### ANIM-3 — [OTA] Transitions de cluster douces + recentrage/localisation premium  · Prio 3.0 (V4/E2)
+**Story** : En tant qu'utilisateur qui pan/zoome, je veux des transitions de cluster douces et un recentrage fluide, afin que la carte respire au lieu de « sauter ».
+**Given/When/Then**
+- Given un changement de viewport qui recompose les clusters, When `renderMarkers` re-rend, Then les clusters apparaissent/disparaissent en fondu (pas de flash de `clearLayers`).
+- Given un tap « recentrer » (`recenterOnMe`) ou un `flyTo`, When la caméra bouge, Then l'animation a un easing premium (durée/ease cohérents) et le « moi » pulse une fois à l'arrivée.
+- Given un cluster dont le `count` change, When il se met à jour, Then une micro-anim (bump scale) signale le changement.
+**Contraintes perf** : réutiliser le diff d'ANIM-1 ; fondu via opacity ; pas de relayout.
+**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` — `renderMarkers` (l.135-197, diff/fondu clusters l.184-195), `flyTo`/`recenterMe` (l.107-127), injection (l.358-360, `onZoomToCluster` l.547-552).
+**Livraison** : **[OTA]** front-only. Pas de bump.
+**DoD** : pas de flash sur recompose ; recentrage fluide 60fps ; bump cluster visible ; tsc vert.
+
+### ANIM-4 — [OTA] Heart-burst au like (feed + commentaire + story) + double-tap-to-like (P-09)  · Prio 4.5 (V5/E2)
+**Story** : En tant qu'utilisateur, je veux une animation de cœur moderne (burst + particules) au like sur le feed, les commentaires et les stories, et pouvoir double-taper une photo pour liker, afin d'un engagement satisfaisant façon Instagram/Snap.
+**Given/When/Then**
+- Given un post non liké, When je tape le cœur, Then heart-burst (scale spring + petites particules/rayons) + bascule couleur ; un re-tap (unlike) joue l'anim inverse douce. Optimiste, source de vérité inchangée (`feedApi.toggleLike`).
+- Given une photo de post, When je double-tape (P-09), Then un gros cœur apparaît/disparaît au centre + like si non liké (jamais d'unlike au double-tap).
+- Given un commentaire, When je tape son cœur, Then micro heart-burst (échelle réduite).
+- Given une story, When je tape « j'aime », Then heart-burst (réutilise `POST /posts/:id/like` sur l'id de story, cf. B5a).
+**Contraintes perf** : reanimated worklets (`useSharedValue`+`withSpring`/`withSequence`), anim sur le thread UI, AUCUN `setState` par frame ; particules = composant léger réutilisable (`components/ui/HeartBurst.tsx` à créer). Gesture double-tap via `Gesture.Tap().numberOfTaps(2)` (gesture-handler déjà au root `app/_layout.tsx:123`).
+**Fichiers** : nouveau `apps/mobile/components/ui/HeartBurst.tsx` ; `apps/mobile/components/feed/PostCard.tsx` (`ActionButton` l.288-315 + `handleLike` l.70-77 + double-tap sur `PhotoGallery` l.263-286) ; `apps/mobile/components/feed/CommentItem.tsx` (heart l.137-141, `handleLike` l.48-55) ; `apps/mobile/app/stories/[authorId].tsx` (ajouter bouton like animé) ; câblage `apps/mobile/app/(tabs)/index.tsx:237` inchangé.
+**Livraison** : **[OTA]** JS-only (reanimated déjà natif). Pas de bump.
+**DoD** : 60fps sur le burst (démo) ; double-tap = like only ; optimiste cohérent serveur ; tsc vert.
+
+### ANIM-5 — [OTA] Tab bar animée : bounce de l'onglet actif + badge animé  · Prio 3.5 (V4/E1.5)
+**Story** : En tant qu'utilisateur, je veux que l'onglet sélectionné rebondisse et que le badge non-lu s'anime, afin d'une navigation vivante façon Snapchat.
+**Given/When/Then**
+- Given un changement d'onglet, When un onglet devient `focused`, Then son icône joue un bounce (spring scale) ; l'inactif revient à l'échelle 1 en douceur.
+- Given un nouveau message, When `unreadTotal` augmente, Then le badge fait un pop (scale) + éventuel halo ; à 0, il disparaît en fondu.
+- Given des changements rapides d'onglet, When je tabote vite, Then pas d'accumulation d'anims (interruptibles).
+**Contraintes perf** : reanimated worklet sur `focused`/`badge` ; pas de re-render de toute la tab bar.
+**Fichiers** : `apps/mobile/app/(tabs)/_layout.tsx` — `TabIcon` (l.18-39) → animer `Feather` (scale sur `focused`) et le badge (l.32-36, pop sur changement de valeur).
+**Livraison** : **[OTA]** JS-only. Pas de bump.
+**DoD** : bounce 60fps interruptible ; badge pop sur incrément ; tsc vert.
+
+### ANIM-6 — [OTA] Badges animés (vérifié / ambassadeur) + transitions d'icônes  · Prio 2.5 (V3/E1.5)
+**Story** : En tant qu'utilisateur, je veux que les badges vérifié/ambassadeur aient une entrée animée et que les bascules d'icônes (ex. ami ajouté) soient fluides, afin d'un produit qui se distingue dans le détail.
+**Given/When/Then**
+- Given un profil/post vérifié ou ambassadeur, When le badge apparaît, Then entrée pop discrète (scale/rotation légère), une seule fois (pas de boucle).
+- Given une bascule d'icône d'action (ex. `user-plus` → `check` après ajout d'ami sur la map sheet), When l'état change, Then cross-fade/scale au lieu d'un switch sec.
+**Contraintes perf** : anims one-shot, pas de boucle ; réutilisables.
+**Fichiers** : `apps/mobile/components/ui/AmbassadorBadge.tsx` (l.14-25), `apps/mobile/components/ui/VerifiedBadge.tsx` ; transitions d'icônes optionnelles dans `apps/mobile/app/(tabs)/map.tsx` (`IndividualSheet` `friendIcon` l.734-741) et boutons d'action friend.
+**Livraison** : **[OTA]** JS-only. Pas de bump.
+**DoD** : entrée one-shot ; bascule fluide ; tsc vert.
+
+## VAGUE B — Natifs (axes 2 + 4) = UN SEUL rebuild EAS + UN SEUL bump (1.7.0 → 1.8.0)
+
+> **Justification du regroupement** : `react-native-maps` (axe 2) ET `lottie-react-native` (axe 4) sont tous deux
+> des **modules natifs** ⇒ chacun impose un rebuild EAS (l'OTA crasherait). Les livrer ensemble = **un seul
+> build iOS + un seul bump `app.json version`** au lieu de deux cycles store. On gèle la Vague A en OTA d'abord
+> (valeur immédiate sans rebuild), puis on groupe tout le natif dans le build 1.8.0. **STOP avant build = action
+> sortante, approbation proprio obligatoire** (Norton CA + EAS `sidi30`, cf. CLAUDE.md).
+
+### ANIM-7 — [REBUILD+bump] ADR carte native Snapchat : react-native-maps vs @rnmapbox/maps  · Prio 4.0 (V5/E2) — ARCHITECT D'ABORD
+**Story** : En tant que proprio, je veux une décision d'architecture documentée avant de migrer la carte Leaflet vers du natif, afin de ne pas casser geo/markers/clustering/proximité.
+**Périmètre ADR (gwani-architect)** : choix `react-native-maps` (Google/Apple) vs `@rnmapbox/maps` (style Snap, vector) ; impact sur le contrat `geo/members` (clustering aujourd'hui côté serveur/bounds), portage des markers avatars (divIcon → marqueur natif/Marker custom + anneau story P-04), clustering natif vs serveur, recentrage/proximité, coût (clé API Mapbox ?), **stratégie migration vs cohabitation** (garder Leaflet en web `apps/web`, natif en mobile ?), et plan de non-régression. Produit : ADR + impact sur `app.json` (plugin natif, permissions).
+**Fichiers à cadrer** : `apps/mobile/app/(tabs)/map.tsx` (réécriture du rendu), `apps/mobile/services/geoApi.ts`, `apps/api/src/geo/geo.service.ts`, `packages/shared-types`, `app.json` (plugin + version bump).
+**Livraison** : ADR (doc). **Pré-requis** d'ANIM-8. Pas de code prod tant que l'ADR n'est pas validé proprio.
+**DoD** : ADR écrit + arbitrage lib tranché + plan migration/cohabitation + estimation rebuild.
+
+### ANIM-8 — [REBUILD+bump] Carte native : pins avatars 60fps + anneau de story (P-04) + Snap-glide + clustering natif  · Prio 3.5 (V5/E5)
+**Story** : En tant qu'utilisateur, je veux une carte native ultra-fluide façon Snap Map — pins avatars vrais natifs, anneau de story autour de l'avatar (tap → ouvre la story), glisse 60fps, clustering natif — afin d'une expérience carte best-in-class.
+**Given/When/Then** (détaillé après ADR ANIM-7)
+- Given la lib choisie, When je pan/zoome, Then 60fps natif (vs WebView), pins avatars rendus nativement.
+- Given un membre avec story active, When je vois son pin, Then un **anneau de story** (P-04) l'entoure ; tap → ouvre `app/stories/[authorId].tsx`.
+- Given une densité de pins, When je dézoome, Then clustering natif fluide.
+- Given la proximité/`drawMe`, When localisé, Then parité fonctionnelle avec l'actuel (zone, recenter, sheets).
+**Contraintes** : **module natif ⇒ rebuild EAS + bump**. Non-régression totale du parcours carte actuel (sheets, recherche, filtres, friend actions). Réutiliser les endpoints geo existants (sauf décision ADR contraire).
+**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` (réécriture rendu carte), `app.json` (plugin + `version`), composant pin natif + anneau story.
+**Livraison** : **[REBUILD+bump]** — groupé avec ANIM-9 dans le build 1.8.0.
+**DoD** : parité fonctionnelle prouvée (aucune régression sheets/recherche/filtres) ; 60fps natif ; anneau story tap→story ; bug-hunter→fixer→e2e ; build EAS seulement après GO proprio.
+
+### ANIM-9 — [REBUILD+bump] Premium Lottie : like premium, écrans de succès, empty-states animés  · Prio 3.0 (V4/E3)
+**Story** : En tant qu'utilisateur, je veux des animations Lottie premium (like premium, écrans de succès, empty-states illustrés), afin d'un produit qui paraît haut de gamme.
+**Given/When/Then**
+- Given une action de succès (ami accepté, post publié, invitation envoyée), When elle réussit, Then un Lottie de succès joue puis se ferme.
+- Given un écran vide (feed/services/recherche sans résultat), When affiché, Then un empty-state illustré animé (vs texte sec actuel).
+- Given un like « premium » (option), When déclenché, Then anim Lottie riche (au-delà du heart-burst reanimated d'ANIM-4).
+**Contraintes** : `lottie-react-native` = **module natif ⇒ rebuild EAS + bump**. Poids des fichiers `.json` Lottie maîtrisé (lazy/bundle). Ne PAS remplacer ANIM-4 (reanimated reste le défaut OTA-livrable ; Lottie = couche premium).
+**Fichiers** : nouveau `apps/mobile/components/ui/LottieSuccess.tsx` / `LottieEmpty.tsx` + assets ; empty-states existants (feed `app/(tabs)/index.tsx`, services `app/(tabs)/services.tsx`, recherche) ; `app.json` (version bump partagé).
+**Livraison** : **[REBUILD+bump]** — groupé avec ANIM-8 dans le build 1.8.0.
+**DoD** : Lottie jouent sans jank ; poids assets maîtrisé ; build EAS seulement après GO proprio ; e2e visuel.

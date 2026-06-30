@@ -1,7 +1,16 @@
 import { memo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
+import { HeartBurst } from '../ui/HeartBurst';
 import type { Post, SharedPost } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
 import { NCImage } from '../ui/NCImage';
@@ -63,18 +72,47 @@ function PostCardImpl({
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [menuOpen, setMenuOpen] = useState(false);
   const [likersOpen, setLikersOpen] = useState(false);
+  // Animation triggers: small burst on the like icon, big one on double-tap.
+  const [iconBurst, setIconBurst] = useState(0);
+  const [photoBurst, setPhotoBurst] = useState(0);
+  const heartScale = useSharedValue(1);
 
   const isOwn = currentUserId && currentUserId === author.id;
   const goToAuthor = () => router.push(`/user/${author.id}`);
+
+  function bounceHeart(liking: boolean) {
+    heartScale.value = withSequence(
+      withTiming(liking ? 1.35 : 0.85, { duration: 110 }),
+      withSpring(1, { damping: 6, stiffness: 220 }),
+    );
+  }
 
   function handleLike() {
     setLiked((prev) => {
       const next = !prev;
       setLikeCount((c) => c + (next ? 1 : -1));
+      bounceHeart(next);
+      if (next) setIconBurst((n) => n + 1);
       return next;
     });
     onLike?.(post.id);
   }
+
+  // Double-tap a photo to like (never unlikes), Instagram-style.
+  function handleDoubleTapLike() {
+    setPhotoBurst((n) => n + 1);
+    if (!liked) {
+      setLiked(true);
+      setLikeCount((c) => c + 1);
+      bounceHeart(true);
+      setIconBurst((n) => n + 1);
+      onLike?.(post.id);
+    }
+  }
+
+  const heartAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+  }));
 
   return (
     <View style={styles.card}>
@@ -162,10 +200,18 @@ function PostCardImpl({
       {post.content ? <MentionText content={post.content} style={styles.content} /> : null}
 
       {post.media.length > 0 ? (
-        <PhotoGallery
-          photos={post.media.map((m) => m.mediaUrl)}
-          onPress={onPhotoPress}
-        />
+        <GestureDetector gesture={Gesture.Tap().numberOfTaps(2).onEnd(() => handleDoubleTapLike())}>
+          <View>
+            <PhotoGallery
+              photos={post.media.map((m) => m.mediaUrl)}
+              onPress={onPhotoPress}
+            />
+            {/* Big celebratory heart on double-tap, centered over the media. */}
+            <View pointerEvents="none" style={styles.photoBurst}>
+              <HeartBurst trigger={photoBurst} size={88} color={Colors.white} />
+            </View>
+          </View>
+        </GestureDetector>
       ) : null}
 
       {post.sharedPost ? (
@@ -177,13 +223,26 @@ function PostCardImpl({
       ) : null}
 
       <View style={styles.actions}>
-        <ActionButton
-          name="heart"
-          label={String(likeCount)}
-          active={liked}
-          accessibilityLabel={liked ? "Je n'aime plus" : "J'aime"}
+        <Pressable
           onPress={handleLike}
-        />
+          style={styles.action}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={liked ? "Je n'aime plus" : "J'aime"}
+        >
+          <View>
+            <Animated.View style={heartAnimStyle}>
+              <Feather name="heart" size={19} color={liked ? Colors.danger : Colors.tan500} />
+            </Animated.View>
+            {/* Small burst over the icon when liking. */}
+            <View pointerEvents="none" style={styles.iconBurst}>
+              <HeartBurst trigger={iconBurst} size={19} />
+            </View>
+          </View>
+          <Text style={[styles.actionLabel, liked && { color: Colors.danger }]}>
+            {String(likeCount)}
+          </Text>
+        </Pressable>
         <ActionButton
           name="message-circle"
           label={String(post.commentCount)}
@@ -402,6 +461,20 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 4,
     paddingHorizontal: Spacing.sm,
+  },
+  photoBurst: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBurst: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionLabel: { fontSize: Typography.sizes.sm, color: Colors.tan500, fontWeight: '600' },
   menuBackdrop: {

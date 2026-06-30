@@ -1,5 +1,6 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Animated, { useReducedMotion, ZoomIn } from 'react-native-reanimated';
 import { Colors } from '@/constants/theme';
 
 interface Props {
@@ -12,15 +13,14 @@ interface Props {
 const GOLD = '#E8A300';
 
 export function AmbassadorBadge({ size = 14 }: Props) {
+  const reduce = useReducedMotion();
   return (
-    <View
-      style={[
-        styles.badge,
-        { width: size, height: size, borderRadius: size / 2 },
-      ]}
+    <Animated.View
+      entering={reduce ? undefined : ZoomIn.springify().damping(8).stiffness(180)}
+      style={[styles.badge, { width: size, height: size, borderRadius: size / 2 }]}
     >
       <Feather name="star" size={size * 0.66} color={Colors.white} />
-    </View>
+    </Animated.View>
   );
 }
 
