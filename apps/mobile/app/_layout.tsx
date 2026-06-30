@@ -166,6 +166,8 @@ export default function RootLayout() {
                 <Stack.Screen name="pages/[id]" />
                 <Stack.Screen name="pages/new" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="friends" />
+                <Stack.Screen name="proximity/index" />
+                <Stack.Screen name="proximity/[encounterId]" options={{ presentation: 'card' }} />
                 <Stack.Screen name="settings" options={{ presentation: 'card' }} />
                 <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
                 <Stack.Screen name="reset-password" options={{ presentation: 'card' }} />
@@ -211,8 +213,11 @@ function NotificationDeepLink() {
       const postId = typeof data.postId === 'string' ? data.postId : null;
       const associationId = typeof data.associationId === 'string' ? data.associationId : null;
       const requestId = typeof data.requestId === 'string' ? data.requestId : null;
-      const proximityUserId =
-        data.type === 'proximity' && typeof data.userId === 'string' ? data.userId : null;
+      const isProximity = data.type === 'proximity';
+      const proximityEncounterId =
+        isProximity && typeof data.encounterId === 'string' ? data.encounterId : null;
+      const proximityRequesterId =
+        isProximity && typeof data.requesterId === 'string' ? data.requesterId : null;
       // review_received carries { reviewTargetType: 'user'|'page', targetId }.
       const reviewTargetType =
         data.reviewTargetType === 'user' || data.reviewTargetType === 'page'
@@ -230,7 +235,15 @@ function NotificationDeepLink() {
       else if (postId) router.push(`/post/${postId}` as never);
       else if (associationId) router.push(`/associations/${associationId}` as never);
       else if (requestId) router.push(`/services/${requestId}` as never);
-      else if (proximityUserId) router.push(`/user/${proximityUserId}` as never);
+      else if (isProximity) {
+        // Incoming connection request (encounter + requester) → request screen;
+        // anonymous crossing → the encounters list (peer stays hidden).
+        router.push(
+          (proximityEncounterId && proximityRequesterId
+            ? `/proximity/${proximityEncounterId}`
+            : '/proximity') as never,
+        );
+      }
       else if (data.type === 'friend_request' || data.type === 'friend_accepted') {
         // Deep-link to the other user's profile (accept/refuse for a request
         // lives there). requesterId on a request, actorId otherwise; legacy

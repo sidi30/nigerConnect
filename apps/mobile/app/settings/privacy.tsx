@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
@@ -19,6 +20,7 @@ import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
 
 export default function PrivacyScreen() {
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const qc = useQueryClient();
@@ -133,13 +135,15 @@ export default function PrivacyScreen() {
         />
       </View>
 
-      <Text style={styles.section}>Alertes de proximité</Text>
+      <Text style={styles.section}>Rencontres à proximité</Text>
       <View style={styles.switchRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.switchLabel}>Activer les alertes</Text>
+          <Text style={styles.switchLabel}>Activer la proximité</Text>
           <Text style={styles.switchHint}>
-            Fonctionne uniquement quand l&apos;application est ouverte. Tu es notifié
-            lorsqu&apos;un autre membre se trouve dans le rayon que tu as choisi.
+            Fonctionne uniquement quand l&apos;application est ouverte. Tu croises un
+            autre membre seulement si vous l&apos;avez activé tous les deux et que vous
+            êtes chacun dans le rayon choisi (le plus restrictif des deux s&apos;applique).
+            Vous restez anonymes jusqu&apos;à ce qu&apos;une demande soit acceptée.
           </Text>
         </View>
         <Switch
@@ -151,14 +155,25 @@ export default function PrivacyScreen() {
         />
       </View>
 
-      {proximityAlerts && !showOnMap ? (
+      {proximityAlerts && user.identityStatus !== 'approved' ? (
         <View style={styles.hintCard}>
           <Feather name="alert-triangle" size={16} color={Colors.brown} style={styles.hintIcon} />
           <Text style={styles.hintText}>
-            Pour que les alertes de proximité fonctionnent, tu dois être visible sur la
-            carte. Active « Afficher mon avatar » ci-dessus.
+            La proximité est réservée aux membres dont la pièce d&apos;identité est
+            vérifiée (sécurité). Vérifie ton identité pour y participer.
           </Text>
         </View>
+      ) : null}
+
+      {proximityAlerts ? (
+        <Pressable style={styles.linkRow} onPress={() => router.push('/proximity')}>
+          <Feather name="map-pin" size={20} color={Colors.orange} style={styles.exportEmoji} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.exportLabel}>Voir mes rencontres</Text>
+            <Text style={styles.exportDesc}>Les personnes croisées et les demandes reçues.</Text>
+          </View>
+          <Text style={styles.exportChevron}>›</Text>
+        </Pressable>
       ) : null}
 
       <View style={styles.radiusRow}>
@@ -375,6 +390,16 @@ const styles = StyleSheet.create({
     borderColor: Colors.danger,
   },
   unblockLabel: { color: Colors.danger, fontSize: Typography.sizes.xs + 1, fontWeight: '700' },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md + 2,
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+  },
   exportBtn: {
     flexDirection: 'row',
     alignItems: 'center',

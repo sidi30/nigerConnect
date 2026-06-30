@@ -1,4 +1,8 @@
-import type { ProximityPingResult } from '@nigerconnect/shared-types';
+import type {
+  ProximityActionResult,
+  ProximityEncounterSummary,
+  ProximityPingResult,
+} from '@nigerconnect/shared-types';
 import { api } from './api';
 
 /**
@@ -134,6 +138,30 @@ export const geoApi = {
     lon: number;
   }): Promise<ProximityPingResult> {
     const { data } = await api.post<ProximityPingResult>('/geo/proximity/ping', params);
+    return data;
+  },
+
+  // ── Proximity encounters (double-blind) ──────────────────────────────────
+  async listEncounters(): Promise<ProximityEncounterSummary[]> {
+    const { data } = await api.get<ProximityEncounterSummary[]>('/geo/proximity/encounters');
+    return data;
+  },
+  async connectEncounter(encounterId: string): Promise<ProximityActionResult> {
+    const { data } = await api.post<ProximityActionResult>(
+      `/geo/proximity/encounters/${encounterId}/connect`,
+    );
+    return data;
+  },
+  async acceptEncounter(encounterId: string): Promise<ProximityActionResult> {
+    const { data } = await api.post<ProximityActionResult>(
+      `/geo/proximity/encounters/${encounterId}/accept`,
+    );
+    return data;
+  },
+  async declineEncounter(encounterId: string): Promise<ProximityActionResult> {
+    const { data } = await api.post<ProximityActionResult>(
+      `/geo/proximity/encounters/${encounterId}/decline`,
+    );
     return data;
   },
 };

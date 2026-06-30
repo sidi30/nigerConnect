@@ -59,8 +59,13 @@ function routeForNotification(n: Notification): string | null {
       return r ? `/services/${r}` : null;
     }
     case 'proximity': {
-      const u = str('userId');
-      return u ? `/user/${u}` : null;
+      // An incoming connection request carries both ids → open the request
+      // screen (requester revealed). An anonymous crossing has only encounterId
+      // → open the list (peer stays hidden).
+      const enc = str('encounterId');
+      const req = str('requesterId');
+      if (enc && req) return `/proximity/${enc}`;
+      return '/proximity';
     }
     case 'invite_accepted': {
       // The backend sets actorId = the newly-joined member.
