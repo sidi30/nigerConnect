@@ -108,7 +108,7 @@ export default function PostScreen() {
   });
 
   const likeMut = useMutation({
-    mutationFn: () => feedApi.toggleLike(id!),
+    mutationFn: (emoji?: string) => feedApi.toggleLike(id!, emoji),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['post', id] });
       void qc.invalidateQueries({ queryKey: ['feed'] });
@@ -173,7 +173,7 @@ export default function PostScreen() {
               <View>
                 <PostCard
                   post={postQuery.data}
-                  onLike={() => likeMut.mutate()}
+                  onLike={(_postId, emoji) => likeMut.mutate(emoji)}
                   onPhotoPress={(photos, index) =>
                     router.push({
                       pathname: '/photos/viewer',

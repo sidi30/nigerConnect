@@ -119,37 +119,11 @@ export default function FeedTab() {
     },
   });
 
+  // PostCard owns the instant reaction UI (emoji + count + burst); this just
+  // persists the reaction and re-syncs the cached feed with DB truth.
   const likeMut = useMutation({
-    mutationFn: (postId: string) => feedApi.toggleLike(postId),
-    // Optimistic: flip the like on the cached feed pages immediately
-    onMutate: async (postId) => {
-      await qc.cancelQueries({ queryKey: ['feed'] });
-      const prev = qc.getQueryData(['feed']);
-      qc.setQueryData(['feed'], (old: unknown) => {
-        const typed = old as { pages: Array<{ items: Post[] }> } | undefined;
-        if (!typed) return old;
-        return {
-          ...typed,
-          pages: typed.pages.map((page) => ({
-            ...page,
-            items: page.items.map((p) =>
-              p.id === postId
-                ? {
-                    ...p,
-                    isLikedByMe: !p.isLikedByMe,
-                    likeCount: p.likeCount + (p.isLikedByMe ? -1 : 1),
-                  }
-                : p,
-            ),
-          })),
-        };
-      });
-      return { prev };
-    },
-    onError: (_e, _postId, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['feed'], ctx.prev);
-    },
-    // Re-sync with the server so the cached counter matches DB truth.
+    mutationFn: ({ postId, emoji }: { postId: string; emoji?: string }) =>
+      feedApi.toggleLike(postId, emoji),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['feed'] });
     },
@@ -172,8 +146,8 @@ export default function FeedTab() {
   const posts: Post[] = feedQuery.data?.pages.flatMap((p) => p.items) ?? [];
 
   const handleLike = useCallback(
-    (id: string) => {
-      likeMut.mutate(id);
+    (id: string, emoji?: string) => {
+      likeMut.mutate({ postId: id, emoji });
     },
     [likeMut],
   );

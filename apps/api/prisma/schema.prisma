@@ -506,6 +506,8 @@ model Like {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   postId    String   @map("post_id") @db.Uuid
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  // The reaction emoji (Instagram/Facebook-style). Legacy likes default to ❤️.
+  emoji     String   @default("❤️") @db.VarChar(16)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@id([userId, postId])

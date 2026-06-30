@@ -13,7 +13,18 @@ export class LikesService {
     private readonly posts: PostsService,
   ) {}
 
-  async toggleLike(userId: string, postId: string): Promise<{ liked: boolean; count: number }> {
+  /**
+   * Set / switch / clear the viewer's reaction on a post (Instagram/Facebook
+   * style). `emoji` defaults to ❤️ so the legacy "like" call still works.
+   * - no reaction yet → create (count +1, notify author)
+   * - same emoji again → remove (toggle off, count -1)
+   * - different emoji → switch in place (count unchanged, no re-notify)
+   */
+  async toggleLike(
+    userId: string,
+    postId: string,
+    emoji = '❤️',
+  ): Promise<{ liked: boolean; count: number; myReaction: string | null }> {
     // Visibility gate first — without it, a non-friend could like a
     // friends-only post and surface their identity in the author's
     // notifications, working around the privacy setting entirely.
@@ -29,26 +40,36 @@ export class LikesService {
     });
 
     if (existing) {
-      await this.prisma.$transaction([
-        this.prisma.like.delete({ where: { userId_postId: { userId, postId } } }),
-        this.prisma.post.update({
-          where: { id: postId },
-          data: { likeCount: { decrement: 1 } },
-        }),
-      ]);
+      if (existing.emoji === emoji) {
+        // Same reaction tapped again → remove it.
+        await this.prisma.$transaction([
+          this.prisma.like.delete({ where: { userId_postId: { userId, postId } } }),
+          this.prisma.post.update({
+            where: { id: postId },
+            data: { likeCount: { decrement: 1 } },
+          }),
+        ]);
+        await this.invalidateCaches(userId, post.authorId);
+        return { liked: false, count: post.likeCount - 1, myReaction: null };
+      }
+      // Switch reaction in place — count unchanged, no fresh notification.
+      await this.prisma.like.update({
+        where: { userId_postId: { userId, postId } },
+        data: { emoji },
+      });
       await this.invalidateCaches(userId, post.authorId);
-      return { liked: false, count: post.likeCount - 1 };
+      return { liked: true, count: post.likeCount, myReaction: emoji };
     }
 
     await this.prisma.$transaction([
-      this.prisma.like.create({ data: { userId, postId } }),
+      this.prisma.like.create({ data: { userId, postId, emoji } }),
       this.prisma.post.update({
         where: { id: postId },
         data: { likeCount: { increment: 1 } },
       }),
     ]);
 
-    // Notify post author (skip if liking own post)
+    // Notify post author (skip if reacting to own post)
     if (post.authorId !== userId) {
       const liker = await this.prisma.user.findUnique({
         where: { id: userId },
@@ -59,13 +80,13 @@ export class LikesService {
         userId: post.authorId,
         actorId: userId,
         type: 'like',
-        title: `${likerName} a aimé votre publication`,
+        title: `${likerName} a réagi ${emoji} à votre publication`,
         data: { postId },
       });
     }
 
     await this.invalidateCaches(userId, post.authorId);
-    return { liked: true, count: post.likeCount + 1 };
+    return { liked: true, count: post.likeCount + 1, myReaction: emoji };
   }
 
   private async invalidateCaches(likerId: string, authorId: string): Promise<void> {

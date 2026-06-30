@@ -43,6 +43,8 @@ export interface Post {
   commentCount: number;
   shareCount: number;
   isLikedByMe: boolean;
+  /** The viewer's chosen reaction emoji (e.g. '❤️','😂'), or null if none. */
+  myReaction?: string | null;
   media: PostMedia[];
   createdAt: string;
   updatedAt: string;

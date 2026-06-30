@@ -38,8 +38,14 @@ export const feedApi = {
     return data;
   },
 
-  async toggleLike(postId: string): Promise<{ liked: boolean; count: number }> {
-    const { data } = await api.post<{ liked: boolean; count: number }>(`/posts/${postId}/like`);
+  async toggleLike(
+    postId: string,
+    emoji?: string,
+  ): Promise<{ liked: boolean; count: number; myReaction: string | null }> {
+    const { data } = await api.post<{ liked: boolean; count: number; myReaction: string | null }>(
+      `/posts/${postId}/like`,
+      emoji ? { emoji } : {},
+    );
     return data;
   },
 

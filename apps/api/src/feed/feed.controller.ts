@@ -21,11 +21,13 @@ import {
   createPostSchema,
   createStorySchema,
   feedQuerySchema,
+  reactSchema,
   updatePostSchema,
   type CreateCommentDto,
   type CreatePostDto,
   type CreateStoryDto,
   type FeedQueryDto,
+  type ReactDto,
   type UpdatePostDto,
 } from './dto/post.dto';
 
@@ -105,8 +107,9 @@ export class FeedController {
   like(
     @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(reactSchema)) dto: ReactDto,
   ) {
-    return this.likes.toggleLike(me.sub, id);
+    return this.likes.toggleLike(me.sub, id, dto.emoji);
   }
 
   @Get('posts/:id/likes')

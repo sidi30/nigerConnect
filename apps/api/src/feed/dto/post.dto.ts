@@ -41,3 +41,9 @@ export const feedQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type FeedQueryDto = z.infer<typeof feedQuerySchema>;
+
+/** Reaction emoji for a post like (Instagram/Facebook-style). Defaults to ❤️. */
+export const reactSchema = z.object({
+  emoji: z.string().trim().min(1).max(16).default('❤️'),
+});
+export type ReactDto = z.infer<typeof reactSchema>;

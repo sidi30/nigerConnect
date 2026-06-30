@@ -18,13 +18,14 @@ import { VerifiedBadge } from '../ui/VerifiedBadge';
 import { AmbassadorBadge } from '../ui/AmbassadorBadge';
 import { MentionText } from '../ui/MentionText';
 import { LikersSheet } from './LikersSheet';
+import { ReactionBar } from './ReactionBar';
 import { Colors, palette, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
 interface Props {
   post: Post;
   currentUserId?: string;
-  onLike?: (postId: string) => void;
+  onLike?: (postId: string, emoji?: string) => void;
   onComment?: (postId: string) => void;
   onShare?: (postId: string) => void;
   onPhotoPress?: (photos: string[], index: number) => void;
@@ -68,46 +69,59 @@ function PostCardImpl({
 }: Props) {
   const router = useRouter();
   const author = post.author;
-  const [liked, setLiked] = useState(post.isLikedByMe);
+  // myReaction = the viewer's chosen emoji (null = none). Derived from the new
+  // field, falling back to ❤️ for legacy isLikedByMe.
+  const [myReaction, setMyReaction] = useState<string | null>(
+    post.myReaction ?? (post.isLikedByMe ? '❤️' : null),
+  );
   const [likeCount, setLikeCount] = useState(post.likeCount);
   const [menuOpen, setMenuOpen] = useState(false);
   const [likersOpen, setLikersOpen] = useState(false);
+  const [reactionBarOpen, setReactionBarOpen] = useState(false);
   // Animation triggers: small burst on the like icon, big one on double-tap.
   const [iconBurst, setIconBurst] = useState(0);
   const [photoBurst, setPhotoBurst] = useState(0);
   const heartScale = useSharedValue(1);
 
+  const liked = myReaction !== null;
   const isOwn = currentUserId && currentUserId === author.id;
   const goToAuthor = () => router.push(`/user/${author.id}`);
 
-  function bounceHeart(liking: boolean) {
+  function bounce(up: boolean) {
     heartScale.value = withSequence(
-      withTiming(liking ? 1.35 : 0.85, { duration: 110 }),
+      withTiming(up ? 1.35 : 0.85, { duration: 110 }),
       withSpring(1, { damping: 6, stiffness: 220 }),
     );
   }
 
-  function handleLike() {
-    setLiked((prev) => {
-      const next = !prev;
-      setLikeCount((c) => c + (next ? 1 : -1));
-      bounceHeart(next);
-      if (next) setIconBurst((n) => n + 1);
-      return next;
+  // Apply a reaction optimistically and persist. Mirrors the server: same emoji
+  // again → remove; different → switch (count unchanged); new → add.
+  function react(emoji: string) {
+    setReactionBarOpen(false);
+    setMyReaction((prev) => {
+      if (prev === emoji) {
+        setLikeCount((c) => Math.max(0, c - 1));
+        bounce(false);
+        onLike?.(post.id, emoji); // toggles off server-side
+        return null;
+      }
+      if (prev === null) setLikeCount((c) => c + 1);
+      bounce(true);
+      if (emoji === '❤️') setIconBurst((n) => n + 1);
+      onLike?.(post.id, emoji);
+      return emoji;
     });
-    onLike?.(post.id);
   }
 
-  // Double-tap a photo to like (never unlikes), Instagram-style.
+  // Quick tap: ❤️ if none, else remove the current reaction.
+  function handleLike() {
+    react(myReaction ?? '❤️');
+  }
+
+  // Double-tap a photo → ❤️ (never removes), Instagram-style.
   function handleDoubleTapLike() {
     setPhotoBurst((n) => n + 1);
-    if (!liked) {
-      setLiked(true);
-      setLikeCount((c) => c + 1);
-      bounceHeart(true);
-      setIconBurst((n) => n + 1);
-      onLike?.(post.id);
-    }
+    if (!liked) react('❤️');
   }
 
   const heartAnimStyle = useAnimatedStyle(() => ({
@@ -223,26 +237,40 @@ function PostCardImpl({
       ) : null}
 
       <View style={styles.actions}>
-        <Pressable
-          onPress={handleLike}
-          style={styles.action}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={liked ? "Je n'aime plus" : "J'aime"}
-        >
-          <View>
-            <Animated.View style={heartAnimStyle}>
-              <Feather name="heart" size={19} color={liked ? Colors.danger : Colors.tan500} />
-            </Animated.View>
-            {/* Small burst over the icon when liking. */}
-            <View pointerEvents="none" style={styles.iconBurst}>
-              <HeartBurst trigger={iconBurst} size={19} />
+        <View style={styles.likeWrap}>
+          <ReactionBar
+            visible={reactionBarOpen}
+            onSelect={react}
+            onClose={() => setReactionBarOpen(false)}
+          />
+          <Pressable
+            onPress={handleLike}
+            onLongPress={() => setReactionBarOpen(true)}
+            delayLongPress={220}
+            style={styles.action}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={liked ? 'Retirer ma réaction' : 'Réagir'}
+          >
+            <View>
+              <Animated.View style={heartAnimStyle}>
+                {myReaction ? (
+                  <Text style={styles.reactionEmoji}>{myReaction}</Text>
+                ) : (
+                  <Feather name="heart" size={20} color={Colors.tan500} />
+                )}
+              </Animated.View>
+              <View pointerEvents="none" style={styles.iconBurst}>
+                <HeartBurst trigger={iconBurst} size={19} />
+              </View>
             </View>
-          </View>
-          <Text style={[styles.actionLabel, liked && { color: Colors.danger }]}>
-            {String(likeCount)}
-          </Text>
-        </Pressable>
+            {likeCount > 0 ? (
+              <Text style={[styles.actionLabel, liked && { color: Colors.danger }]}>
+                {String(likeCount)}
+              </Text>
+            ) : null}
+          </Pressable>
+        </View>
         <ActionButton
           name="message-circle"
           label={String(post.commentCount)}
@@ -462,6 +490,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: Spacing.sm,
   },
+  likeWrap: { position: 'relative' },
+  reactionEmoji: { fontSize: 19, lineHeight: 22 },
   photoBurst: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',

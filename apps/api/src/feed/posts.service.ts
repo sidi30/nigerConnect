@@ -227,7 +227,7 @@ export class PostsService {
       include: {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
-        likes: { where: { userId: viewerId }, select: { userId: true } },
+        likes: { where: { userId: viewerId }, select: { userId: true, emoji: true } },
         sharedPost: { include: SHARED_POST_INCLUDE },
       },
     });
@@ -403,7 +403,7 @@ export class PostsService {
       include: {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
-        likes: { where: { userId }, select: { userId: true } },
+        likes: { where: { userId }, select: { userId: true, emoji: true } },
         sharedPost: { include: SHARED_POST_INCLUDE },
       },
       orderBy: { createdAt: 'desc' },
@@ -456,7 +456,7 @@ export class PostsService {
       include: {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
-        likes: { where: { userId: viewerId }, select: { userId: true } },
+        likes: { where: { userId: viewerId }, select: { userId: true, emoji: true } },
         sharedPost: { include: SHARED_POST_INCLUDE },
       },
       orderBy: { createdAt: 'desc' },
@@ -543,7 +543,7 @@ export class PostsService {
       include: {
         media: { orderBy: { sortOrder: 'asc' } },
         author: { select: AUTHOR_SELECT },
-        likes: { where: { userId: viewerId }, select: { userId: true } },
+        likes: { where: { userId: viewerId }, select: { userId: true, emoji: true } },
         sharedPost: { include: SHARED_POST_INCLUDE },
       },
       orderBy: { createdAt: 'desc' },
@@ -617,14 +617,17 @@ export class PostsService {
     await pipeline.exec();
   }
 
-  private decoratePost<T extends { likes?: { userId: string }[] }>(
+  private decoratePost<T extends { likes?: { userId: string; emoji?: string }[] }>(
     post: T,
     viewerId: string,
-  ): Omit<T, 'likes'> & { isLikedByMe: boolean } {
-    const { likes, ...rest } = post as T & { likes: { userId: string }[] };
+  ): Omit<T, 'likes'> & { isLikedByMe: boolean; myReaction: string | null } {
+    const { likes, ...rest } = post as T & { likes: { userId: string; emoji?: string }[] };
+    const mine = (likes ?? []).find((l) => l.userId === viewerId);
     return {
       ...(rest as Omit<T, 'likes'>),
-      isLikedByMe: (likes ?? []).some((l) => l.userId === viewerId),
+      isLikedByMe: !!mine,
+      // The viewer's chosen reaction emoji (defaults to ❤️ for legacy likes).
+      myReaction: mine ? mine.emoji ?? '❤️' : null,
     };
   }
 }
