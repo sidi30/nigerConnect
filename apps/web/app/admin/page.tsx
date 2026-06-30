@@ -21,6 +21,7 @@ import {
 import { useAdminNotifications } from "@/lib/useAdminNotifications";
 import OverviewSection from "@/components/admin/OverviewSection";
 import IdentitySection from "@/components/admin/IdentitySection";
+import DobBackfillSection from "@/components/admin/DobBackfillSection";
 import ReportsSection from "@/components/admin/ReportsSection";
 import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
@@ -119,7 +120,12 @@ export default function AdminDashboardPage() {
 
       <main className="px-4 sm:px-6 lg:px-8 py-6 max-w-[1400px] mx-auto">
         {tab === "overview" ? <OverviewSection /> : null}
-        {tab === "identity" ? <IdentitySection /> : null}
+        {tab === "identity" ? (
+          <div className="space-y-6">
+            <IdentitySection />
+            <DobBackfillSection />
+          </div>
+        ) : null}
         {tab === "users" ? <UsersSection role={role} /> : null}
         {tab === "reports" ? <ReportsSection /> : null}
         {tab === "newsletter" ? <NewsletterSection /> : null}

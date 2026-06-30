@@ -18,6 +18,20 @@ const timeseriesSchema = z.object({
 });
 type TimeseriesDto = z.infer<typeof timeseriesSchema>;
 
+const listMissingDobSchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+type ListMissingDobDto = z.infer<typeof listMissingDobSchema>;
+
+const setDobSchema = z.object({
+  dateOfBirth: z
+    .string()
+    .date()
+    .refine((d) => Date.parse(d) <= Date.now(), 'dateOfBirth cannot be in the future'),
+});
+type SetDobDto = z.infer<typeof setDobSchema>;
+
 // ── Invitation admin schemas ───────────────────────────────────────────────
 
 const patchSettingsSchema = z
@@ -120,6 +134,24 @@ export class AdminController {
   @Get('identity')
   identity(@Query(new ZodValidationPipe(listIdentitySchema)) dto: ListIdentityDto) {
     return this.admin.listIdentityDocuments(dto.status, dto.limit, dto.cursor);
+  }
+
+  /** Backfill queue: approved users missing a DOB (proximity 18+ gate). Admin-only. */
+  @Roles('admin')
+  @Get('identity/missing-dob')
+  identityMissingDob(@Query(new ZodValidationPipe(listMissingDobSchema)) dto: ListMissingDobDto) {
+    return this.admin.listApprovedMissingDob(dto.limit, dto.cursor);
+  }
+
+  /** Record the DOB on an already-approved user's document (backfill). Admin-only. */
+  @Roles('admin')
+  @Patch('identity/:userId/dob')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async setIdentityDob(
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body(new ZodValidationPipe(setDobSchema)) dto: SetDobDto,
+  ): Promise<void> {
+    await this.admin.setApprovedDob(userId, dto.dateOfBirth);
   }
 
   // ── Invitation / Settings endpoints (§5.3) ──────────────────────────────

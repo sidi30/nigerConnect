@@ -455,6 +455,33 @@ export function fetchPendingIdentity(
   });
 }
 
+export interface MissingDobItem {
+  id: string;
+  userId: string;
+  documentType: string;
+  status: string;
+  createdAt: string;
+  viewUrl: string | null;
+  user: IdentityUser;
+}
+export interface MissingDobResponse {
+  items: MissingDobItem[];
+  nextCursor: string | null;
+}
+
+/** Approved users missing a DOB — the proximity 18+ backfill queue. */
+export function fetchMissingDob(signal?: AbortSignal): Promise<MissingDobResponse> {
+  return adminFetch<MissingDobResponse>("/admin/identity/missing-dob", { signal });
+}
+
+/** Record a DOB on an already-approved user's document (backfill). */
+export function setIdentityDob(userId: string, dateOfBirth: string): Promise<void> {
+  return adminFetch<void>(`/admin/identity/${userId}/dob`, {
+    method: "PATCH",
+    body: { dateOfBirth },
+  });
+}
+
 export function reviewIdentity(
   userId: string,
   decision: IdentityDecision,

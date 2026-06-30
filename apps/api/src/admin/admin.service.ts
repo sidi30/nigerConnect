@@ -939,6 +939,67 @@ export class AdminService {
     return { items, nextCursor: hasMore ? page[page.length - 1]!.id : null };
   }
 
+  /**
+   * Backfill queue: approved users whose identity document has NO date of birth
+   * (verified before the 18+/DOB capture existed). They're proximity-INELIGIBLE
+   * until an admin opens the (already-approved) document and records the DOB.
+   */
+  async listApprovedMissingDob(limit: number, cursor?: string) {
+    const docs = await this.prisma.identityDocument.findMany({
+      where: { status: 'approved', dateOfBirth: null },
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      orderBy: { reviewedAt: 'asc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
+            city: true,
+            countryCode: true,
+            identityStatus: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+    const hasMore = docs.length > limit;
+    const page = hasMore ? docs.slice(0, limit) : docs;
+    const items = await Promise.all(
+      page.map(async (d) => ({
+        id: d.id,
+        userId: d.userId,
+        documentType: d.documentType,
+        status: d.status,
+        createdAt: d.createdAt,
+        viewUrl: await this.presignDoc(d.fileUrl),
+        user: d.user,
+      })),
+    );
+    return { items, nextCursor: hasMore ? page[page.length - 1]!.id : null };
+  }
+
+  /**
+   * Record the DOB on a user's latest approved identity document (backfill).
+   * Does NOT change the document status — the user stays verified; this only
+   * fills the 18+ gate. Stored at UTC midnight (@db.Date) to avoid an off-by-one.
+   */
+  async setApprovedDob(userId: string, dateOfBirth: string): Promise<void> {
+    const doc = await this.prisma.identityDocument.findFirst({
+      where: { userId, status: 'approved' },
+      orderBy: { reviewedAt: 'desc' },
+    });
+    if (!doc) throw new NotFoundException('No approved identity document for this user');
+    await this.prisma.identityDocument.update({
+      where: { id: doc.id },
+      data: { dateOfBirth: new Date(`${dateOfBirth}T00:00:00.000Z`) },
+    });
+  }
+
   /** Turn an `s3://<privateBucket>/<key>` pointer into a short presigned GET. */
   private async presignDoc(fileUrl: string): Promise<string | null> {
     const prefix = `s3://${this.privateBucket}/`;
