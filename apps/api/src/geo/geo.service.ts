@@ -96,6 +96,8 @@ export interface IndividualMarker {
   countryCode: string | null;
   lat: number;
   lon: number;
+  /** True if the user is online right now (Redis presence) — drives the live halo. */
+  activeRecently?: boolean;
 }
 export interface AssociationMarker {
   kind: 'association';
@@ -1078,18 +1080,40 @@ export class GeoService implements OnModuleInit {
       },
     });
 
-    return users
-      .filter((u) => u.latitude !== null && u.longitude !== null)
-      .map<IndividualMarker>((u) => ({
-        kind: 'individual',
-        userId: u.id,
-        name: u.displayName,
-        avatarUrl: u.avatarUrl,
-        city: u.city,
-        countryCode: u.countryCode,
-        lat: Number(u.latitude),
-        lon: Number(u.longitude),
-      }));
+    const placed = users.filter((u) => u.latitude !== null && u.longitude !== null);
+    // Live presence: which of these are online right now (Redis, 60s TTL). Used
+    // for the pulsing "alive" halo. Privacy-safe: only a boolean leaves the
+    // server, never a last-seen timestamp. Fail-open to no-halo on Redis error.
+    const online = await this.onlinePresence(placed.map((u) => u.id));
+
+    return placed.map<IndividualMarker>((u) => ({
+      kind: 'individual',
+      userId: u.id,
+      name: u.displayName,
+      avatarUrl: u.avatarUrl,
+      city: u.city,
+      countryCode: u.countryCode,
+      lat: Number(u.latitude),
+      lon: Number(u.longitude),
+      activeRecently: online.has(u.id),
+    }));
+  }
+
+  /** Set of the given userIds currently online (Redis presence). Fail-open: {} on error. */
+  private async onlinePresence(userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    try {
+      const pipeline = this.redis.client.pipeline();
+      for (const id of userIds) pipeline.exists(`presence:user:${id}`);
+      const results = await pipeline.exec();
+      const online = new Set<string>();
+      results?.forEach(([err, value], i) => {
+        if (!err && value === 1) online.add(userIds[i]!);
+      });
+      return online;
+    } catch {
+      return new Set();
+    }
   }
 
   /**

@@ -25,7 +25,7 @@ describe('AdminService — DOB backfill', () => {
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'user-1', status: 'approved' } }),
     );
-    const arg = update.mock.calls[0]![0] as { data: { dateOfBirth: Date } };
+    const arg = (update.mock.calls[0] as unknown as [{ data: { dateOfBirth: Date } }])[0];
     expect(arg.data.dateOfBirth.toISOString()).toBe('1990-03-12T00:00:00.000Z');
   });
 

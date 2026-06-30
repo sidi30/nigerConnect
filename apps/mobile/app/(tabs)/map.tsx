@@ -80,7 +80,11 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   @keyframes clusterPop{0%{opacity:0;transform:scale(.4)}60%{opacity:1;transform:scale(1.14)}100%{transform:scale(1)}}
   .enter{animation:markerDrop .42s cubic-bezier(.2,.8,.3,1.1) both;will-change:transform,opacity}
   .enter-cluster{animation:clusterPop .4s ease both;will-change:transform,opacity}
-  @media (prefers-reduced-motion: reduce){.enter,.enter-cluster{animation:none}}
+  /* ANIM-2 — "alive" halo: a soft green pulse behind online members' avatars. */
+  .ind-wrap{position:relative;width:48px;height:48px}
+  .ind-halo{position:absolute;top:50%;left:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:rgba(13,176,43,.45);z-index:-1;animation:halo 1.8s ease-out infinite;will-change:transform,opacity}
+  @keyframes halo{0%{transform:scale(.85);opacity:.7}80%{transform:scale(1.8);opacity:0}100%{opacity:0}}
+  @media (prefers-reduced-motion: reduce){.enter,.enter-cluster{animation:none}.ind-halo{animation:none;opacity:0}}
 </style>
 </head><body>
 <div id="map"></div>
@@ -183,9 +187,13 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
       if (m.kind === 'individual') {
         const off = offset[m.userId] || { dLat:0, dLon:0 };
         const e = entry('i:' + m.userId);
-        const inner = m.avatarUrl
+        const avatar = m.avatarUrl
           ? '<div class="marker-ind' + e.cls + '" style="background-image:url(\\'' + m.avatarUrl + '\\')' + e.style + '"></div>'
           : '<div class="marker-ind marker-ind-initials' + e.cls + '" style="' + e.style.replace(/^;/,'') + '">' + initials(m.name) + '</div>';
+        // Wrap with a pulsing halo when the member is online right now.
+        const inner = m.activeRecently
+          ? '<div class="ind-wrap"><div class="ind-halo"></div>' + avatar + '</div>'
+          : avatar;
         const icon = L.divIcon({ html: inner, className: '', iconSize: [48, 48], iconAnchor: [24, 24] });
         const mk = L.marker([m.lat + off.dLat, m.lon + off.dLon], { icon });
         mk.on('click', () => post({ type:'select', marker: m }));

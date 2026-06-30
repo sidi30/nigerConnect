@@ -30,6 +30,8 @@ export type MapMarker =
       countryCode: string | null;
       lat: number;
       lon: number;
+      /** Online now (Redis presence) — drives the live pulsing halo on the map. */
+      activeRecently?: boolean;
     }
   | {
       kind: 'association';
