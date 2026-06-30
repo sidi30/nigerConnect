@@ -492,6 +492,7 @@ export class GeoService implements OnModuleInit {
         proximityAlerts: true,
         proximityRadius: true,
         city: true,
+        countryCode: true,
         identityStatus: true,
         // Latest approved ID document with a recorded DOB — drives the 18+ gate.
         identityDocuments: {
@@ -513,8 +514,9 @@ export class GeoService implements OnModuleInit {
     if (!isAdult(pinger.identityDocuments[0]?.dateOfBirth ?? null))
       return { matches: [] };
 
-    // Rollout: restrict to the pilot city/cities when configured (empty = all).
-    if (!(await this.settings.isProximityCityAllowed(pinger.city)))
+    // Rollout: restrict to the pilot region(s) — city and/or country — when
+    // configured (both empty = everyone).
+    if (!(await this.settings.isProximityRegionAllowed(pinger.city, pinger.countryCode)))
       return { matches: [] };
 
     // Persist the pinger's live position for matching — in the PRIVATE

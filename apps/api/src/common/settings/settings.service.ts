@@ -122,19 +122,33 @@ export class SettingsService {
   }
 
   /**
-   * City allowlist for the proximity rollout. `proximity_cities` is a
-   * comma-separated list (case-insensitive) — empty = no restriction (all
-   * cities). A non-empty list with a user who has no city => not allowed
-   * (fail-closed). Lets us pilot in one city before a wider launch.
+   * Region allowlist for the proximity rollout. Pilots can be scoped by CITY
+   * (`proximity_cities`, matched against user.city, case-insensitive) and/or by
+   * COUNTRY (`proximity_countries`, matched against user.countryCode, e.g. 'FR').
+   * Both empty = no restriction (everyone). When at least one list is set, a user
+   * is in scope if their country OR their city matches; a user with neither field
+   * is out of scope (fail-closed).
    */
-  async isProximityCityAllowed(city: string | null | undefined): Promise<boolean> {
-    const raw = (await this.getSetting('proximity_cities', '')).trim();
-    if (!raw) return true;
-    if (!city) return false;
-    const allow = raw
+  async isProximityRegionAllowed(
+    city: string | null | undefined,
+    countryCode: string | null | undefined,
+  ): Promise<boolean> {
+    const cities = this.parseCsv(await this.getSetting('proximity_cities', '')).map((c) =>
+      c.toLowerCase(),
+    );
+    const countries = this.parseCsv(await this.getSetting('proximity_countries', '')).map((c) =>
+      c.toUpperCase(),
+    );
+    if (cities.length === 0 && countries.length === 0) return true;
+    if (countryCode && countries.includes(countryCode.trim().toUpperCase())) return true;
+    if (city && cities.includes(city.trim().toLowerCase())) return true;
+    return false;
+  }
+
+  private parseCsv(raw: string): string[] {
+    return raw
       .split(',')
-      .map((c) => c.trim().toLowerCase())
+      .map((s) => s.trim())
       .filter(Boolean);
-    return allow.includes(city.trim().toLowerCase());
   }
 }
