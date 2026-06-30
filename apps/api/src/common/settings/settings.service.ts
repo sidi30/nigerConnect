@@ -111,4 +111,30 @@ export class SettingsService {
     if (!(await this.isFullVisibilityActive())) return null;
     return (await this.getSetting('admin_full_visibility_until', '')) || null;
   }
+
+  /**
+   * Master kill-switch for the proximity-encounter feature. OFF by default so the
+   * feature ships DARK and a misconfig / DB failure fails CLOSED (off). Flip to
+   * 'true' via the admin settings to enable, then roll out per city below.
+   */
+  async isProximityEnabled(): Promise<boolean> {
+    return (await this.getSetting('proximity_enabled', 'false')) === 'true';
+  }
+
+  /**
+   * City allowlist for the proximity rollout. `proximity_cities` is a
+   * comma-separated list (case-insensitive) — empty = no restriction (all
+   * cities). A non-empty list with a user who has no city => not allowed
+   * (fail-closed). Lets us pilot in one city before a wider launch.
+   */
+  async isProximityCityAllowed(city: string | null | undefined): Promise<boolean> {
+    const raw = (await this.getSetting('proximity_cities', '')).trim();
+    if (!raw) return true;
+    if (!city) return false;
+    const allow = raw
+      .split(',')
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean);
+    return allow.includes(city.trim().toLowerCase());
+  }
 }

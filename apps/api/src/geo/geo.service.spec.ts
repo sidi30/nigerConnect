@@ -33,6 +33,9 @@ function makeMocks() {
       update: jest.fn(async () => ({}) as unknown),
       updateMany: jest.fn(async () => ({ count: 1 }) as unknown),
     },
+    proximityEncounter: {
+      upsert: jest.fn(async () => ({ id: 'enc-1', status: 'active' }) as unknown),
+    },
     $queryRaw: jest.fn(async () => [] as unknown[]),
   };
   const notifications = { create: jest.fn(async () => ({ id: 'n1' })) };
@@ -42,7 +45,7 @@ function makeMocks() {
 describe('GeoService', () => {
   it('scopes the marker cache key to the viewer (no cross-viewer bleed)', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityCityAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     await svc.getMarkers('viewer-A', BOUNDS);
     await svc.getMarkers('viewer-B', BOUNDS);
@@ -70,7 +73,7 @@ describe('GeoService', () => {
     redis.client.get.mockImplementation(async (key) =>
       key.includes('viewer-A') ? cachedForA : null,
     );
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityCityAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     const resultForB = await svc.getMarkers('viewer-B', BOUNDS);
 
@@ -81,7 +84,7 @@ describe('GeoService', () => {
 
   it('counts map-hidden users in country clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityCityAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     // zoom 3 (< 4) -> country clusters branch.
     await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 3 });
@@ -97,7 +100,7 @@ describe('GeoService', () => {
 
   it('counts map-hidden users in city clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityCityAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     // zoom 5 (>= 4, < 9) -> city clusters branch.
     await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 5 });
@@ -110,7 +113,7 @@ describe('GeoService', () => {
 
   it('getNearby caps results to the requested radius (km)', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityCityAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     await svc.getNearby('viewer-A', { lat: 13.5, lon: 2.1, radius: 25, limit: 30 });
 
@@ -127,14 +130,91 @@ describe('GeoService', () => {
   });
 
   describe('proximityPing', () => {
+    it('is fully inert when the proximity kill-switch is OFF (ships DARK)', async () => {
+      const { redis, prisma, notifications } = makeMocks();
+      const svc = new GeoService(
+        prisma as never,
+        redis as never,
+        notifications as never,
+        {
+          isAdminFullVisibility: jest.fn(async () => false),
+          isProximityEnabled: jest.fn(async () => false),
+          isProximityCityAllowed: jest.fn(async () => true),
+        } as never,
+        { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
+      );
+
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+
+      // Kill-switch OFF: no user lookup, no position write, no matching, no notif.
+      expect(result).toEqual({ matches: [] });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+
+    it('returns empty when enabled but the pinger is outside the pilot city allowlist', async () => {
+      const { redis, prisma, notifications } = makeMocks();
+      prisma.user.findUnique.mockResolvedValueOnce({
+        proximityAlerts: true,
+        proximityRadius: 100,
+        showOnMap: true,
+        privacyLevel: 'public',
+        city: 'Agadez',
+      });
+      const svc = new GeoService(
+        prisma as never,
+        redis as never,
+        notifications as never,
+        {
+          isAdminFullVisibility: jest.fn(async () => false),
+          isProximityEnabled: jest.fn(async () => true),
+          isProximityCityAllowed: jest.fn(async () => false),
+        } as never,
+        { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
+      );
+
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+
+      expect(result).toEqual({ matches: [] });
+      // Gated before any live-location write or matching.
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+
+    // Verified (approved) + 18+ pinger; map flags are irrelevant now.
+    const eligiblePinger = {
+      proximityAlerts: true,
+      proximityRadius: 500,
+      city: null,
+      identityStatus: 'approved',
+      identityDocuments: [{ dateOfBirth: new Date('1990-01-01') }],
+    };
+    const makeSvc = (prisma: unknown, redis: unknown, notifications: unknown) =>
+      new GeoService(
+        prisma as never,
+        redis as never,
+        notifications as never,
+        {
+          isAdminFullVisibility: jest.fn(async () => false),
+          isProximityEnabled: jest.fn(async () => true),
+          isProximityCityAllowed: jest.fn(async () => true),
+        } as never,
+        { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
+      );
+
     it('returns empty and never notifies when the pinger has not opted in', async () => {
       const { redis, prisma, notifications } = makeMocks();
       prisma.user.findUnique.mockResolvedValueOnce({
         proximityAlerts: false,
         proximityRadius: 100,
-        showOnMap: true,
+        city: null,
+        identityStatus: 'approved',
+        identityDocuments: [{ dateOfBirth: new Date('1990-01-01') }],
       });
-      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+      const svc = makeSvc(prisma, redis, notifications);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
@@ -144,62 +224,80 @@ describe('GeoService', () => {
       expect(notifications.create).not.toHaveBeenCalled();
     });
 
-    it('returns empty when the pinger opted in but is hidden from the map', async () => {
+    it('returns empty when the pinger is not identity-verified', async () => {
       const { redis, prisma, notifications } = makeMocks();
       prisma.user.findUnique.mockResolvedValueOnce({
         proximityAlerts: true,
         proximityRadius: 100,
-        showOnMap: false,
+        city: null,
+        identityStatus: 'pending',
+        identityDocuments: [],
       });
-      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+      const svc = makeSvc(prisma, redis, notifications);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
-      // Opting into proximity while map-hidden must NOT write live location
-      // nor broadcast — no one-way tracker.
       expect(result).toEqual({ matches: [] });
       expect(prisma.user.updateMany).not.toHaveBeenCalled();
-      expect(notifications.create).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('returns empty when approved but no adult DOB on record (fail-closed 18+)', async () => {
+      const { redis, prisma, notifications } = makeMocks();
+      prisma.user.findUnique.mockResolvedValueOnce({
+        proximityAlerts: true,
+        proximityRadius: 100,
+        city: null,
+        identityStatus: 'approved',
+        identityDocuments: [], // no DOB recorded → not adult
+      });
+      const svc = makeSvc(prisma, redis, notifications);
+
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+
+      expect(result).toEqual({ matches: [] });
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('a map-hidden / private but verified-adult pinger IS eligible (decoupled from the map)', async () => {
+      const { redis, prisma, notifications } = makeMocks();
+      prisma.user.findUnique.mockResolvedValueOnce(eligiblePinger);
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'cand-1', distance: 0.12 }]);
+      const svc = makeSvc(prisma, redis, notifications);
+
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+
+      // Live position written (no show_on_map gate), encounter created, matched.
+      expect(prisma.user.updateMany).toHaveBeenCalled();
+      expect(prisma.proximityEncounter.upsert).toHaveBeenCalled();
+      expect(result.matches).toHaveLength(1);
     });
 
     it('stays silent when already notified in this zone (dedup key exists)', async () => {
       const { redis, prisma, notifications } = makeMocks();
-      // 1st findUnique = pinger opt-in/radius/showOnMap; 2nd = displayName lookup.
-      prisma.user.findUnique
-        .mockResolvedValueOnce({ proximityAlerts: true, proximityRadius: 100, showOnMap: true })
-        .mockResolvedValueOnce({ displayName: 'Aïcha', firstName: null });
-      prisma.$queryRaw.mockResolvedValueOnce([
-        { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.04 },
-      ]);
-      // Per-zone dedup key already set -> SET NX returns null.
-      redis.client.set.mockResolvedValueOnce(null);
-      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+      prisma.user.findUnique.mockResolvedValueOnce(eligiblePinger);
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'cand-1', distance: 0.04 }]);
+      redis.client.set.mockResolvedValueOnce(null); // SET NX → already claimed
+      const svc = makeSvc(prisma, redis, notifications);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
-      // No notification AND no match surfaced — the pinger's local heads-up
-      // mirrors a real new encounter, so a deduped peer is omitted.
       expect(result.matches).toHaveLength(0);
       expect(notifications.create).not.toHaveBeenCalled();
+      expect(prisma.proximityEncounter.upsert).not.toHaveBeenCalled();
     });
 
     it('mutes a habitual pair (co-located ≥ threshold distinct days)', async () => {
       const { redis, prisma, notifications } = makeMocks();
-      prisma.user.findUnique
-        .mockResolvedValueOnce({ proximityAlerts: true, proximityRadius: 100, showOnMap: true })
-        .mockResolvedValueOnce({ displayName: 'Aïcha', firstName: null });
-      prisma.$queryRaw.mockResolvedValueOnce([
-        { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.04 },
-      ]);
-      // 3rd distinct day in the same zone -> crosses HABITUAL_DAYS -> muted.
+      prisma.user.findUnique.mockResolvedValueOnce(eligiblePinger);
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'cand-1', distance: 0.04 }]);
       redis.client.scard.mockResolvedValueOnce(3);
-      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+      const svc = makeSvc(prisma, redis, notifications);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
       expect(result.matches).toHaveLength(0);
       expect(notifications.create).not.toHaveBeenCalled();
-      // The pair is promoted to "familiar" so future pings short-circuit.
       expect(redis.client.set).toHaveBeenCalledWith(
         expect.stringMatching(/^prox:familiar:/),
         '1',
@@ -208,38 +306,50 @@ describe('GeoService', () => {
       );
     });
 
-    it('notifies once per zone for a fresh, non-habitual encounter', async () => {
+    it('a declined encounter stays silent (permanent anti-spam)', async () => {
       const { redis, prisma, notifications } = makeMocks();
-      prisma.user.findUnique
-        .mockResolvedValueOnce({ proximityAlerts: true, proximityRadius: 500, showOnMap: true })
-        .mockResolvedValueOnce({ displayName: 'Aïcha', firstName: null });
-      prisma.$queryRaw.mockResolvedValueOnce([
-        { id: 'cand-1', display_name: 'Bob', avatar_url: null, distance: 0.12 },
-      ]);
-      const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+      prisma.user.findUnique.mockResolvedValueOnce(eligiblePinger);
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'cand-1', distance: 0.04 }]);
+      prisma.proximityEncounter.upsert.mockResolvedValueOnce({ id: 'enc-1', status: 'declined' });
+      const svc = makeSvc(prisma, redis, notifications);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
-      // Dedup key is directional + zone-scoped (geohash suffix varies).
-      expect(redis.client.set).toHaveBeenCalledWith(
-        expect.stringMatching(/^prox:seen:pinger:cand-1:/),
-        '1',
-        'EX',
-        8 * 60 * 60,
-        'NX',
-      );
-      // 0.12 km = 120 m → bucketed up to the 500 m tier.
-      expect(result.matches).toHaveLength(1);
-      expect(result.matches[0]).toMatchObject({ userId: 'cand-1', distance: 500 });
+      expect(result.matches).toHaveLength(0);
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+
+    it('creates an ANONYMOUS mutual encounter for a fresh crossing (no identity leaked)', async () => {
+      const { redis, prisma, notifications } = makeMocks();
+      prisma.user.findUnique.mockResolvedValueOnce(eligiblePinger);
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'cand-1', distance: 0.12 }]);
+      const svc = makeSvc(prisma, redis, notifications);
+
+      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
+
+      // Pair stored sorted (cand-1 < pinger) for unordered-pair dedup.
+      const upsertArg = (prisma.proximityEncounter.upsert as jest.Mock).mock.calls[0][0];
+      expect(upsertArg.where.userAId_userBId).toEqual({ userAId: 'cand-1', userBId: 'pinger' });
+      expect(upsertArg.create.distanceBucket).toBe(500); // 120 m → 500 m tier
+      expect(upsertArg.update).toEqual({}); // frozen — never recomputed
+
+      // Match surfaced to the pinger is the opaque handle ONLY — no peer identity.
+      expect(result.matches).toEqual([{ encounterId: 'enc-1', distance: 500 }]);
+      const match = result.matches[0] as unknown as Record<string, unknown>;
+      expect(match.userId).toBeUndefined();
+      expect(match.name).toBeUndefined();
+      expect(match.avatarUrl).toBeUndefined();
+
+      // Notification to the peer is anonymous: no name/userId/avatar/actorId.
       expect(notifications.create).toHaveBeenCalledTimes(1);
-      expect(notifications.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'cand-1',
-          type: 'proximity',
-          actorId: 'pinger',
-          title: 'Aïcha',
-        }),
-      );
+      const notifArg = (notifications.create as jest.Mock).mock.calls[0][0];
+      expect(notifArg).toMatchObject({
+        userId: 'cand-1',
+        type: 'proximity',
+        data: { encounterId: 'enc-1' },
+      });
+      expect(notifArg.actorId).toBeUndefined();
+      expect(JSON.stringify(notifArg)).not.toContain('pinger');
     });
   });
 });

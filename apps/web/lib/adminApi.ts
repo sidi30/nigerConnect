@@ -459,12 +459,20 @@ export function reviewIdentity(
   userId: string,
   decision: IdentityDecision,
   reason?: string,
+  dateOfBirth?: string,
 ): Promise<void> {
-  const body: { userId: string; decision: IdentityDecision; reason?: string } = {
+  const body: {
+    userId: string;
+    decision: IdentityDecision;
+    reason?: string;
+    dateOfBirth?: string;
+  } = {
     userId,
     decision,
   };
   if (decision === "rejected" && reason) body.reason = reason;
+  // DOB is mandatory server-side to approve (18+ gate for proximity).
+  if (decision === "approved" && dateOfBirth) body.dateOfBirth = dateOfBirth;
   return adminFetch<void>("/auth/identity/review", {
     method: "PATCH",
     body,

@@ -180,6 +180,34 @@ function getGeoRow(userId: string): GeoRow | null {
   return match ? (JSON.parse(match[0]) as GeoRow) : null;
 }
 
+/**
+ * Master kill-switch for the proximity-encounter feature (ships DARK). The
+ * service reads it via SettingsService, which caches in Redis (write-through),
+ * so we clear the cache key after flipping it.
+ */
+function setProximityEnabled(enabled: boolean): void {
+  const v = enabled ? 'true' : 'false';
+  psql(
+    `INSERT INTO app_settings(key, value, updated_at)
+       VALUES('proximity_enabled', '${v}', NOW())
+       ON CONFLICT (key) DO UPDATE SET value = '${v}', updated_at = NOW();`,
+  );
+  redisDel('setting:proximity_enabled');
+}
+
+/**
+ * Make a user proximity-eligible: identity approved + an approved ID document
+ * carrying an adult DOB (the 18+ gate). Proximity is now decoupled from the map
+ * (show_on_map / privacy_level no longer gate it) — identity does.
+ */
+function makeProximityEligible(userId: string): void {
+  psql(`UPDATE users SET identity_status = 'approved' WHERE id = '${userId}';`);
+  psql(
+    `INSERT INTO identity_documents(id, user_id, document_type, file_url, status, date_of_birth, created_at)
+       VALUES(gen_random_uuid(), '${userId}', 'passport', 'https://example.test/id.jpg', 'approved', '1990-01-01', NOW());`,
+  );
+}
+
 function getShowOnMapFromDb(userId: string): boolean {
   const out = psql(
     `SELECT row_to_json(t) FROM (
@@ -214,6 +242,11 @@ function haversineKm(
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map surfaces', () => {
+  // Proximity ships DARK behind a kill-switch — enable it for this suite, and
+  // make pingers identity-eligible (verified + 18+), the new gate that replaced
+  // the show_on_map / privacy_level requirement.
+  test.beforeAll(() => setProximityEnabled(true));
+  test.afterAll(() => setProximityEnabled(false));
 
   /**
    * Core regression test: after pinging with a Paris GPS that is ~4 900 km from
@@ -231,6 +264,7 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
     verifyEmailInDb(pinger.id);
     enableShowOnMap(pinger.id);
     enableProximityAlerts(pinger.id);
+    makeProximityEligible(pinger.id);
 
     // Observer: needed because individuals() excludes the viewer themselves.
     // Uses Paris FR so the observer's own pin doesn't interfere with Niamey bbox.
@@ -446,13 +480,13 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
       city: 'Niamey', countryCode: 'NE',
     });
 
-    // Both must satisfy the candidate-query filter
+    // Both must satisfy the candidate-query filter: opted in + identity-eligible.
     verifyEmailInDb(userA.id);
     verifyEmailInDb(userB.id);
-    enableShowOnMap(userA.id);
-    enableShowOnMap(userB.id);
     enableProximityAlerts(userA.id);
     enableProximityAlerts(userB.id);
+    makeProximityEligible(userA.id);
+    makeProximityEligible(userB.id);
     // Use 1 000 m radius — generous enough to absorb the zero-distance seed
     setProximityRadius(userA.id, 1000);
     setProximityRadius(userB.id, 1000);
@@ -491,19 +525,20 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
   });
 
   /**
-   * A user with privacy_level='private' must neither broadcast their location
-   * via proximity ping nor receive matches — even if every other flag is enabled.
+   * New eligibility gate (replaces the old map/privacy gate): a user who is NOT
+   * identity-verified (no approved doc / no adult DOB) must receive empty matches
+   * — even with proximity opted in. Privacy_level is now irrelevant to proximity.
    */
-  test('1e: private-profile user receives empty matches regardless of other flags', async ({
+  test('1e: a non-identity-verified user receives empty matches (18+ gate)', async ({
     request,
   }) => {
     const { user, tokens } = await register(request, {
       city: 'Niamey', countryCode: 'NE',
     });
     verifyEmailInDb(user.id);
-    enableShowOnMap(user.id);
     enableProximityAlerts(user.id);
-    // Override privacy to 'private' — the service must early-return []
+    // Deliberately NOT calling makeProximityEligible — identity stays unverified.
+    // privacy_level='private' must NOT matter anymore (decoupled from the map).
     psql(`UPDATE users SET privacy_level = 'private' WHERE id = '${user.id}';`);
 
     const pingRes = await request.post(`${BASE_URL}/api/geo/proximity/ping`, {
@@ -514,32 +549,29 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
     const pingBody = (await pingRes.json()) as { matches: unknown[] };
     expect(
       pingBody.matches,
-      'private user must always receive an empty matches array from proximity ping',
+      'an unverified user is not proximity-eligible → empty matches',
     ).toHaveLength(0);
   });
 
   /**
-   * A user with show_on_map=false (the default after registration) must:
-   *   - receive no proximity matches (the service early-returns)
-   *   - NOT have their GPS written to the private proximity_lat/lon columns
-   *
-   * This verifies the conditional updateMany: it only writes when BOTH
-   * proximityAlerts=true AND showOnMap=true are set.
+   * Proximity is decoupled from the map: a show_on_map=false (map-hidden) but
+   * identity-eligible user DOES participate — their live GPS is written to the
+   * PRIVATE proximity_lat/lon columns (so they can be crossed), while their
+   * PUBLIC latitude/longitude stays at city-coarse (never leaked to the map).
    */
-  test('1f: show_on_map=false user — no matches and no GPS stored in proximity columns', async ({
+  test('1f: a map-hidden but eligible user participates — GPS goes to private cols only', async ({
     request,
   }) => {
-    // proximity_alerts=true but show_on_map=false (default)
     const { user, tokens } = await register(request, {
       city: 'Niamey', countryCode: 'NE',
     });
     verifyEmailInDb(user.id);
     enableProximityAlerts(user.id);
-    // Deliberately do NOT call enableShowOnMap — show_on_map stays false
+    makeProximityEligible(user.id);
+    // Deliberately do NOT call enableShowOnMap — show_on_map stays false.
 
     const beforeRow = getGeoRow(user.id);
     expect(beforeRow!.proximity_lat, 'proximity_lat must be null before any ping').toBeNull();
-    expect(beforeRow!.proximity_lon, 'proximity_lon must be null before any ping').toBeNull();
 
     const pingRes = await request.post(`${BASE_URL}/api/geo/proximity/ping`, {
       data: { lat: PARIS_GPS.lat, lon: PARIS_GPS.lon },
@@ -547,25 +579,64 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
     });
     expect(pingRes.status()).toBe(200);
     const pingBody = (await pingRes.json()) as { matches: unknown[] };
-    expect(
-      pingBody.matches,
-      'user with show_on_map=false must receive no proximity matches',
-    ).toHaveLength(0);
+    // No candidate near Paris → empty, but the pinger still participates.
+    expect(pingBody.matches, 'no candidate near Paris → empty matches').toHaveLength(0);
 
-    // proximity_lat/lon must remain null — the service short-circuits before writing
+    // Live GPS IS now written to the PRIVATE columns (map gate removed).
     const afterRow = getGeoRow(user.id);
-    expect(
-      afterRow!.proximity_lat,
-      'proximity_lat must remain null for a show_on_map=false user (no GPS write)',
-    ).toBeNull();
-    expect(
-      afterRow!.proximity_lon,
-      'proximity_lon must remain null for a show_on_map=false user (no GPS write)',
-    ).toBeNull();
+    expect(afterRow!.proximity_lat, 'proximity_lat must be written for an eligible pinger').not.toBeNull();
+    const proxDistToParis = haversineKm(
+      afterRow!.proximity_lat!, afterRow!.proximity_lon!,
+      PARIS_GPS.lat, PARIS_GPS.lon,
+    );
+    expect(proxDistToParis, 'private proximity coords must equal the Paris ping GPS').toBeLessThan(1);
 
-    // Public latitude/longitude must also be unchanged (ping never ran)
+    // PUBLIC latitude/longitude must stay city-coarse (near Niamey) — never the live GPS.
     expect(afterRow!.latitude).toBe(beforeRow!.latitude);
     expect(afterRow!.longitude).toBe(beforeRow!.longitude);
+    const pubDistToNiamey = haversineKm(
+      afterRow!.latitude!, afterRow!.longitude!,
+      NIAMEY_CENTROID.lat, NIAMEY_CENTROID.lon,
+    );
+    expect(pubDistToNiamey, 'public coords must stay near Niamey, never leak Paris GPS').toBeLessThan(JITTER_SAFE_KM);
+  });
+
+  /**
+   * Double-blind anti-leak: when two eligible users cross, the pinger's matches
+   * carry ONLY an opaque encounterId + coarse distance — never the peer's
+   * userId/name/avatar. The peer is resolvable only after an accepted request.
+   */
+  test('1g: a crossing match is anonymous — only {encounterId, distance}, no peer identity', async ({
+    request,
+  }) => {
+    const { user: userA, tokens: tokensA } = await register(request, { city: 'Niamey', countryCode: 'NE' });
+    const { user: userB } = await register(request, { city: 'Niamey', countryCode: 'NE' });
+    verifyEmailInDb(userA.id);
+    verifyEmailInDb(userB.id);
+    enableProximityAlerts(userA.id);
+    enableProximityAlerts(userB.id);
+    makeProximityEligible(userA.id);
+    makeProximityEligible(userB.id);
+    setProximityRadius(userA.id, 1000);
+    seedProximityCoords(userB.id, NIAMEY_CENTROID.lat, NIAMEY_CENTROID.lon);
+
+    const pingRes = await request.post(`${BASE_URL}/api/geo/proximity/ping`, {
+      data: { lat: NIAMEY_CENTROID.lat, lon: NIAMEY_CENTROID.lon },
+      headers: authHdr(tokensA.accessToken),
+    });
+    expect(pingRes.status()).toBe(200);
+    const pingBody = (await pingRes.json()) as { matches: Array<Record<string, unknown>> };
+    expect(pingBody.matches.length, 'B must be crossed').toBeGreaterThanOrEqual(1);
+
+    const m = pingBody.matches[0]!;
+    // Only the opaque handle + coarse bucket — nothing that identifies B.
+    expect(typeof m['encounterId'], 'match must carry an opaque encounterId').toBe('string');
+    expect([50, 100, 500, 1000]).toContain(m['distance']);
+    expect(m['userId'], 'match must NOT carry the peer userId').toBeUndefined();
+    expect(m['name'], 'match must NOT carry the peer name').toBeUndefined();
+    expect(m['avatarUrl'], 'match must NOT carry the peer avatar').toBeUndefined();
+    // The peer id must not appear anywhere in the serialized match.
+    expect(JSON.stringify(m)).not.toContain(userB.id);
   });
 });
 

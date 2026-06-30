@@ -61,3 +61,33 @@ describe('SettingsService — admin full-visibility expiry gate', () => {
     ).toBeNull();
   });
 });
+
+describe('SettingsService — proximity kill-switch + city allowlist', () => {
+  it('proximity disabled by default (fail-closed, ships DARK)', async () => {
+    expect(await makeService({}).isProximityEnabled()).toBe(false);
+    expect(await makeService({ proximity_enabled: 'false' }).isProximityEnabled()).toBe(false);
+  });
+
+  it('proximity enabled only when explicitly true', async () => {
+    expect(await makeService({ proximity_enabled: 'true' }).isProximityEnabled()).toBe(true);
+  });
+
+  it('no city allowlist → all cities allowed', async () => {
+    const svc = makeService({});
+    expect(await svc.isProximityCityAllowed('Niamey')).toBe(true);
+    expect(await svc.isProximityCityAllowed(null)).toBe(true);
+  });
+
+  it('city allowlist filters case-insensitively', async () => {
+    const svc = makeService({ proximity_cities: 'Niamey, Paris' });
+    expect(await svc.isProximityCityAllowed('niamey')).toBe(true);
+    expect(await svc.isProximityCityAllowed('PARIS')).toBe(true);
+    expect(await svc.isProximityCityAllowed('Agadez')).toBe(false);
+  });
+
+  it('allowlist set but user has no city → not allowed (fail-closed)', async () => {
+    const svc = makeService({ proximity_cities: 'Niamey' });
+    expect(await svc.isProximityCityAllowed(null)).toBe(false);
+    expect(await svc.isProximityCityAllowed(undefined)).toBe(false);
+  });
+});

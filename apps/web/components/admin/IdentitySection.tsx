@@ -86,16 +86,23 @@ function IdentityCard({
   const [pending, setPending] = useState<null | "approve" | "reject">(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [dob, setDob] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const name = fullName(item.user);
   const loc = location(item.user);
 
+  const today = new Date().toISOString().slice(0, 10);
+
   async function approve() {
+    if (!dob) {
+      setError("Renseigne la date de naissance figurant sur la pièce (gate 18+).");
+      return;
+    }
     setPending("approve");
     setError(null);
     try {
-      await reviewIdentity(item.userId, "approved");
+      await reviewIdentity(item.userId, "approved", undefined, dob);
       onResolved(item.id);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Échec de l'action.");
@@ -228,8 +235,28 @@ function IdentityCard({
             </div>
           </div>
         ) : (
-          <div className="flex gap-2">
-            <PrimaryButton onClick={() => void approve()} disabled={busy}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div>
+              <label
+                htmlFor={`dob-${item.id}`}
+                className="block text-sm font-semibold text-[#1A0F0A] mb-1"
+              >
+                Date de naissance (sur la pièce)
+              </label>
+              <input
+                id={`dob-${item.id}`}
+                type="date"
+                value={dob}
+                max={today}
+                onChange={(e) => setDob(e.target.value)}
+                disabled={busy}
+                className="border border-[#E8DFD3] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#E05206] disabled:opacity-50"
+              />
+              <p className="text-xs text-[#8A6B4D] mt-1">
+                Obligatoire pour valider (gate 18+ proximité).
+              </p>
+            </div>
+            <PrimaryButton onClick={() => void approve()} disabled={busy || !dob}>
               {pending === "approve" ? "Validation…" : "Approuver"}
             </PrimaryButton>
             <GhostButton

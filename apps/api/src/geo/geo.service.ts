@@ -1,4 +1,15 @@
-import { BadRequestException, Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
@@ -7,6 +18,7 @@ import { AdminAuditService } from '../common/audit/audit.service';
 import { NotificationService } from '../notification/notification.service';
 import { geocode, setWorldCitiesLookup } from '../common/geo/city-coords';
 import { geohashEncode } from '../common/geo/geohash';
+import { isAdult } from '../common/age';
 import { WorldCitiesService } from './world-cities';
 import type { BoundsDto, CitiesQueryDto, NearbyDto, ProximityPingDto } from './dto/geo.dto';
 
@@ -30,13 +42,33 @@ const PROXIMITY_FRESHNESS_SECONDS = 5 * 60; // 5 min
 //  - HABITUAL_WINDOW: rolling lifetime for both the day-counter and the
 //    resulting "familiar" mute, refreshed as the routine continues.
 const PROXIMITY_ZONE_TTL_SECONDS = 8 * 60 * 60; // 8h
+// A street crossing is perishable: the encounter (and its connect window) expires
+// after 48h. A later re-crossing in a fresh zone mints a new encounter.
+const PROXIMITY_ENCOUNTER_TTL_SECONDS = 48 * 60 * 60; // 48h
+// Anti-harassment: cap how many proximity connection requests one user can send
+// per day (a connect reveals the requester to the target).
+const PROXIMITY_CONNECT_DAILY_CAP = 10;
 const HABITUAL_DAYS = 3;
+
+// Fields revealed about a participant once they're no longer anonymous (the
+// requester at connect, both at accept). Never includes contact/secret columns.
+const ENCOUNTER_USER_SELECT = {
+  id: true,
+  displayName: true,
+  firstName: true,
+  lastName: true,
+  avatarUrl: true,
+  city: true,
+  countryCode: true,
+  identityStatus: true,
+  isAmbassador: true,
+} as const;
 const HABITUAL_WINDOW_SECONDS = 14 * 24 * 60 * 60; // 14 days
 
 export interface ProximityMatch {
-  userId: string;
-  name: string | null;
-  avatarUrl: string | null;
+  // Opaque, mutual handle for the encounter. NEVER carries the other person's
+  // identity (no userId/name/avatar) — the pair stays double-blind until accept.
+  encounterId: string;
   distance: number;
 }
 
@@ -99,6 +131,8 @@ export type MapMarker =
 
 @Injectable()
 export class GeoService implements OnModuleInit {
+  private readonly logger = new Logger(GeoService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
@@ -446,26 +480,41 @@ export class GeoService implements OnModuleInit {
     viewerId: string,
     dto: ProximityPingDto,
   ): Promise<{ matches: ProximityMatch[] }> {
+    // Master kill-switch + city rollout gate. Feature ships DARK: when the
+    // setting is off (default) proximity is fully inert. Fail-closed: a settings
+    // read failure returns 'false' → off. When enabled, an optional city
+    // allowlist restricts the pilot to the pinger's own city.
+    if (!(await this.settings.isProximityEnabled())) return { matches: [] };
+
     const pinger = await this.prisma.user.findUnique({
       where: { id: viewerId },
       select: {
         proximityAlerts: true,
         proximityRadius: true,
-        showOnMap: true,
-        privacyLevel: true,
+        city: true,
+        identityStatus: true,
+        // Latest approved ID document with a recorded DOB — drives the 18+ gate.
+        identityDocuments: {
+          where: { status: 'approved', dateOfBirth: { not: null } },
+          select: { dateOfBirth: true },
+          orderBy: { reviewedAt: 'desc' },
+          take: 1,
+        },
       },
     });
-    // Proximity is a map feature: a user must both opt into proximity AND be
-    // map-visible to broadcast or receive. Opting into proximity while hidden
-    // from the map must NOT turn it into a one-way live-location tracker.
-    // A 'private' profile is invisible in discovery, so it neither broadcasts
-    // (the notification would reveal the private pinger) nor receives.
-    if (
-      !pinger ||
-      !pinger.proximityAlerts ||
-      !pinger.showOnMap ||
-      pinger.privacyLevel === 'private'
-    )
+    // Proximity is now an AUTONOMOUS channel, decoupled from the map: a user
+    // opts in with `proximityAlerts` regardless of `showOnMap`/`privacyLevel`
+    // (a discreet, map-hidden user can still be crossed — and stays anonymous
+    // until a request is accepted). Eligibility is identity-gated instead:
+    // verified (approved) AND 18+ (DOB on the approved doc). Foreground-only,
+    // never a background tracker.
+    if (!pinger || !pinger.proximityAlerts) return { matches: [] };
+    if (pinger.identityStatus !== 'approved') return { matches: [] };
+    if (!isAdult(pinger.identityDocuments[0]?.dateOfBirth ?? null))
+      return { matches: [] };
+
+    // Rollout: restrict to the pilot city/cities when configured (empty = all).
+    if (!(await this.settings.isProximityCityAllowed(pinger.city)))
       return { matches: [] };
 
     // Persist the pinger's live position for matching — in the PRIVATE
@@ -476,7 +525,7 @@ export class GeoService implements OnModuleInit {
     // proximity_updated_at gates freshness — a stale fix drops out of matching
     // rather than lingering as a public pin at the user's home.
     await this.prisma.user.updateMany({
-      where: { id: viewerId, proximityAlerts: true, showOnMap: true },
+      where: { id: viewerId, proximityAlerts: true },
       data: { proximityLat: dto.lat, proximityLon: dto.lon, proximityUpdatedAt: new Date() },
     });
 
@@ -503,33 +552,40 @@ export class GeoService implements OnModuleInit {
     // Cap fan-out: one ping in a dense area must not notify hundreds. The
     // nearest MATCH_LIMIT opted-in, map-visible, non-blocked users who pinged
     // recently (proximity_updated_at within the freshness window) only.
+    // Candidates: opted-in, active, fresh, eligible (verified + 18+). The map
+    // gates (show_on_map / privacy_level) are intentionally NOT applied — a
+    // map-hidden or private user is a valid, anonymous proximity candidate. The
+    // identity gate replaces them: approved status AND an approved ID document
+    // with a recorded DOB ≥ 18 years. No identifying columns are SELECTed.
     const candidates = await this.prisma.$queryRaw<
       Array<{
         id: string;
-        display_name: string | null;
-        avatar_url: string | null;
         distance: number;
       }>
     >(Prisma.sql`
-      SELECT id, display_name, avatar_url,
+      SELECT u.id,
              ${distanceExpr} AS distance
-      FROM users
-      WHERE proximity_alerts = TRUE
-        AND show_on_map = TRUE
-        AND status = 'active'
-        AND email_verified = TRUE
-        AND privacy_level <> 'private'
-        AND proximity_lat IS NOT NULL
-        AND proximity_lon IS NOT NULL
-        AND proximity_updated_at > ${freshCutoff}
-        AND id::text <> ${viewerId}
+      FROM users u
+      WHERE u.proximity_alerts = TRUE
+        AND u.status = 'active'
+        AND u.email_verified = TRUE
+        AND u.identity_status = 'approved'
+        AND u.proximity_lat IS NOT NULL
+        AND u.proximity_lon IS NOT NULL
+        AND u.proximity_updated_at > ${freshCutoff}
+        AND u.id::text <> ${viewerId}
+        AND EXISTS (
+          SELECT 1 FROM identity_documents d
+          WHERE d.user_id = u.id
+            AND d.status = 'approved'
+            AND d.date_of_birth IS NOT NULL
+            AND d.date_of_birth <= (CURRENT_DATE - INTERVAL '18 years')
+        )
         ${blockedClause}
         AND ${distanceExpr} <= ${radiusKm}
       ORDER BY distance
       LIMIT ${PROXIMITY_MATCH_LIMIT}
     `);
-
-    const pingerName = await this.displayName(viewerId);
 
     // Zone label for this encounter — same geohash cell ⇒ "same place". Computed
     // from the pinger's position (candidates are within ≤1 km, so they share or
@@ -594,35 +650,287 @@ export class GeoService implements OnModuleInit {
         continue;
       }
 
-      // 4) Notify, guarded on its own. If create() throws we must not leave the
-      //    dedup slot claimed (that peer would be muted for the whole TTL) nor
-      //    abort the loop and skip later candidates — release the slot so it can
-      //    re-fire next ping, and move on.
+      // 4) Materialise the mutual encounter for the sorted pair (idempotent via
+      //    @@unique). The distance bucket is FROZEN on creation and never
+      //    recomputed (update:{}), so neither side can triangulate by moving.
+      const [userAId, userBId] = viewerId < c.id ? [viewerId, c.id] : [c.id, viewerId];
+      let encounter: { id: string; status: string };
+      try {
+        encounter = await this.prisma.proximityEncounter.upsert({
+          where: { userAId_userBId: { userAId, userBId } },
+          create: {
+            userAId,
+            userBId,
+            distanceBucket: bucket,
+            zone,
+            expiresAt: new Date(Date.now() + PROXIMITY_ENCOUNTER_TTL_SECONDS * 1000),
+          },
+          update: {},
+          select: { id: true, status: true },
+        });
+      } catch {
+        await this.redis.client.del(dedupKey);
+        continue;
+      }
+      // Anti-spam: a declined/expired pair is permanently silent; an already
+      // requested/accepted pair needs no fresh anonymous ping. Only surface a
+      // still-active encounter.
+      if (encounter.status !== 'active') continue;
+
+      // 5) Notify the candidate — ANONYMOUS: no name, no avatar, no userId, no
+      //    actorId. Only the opaque encounterId + a generic copy. If create()
+      //    throws, release the dedup slot so it can re-fire next ping.
       try {
         await this.notifications.create({
           userId: c.id,
           type: 'proximity',
-          title: pingerName,
-          body: `est à proximité (${this.distanceLabel(bucket)})`,
-          data: { userId: viewerId },
-          actorId: viewerId,
+          title: 'Une rencontre à proximité',
+          body: `Quelqu'un de la communauté est tout près (${this.distanceLabel(bucket)})`,
+          data: { encounterId: encounter.id },
         });
       } catch {
         await this.redis.client.del(dedupKey);
         continue;
       }
 
-      // Only surface the match to the pinger after a successful notify, so the
-      // pinger's courtesy local heads-up mirrors a real new encounter.
+      // Surface the same opaque handle to the pinger (mutual) — never the peer's
+      // identity. Both sides hold encounterId and can act on it.
       matches.push({
-        userId: c.id,
-        name: c.display_name,
-        avatarUrl: c.avatar_url,
+        encounterId: encounter.id,
         distance: bucket,
       });
     }
 
     return { matches };
+  }
+
+  // ── Proximity encounters: connect / accept / decline (PX4) ────────────────
+
+  /**
+   * The viewer's live encounters (active or pending). Double-blind: an `active`
+   * encounter — and one the viewer themselves requested — carries NO peer
+   * identity. Only when someone ELSE requested the viewer is the requester's
+   * profile revealed (so the viewer can decide whether to accept).
+   */
+  async listEncounters(userId: string) {
+    const rows = await this.prisma.proximityEncounter.findMany({
+      where: {
+        AND: [
+          { OR: [{ userAId: userId }, { userBId: userId }] },
+          { status: { in: ['active', 'requested'] } },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        ],
+      },
+      include: { requester: { select: ENCOUNTER_USER_SELECT } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    return rows.map((e) => {
+      const iAmRequester = e.requesterId === userId;
+      const base = {
+        encounterId: e.id,
+        status: e.status,
+        distance: e.distanceBucket,
+        createdAt: e.createdAt,
+        // I requested → I'm waiting; the peer stays hidden until they accept.
+        outgoing: iAmRequester,
+      };
+      // Someone requested ME → reveal the requester so I can decide.
+      if (e.status === 'requested' && !iAmRequester && e.requester) {
+        return { ...base, requester: e.requester };
+      }
+      return base;
+    });
+  }
+
+  /**
+   * Request to connect (the requester REVEALS themselves to the peer). Idempotent
+   * for a request the viewer already sent. Collision-safe: if the peer requested
+   * first (a near-simultaneous mutual tap), this is treated as an accept. The
+   * status transition is guarded by an optimistic-lock `version` so two
+   * concurrent connects can't both win.
+   */
+  async connectEncounter(userId: string, encounterId: string) {
+    await this.assertProximityEnabled();
+    const e = await this.loadParticipant(userId, encounterId);
+    if (e.status === 'accepted') throw new ConflictException('Encounter already accepted');
+    if (e.status === 'declined' || e.status === 'expired') {
+      throw new BadRequestException('Encounter no longer active');
+    }
+    if (e.status === 'requested') {
+      if (e.requesterId === userId) return { status: 'requested' as const }; // mine already
+      return this.acceptEncounter(userId, encounterId); // collision → accept
+    }
+
+    await this.enforceConnectQuota(userId);
+    const res = await this.prisma.proximityEncounter.updateMany({
+      where: { id: encounterId, status: 'active', version: e.version },
+      data: {
+        status: 'requested',
+        requesterId: userId,
+        version: { increment: 1 },
+        respondedAt: new Date(),
+      },
+    });
+    if (res.count === 0) {
+      // Lost the race: the peer transitioned it first. If they requested, accept.
+      const fresh = await this.loadParticipant(userId, encounterId);
+      if (fresh.status === 'requested' && fresh.requesterId !== userId) {
+        return this.acceptEncounter(userId, encounterId);
+      }
+      throw new ConflictException('Encounter already updated');
+    }
+
+    const other = e.userAId === userId ? e.userBId : e.userAId;
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: ENCOUNTER_USER_SELECT,
+    });
+    await this.notifications
+      .create({
+        userId: other,
+        actorId: userId,
+        type: 'proximity',
+        title: `${this.nameOf(me)} souhaite vous rencontrer`,
+        body: 'Voir le profil, puis accepter ou refuser',
+        data: { encounterId, requesterId: userId },
+      })
+      .catch(() => undefined);
+    return { status: 'requested' as const };
+  }
+
+  /**
+   * Accept a request: mutual reveal + a real Friendship(accepted). Only the
+   * TARGET of the request can accept (not the requester); guarded by the version
+   * lock. Reuses any existing friendship rather than duplicating it.
+   */
+  async acceptEncounter(userId: string, encounterId: string) {
+    await this.assertProximityEnabled();
+    const e = await this.loadParticipant(userId, encounterId);
+    if (e.status === 'accepted') return { status: 'accepted' as const };
+    if (e.status !== 'requested') throw new BadRequestException('No pending request');
+    if (e.requesterId === userId) throw new BadRequestException('Cannot accept your own request');
+
+    const res = await this.prisma.proximityEncounter.updateMany({
+      where: { id: encounterId, status: 'requested', version: e.version },
+      data: { status: 'accepted', version: { increment: 1 }, respondedAt: new Date() },
+    });
+    if (res.count === 0) throw new ConflictException('Encounter already updated');
+
+    await this.ensureFriendship(e.requesterId!, userId);
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: ENCOUNTER_USER_SELECT,
+    });
+    await this.notifications
+      .create({
+        userId: e.requesterId!,
+        actorId: userId,
+        type: 'friend_accepted',
+        title: `${this.nameOf(me)} a accepté votre rencontre`,
+        data: { encounterId, actorId: userId },
+      })
+      .catch(() => undefined);
+    return { status: 'accepted' as const };
+  }
+
+  /**
+   * Decline (or cancel) an encounter. Permanent: a declined pair is excluded from
+   * future matching (anti-harassment, proximity-layer only — friendship is
+   * untouched). Either participant may decline an active or requested encounter.
+   */
+  async declineEncounter(userId: string, encounterId: string) {
+    const e = await this.loadParticipant(userId, encounterId);
+    if (e.status === 'declined') return { status: 'declined' as const };
+    if (e.status !== 'requested' && e.status !== 'active') {
+      throw new BadRequestException('Encounter cannot be declined');
+    }
+    const res = await this.prisma.proximityEncounter.updateMany({
+      where: { id: encounterId, status: e.status, version: e.version },
+      data: { status: 'declined', version: { increment: 1 }, respondedAt: new Date() },
+    });
+    if (res.count === 0) throw new ConflictException('Encounter already updated');
+    return { status: 'declined' as const };
+  }
+
+  /**
+   * Load an encounter and assert the caller is one of its two participants.
+   * Throws 404 (NOT 403) for a non-participant so the endpoint never confirms an
+   * encounter's existence to an outsider.
+   */
+  private async loadParticipant(userId: string, encounterId: string) {
+    const e = await this.prisma.proximityEncounter.findUnique({ where: { id: encounterId } });
+    if (!e || (e.userAId !== userId && e.userBId !== userId)) {
+      throw new NotFoundException('Encounter not found');
+    }
+    // A crossing is perishable: a still-open but expired encounter is gone — you
+    // can't act on a stale row (its frozen bucket / pair are no longer current).
+    if (
+      e.expiresAt &&
+      e.expiresAt.getTime() < Date.now() &&
+      (e.status === 'active' || e.status === 'requested')
+    ) {
+      throw new NotFoundException('Encounter not found');
+    }
+    return e;
+  }
+
+  /** Incident freeze: when the master switch is off, the reveal actions are blocked. */
+  private async assertProximityEnabled(): Promise<void> {
+    if (!(await this.settings.isProximityEnabled())) {
+      throw new HttpException('Proximité indisponible', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+  }
+
+  /** Create or reactivate an accepted friendship between two users (no dupes). */
+  private async ensureFriendship(requesterId: string, addresseeId: string): Promise<void> {
+    const existing = await this.prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId, addresseeId },
+          { requesterId: addresseeId, addresseeId: requesterId },
+        ],
+      },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      if (existing.status !== 'accepted') {
+        await this.prisma.friendship.update({
+          where: { id: existing.id },
+          data: { status: 'accepted' },
+        });
+      }
+      return;
+    }
+    await this.prisma.friendship.create({
+      data: { requesterId, addresseeId, status: 'accepted' },
+    });
+  }
+
+  /** Per-user daily cap on outgoing connection requests. Fail-open on Redis error. */
+  private async enforceConnectQuota(userId: string): Promise<void> {
+    const key = `prox:connects:${userId}:${new Date().toISOString().slice(0, 10)}`;
+    let count: number;
+    try {
+      count = await this.redis.client.incr(key);
+      if (count === 1) await this.redis.client.expire(key, 24 * 60 * 60);
+    } catch (e) {
+      // Fail-open: a Redis outage must not block legitimate requests. Alert so
+      // the gap (anti-harassment cap temporarily off) is visible.
+      this.logger.warn(`proximity connect quota check skipped (Redis error): ${String(e)}`);
+      return;
+    }
+    if (count > PROXIMITY_CONNECT_DAILY_CAP) {
+      throw new HttpException(
+        'Limite quotidienne de demandes de proximité atteinte',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private nameOf(u: { displayName?: string | null; firstName?: string | null } | null): string {
+    return u?.displayName || u?.firstName || 'Un membre';
   }
 
   /** Round a raw distance (meters) up to a coarse bucket so we never disclose

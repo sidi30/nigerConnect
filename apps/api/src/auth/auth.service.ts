@@ -865,6 +865,7 @@ export class AuthService {
     targetUserId: string,
     decision: 'approved' | 'rejected',
     reason?: string,
+    dateOfBirth?: string,
   ): Promise<void> {
     const doc = await this.prisma.identityDocument.findFirst({
       where: { userId: targetUserId, status: 'pending' },
@@ -874,6 +875,10 @@ export class AuthService {
 
     const now = new Date();
     const expiresAt = decision === 'approved' ? new Date(now.getTime() + 30 * 86_400_000) : null;
+    // DOB captured at approval (validated mandatory by the DTO). @db.Date column,
+    // so store at UTC midnight to avoid a timezone-induced off-by-one day.
+    const dob =
+      decision === 'approved' && dateOfBirth ? new Date(`${dateOfBirth}T00:00:00.000Z`) : null;
 
     await this.prisma.$transaction([
       this.prisma.identityDocument.update({
@@ -883,6 +888,7 @@ export class AuthService {
           reviewedById: reviewerId,
           reviewedAt: now,
           rejectionReason: decision === 'rejected' ? reason ?? null : null,
+          dateOfBirth: dob,
           expiresAt,
         },
       }),

@@ -1,3 +1,4 @@
+import type { ProximityPingResult } from '@nigerconnect/shared-types';
 import { api } from './api';
 
 /**
@@ -131,10 +132,8 @@ export const geoApi = {
   async proximityPing(params: {
     lat: number;
     lon: number;
-  }): Promise<{
-    matches: Array<{ userId: string; name: string | null; avatarUrl: string | null; distance: number }>;
-  }> {
-    const { data } = await api.post('/geo/proximity/ping', params);
+  }): Promise<ProximityPingResult> {
+    const { data } = await api.post<ProximityPingResult>('/geo/proximity/ping', params);
     return data;
   },
 };

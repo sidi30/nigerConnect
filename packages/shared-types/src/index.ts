@@ -8,6 +8,7 @@ export * from './notification';
 export * from './page';
 export * from './poll';
 export * from './review';
+export * from './proximity';
 
 export interface CursorPage<T> {
   items: T[];

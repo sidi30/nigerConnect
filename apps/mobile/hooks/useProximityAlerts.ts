@@ -114,7 +114,7 @@ export function useProximityAlerts(): void {
  * skip people already notified this session to avoid duplicate buzzes.
  */
 async function maybeNotify(
-  matches: Array<{ userId: string; name: string | null; avatarUrl: string | null; distance: number }>,
+  matches: Array<{ encounterId: string; distance: number }>,
   notified: Set<string>,
 ): Promise<void> {
   if (Platform.OS === 'web' || matches.length === 0) return;
@@ -122,15 +122,16 @@ async function maybeNotify(
   const { status } = await Notifications.getPermissionsAsync();
   if (status !== 'granted') return;
 
+  // Double-blind: we never know who the other person is here (no name/avatar).
+  // Dedup by the opaque encounterId so we buzz once per encounter.
   for (const m of matches) {
-    if (notified.has(m.userId)) continue;
-    notified.add(m.userId);
-    const name = m.name?.trim() || 'Un membre';
+    if (notified.has(m.encounterId)) continue;
+    notified.add(m.encounterId);
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: 'Alerte de proximité',
-          body: `${name} est à proximité`,
+          title: 'Une rencontre à proximité',
+          body: 'Quelqu’un de la communauté est tout près.',
         },
         trigger: null,
       });

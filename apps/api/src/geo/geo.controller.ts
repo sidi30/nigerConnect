@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -91,5 +101,39 @@ export class GeoController {
     @Body(new ZodValidationPipe(proximityPingSchema)) dto: ProximityPingDto,
   ) {
     return this.geo.proximityPing(me.sub, dto);
+  }
+
+  /** The viewer's live proximity encounters (anonymous unless someone requested them). */
+  @Get('proximity/encounters')
+  encounters(@CurrentUser() me: JwtUserPayload) {
+    return this.geo.listEncounters(me.sub);
+  }
+
+  // Action endpoints — participant-only (404 otherwise), respond 200.
+  @Post('proximity/encounters/:id/connect')
+  @HttpCode(HttpStatus.OK)
+  connect(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.geo.connectEncounter(me.sub, id);
+  }
+
+  @Post('proximity/encounters/:id/accept')
+  @HttpCode(HttpStatus.OK)
+  accept(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.geo.acceptEncounter(me.sub, id);
+  }
+
+  @Post('proximity/encounters/:id/decline')
+  @HttpCode(HttpStatus.OK)
+  decline(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.geo.declineEncounter(me.sub, id);
   }
 }

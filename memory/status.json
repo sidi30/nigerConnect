@@ -2,24 +2,39 @@
   "current": "SPRINT_PLANNED",
   "updatedAt": "2026-06-30",
   "sprint": {
-    "id": "S1",
-    "goal": "Booster l'engagement du feed/chat à parité Instagram et réparer le flux d'acceptation d'ami, livrable en OTA iOS sans rebuild.",
-    "deliveryNote": "JS-only cote mobile => OTA iOS uniquement (rien sur Android sans accord). NE PAS bumper app.json version (le bump changerait runtimeVersion et orphelinerait l'OTA des builds existants). API: deploy du dernier commit (B3 inclut une migration Prisma).",
+    "id": "S2",
+    "goal": "Livrer le coeur securise de la rencontre de proximite double-aveugle (encounter anonyme + matcher anonymise, decouple de la carte, gate ID+18, kill-switch DARK), prouve sans fuite avant accept par e2e + verdict pentest OK_TO_DEPLOY.",
+    "deliveryNote": "Increment BACKEND-FIRST livre DARK (proximity_enabled=false). API: deploy dernier commit + prisma migrate deploy (PX1 DOB + PX3 encounter = migrations). Mobile UI (PX6) = OTA iOS sans bump, repoussee Sprint 3 avec le rollout ville. Aucun module natif (reuse expo-location foreground + expo-notifications). NE PAS bumper app.json version (orphelinerait l'OTA). Admin DOB review = web. ROLLOUT = action sortante du proprio APRES verdict pentest, hors sprint.",
     "items": [
-      { "id": "B7", "title": "BUG: notif friend_request ouvre le profil du demandeur (accept/refuse)", "priority": 3.3, "status": "todo", "type": "bug", "surfaces": ["api/social", "mobile/notifications", "mobile/_layout"] },
-      { "id": "B1", "title": "Liste des likers d'un post (qui a like)", "priority": 4.0, "status": "todo", "type": "quick-win", "surfaces": ["mobile/feedApi", "mobile/PostCard", "shared-types"] },
-      { "id": "B6", "title": "Barre de recherche plein-texte section Services", "priority": 2.0, "status": "todo", "type": "story", "surfaces": ["api/marketplace", "mobile/services", "shared-types"] },
-      { "id": "B3", "title": "Liker un commentaire (modele CommentLike + migration)", "priority": 1.6, "status": "todo", "type": "story", "surfaces": ["api/feed", "prisma", "mobile/CommentItem", "shared-types"] },
-      { "id": "B2", "title": "Swipe-to-reply dans le chat", "priority": 1.6, "status": "todo", "type": "story", "surfaces": ["api/chat", "mobile/chat", "shared-types"] }
+      { "id": "PX0", "title": "INFRA kill-switch proximity_enabled + allowlist ville pilote", "priority": 5.0, "status": "todo", "type": "infra", "letter": "g", "surfaces": ["api/geo", "AppSetting"], "agent": "gwani-backend", "migration": false },
+      { "id": "PX1", "title": "DOB sur IdentityDocument + gate 18+ + capture revue admin", "priority": 4.5, "status": "todo", "type": "story", "letter": "a", "surfaces": ["prisma", "api/auth", "web/admin", "shared-types"], "agent": "gwani-backend", "migration": true },
+      { "id": "PX2", "title": "SPIKE decoupler proximite de showOnMap/privacy + anonymiser payload matcher", "priority": 5.0, "status": "todo", "type": "spike", "letter": "b", "surfaces": ["api/geo", "shared-types", "mobile/geoApi", "mobile/useProximityAlerts"], "agent": "gwani-backend", "migration": false, "coupledWith": "PX3" },
+      { "id": "PX3", "title": "SPIKE modele ProximityEncounter + migration + dedup paire non-ordonnee", "priority": 5.0, "status": "todo", "type": "spike", "letter": "c", "surfaces": ["prisma", "api/geo", "shared-types"], "agent": "gwani-backend", "migration": true, "coupledWith": "PX2" },
+      { "id": "PX4", "title": "Endpoints connect/accept/decline + collision lock optimiste + plafonds/cooldown/jitter", "priority": 5.0, "status": "todo", "type": "story", "letter": "d", "surfaces": ["api/geo", "api/social", "shared-types"], "agent": "gwani-backend", "migration": false },
+      { "id": "PX5", "title": "Anti-spam dedup paire + interdit re-creation apres decline/block (fix friends.service.ts:71)", "priority": 4.0, "status": "todo", "type": "story", "letter": "e", "surfaces": ["api/geo", "api/social"], "agent": "gwani-backend", "migration": false, "ownerDecision": "friends.service.ts:71 change comportement amitie existant" },
+      { "id": "PX7", "title": "TESTS e2e double-aveugle: aucun ne resout l'autre avant accept (cas les deux invisibles)", "priority": 5.0, "status": "todo", "type": "test", "letter": "h", "surfaces": ["e2e/tests/api", "api/geo spec"], "agent": "bug-hunter->fixer->e2e-tester" },
+      { "id": "PX8", "title": "SECURITE audit gwani-pentest OBLIGATOIRE du diff proximite (deanon/IDOR/rejeu/race)", "priority": 5.0, "status": "todo", "type": "security", "surfaces": ["api/geo", "api/auth", "api/social"], "agent": "gwani-pentest", "gate": "BLOCK_DEPLOY/OK_TO_DEPLOY" }
+    ],
+    "deferred_to_sprint3": [
+      { "id": "PX6", "title": "UI mobile: liste rencontres anonymes + ecran demande + accept/decline + reglages proximite", "letter": "f", "agent": "gwani-frontend", "delivery": "OTA iOS sans bump" },
+      { "id": "ROLLOUT", "title": "Activation proximity_enabled=true + ville pilote (action sortante proprio)", "blockedBy": "PX8 OK_TO_DEPLOY + approbation proprio" }
     ]
   },
+  "completed_sprints": [
+    { "id": "S1", "goal": "Booster l'engagement feed/chat a parite Instagram + reparer le flux d'acceptation d'ami (OTA iOS).", "items": ["B7", "B1", "B6", "B3", "B2"], "status": "delivered" }
+  ],
   "backlog_deferred": [
-    { "id": "B5a", "title": "Liker une story (cœur anime reanimated)" },
+    { "id": "B5a", "title": "Liker une story (coeur anime reanimated)" },
     { "id": "B5b", "title": "Repondre a une story (-> DM auteur)" },
     { "id": "B4", "title": "EPIC: reactions multi-emoji sur post (architect d'abord)" },
     { "id": "P-04", "title": "Snap Map: anneau de story autour de l'avatar (differenciateur)" }
   ],
   "agents": {},
   "checkpoints": { "deploy_approved": false },
-  "iterations": {}
+  "iterations": {},
+  "openQuestions": [
+    "PX5: friends.service.ts:71 - bloquer la reouverture d'une Friendship declined OU exiger un delai? (change comportement amitie existant) -> decision proprio",
+    "PX2/PX4 jitter 1-10min: pas de setTimeout volatil en prod - existe-t-il un job-runner durable? sinon cadrage gwani-architect (table d'attente / BullMQ)",
+    "Design (pre-rollout): TTL re-declenchement (8h/24h/48h), plafonds chiffres (connects/jour ~5-10, encounters/jour ~3), risque k-anonymat faible diaspora"
+  ]
 }

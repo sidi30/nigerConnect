@@ -330,7 +330,13 @@ export class AuthController {
     @CurrentUser() reviewer: JwtUserPayload,
     @Body(new ZodValidationPipe(reviewIdentitySchema)) dto: ReviewIdentityDto,
   ) {
-    await this.auth.reviewIdentity(reviewer.sub, dto.userId, dto.decision, dto.reason);
+    await this.auth.reviewIdentity(
+      reviewer.sub,
+      dto.userId,
+      dto.decision,
+      dto.reason,
+      dto.dateOfBirth,
+    );
     return { status: dto.decision };
   }
 

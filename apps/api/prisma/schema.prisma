@@ -132,6 +132,9 @@ model User {
   photos                  UserPhoto[]
   friendshipsSent         Friendship[]         @relation("FriendshipRequester")
   friendshipsReceived     Friendship[]         @relation("FriendshipAddressee")
+  proximityEncountersA    ProximityEncounter[] @relation("EncounterUserA")
+  proximityEncountersB    ProximityEncounter[] @relation("EncounterUserB")
+  proximityEncountersReq  ProximityEncounter[] @relation("EncounterRequester")
   blocksMade              Block[]              @relation("BlockBlocker")
   blocksReceived          Block[]              @relation("BlockBlocked")
   posts                   Post[]
@@ -198,6 +201,14 @@ enum FriendshipStatus {
   pending
   accepted
   declined
+}
+
+enum ProximityEncounterStatus {
+  active
+  requested
+  accepted
+  declined
+  expired
 }
 
 enum PostVisibility {
@@ -378,6 +389,35 @@ model Friendship {
   @@index([requesterId, status])
   @@index([addresseeId, status])
   @@map("friendships")
+}
+
+/// Mutual, double-blind proximity encounter. Created when two opted-in, eligible
+/// users cross paths; ANONYMOUS to both until one `connect`s (requester revealed)
+/// and the other `accept`s (mutual reveal + Friendship). Participants stored
+/// sorted (userAId < userBId) so the @@unique dedupes the unordered pair.
+model ProximityEncounter {
+  id             String                   @id @default(uuid()) @db.Uuid
+  userAId        String                   @map("user_a_id") @db.Uuid
+  userA          User                     @relation("EncounterUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId        String                   @map("user_b_id") @db.Uuid
+  userB          User                     @relation("EncounterUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  status         ProximityEncounterStatus @default(active)
+  requesterId    String?                  @map("requester_id") @db.Uuid
+  requester      User?                    @relation("EncounterRequester", fields: [requesterId], references: [id])
+  // Coarse distance bucket FROZEN at first crossing — never recomputed, so a
+  // participant can't triangulate the other by moving and re-pinging.
+  distanceBucket Int                      @map("distance_bucket")
+  zone           String                   @db.VarChar(20)
+  // Optimistic-lock version for the connect/accept collision (PX4).
+  version        Int                      @default(0)
+  createdAt      DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  respondedAt    DateTime?                @map("responded_at") @db.Timestamptz
+  expiresAt      DateTime?                @map("expires_at") @db.Timestamptz
+
+  @@unique([userAId, userBId])
+  @@index([userBId])
+  @@index([requesterId])
+  @@map("proximity_encounters")
 }
 
 model Block {
@@ -731,6 +771,9 @@ model IdentityDocument {
   user            User           @relation("UserIdentityDocuments", fields: [userId], references: [id], onDelete: Cascade)
   documentType    String         @map("document_type") @db.VarChar(30)
   fileUrl         String         @map("file_url") @db.VarChar(500)
+  // Captured/validated by the admin at manual review. Used ONLY for the 18+ gate
+  // (proximity feature) — private, never serialised to another user.
+  dateOfBirth     DateTime?      @map("date_of_birth") @db.Date
   status          DocumentStatus @default(pending)
   reviewedById    String?        @map("reviewed_by") @db.Uuid
   reviewedBy      User?          @relation("DocumentReviewer", fields: [reviewedById], references: [id])

@@ -137,3 +137,158 @@
 | P-13 | Commentaire | Commentaire épinglé par l'auteur (IG/YT) | 2 | 2 |
 | P-14 | Chat | Présence en ligne / dernière activité | 3 | 2 |
 | P-15 | Chat | Messages vocaux (module natif audio ⇒ rebuild) | 3 | 4 |
+
+---
+
+# Sprint 2 — Proximité (« Rencontre de proximité rue-à-rue », double-aveugle)
+
+> Design VALIDÉ et décisions VERROUILLÉES : `memory/proximity-rencontre-design.md` (ne pas rediscuter, appliquer).
+> Modèle : `ProximityEncounter` mutuel à 2 participants, **anonyme des deux côtés** (`encounterId` opaque,
+> distance **gelée** au croisement). Statuts `active→requested→accepted|declined|expired`. L'un OU l'autre `connect`
+> (demandeur révélé) ; `accept` → visibilité mutuelle + `Friendship(accepted)`. Collision (les 2 cliquent) = match direct.
+> 2 niveaux INDÉPENDANTS : visibilité profil (globale) ≠ notif proximité (rayon local) — la visibilité globale ne
+> conditionne JAMAIS le croisement ni la demande.
+>
+> **Garde-fous non négociables (à porter dans CHAQUE item)** : jamais de coordonnées/distance fine renvoyées ;
+> foreground-only, ZÉRO background ; position éphémère écrasée, zéro historique ; `encounterId` opaque usage unique ;
+> plafonds + cooldown + **pas de re-demande après decline/block** ; kill-switch `proximity_enabled` (AppSetting) ;
+> ID vérifiée (`identityStatus=approved`) + **18+ (DOB)** des DEUX côtés ; signal **jitté** (1–10 min).
+>
+> **Socle réel (~80% existe)** : `apps/api/src/geo/geo.service.ts` `proximityPing` (l.445), matcher Haversine sur
+> `proximity_lat/lon` privés, dédup zone/cooldown Redis (l.550–595), cap fan-out `PROXIMITY_MATCH_LIMIT`,
+> `blockedIds`. Mobile : `hooks/useProximityAlerts.ts` (watch foreground + ping), `services/geoApi.ts:131`.
+> **Livraison mobile** : aucun module natif nouveau (réutilise expo-location foreground + expo-notifications déjà
+> dans le build) ⇒ **OTA iOS**. **NE PAS bumper `app.json version`** (orphelinerait l'OTA). Si un module natif
+> s'avère requis ⇒ STOP, signaler (rebuild EAS + bump). API : deploy dernier commit + `prisma migrate deploy`.
+
+## ITEMS Sprint 2
+
+### PX0 — [INFRA] Kill-switch `proximity_enabled` + allowlist ville pilote (g)  · Prio 5.0 (V5/E1)
+**Story** : En tant que proprio, je veux activer/désactiver la proximité globalement et la restreindre à une ville pilote, afin de livrer la feature DARK puis faire un rollout maîtrisé.
+**Given/When/Then**
+- Given `app_settings.proximity_enabled='false'`, When un user ping ou appelle un endpoint encounter, Then 200 `{matches:[]}` / 403 silencieux — aucune notif, aucun encounter créé.
+- Given `proximity_enabled='true'` + `proximity_city='Niamey'`, When le pinger n'est pas rattaché à la ville pilote, Then il ne croise personne (gate par `user.city`/zone).
+- Given le flag flip à 'true', When un user éligible ping, Then le flux normal s'active sans redeploy.
+**Contraintes** : lecture `AppSetting` (key/value string, `schema.prisma:1034` — **pas de migration**, juste 2 rows). Cache court (≤60s) pour ne pas lire la DB à chaque ping. Fail-CLOSED si lecture échoue (proximité OFF).
+**Backend** : nouveau helper `geo.service.ts` `isProximityEnabled()/isCityAllowed(city)` lisant `AppSetting` ; gate en tête de `proximityPing` (avant l.449) ET de chaque endpoint encounter (PX4). Seed des clés via le mécanisme AppSetting admin existant.
+**shared-types** : néant.
+**Livraison** : API deploy (pas de migration). Flag posé à `false` au déploiement (DARK).
+**DoD** : flag OFF prouvé inerte (test) ; flag ON + ville prouvé filtrant ; fail-closed testé.
+
+### PX1 — DOB sur IdentityDocument + gate 18+ + capture à la revue admin (a)  · Prio 4.5 (V5/E2)
+**Story** : En tant que plateforme, je veux exiger une date de naissance validée à la revue manuelle de la pièce d'identité, afin de garantir 18+ fiable et bloquer la proximité tant que la DOB est absente.
+**Given/When/Then**
+- Given un admin qui approuve une pièce, When il valide SANS saisir `dateOfBirth`, Then 400 (DOB obligatoire si `decision='approved'`).
+- Given une DOB saisie `< 18 ans` à ce jour, When l'admin approuve, Then approbation possible MAIS l'utilisateur reste **inéligible proximité** (gate `isAdult`).
+- Given un user `identityStatus='approved'` mais DOB absente (approuvé avant cette feature), When il ping, Then aucun croisement (gate bloque tant que DOB null).
+- Given DOB présente + ≥18 + `approved`, When il ping, Then éligible.
+**Contraintes** : Zod ; DOB stockée sur `IdentityDocument` (privé, jamais exposée au public ni au pair) ; ne jamais renvoyer la DOB dans une réponse API destinée à un autre user.
+**Backend / prisma** :
+- `apps/api/prisma/schema.prisma:728` `IdentityDocument` — ajouter `dateOfBirth DateTime? @db.Date @map("date_of_birth")`. **Migration**.
+- `apps/api/src/auth/dto/verify-identity.dto.ts:10` `reviewIdentitySchema` — ajouter `dateOfBirth: z.string().date().optional()` + `.refine(d => d.decision!=='approved' || !!d.dateOfBirth)` (obligatoire à l'approbation) + refus si futur.
+- `apps/api/src/auth/auth.service.ts:863` `reviewIdentity(...)` — accepter `dateOfBirth`, le persister sur le doc approuvé (transaction l.878-893). Helper `isAdult(dob)` (≥18 ans) réutilisable.
+- Gate proximité (consommé par PX2) : un user n'est éligible que si `identityStatus='approved'` ET il existe un `IdentityDocument` approuvé avec `dateOfBirth` non null et `isAdult`. Exposer `proximityEligible` via une vue/agrégat ou jointure dans la requête matcher.
+**Admin review UI** : champ `dateOfBirth` (date picker) dans l'écran de revue des pièces (admin console web `apps/web` — surface qui consomme `admin.service.ts:901 listIdentityDocuments` + `POST` review). Vérifier le câblage exact dans `apps/web` avant impl.
+**shared-types** : ajouter `dateOfBirth?` au type de payload review si typé client.
+**Livraison** : migration + deploy. Admin = web.
+**DoD** : migration verte ; DOB obligatoire à l'approbation prouvée ; gate <18 et DOB-absente prouvés bloquants ; DOB jamais fuitée (vérifié pentest).
+
+### PX2 — Découpler proximité de showOnMap/privacy + anonymiser le payload matcher (b)  · Prio 5.0 (V5/E2) — SPIKE
+**Story** : En tant qu'utilisateur discret (profil masqué/privé), je veux pouvoir croiser et être croisé en proximité sans apparaître sur la carte ni révéler mon identité, afin que la proximité soit un canal autonome double-aveugle.
+**Given/When/Then**
+- Given un pinger `proximityAlerts=true`, `showOnMap=false`, `privacyLevel='private'`, éligible (PX1), When il ping, Then il croise/est croisé normalement (les gates carte ne s'appliquent PLUS).
+- Given un croisement, When la notif part vers l'autre, Then elle ne contient NI nom, NI avatar, NI userId du pinger — seulement `encounterId` opaque + bucket de distance.
+- Given la réponse du ping au pinger, When `matches[]` revient, Then chaque entrée = `{ encounterId, distance:bucket }` UNIQUEMENT (plus de `userId/name/avatarUrl`).
+- Given un user non éligible (PX1 : pas approuvé / pas 18+ / DOB absente), When il ping, Then `{matches:[]}`.
+**Contraintes** : aucune coordonnée/distance fine ; le payload ne doit JAMAIS permettre de résoudre l'autre avant `accept` (cf. PX7). Conserver dédup zone/cooldown/familiar Redis existants. Jitter (1–10 min) du signal sortant = anti-corrélation temporelle.
+**Backend** : `apps/api/src/geo/geo.service.ts` —
+- `proximityPing` gate l.**463-469** : retirer `!pinger.showOnMap` et `pinger.privacyLevel==='private'` ; remplacer par éligibilité PX1 (`approved` + DOB adulte). Garder `proximityAlerts`.
+- `updateMany` l.**478-481** : retirer `showOnMap: true` de la clause `where`.
+- requête candidats l.**517-521** : retirer `AND show_on_map = TRUE` et `AND privacy_level <> 'private'` ; ajouter `AND identity_status = 'approved'` + jointure éligibilité DOB/adulte.
+- notif l.**602-609** : `title` générique (ex. « Quelqu'un est à proximité »), `body` sans nom, `data:{ encounterId }` (PLUS `userId`), `actorId` retiré (ne pas révéler l'acteur via la notif).
+- `matches.push` l.**617-622** : renvoyer `{ encounterId, distance: bucket }` seulement (supprimer `userId/name/avatarUrl`). `pingerName` (l.532) devient inutile pour la notif.
+- Jitter : différer l'émission de la notif d'un délai aléatoire 1–10 min (queue/scheduled — pas de `setTimeout` volatil en prod ; réutiliser un mécanisme durable s'il existe, sinon table d'attente). **À cadrer avec gwani-architect** si pas de job-runner existant.
+**shared-types** : `packages/shared-types/src/proximity.ts` (nouveau) — `EncounterMatch { encounterId; distance:number }`, `ProximityEncounterSummary`.
+**Mobile** : `services/geoApi.ts:131-139` (type retour `matches`), `hooks/useProximityAlerts.ts:116` `maybeNotify` (ne plus afficher de nom — heads-up générique « Une rencontre à proximité »).
+**Couplage** : livré AVEC PX3 (l'`encounterId` provient de l'encounter). = cœur du spike Sprint 2.
+**Livraison** : API deploy. Mobile OTA (pas de bump).
+**DoD** : aucun attribut identifiant dans notif/`matches` (test asserte) ; gates carte retirés ; éligibilité PX1 appliquée ; pentest OK sur la dé-anonymisation.
+
+### PX3 — Modèle `ProximityEncounter` + migration + dédup paire non-ordonnée (c)  · Prio 5.0 (V5/E3) — SPIKE
+**Story** : En tant que système, je veux matérialiser chaque croisement en un objet mutuel opaque dédupliqué par paire, afin de porter le cycle connect/accept/decline sans jamais lier l'identité avant accord.
+**Given/When/Then**
+- Given deux users qui se croisent, When le matcher tourne, Then UN seul `ProximityEncounter` existe pour la paire **non ordonnée** (A<B), `status='active'`, `distanceBucket` gelé, `requesterId=null`.
+- Given un encounter déjà `active/requested/accepted` pour la paire, When ils se recroisent, Then pas de nouvel objet (idempotent) ; le bucket reste **gelé** (anti-triangulation).
+- Given un encounter `declined`, When ils se recroisent, Then **aucun** nouvel encounter (silence — cf. PX5).
+- Given lecture d'un encounter par un tiers (ni A ni B), When il tente, Then 404.
+**Contraintes** : `encounterId` = uuid opaque, aucun attribut de l'autre stocké en clair côté client ; participants stockés triés `userAId<userBId` ⇒ `@@unique([userAId, userBId])` = dédup non-ordonnée (corrige le risque de double-objet symétrique). `version Int` pour lock optimiste (PX4). Pas d'historique de position dans l'objet (juste bucket + zone).
+**Backend / prisma** :
+- `schema.prisma` — modèle `ProximityEncounter { id uuid; userAId; userBId; status ProximityEncounterStatus @default(active); requesterId String? ; distanceBucket Int; zone String; version Int @default(0); createdAt; respondedAt DateTime?; expiresAt DateTime? }` + enum `ProximityEncounterStatus { active requested accepted declined expired }` + relations vers `User` (3 FKs : A, B, requester) + `@@unique([userAId, userBId])` + index. **Migration**.
+- `geo.service.ts` matcher (boucle l.541-623) : remplacer la création de notif directe par `upsert` de l'encounter pour la paire triée ; si existant non-`active`/`declined` → skip selon règle ; récupérer `encounterId` pour PX2.
+**shared-types** : enrichir `proximity.ts`.
+**Livraison** : migration + deploy.
+**DoD** : migration verte ; dédup non-ordonnée prouvée (A→B et B→A = 1 objet) ; bucket gelé prouvé ; accès tiers = 404.
+
+### PX4 — Endpoints connect/accept/decline + collision (lock optimiste) + plafonds/cooldown/jitter (d)  · Prio 5.0 (V5/E3)
+**Story** : En tant qu'utilisateur croisé, je veux pouvoir demander à connecter (je me révèle), accepter ou refuser, afin de transformer un croisement anonyme en lien — avec gestion saine des deux qui cliquent en même temps.
+**Given/When/Then**
+- Given un encounter `active` dont je suis participant, When `POST /geo/proximity/encounters/:id/connect`, Then `status→requested`, `requesterId=moi` ; l'AUTRE reçoit une notif révélant le demandeur (moi) UNIQUEMENT.
+- Given je ne suis PAS participant, When je `connect/accept/decline`, Then **404** (ni 403 — ne pas confirmer l'existence).
+- Given l'encounter est `requested` par l'autre, When je `connect`, Then = `accept` (collision) → `accepted`.
+- Given `requested` (par l'autre), When j'`accept`, Then `status→accepted`, `Friendship(accepted)` créé/réutilisé, visibilité mutuelle ; je ne peux PAS accepter ma propre demande (`requesterId===moi` → 400).
+- Given deux `connect` simultanés, When ils s'exécutent en concurrence, Then le **lock optimiste** (`where:{id,version}`+`version++`) sérialise : 1er=requested, 2e détecté requested-par-l'autre ⇒ accepted (pas de double-transition, pas de perte).
+- Given `accepted/declined/expired`, When `connect/accept`, Then 409/400 (transition invalide).
+- Given mes plafonds atteints (`connects/jour` ~5–10, `encounters reçus/jour` ~3 puis silence) ou cooldown actif, When j'agis, Then 429.
+**Contraintes** : Zod (param `:id` uuid) ; **AuthZ stricte = participant only, sinon 404** (anti-IDOR critique) ; transition d'état atomique sous lock optimiste/transaction ; réutiliser `Friendship(accepted)` en vérifiant les DEUX directions (`@@unique([requesterId,addresseeId])` ordonné `schema.prisma:377` — upsert prudent) ; jitter sur la notif de `connect`.
+**Backend** :
+- `geo.controller.ts` — `GET /geo/proximity/encounters` (liste anonyme), `POST …/:id/connect|accept|decline` (`@HttpCode(200)`).
+- `geo.service.ts` — `listEncounters(userId)`, `connect/accept/decline(userId, encounterId)` ; à l'accept, créer/réutiliser `Friendship(accepted)` (cf. `friends.service.ts:95-115` pour le pattern, réutiliser le service).
+- DTO Zod dédiés.
+**shared-types** : `proximity.ts` — types réponses connect/accept/decline + liste.
+**Livraison** : API deploy.
+**DoD** : non-participant=404 prouvé ; collision sans race prouvée (test concurrent) ; plafonds/cooldown 429 prouvés ; Friendship réutilisée sans doublon ; pentest OK (IDOR/rejeu/race).
+
+### PX5 — Anti-spam : dédup paire + interdiction de re-création après decline/block (e)  · Prio 4.0 (V4/E2)
+**Story** : En tant qu'utilisateur ayant refusé (ou bloqué) quelqu'un, je veux ne plus jamais être re-sollicité par cette personne via proximité ou amitié, afin de ne pas être harcelé.
+**Given/When/Then**
+- Given un encounter `declined` pour la paire, When ils se recroisent, Then aucun nouvel encounter ni notif (silence permanent pour cette paire).
+- Given A a bloqué B (`Block`), When le matcher tourne, Then aucun encounter (déjà filtré `blockedIds`, vérifier la symétrie).
+- Given une `Friendship` `declined` existante, When on re-`sendRequest`, Then **plus de re-send permissif automatique** : aligner sur la règle proximité (corrige `friends.service.ts:71` qui ré-ouvre une `declined` en `pending`).
+- Given le block intervient APRÈS un encounter `requested`, When l'autre tente `accept`, Then 403/404 (block prime).
+**Contraintes** : pas d'IDOR ; le « decline » ne doit pas révéler qui a refusé (silencieux des deux côtés).
+**Backend** :
+- `geo.service.ts` matcher : avant upsert encounter, exclure les paires avec encounter `declined` et avec `Block` (l'un OU l'autre sens).
+- `apps/api/src/social/friends.service.ts:71` — retirer/durcir le re-send auto d'une `declined` (au minimum : pas de réouverture silencieuse ; décision proprio = bloquer ou exiger un délai). **À confirmer proprio** car ça change le comportement amitié existant.
+**Livraison** : API deploy.
+**DoD** : re-croisement après decline prouvé silencieux ; block (2 sens) prouvé bloquant ; `friends.service.ts:71` durci + test ; pentest OK (anti-harcèlement/rejeu).
+
+### PX6 — UI mobile : liste rencontres anonymes + écran demande + accept/decline + réglages proximité (f)  · Prio 3.5 (V4/E3) — Sprint 3
+**Story** : En tant qu'utilisateur, je veux voir mes rencontres de proximité anonymes, demander à connecter, et répondre aux demandes, afin de vivre le parcours double-aveugle.
+**Given/When/Then**
+- Given des encounters `active`, When j'ouvre l'écran proximité, Then liste ANONYME (bucket distance, libellé zone, « Demander à connecter ») — aucun nom/avatar.
+- Given je tape « connecter », When `POST …/connect`, Then état `requested` (en attente).
+- Given une demande reçue (`requested` par l'autre), When j'ouvre la notif, Then écran révélant le DEMANDEUR (nom/avatar) + Accepter/Refuser.
+- Given j'accepte, Then visibilité mutuelle + ami ; Given je refuse, Then disparaît, plus de re-sollicitation.
+- Given réglages, When je règle mon rayon minimum + toggle notif proximité, Then `proximityAlerts/proximityRadius` persistés (le croisement n'a lieu que si les DEUX consentent — le plus restrictif gagne).
+**Contraintes** : aucune fuite avant accept (l'écran liste ne reçoit que `{encounterId,distance}`) ; OTA-safe (pas de module natif). Deep-link notif proximité → écran demande.
+**Mobile** : nouvel écran `apps/mobile/app/proximity/index.tsx` + `apps/mobile/app/proximity/[encounterId].tsx` ; `services/geoApi.ts` (listEncounters/connect/accept/decline) ; routing notif `app/settings/notifications.tsx` + `app/_layout.tsx` (type `proximity` → écran demande) ; réglages `app/settings/privacy.tsx:26-28,146-183` (rayon « minimum », libellé consentement mutuel) ; `hooks/useProximityAlerts.ts:116` heads-up générique.
+**Livraison** : OTA iOS, **pas de bump**.
+**DoD** : parcours démontré ; aucun attribut identifiant côté liste (vérifié) ; deep-link OK.
+
+### PX7 — [TESTS] e2e double-aveugle : aucun des deux ne résout l'autre avant accept (h)  · Prio 5.0 (V5/E2)
+**Story** : En tant que garant sécurité, je veux des tests e2e prouvant l'anonymat symétrique jusqu'à l'accept, afin d'empêcher toute régression de fuite.
+**Given/When/Then (cas « les deux invisibles »)**
+- Given A et B `proximityAlerts=true`, `showOnMap=false`, `privacyLevel='private'`, tous deux `approved`+18+, When ils se croisent, Then chacun obtient un `encounterId` mais AUCUN endpoint accessible ne renvoie l'identité/avatar/userId de l'autre.
+- Given B `connect`, When A lit, Then A voit B (demandeur révélé) mais B ne voit toujours pas A.
+- Given A `accept`, Then et SEULEMENT alors les deux se résolvent + `Friendship(accepted)`.
+- Given un tiers C, When il sonde l'`encounterId`, Then 404.
+- Given decline puis re-croisement, Then silence (PX5).
+**Backend tests** : `e2e/tests/api/proximity.spec.ts` (Playwright API, cf. `e2e/tests/api/*`). Couvre PX2/PX3/PX4/PX5. + unit Jest sur le matcher anonymisé (`apps/api/src/geo/*.spec.ts`).
+**Livraison** : tests (pas de deploy).
+**DoD** : suite verte ; un test échoue si on réintroduit `userId/name/avatar` dans notif/`matches`/liste (test de non-régression de fuite).
+
+### PX8 — [SÉCURITÉ] Audit gwani-pentest OBLIGATOIRE du diff proximité  · Prio 5.0 (V5/E1)
+**Story** : En tant que proprio, je veux un audit offensif du diff sensible (dé-anonymisation, IDOR, rejeu, race), afin d'obtenir un verdict `OK_TO_DEPLOY` avant toute activation.
+**Périmètre** : déanonymisation (peut-on relier `encounterId`→user avant accept ?), IDOR sur `:id` (non-participant), rejeu (re-`connect`/`accept`), race (double connect, lock optimiste), fuite DOB, timing/oracle (404 vs 403), abus plafonds/cooldown, kill-switch contournable.
+**Livraison** : verdict `BLOCK_DEPLOY`/`OK_TO_DEPLOY` (corrige+teste). **Gate dur** avant READY_FOR_DEPLOY.
+**DoD** : verdict `OK_TO_DEPLOY`, 0 critical/high non résolu.
