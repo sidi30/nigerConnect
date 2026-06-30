@@ -290,11 +290,19 @@ function PostCardImpl({
         <Pressable
           onPress={() => setLikersOpen(true)}
           hitSlop={6}
-          accessibilityLabel="Voir qui a aimé"
+          style={styles.pileRow}
+          accessibilityLabel="Voir les réactions"
         >
-          <Text style={styles.likersLink}>
-            {likeCount === 1 ? '1 j’aime' : `${likeCount} j’aime`}
-          </Text>
+          {post.reactionCounts && post.reactionCounts.length > 0 ? (
+            <View style={styles.pileEmojis}>
+              {post.reactionCounts.map((r, i) => (
+                <Text key={r.emoji} style={[styles.pileEmoji, i > 0 && { marginLeft: -5 }]}>
+                  {r.emoji}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          <Text style={styles.likersLink}>{likeCount}</Text>
         </Pressable>
       ) : null}
 
@@ -476,12 +484,19 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.tan200,
     marginTop: Spacing.sm,
   },
+  pileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  pileEmojis: { flexDirection: 'row', alignItems: 'center' },
+  pileEmoji: { fontSize: 15 },
   likersLink: {
     fontSize: Typography.sizes.sm,
     fontWeight: '700',
     color: Colors.brown,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
   },
   action: {
     flexDirection: 'row',

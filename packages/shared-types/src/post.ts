@@ -45,6 +45,8 @@ export interface Post {
   isLikedByMe: boolean;
   /** The viewer's chosen reaction emoji (e.g. '❤️','😂'), or null if none. */
   myReaction?: string | null;
+  /** Top reaction emojis with counts (the pile under a post), count-desc. */
+  reactionCounts?: { emoji: string; count: number }[];
   media: PostMedia[];
   createdAt: string;
   updatedAt: string;

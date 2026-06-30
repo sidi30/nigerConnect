@@ -232,7 +232,8 @@ export class PostsService {
       },
     });
     if (!post) throw new NotFoundException('Post not found');
-    return this.decoratePost(post, viewerId);
+    const rc = await this.reactionCountsFor([post.id]);
+    return this.decoratePost(post, viewerId, rc.get(post.id) ?? []);
   }
 
   async update(authorId: string, postId: string, dto: UpdatePostDto) {
@@ -411,7 +412,9 @@ export class PostsService {
     });
 
     const hasMore = posts.length > limit;
-    const items = (hasMore ? posts.slice(0, limit) : posts).map((p) => this.decoratePost(p, userId));
+    const page = hasMore ? posts.slice(0, limit) : posts;
+    const rc = await this.reactionCountsFor(page.map((p) => p.id));
+    const items = page.map((p) => this.decoratePost(p, userId, rc.get(p.id) ?? []));
     const nextCursor = hasMore ? items[items.length - 1]!.createdAt.toISOString() : null;
     const result = { items, nextCursor };
 
@@ -464,9 +467,9 @@ export class PostsService {
     });
 
     const hasMore = posts.length > limit;
-    const items = (hasMore ? posts.slice(0, limit) : posts).map((p) =>
-      this.decoratePost(p, viewerId),
-    );
+    const page = hasMore ? posts.slice(0, limit) : posts;
+    const rc = await this.reactionCountsFor(page.map((p) => p.id));
+    const items = page.map((p) => this.decoratePost(p, viewerId, rc.get(p.id) ?? []));
     const nextCursor = hasMore ? items[items.length - 1]!.createdAt.toISOString() : null;
     return { items, nextCursor };
   }
@@ -550,7 +553,9 @@ export class PostsService {
       take: limit + 1,
     });
     const hasMore = posts.length > limit;
-    const items = (hasMore ? posts.slice(0, limit) : posts).map((p) => this.decoratePost(p, viewerId));
+    const page = hasMore ? posts.slice(0, limit) : posts;
+    const rc = await this.reactionCountsFor(page.map((p) => p.id));
+    const items = page.map((p) => this.decoratePost(p, viewerId, rc.get(p.id) ?? []));
     return {
       items,
       nextCursor: hasMore ? items[items.length - 1]!.createdAt.toISOString() : null,
@@ -617,10 +622,15 @@ export class PostsService {
     await pipeline.exec();
   }
 
-  private decoratePost<T extends { likes?: { userId: string; emoji?: string }[] }>(
+  private decoratePost<T extends { id: string; likes?: { userId: string; emoji?: string }[] }>(
     post: T,
     viewerId: string,
-  ): Omit<T, 'likes'> & { isLikedByMe: boolean; myReaction: string | null } {
+    reactionCounts: { emoji: string; count: number }[] = [],
+  ): Omit<T, 'likes'> & {
+    isLikedByMe: boolean;
+    myReaction: string | null;
+    reactionCounts: { emoji: string; count: number }[];
+  } {
     const { likes, ...rest } = post as T & { likes: { userId: string; emoji?: string }[] };
     const mine = (likes ?? []).find((l) => l.userId === viewerId);
     return {
@@ -628,6 +638,34 @@ export class PostsService {
       isLikedByMe: !!mine,
       // The viewer's chosen reaction emoji (defaults to ❤️ for legacy likes).
       myReaction: mine ? mine.emoji ?? '❤️' : null,
+      reactionCounts,
     };
+  }
+
+  /**
+   * Top reaction emojis (with counts) per post, for the "reaction pile" under a
+   * post. One grouped query for the whole page; returns the 3 most-used emojis
+   * per post, count-desc.
+   */
+  private async reactionCountsFor(
+    postIds: string[],
+  ): Promise<Map<string, { emoji: string; count: number }[]>> {
+    const map = new Map<string, { emoji: string; count: number }[]>();
+    if (postIds.length === 0) return map;
+    const rows = await this.prisma.like.groupBy({
+      by: ['postId', 'emoji'],
+      where: { postId: { in: postIds } },
+      _count: { emoji: true },
+    });
+    for (const r of rows) {
+      const arr = map.get(r.postId) ?? [];
+      arr.push({ emoji: r.emoji, count: r._count.emoji });
+      map.set(r.postId, arr);
+    }
+    for (const [k, arr] of map) {
+      arr.sort((a, b) => b.count - a.count);
+      map.set(k, arr.slice(0, 3));
+    }
+    return map;
   }
 }
