@@ -1,72 +1,78 @@
 {
-  "current": "SPRINT_PLANNED",
-  "updatedAt": "2026-06-30",
-  "sprint": {
-    "id": "S2",
-    "goal": "Livrer le coeur securise de la rencontre de proximite double-aveugle (encounter anonyme + matcher anonymise, decouple de la carte, gate ID+18, kill-switch DARK), prouve sans fuite avant accept par e2e + verdict pentest OK_TO_DEPLOY.",
-    "deliveryNote": "Increment BACKEND-FIRST livre DARK (proximity_enabled=false). API: deploy dernier commit + prisma migrate deploy (PX1 DOB + PX3 encounter = migrations). Mobile UI (PX6) = OTA iOS sans bump, repoussee Sprint 3 avec le rollout ville. Aucun module natif (reuse expo-location foreground + expo-notifications). NE PAS bumper app.json version (orphelinerait l'OTA). Admin DOB review = web. ROLLOUT = action sortante du proprio APRES verdict pentest, hors sprint.",
-    "items": [
-      { "id": "PX0", "title": "INFRA kill-switch proximity_enabled + allowlist ville pilote", "priority": 5.0, "status": "todo", "type": "infra", "letter": "g", "surfaces": ["api/geo", "AppSetting"], "agent": "gwani-backend", "migration": false },
-      { "id": "PX1", "title": "DOB sur IdentityDocument + gate 18+ + capture revue admin", "priority": 4.5, "status": "todo", "type": "story", "letter": "a", "surfaces": ["prisma", "api/auth", "web/admin", "shared-types"], "agent": "gwani-backend", "migration": true },
-      { "id": "PX2", "title": "SPIKE decoupler proximite de showOnMap/privacy + anonymiser payload matcher", "priority": 5.0, "status": "todo", "type": "spike", "letter": "b", "surfaces": ["api/geo", "shared-types", "mobile/geoApi", "mobile/useProximityAlerts"], "agent": "gwani-backend", "migration": false, "coupledWith": "PX3" },
-      { "id": "PX3", "title": "SPIKE modele ProximityEncounter + migration + dedup paire non-ordonnee", "priority": 5.0, "status": "todo", "type": "spike", "letter": "c", "surfaces": ["prisma", "api/geo", "shared-types"], "agent": "gwani-backend", "migration": true, "coupledWith": "PX2" },
-      { "id": "PX4", "title": "Endpoints connect/accept/decline + collision lock optimiste + plafonds/cooldown/jitter", "priority": 5.0, "status": "todo", "type": "story", "letter": "d", "surfaces": ["api/geo", "api/social", "shared-types"], "agent": "gwani-backend", "migration": false },
-      { "id": "PX5", "title": "Anti-spam dedup paire + interdit re-creation apres decline/block (fix friends.service.ts:71)", "priority": 4.0, "status": "todo", "type": "story", "letter": "e", "surfaces": ["api/geo", "api/social"], "agent": "gwani-backend", "migration": false, "ownerDecision": "friends.service.ts:71 change comportement amitie existant" },
-      { "id": "PX7", "title": "TESTS e2e double-aveugle: aucun ne resout l'autre avant accept (cas les deux invisibles)", "priority": 5.0, "status": "todo", "type": "test", "letter": "h", "surfaces": ["e2e/tests/api", "api/geo spec"], "agent": "bug-hunter->fixer->e2e-tester" },
-      { "id": "PX8", "title": "SECURITE audit gwani-pentest OBLIGATOIRE du diff proximite (deanon/IDOR/rejeu/race)", "priority": 5.0, "status": "todo", "type": "security", "surfaces": ["api/geo", "api/auth", "api/social"], "agent": "gwani-pentest", "gate": "BLOCK_DEPLOY/OK_TO_DEPLOY" }
+  "current": "READY_FOR_DEPLOY",
+  "updatedAt": "2026-07-02",
+  "activeWave": {
+    "id": "W360",
+    "title": "Vague 360deg (juillet 2026): LIVES + Marketplace secondaire + Profil + gaps diaspora",
+    "discovery": {
+      "market": "memory/market.md",
+      "strategy": "diagnostic gwani-conseiller-strategique (2026-07-02): deconseille la VIDEO live complete en V1; recommande LIVE AUDIO Salons",
+      "adr_lives": "docs/adr/ADR-LIVES-streaming.md (+ memory/lives-api-contracts.json): si video => LiveKit Cloud, self-host SFU sur VPS prod exclu, rebuild EAS + bump 1.8->1.9"
+    },
+    "decisionGates": [
+      "MARKETPLACE: garder l'onglet Services pair OU le fondre sous un onglet Entraide (reco conseiller) -- DECISION PROPRIO de positionnement avant la refonte nav"
     ],
-    "deferred_to_sprint3": [
-      { "id": "PX6", "title": "UI mobile: liste rencontres anonymes + ecran demande + accept/decline + reglages proximite", "letter": "f", "agent": "gwani-frontend", "delivery": "OTA iOS sans bump" },
-      { "id": "ROLLOUT", "title": "Activation proximity_enabled=true + ville pilote (action sortante proprio)", "blockedBy": "PX8 OK_TO_DEPLOY + approbation proprio" }
+    "hardRules": [
+      "ZERO solution payante (absolue, 2026-07-02): gratuit + OSS + securise + auto-hebergeable VPS, sinon feature ABANDONNEE (jamais degrader la securite).",
+      "Infra = VPS unique partage, RAM/CPU serres: le cout ressource est un critere de rejet (cf. LIVES ecarte).",
+      "Efficacite: pas de scope creep, items finis a 100% (Zod+AuthZ+tests verts+revue) > beaucoup a 80%.",
+      "Audit dep. payantes: ANIM-8 carte native -> react-native-maps (gratuit) ou Leaflet OSS, PAS @rnmapbox/Mapbox (payant). Reste du stack deja 100% gratuit/self-host."
     ]
   },
+  "sprint": {
+    "id": "S3",
+    "goal": "De-risking OTA-safe: rendre la page profil correcte a l'echelle (compteurs autoritatifs, apercu amis borne + voir tout pagine) et corriger le bug du compteur d'amis plafonne a une page. Zero decision proprio bloquante, zero module natif => OTA iOS sans bump.",
+    "deliveryNote": "Increment 100% OTA iOS. API: 1 endpoint/enrichissement de comptage (pas de migration a priori, _count Prisma). Mobile JS-only. NE PAS bumper app.json version (orphelinerait l'OTA). Privacy: le friendsCount d'un tiers suit exactement le gating existant de la liste d'amis (private=>404, friends=>amis only).",
+    "items": [
+      { "id": "PR1", "title": "Endpoint/enrichissement compteurs autoritatifs (friends/posts/photos/filleuls) via _count, gate privacy identique a la liste", "priority": 5.0, "status": "todo", "type": "story", "surfaces": ["api/profile", "api/social", "shared-types"], "agent": "gwani-backend", "migration": false },
+      { "id": "PR2", "title": "Profil (moi + tiers): compteur amis autoritatif, apercu amis borne (N max) + Voir tous les amis => ecran paginate", "priority": 4.5, "status": "todo", "type": "story", "surfaces": ["mobile/profile.tsx", "mobile/user/[id].tsx", "mobile/friends", "mobile/profileApi"], "agent": "gwani-frontend", "delivery": "OTA iOS sans bump" },
+      { "id": "PR3", "title": "TESTS: unit jest counts + gating privacy du compteur tiers + non-regression tsc api/mobile", "priority": 5.0, "status": "todo", "type": "test", "surfaces": ["api/profile spec", "e2e/tests/api"], "agent": "bug-hunter->fixer->e2e-tester" },
+      { "id": "PR4", "title": "REVUE gwani-reviewer + verdict gwani-pentest sur le gating du compteur (fuite de taille de reseau d'un compte prive?)", "priority": 4.0, "status": "done", "type": "security", "surfaces": ["api/profile", "api/social"], "agent": "gwani-reviewer + gwani-pentest", "gate": "OK_TO_DEPLOY" }
+    ],
+    "status": "READY_FOR_DEPLOY",
+    "result": {
+      "allItems": "done (PR1..PR4)",
+      "tests": "api tsc vert + 35 suites / 324 tests jest verts ; mobile tsc vert",
+      "reviewer": "READY (aucun bloquant)",
+      "pentest": "OK_TO_DEPLOY (0 critical, 0 high) -- 5 menaces deanon/oracle/IDOR/cache/enumeration neutralisees avec preuves",
+      "bugFixed": "MEDIUM postsCount ne respectait pas la visibilite par post (fuite mineure du nb de posts non-publics) -> corrige, mirrore getUserPosts",
+      "mobileVersion": "1.8.0 inchangee (OTA-safe, pas de bump)",
+      "delivery": "API deploy dernier commit (pas de migration) + Mobile OTA iOS eas update --channel preview",
+      "deferredNits": [
+        "getById alourdi (loadCounts) alors que getPhotos/listFriendsOf ne l'utilisent que comme gate -> extraire assertCanViewProfile leger",
+        "clause de visibilite des posts dupliquee de posts.service.ts -> extraire un helper partage (dette de divergence)",
+        "LOW mobile: erreur transitoire (5xx/timeout) affichee comme 'liste non visible' -> distinguer 403/404 vs transitoire (retry)",
+        "ProfileCounts defini 2x (shared-types optionnel + service local requis)",
+        "postsCount livre+teste mais non encore affiche cote mobile (contrat autoritatif pret pour web/futur)"
+      ]
+    }
+  },
+  "backlogEpics": [
+    { "id": "E-LIVES", "title": "LIVES (streaming live)", "status": "ecartee", "note": "ABANDONNEE 2026-07-02 (decision proprio): cout ressource VPS partage refuse; video = payant sans alternative; audio self-hoste (LiveKit OSS+coturn) refuse aussi. ADR docs/adr/ADR-LIVES-streaming.md = REJECTED (trace). NE PAS re-proposer sans demande explicite." },
+    { "id": "E-MARKET", "title": "Marketplace secondaire (multi-images, tarif optionnel, page detail, formulaire dynamique intention-first)", "status": "ready-pending-decision", "blockedBy": "positionnement nav (onglet Services vs fondu sous Entraide)", "note": "Multi-images => migration Prisma (ServiceRequest n'a aucun champ image) + S3Service.assertOwnedPublicImage. Formulaire intention-first (aide gratuite vs service payant)." },
+    { "id": "E-PROFILE", "title": "Profil a l'echelle", "status": "in_sprint", "note": "Sprint S3 en cours." },
+    { "id": "E-DIASPORA", "title": "Gaps diaspora (evenements geolocalises + RSVP, entraide Demarches structuree, i18n haoussa/zarma, groupes par ville d'accueil, annonces officielles verifiees)", "status": "backlog", "note": "Fort levier moat vs me-too selon conseiller + market.md. Evenements = infra ~0, se branche sur la carte existante." }
+  ],
+  "pausedSprints": [
+    {
+      "id": "S2",
+      "status": "paused",
+      "goal": "Coeur securise rencontre de proximite double-aveugle (encounter anonyme, gate ID+18, kill-switch DARK).",
+      "note": "EN PAUSE (cf. memory/proximity-rencontre-design.md). Reprise = decision proprio. Items PX0-PX8 conserves dans memory/backlog.md."
+    }
+  ],
   "completed_sprints": [
     { "id": "S1", "goal": "Booster l'engagement feed/chat a parite Instagram + reparer le flux d'acceptation d'ami (OTA iOS).", "items": ["B7", "B1", "B6", "B3", "B2"], "status": "delivered" }
   ],
   "plannedSprints": [
-    {
-      "id": "S-ANIM-1",
-      "title": "Sprint Animations v1 (Vague A = OTA-safe, axes 1 + 3)",
-      "status": "planned",
-      "goal": "Rendre NigerConnect vivant et premium facon Snapchat SANS rebuild: carte Leaflet animee (entree des pins, pulsation actif-recent, transitions de cluster douces) + micro-anims d'icones reanimated (heart-burst feed/commentaire/story, double-tap-to-like, tab bar bounce, badges animes). Livre 100% OTA iOS, ZERO bump app.json version (reste 1.7.0).",
-      "deliveryNote": "Vague A entiere = OTA iOS, PAS de bump (reanimated 4.1.7 + worklets 0.5.1 deja dans le build; carte = CSS/JS WebView). ANIM-2 a un petit ajout backend (champ activeRecently sur le marqueur geo) = deploy dernier commit sans migration, front degrade proprement si absent. Vague B (natifs) repoussee a un seul build 1.8.0. Aucun build/submit sans GO proprio.",
-      "items": [
-        { "id": "ANIM-1", "title": "Carte vivante: entree des pins (drop+fade+stagger)", "priority": 4.0, "status": "todo", "axis": 1, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/app/(tabs)/map.tsx (LEAFLET_HTML l.58-201, renderMarkers l.135-197)"] },
-        { "id": "ANIM-2", "title": "Pulsation actif-recent + halo de proximite", "priority": 3.5, "status": "todo", "axis": 1, "delivery": "OTA+petitAPI", "agent": "gwani-frontend(+gwani-backend champ activeRecently)", "files": ["apps/mobile/app/(tabs)/map.tsx", "apps/mobile/services/geoApi.ts:25-28", "apps/api/src/geo/geo.service.ts ~l.258-286"], "apiNote": "ajoute activeRecently:boolean, pas de migration a priori, jamais d'horodatage fin expose" },
-        { "id": "ANIM-3", "title": "Transitions de cluster douces + recentrage premium", "priority": 3.0, "status": "todo", "axis": 1, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/app/(tabs)/map.tsx (renderMarkers, flyTo l.107-127)"] },
-        { "id": "ANIM-4", "title": "Heart-burst au like (feed+commentaire+story) + double-tap-to-like (P-09)", "priority": 4.5, "status": "todo", "axis": 3, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/components/ui/HeartBurst.tsx (new)", "components/feed/PostCard.tsx l.70-77,288-315", "components/feed/CommentItem.tsx l.48-55,137-141", "app/stories/[authorId].tsx"] },
-        { "id": "ANIM-5", "title": "Tab bar animee: bounce onglet actif + badge anime", "priority": 3.5, "status": "todo", "axis": 3, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/app/(tabs)/_layout.tsx TabIcon l.18-39"] },
-        { "id": "ANIM-6", "title": "Badges animes (verifie/ambassadeur) + transitions d'icones", "priority": 2.5, "status": "todo", "axis": 3, "delivery": "OTA", "agent": "gwani-frontend", "files": ["apps/mobile/components/ui/AmbassadorBadge.tsx", "VerifiedBadge.tsx", "map.tsx friendIcon l.734-741"] }
-      ],
-      "validation": { "agents": ["bug-hunter->fixer", "e2e-tester"], "pentest": "non requis (pas de surface API sensible; ANIM-2 backend = champ booleen non identifiant -> revue suffit)" },
-      "dod": ["60fps demontre (capture/video)", "aucune regression npx tsc --noEmit (api+mobile)", "OTA-only confirme: app.json version reste 1.7.0", "reduce-motion respecte"]
-    },
-    {
-      "id": "S-ANIM-2",
-      "title": "Sprint Animations v2 (Vague B = natifs, axes 2 + 4) -- UN seul rebuild 1.8.0",
-      "status": "blocked",
-      "blockedBy": "ANIM-7 ADR valide proprio + GO build (action sortante)",
-      "goal": "Carte native facon Snap Map (react-native-maps/@rnmapbox) + Lottie premium, groupes en UN SEUL rebuild EAS + UN bump app.json 1.7.0->1.8.0.",
-      "items": [
-        { "id": "ANIM-7", "title": "ADR carte native: react-native-maps vs @rnmapbox/maps", "priority": 4.0, "status": "todo", "axis": 2, "delivery": "ADR", "agent": "gwani-architect", "gate": "ADR valide proprio avant tout code" },
-        { "id": "ANIM-8", "title": "Carte native: pins 60fps + anneau story (P-04) + Snap-glide + clustering natif", "priority": 3.5, "status": "todo", "axis": 2, "delivery": "REBUILD+bump", "agent": "gwani-frontend", "dependsOn": "ANIM-7" },
-        { "id": "ANIM-9", "title": "Premium Lottie: like premium + ecrans succes + empty-states animes", "priority": 3.0, "status": "todo", "axis": 4, "delivery": "REBUILD+bump", "agent": "gwani-frontend" }
-      ],
-      "deliveryNote": "react-native-maps ET lottie-react-native = 2 modules natifs -> 1 build EAS + 1 bump couvre les deux. STOP avant build = approbation proprio (Norton CA + EAS sidi30). Validation bug-hunter->fixer->e2e-tester."
-    }
-  ],
-  "backlog_deferred": [
-    { "id": "B5a", "title": "Liker une story (coeur anime reanimated)" },
-    { "id": "B5b", "title": "Repondre a une story (-> DM auteur)" },
-    { "id": "B4", "title": "EPIC: reactions multi-emoji sur post (architect d'abord)" },
-    { "id": "P-04", "title": "Snap Map: anneau de story autour de l'avatar (differenciateur)" }
+    { "id": "S-ANIM-1", "title": "Sprint Animations v1 (Vague A = OTA-safe, axes 1 + 3)", "status": "planned", "note": "Detail complet conserve dans memory/backlog.md (ANIM-1..6)." },
+    { "id": "S-ANIM-2", "title": "Sprint Animations v2 (Vague B = natifs) -- 1 rebuild 1.8.0", "status": "blocked", "blockedBy": "ANIM-7 ADR carte native valide proprio + GO build" }
   ],
   "agents": {},
   "checkpoints": { "deploy_approved": false },
   "iterations": {},
   "openQuestions": [
-    "PX5: friends.service.ts:71 - bloquer la reouverture d'une Friendship declined OU exiger un delai? (change comportement amitie existant) -> decision proprio",
-    "PX2/PX4 jitter 1-10min: pas de setTimeout volatil en prod - existe-t-il un job-runner durable? sinon cadrage gwani-architect (table d'attente / BullMQ)",
-    "Design (pre-rollout): TTL re-declenchement (8h/24h/48h), plafonds chiffres (connects/jour ~5-10, encounters/jour ~3), risque k-anonymat faible diaspora"
+    "MARKETPLACE: positionnement -- onglet Services pair (actuel, deja tres visible) vs fondu sous onglet Entraide avec formulaire intention-first (reco conseiller). Impacte la tab-bar (deja 6 onglets).",
+    "S2 proximite: reprise ou maintien en pause?"
   ]
 }

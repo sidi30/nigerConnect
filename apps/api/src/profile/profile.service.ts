@@ -40,6 +40,46 @@ export interface ProfileNetwork {
   inviteesCount: number;
 }
 
+/**
+ * Authoritative counters for the profile header (S3/PR1). The mobile client
+ * used to derive "nb d'amis" from the length of the first friends-list page
+ * (capped ~30) — a member with 500 friends showed "30". These come straight
+ * from Prisma `count`/`_count`, uncapped.
+ *
+ * `friendsCount`/`postsCount` follow the EXACT same gate as the underlying
+ * lists (`listFriendsOf` / the friends-only wall in posts.service.ts): a
+ * `friends`-privacy profile viewed by a non-friend must not leak its network
+ * size, so both are `null` in that case — never a real number, never 0 (which
+ * would itself be information). `photosCount` is never gated further than the
+ * profile header itself (see `getPhotos`), so it's always a number once
+ * `getById`/`getMe` returned successfully.
+ */
+export interface ProfileCounts {
+  friendsCount: number | null;
+  postsCount: number | null;
+  photosCount: number;
+}
+
+/**
+ * Viewer context `loadCounts` needs to compute `postsCount` with the SAME
+ * per-post visibility as the underlying wall (`PostsService.getUserPosts`), so
+ * the header total never diverges from the list the viewer can actually scroll
+ * — and a stranger of a `public` profile is never told how many `friends`/
+ * `association` posts exist.
+ *
+ *   - `canSeeLists` gates `friendsCount`/`postsCount` (→ null for a non-friend
+ *     of a `friends`-privacy profile).
+ *   - `seeAllPosts`  → count every non-story post (self, or admin full-visibility).
+ *   - `isFriend`     → an accepted friend sees public + friends (+ association
+ *     posts of the associations they belong to); otherwise public only.
+ */
+interface CountsViewer {
+  viewerId: string;
+  canSeeLists: boolean;
+  seeAllPosts: boolean;
+  isFriend: boolean;
+}
+
 @Injectable()
 export class ProfileService {
   constructor(
@@ -67,13 +107,23 @@ export class ProfileService {
     return { email: user.email };
   }
 
-  async getMe(userId: string): Promise<SelfUser & ProfileNetwork> {
+  async getMe(userId: string): Promise<SelfUser & ProfileNetwork & ProfileCounts> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: USER_SELF_SELECT,
     });
     if (!user) throw new NotFoundException('User not found');
-    return { ...user, ...(await this.loadNetwork(userId)) };
+    // Self always sees its own true totals — no gate applies to your own network.
+    const [network, counts] = await Promise.all([
+      this.loadNetwork(userId),
+      this.loadCounts(userId, {
+        viewerId: userId,
+        canSeeLists: true,
+        seeAllPosts: true,
+        isFriend: true,
+      }),
+    ]);
+    return { ...user, ...network, ...counts };
   }
 
   /**
@@ -97,6 +147,73 @@ export class ProfileService {
         ? { id: inv.id, displayName: inv.displayName, avatarUrl: inv.avatarUrl }
         : null;
     return { invitedBy, inviteesCount: row?._count?.invitees ?? 0 };
+  }
+
+  /**
+   * Authoritative counters (PR1). `viewer.canSeeLists` gates `friendsCount` and
+   * `postsCount` — the same boolean `listFriendsOf`/the wall would use to decide
+   * whether the underlying list itself is visible to this viewer (always `true`
+   * for self). `postsCount` is then counted with the SAME per-post visibility
+   * filter as `PostsService.getUserPosts`, so the header total matches the wall
+   * the viewer can actually scroll (see `postVisibilityFilter`). `photosCount`
+   * ignores the context: photos aren't gated beyond the profile header (see
+   * `getPhotos`).
+   */
+  private async loadCounts(userId: string, viewer: CountsViewer): Promise<ProfileCounts> {
+    const [photosCount, friendsCount, postsCount] = await Promise.all([
+      this.prisma.userPhoto.count({ where: { userId } }),
+      viewer.canSeeLists
+        ? this.prisma.friendship.count({
+            where: {
+              status: 'accepted',
+              OR: [{ requesterId: userId }, { addresseeId: userId }],
+            },
+          })
+        : Promise.resolve(null),
+      viewer.canSeeLists ? this.countVisiblePosts(userId, viewer) : Promise.resolve(null),
+    ]);
+    return { friendsCount, postsCount, photosCount };
+  }
+
+  /**
+   * Count `authorId`'s wall posts as this viewer would actually see them. Mirrors
+   * `PostsService.getUserPosts`: stories excluded, and the per-post `visibility`
+   * clause depends on the viewer/author relation so a stranger of a `public`
+   * profile is only told the number of `public` posts, never the `friends`/
+   * `association` ones they cannot list.
+   */
+  private async countVisiblePosts(authorId: string, viewer: CountsViewer): Promise<number> {
+    const visibilityFilter = await this.postVisibilityFilter(viewer);
+    return this.prisma.post.count({
+      where: { authorId, isStory: false, deletedAt: null, ...visibilityFilter },
+    });
+  }
+
+  /**
+   * The per-post visibility clause, mirroring `PostsService.getUserPosts` EXACTLY:
+   *   - self / admin full-visibility → no narrowing (every post),
+   *   - accepted friend              → public + friends, plus `association` posts
+   *     of the associations the viewer is an approved member of (being a friend
+   *     of the author is not enough for association-scoped posts),
+   *   - stranger of a public profile → public only.
+   */
+  private async postVisibilityFilter(viewer: CountsViewer): Promise<Prisma.PostWhereInput> {
+    if (viewer.seeAllPosts) return {};
+    if (!viewer.isFriend) return { visibility: 'public' };
+    const memberAssocIds = (
+      await this.prisma.associationMember.findMany({
+        where: { userId: viewer.viewerId, status: 'approved' },
+        select: { associationId: true },
+      })
+    ).map((m) => m.associationId);
+    return {
+      OR: [
+        { visibility: { in: ['public', 'friends'] } },
+        ...(memberAssocIds.length > 0
+          ? [{ visibility: 'association' as const, associationId: { in: memberAssocIds } }]
+          : []),
+      ],
+    };
   }
 
   async updateMe(userId: string, dto: UpdateProfileDto): Promise<SelfUser> {
@@ -223,7 +340,7 @@ export class ProfileService {
     viewerId: string,
     targetId: string,
     viewerRole?: string,
-  ): Promise<(SelfUser | PublicUser) & ProfileNetwork> {
+  ): Promise<(SelfUser | PublicUser) & ProfileNetwork & ProfileCounts> {
     if (viewerId === targetId) return this.getMe(targetId);
 
     // Admin support override: an admin (with the setting on) may open any profile
@@ -266,7 +383,36 @@ export class ProfileService {
     // listFriendsOf below) — remain restricted; what we expose here is the
     // same set of fields already visible in the search/map response, so no
     // new information leaks.
-    return { ...target, ...(await this.loadNetwork(targetId)) };
+    //
+    // `friendsCount`/`postsCount` mirror that same gate: a `friends`-privacy
+    // target only reveals them once the viewer is an accepted friend (an
+    // admin override already unlocked full access above, so it also sees the
+    // real totals). A `public` target always exposes them.
+    // Whether the viewer is an accepted friend of the target. Needed both for
+    // the list gate (`canSeeLists`) AND to count posts with the same per-post
+    // visibility `getUserPosts` applies — a friend's `postsCount` includes
+    // `friends`/`association` posts, a stranger's counts `public` only.
+    const isFriend =
+      (await this.prisma.friendship.count({
+        where: {
+          status: 'accepted',
+          OR: [
+            { requesterId: viewerId, addresseeId: targetId },
+            { requesterId: targetId, addresseeId: viewerId },
+          ],
+        },
+      })) > 0;
+    const canSeeLists = fullVis || target.privacyLevel !== 'friends' || isFriend;
+    const [network, counts] = await Promise.all([
+      this.loadNetwork(targetId),
+      this.loadCounts(targetId, {
+        viewerId,
+        canSeeLists,
+        seeAllPosts: fullVis,
+        isFriend,
+      }),
+    ]);
+    return { ...target, ...network, ...counts };
   }
 
   /**

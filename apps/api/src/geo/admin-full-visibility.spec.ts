@@ -59,7 +59,12 @@ describe('GeoService — admin full visibility (map)', () => {
 });
 
 function makeProfile(full: boolean, target: { privacyLevel: string } | null) {
-  const prisma = { user: { findUnique: jest.fn(async () => target) } };
+  const prisma = {
+    user: { findUnique: jest.fn(async () => target) },
+    // getById now computes `isFriend` (for the S3 counter gate) via a direct
+    // friendship.count before delegating to the stubbed loadCounts.
+    friendship: { count: jest.fn(async () => 0) },
+  };
   const redis = { client: { get: jest.fn(async () => null), set: jest.fn() } };
   const blocks = { isBlocked: jest.fn(async () => false) };
   const svc = new ProfileService(
@@ -71,8 +76,11 @@ function makeProfile(full: boolean, target: { privacyLevel: string } | null) {
     settings(full) as never,
     { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
   );
-  // loadNetwork hits prisma; stub it so getById resolves.
+  // loadNetwork/loadCounts hit prisma; stub them so getById resolves.
   jest.spyOn(svc as never, 'loadNetwork').mockResolvedValue({} as never);
+  jest
+    .spyOn(svc as never, 'loadCounts')
+    .mockResolvedValue({ friendsCount: null, postsCount: null, photosCount: 0 } as never);
   return { svc, blocks };
 }
 

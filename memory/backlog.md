@@ -10,6 +10,80 @@
 
 ---
 
+# VAGUE 360° — juillet 2026 (LIVES · Marketplace secondaire · Profil · gaps diaspora)
+
+> Discovery livrée : recherche marché `memory/market.md`, diagnostic stratégique (gwani-conseiller-strategique
+> 2026-07-02), ADR streaming `docs/adr/ADR-LIVES-streaming.md` (+ `memory/lives-api-contracts.json`).
+> **Priorité de vague = valeur ÷ risque.**
+>
+> ## CONTRAINTES TRANSVERSES DURES (priment sur tout, à porter dans CHAQUE item)
+> - **ZÉRO solution payante** (règle absolue proprio 2026-07-02) : aucun SaaS/API/licence payant. Brique
+>   normalement payante ⇒ alternative GRATUITE + open-source + sécurisée, auto-hébergeable en conteneur sur le VPS ;
+>   si aucune n'existe ⇒ **ABANDONNER la feature** (la noter « écartée — dépendance payante sans alternative »).
+>   Jamais dégrader la sécurité pour rester gratuit.
+> - **Infra imposée** = VPS unique 46.224.193.109, Docker/Traefik, hôte PARTAGÉ, RAM/CPU serrés. Toute feature
+>   doit tenir sans dégrader les apps voisines ; le coût ressource est un critère de rejet (cf. LIVES écarté).
+> - **Efficacité** : pas de dérive de périmètre, pas de sur-ingénierie. Mieux vaut peu d'items finis à 100 % (code +
+>   Zod + AuthZ + tests verts + revue) que beaucoup à 80 %.
+> - **Audit dépendances payantes du backlog** : ⚠️ ANIM-8 (carte native) évaluait `@rnmapbox/maps` (Mapbox = offre
+>   payante/clé) — à REMPLACER par `react-native-maps` (tuiles OS natives gratuites) ou GARDER Leaflet OSS. Le reste
+>   (MinIO/S3 self-host, Postgres/PostGIS, Redis, Expo Push, géocodage table locale, i18n locale, carte Leaflet OSS,
+>   événements sur carte existante) est déjà 100 % gratuit/auto-hébergé.
+
+## E-PROFILE — Profil à l'échelle · **Prio 5.0 — SPRINT S3 EN COURS** (OTA-safe, aucune décision bloquante)
+Audit confirmé (ask #3) :
+- **Bug** : `apps/mobile/app/(tabs)/profile.tsx:112` `friendsCount = friendsQuery.data?.items.length` = taille de la 1re page curseur (~30). Un membre à 500 amis affiche « 30 Amis ». (`assocsCount` à re-vérifier.)
+- Profil tiers `apps/mobile/app/user/[id].tsx:468-491` : section « Amis » rend toute la 1re page en bande horizontale, **sans total ni « voir tout »** ; grille Photos aplatit toutes les images des posts chargés (non borné).
+- **Aucun endpoint de comptage autoritatif** (`friendsApi.list()` / `getFriendsOf` renvoient des pages curseur ; `profile.service.ts` gate déjà la liste : private⇒404, friends⇒amis only).
+- **PR1** (backend) : exposer des compteurs autoritatifs (`friendsCount/postsCount/photosCount/inviteesCount`) via `_count` Prisma sur `/profile/me` et `/profile/:id`. Le `friendsCount` d'un tiers **suit exactement le gating de la liste** (sinon fuite de la taille du réseau d'un compte privé). Zod, AuthZ, pas de migration. shared-types : ajouter les champs (optionnels).
+- **PR2** (frontend) : profil (moi + tiers) → compteur amis autoritatif ; aperçu amis borné (N max, ex. 9-12) + « Voir tous les amis » → écran `/friends` (ou écran amis-d'un-tiers) paginé. Photos bornées.
+- **PR3** (tests) : unit jest counts + gating privacy du compteur tiers + `tsc --noEmit` api/mobile vert.
+- **PR4** (revue+sécu) : gwani-reviewer + gwani-pentest (le compteur ne doit pas fuiter la taille du réseau d'un compte privé).
+- Livraison : API deploy (pas de migration). Mobile OTA iOS, **pas de bump**.
+
+## E-MARKET — Marketplace « sexy mais SECONDAIRE » · **Prio 4.0 — READY, mais GATE positionnement** (ask #2)
+> **GATE proprio** : garder l'onglet « Services » pair (actuel — déjà très visible pour un « secondaire ») OU le
+> fondre sous un onglet « Entraide » (défaut = communautaire gratuit ; payant = filtre secondaire) — reco conseiller.
+> Impacte la tab-bar (déjà 6 onglets). À trancher avant la refonte nav.
+- Multi-images par annonce : **le modèle `ServiceRequest` n'a AUCUN champ image** (`services.service.ts:26-40`, `dto/service.dto.ts:14-22`) ⇒ **migration Prisma** (relation images ou `String[]`) + binder chaque URL via `S3Service.assertOwnedPublicImage` (clé `users/{userId}/...`). Galerie responsive sur la carte + page détail.
+- Tarif optionnel : `budget` (string) existe déjà — structurer (montant + « gratuit/à débattre »).
+- **Formulaire dynamique intention-first** : 1re question = intention (« J'ai besoin d'aide » gratuit par défaut vs « Je propose un service » payant révèle les champs pro). Verbes d'entrée chaleureux (Proposer/Donner/Demander) plutôt que « Vendre ».
+- Design page détail élégant (galerie, auteur vérifié, contacter en 1 tap → chat, avis via module review existant).
+- Livraison : API migration + deploy ; Mobile OTA (multi-images = expo-image-picker déjà présent à vérifier ; si nouveau module natif ⇒ STOP rebuild).
+
+## E-LIVES — Streaming live · **❌ ÉCARTÉE (abandonnée 2026-07-02, décision proprio)** (ask #1)
+> **NE PAS IMPLÉMENTER. Ne pas re-proposer sans demande explicite du proprio.** Feature abandonnée : le coût
+> ressource sur le VPS unique partagé est refusé ; la vidéo impose une brique de fait payante/dédiée (interdite par
+> la règle zéro-payant) sans alternative tenable sur l'infra ; l'audio self-hosté (LiveKit OSS + coturn) a AUSSI été
+> refusé pour son empreinte RAM/CPU/bande passante sur l'hôte partagé. L'ADR `docs/adr/ADR-LIVES-streaming.md`
+> reste comme trace de décision (chiffrage : vidéo ~150-250 Mbps/100 viewers intenable ; audio ~6,4 Mbps mais coût
+> ressource refusé). Historique de l'analyse conservé ci-dessous à titre d'archive uniquement.
+>
+> ~~ADR livré `docs/adr/ADR-LIVES-streaming.md`. **Tension à trancher** :~~
+> - Demande proprio : vidéo complète (réactions RT, viewers, chat live, **co-diffusion jusqu'à 3**, **badge LIVE carte**).
+> - Reco conseiller (honnêteté avant flatterie) : **NE PAS** livrer la vidéo complète en V1 — VPS unique 1 Go
+>   mutualisé, egress ~150 Mbps/100 viewers intenable en self-host, pas de masse critique (live vide = churn),
+>   modération live impossible sans équipe T&S, connectivité diaspora hostile à la vidéo, badge géolocalisé =
+>   classe de risque privacy F-01/F-02 en pire. **Recommande LIVE AUDIO « Salons »** (Spaces-like) : ~60× moins
+>   de bande passante, marche au pays, co-diffusion à 3 naturelle, réutilise `chat.gateway.ts` + réactions déjà livrées.
+> - Si vidéo malgré tout : **LiveKit Cloud** (SFU managé) derrière une abstraction serveur ; self-host SFU sur VPS
+>   prod EXCLU ; `@livekit/react-native` = **module natif ⇒ rebuild EAS + bump 1.8.0→1.9.0**.
+> Réel réutilisable dans les deux cas : réactions/chat/compteur viewers/invitations co-host/**badge map** passent par
+> le **gateway WS existant** (auth JWT RS256, Zod rejoué, rate-limit Redis), PAS le SFU. Badge LIVE = enrichissement
+> de marqueurs déjà autorisés (comme `hasActiveStory`) ⇒ un compte private ne peut structurellement pas fuiter sur `/geo/*`.
+> **8 questions ouvertes** (budget/hébergement, périmètre V1 1-diffuseur vs 3, enregistrement/replay, chat éphémère vs
+> persisté, RGPD/souveraineté, plafonds coût, lives des comptes privés, GO build) → cf. `status.json.openQuestions`.
+> Découpage possible dès accord : LIVE-0..5 backend DARK (feature flag, sans toucher mobile) puis LIVE-6 = build mobile (gate proprio).
+
+## E-DIASPORA — Gaps diaspora (moat vs me-too) · **Prio 3.5 — BACKLOG** (ask #4)
+Priorisés par le conseiller + `market.md` (fort levier rétention/acquisition, coût infra ≈ 0 pour les 2 premiers) :
+1. **Événements géolocalisés** sur la carte existante (RSVP + « qui y va » scopé friends) — fêtes nationales, associations, religieux. Viral, zéro coût vidéo. Le « wow » pas cher.
+2. **Entraide « Démarches » structurée** localisée par pays d'accueil (titre de séjour, passeport consulaire, équivalences…) + contributeurs de confiance (ambassadeurs). Récurrent (rétention) + partageable/SEO web (acquisition).
+3. **i18n haoussa/zarma/français** (aucun concurrent ne le fait, coût faible) ; **groupes par ville d'accueil** ; **annonces officielles vérifiées**.
+À dé-prioriser (me-too, les géants gagnent) : reels/short-video, marketplace commerce générique, stickers DM.
+
+---
+
 ## Synthèse concurrentielle (actionnable, surface par surface)
 
 ### Feed / posts / commentaires — modèle **Instagram**

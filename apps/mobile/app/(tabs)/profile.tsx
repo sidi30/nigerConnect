@@ -109,9 +109,15 @@ export default function ProfileTab() {
     'Utilisateur';
 
   const verified = user.identityStatus === 'approved';
-  const friendsCount = friendsQuery.data?.items.length ?? 0;
+  // `friendsApi.list()` / the photos query only return the first cursor page
+  // (~30 items) — using its length as "the" count under-reports members with
+  // more friends/photos than fit on one page. `meQuery` carries the
+  // authoritative totals from `/profile/me` (S3/PR1); fall back to the page
+  // length only if an older backend doesn't send the field yet.
+  const friendsCount = meQuery.data?.friendsCount ?? friendsQuery.data?.items.length ?? 0;
   const photos = photosQuery.data?.items ?? [];
   const photoUrls = photos.map((p) => p.url);
+  const photosCount = meQuery.data?.photosCount ?? photos.length;
   const assocsCount = assocsQuery.data?.length ?? 0;
   const unreadNotifs = notifQuery.data ?? 0;
   const invitedBy = meQuery.data?.invitedBy ?? null;
@@ -188,7 +194,7 @@ export default function ProfileTab() {
           <View style={styles.statsRow}>
             {[
               { n: friendsCount, l: 'Amis' },
-              { n: photos.length, l: 'Photos' },
+              { n: photosCount, l: 'Photos' },
               { n: assocsCount, l: 'Assos' },
               { n: inviteesCount, l: 'Filleuls' },
             ].map((s) => (

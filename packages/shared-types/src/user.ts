@@ -44,6 +44,22 @@ export interface User extends PublicUser {
   updatedAt: string;
 }
 
+/**
+ * Authoritative profile counters (S3/PR1 — apps/api ProfileService.loadCounts).
+ * Optional: only `/profile/me` and `/profile/:id` attach them, not every
+ * endpoint that returns a `User`/`PublicUser` shape (e.g. search results).
+ *
+ * `friendsCount`/`postsCount` are `null` when the viewer isn't allowed to see
+ * the underlying list (a `friends`-privacy profile viewed by a non-friend) —
+ * never a fabricated number, to avoid leaking the target's network size.
+ * `photosCount` is never gated further than the profile header itself.
+ */
+export interface ProfileCounts {
+  friendsCount?: number | null;
+  postsCount?: number | null;
+  photosCount?: number;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;

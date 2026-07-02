@@ -1,4 +1,4 @@
-import type { User, CursorPage, Post, PublicUser } from '@nigerconnect/shared-types';
+import type { User, CursorPage, Post, PublicUser, ProfileCounts } from '@nigerconnect/shared-types';
 import { api, BASE_URL } from './api';
 import { tokenStore } from './secureStore';
 
@@ -10,11 +10,15 @@ export interface InvitedBy {
 }
 
 /**
- * Referral-network fields the profile endpoints expose since the parrainage v2
- * rework. Optional so the augmented shape stays assignable to `User` everywhere
- * the bare type is still expected (auth store, caches…).
+ * Referral-network + counters fields the profile endpoints expose. Optional
+ * so the augmented shape stays assignable to `User` everywhere the bare type
+ * is still expected (auth store, caches…).
+ *
+ * `ProfileCounts` (friendsCount/postsCount/photosCount) is the authoritative
+ * counter block added in S3/PR1 (`ProfileService.loadCounts`) — see its
+ * doc-comment in shared-types for the gating semantics (`null` = hidden list).
  */
-export interface ProfileNetwork {
+export interface ProfileNetwork extends ProfileCounts {
   /** The sponsor who invited this user, or `null` (also `null` if private). */
   invitedBy?: InvitedBy | null;
   /** Number of accounts this user has sponsored (`invitedById = this user`). */

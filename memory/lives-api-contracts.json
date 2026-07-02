@@ -1,0 +1,203 @@
+{
+  "version": "0.2-draft",
+  "status": "DRAFT rev.2 (self-host gratuit, AUDIO-ONLY) — no production code; awaits owner decisions (see ADR-LIVES §14)",
+  "baseUrl": "/api/v1/live",
+  "auth": "JWT RS256 (cookie/Bearer) + EmailVerifiedGuard global. Toutes les routes /live sont gardees par le kill-switch AppSetting 'lives_enabled' (defaut false = DARK -> 503/feature_disabled).",
+  "media": {
+    "modality_v1": "AUDIO-ONLY (Opus voix ~48-64 kbps). La VIDEO est ECARTEE de la V1: elle ne tient pas sur le VPS partage (egress ~150-250 Mbps/live 720p a 100 viewers, sature la NIC et degrade les voisins). La video exigerait un noeud auto-heberge dedie (decision infra proprio) — JAMAIS un SaaS payant. Voir ADR-LIVES §5-§6.",
+    "video_status": "differee — dependance infra (noeud dedie) non tranchee (§14 Q2). Design pret pour la video sans refonte (lever le flag audioOnly cote token)."
+  },
+  "sfu": {
+    "engine": "LiveKit OSS (Apache-2.0) AUTO-HEBERGE en conteneur sur le VPS. AUCUN SaaS payant. LiveKit Cloud est INTERDIT (contrainte proprio: zero solution payante).",
+    "deployment_v1": "Conteneur LiveKit OSS single-node sur 46.224.193.109 (Docker Compose derriere Traefik), mode AUDIO-ONLY, RAM cappee 256-384 Mo. Signalisation WSS via Traefik; media UDP via single-port mux + coturn (voir turn).",
+    "turn": "coturn OSS (BSD) en conteneur sur le VPS. Necessaire pour le NAT symetrique (sans relais TURN une partie des mobiles n'aurait pas d'audio). Cape via total-quota/bps-capacity/max-bps. TURN payant INTERDIT.",
+    "fallback": "Toujours GRATUIT: (1) coturn en TURN/TCP-443 only si port UDP hote refuse; (2) noeud LiveKit OSS dedie provisionne par le proprio si contention; (3) sinon ECARTER la feature. Jamais de SaaS payant, meme en repli.",
+    "token_model": "L'API emet un access-token LiveKit signe: room=LiveSession.roomName, identity=userId, TTL court, flag audioOnly. Permission canPublish (AUDIO) UNIQUEMENT host + co-host 'joined'; viewer canSubscribe seul. Le token de subscribe est REFUSE (403) si le viewer n'a pas le droit de voir le live (visibility friends + non-ami).",
+    "hard_limits": {
+      "lives_max_concurrent": 3,
+      "live_max_viewers": 200,
+      "max_cohosts": 2,
+      "live_max_duration_min": 120,
+      "lives_per_user_per_day": 5,
+      "kill_switch": "AppSetting lives_enabled (defaut false = DARK). false -> REST 503 feature_disabled ET WS refuse les nouveaux live:join.",
+      "note": "Valeurs configurables via AppSetting; a valider par le proprio (§14 Q3). Bornent l'egress agrege sur la NIC partagee."
+    }
+  },
+  "eas_impact": {
+    "native_module": "@livekit/react-native + @livekit/react-native-webrtc = modules natifs (config plugin) -> OTA CRASHERAIT.",
+    "action": "prebuild + rebuild EAS OBLIGATOIRE + bump app.json 1.8.0 -> 1.9.0 (runtimeVersion=appVersion). Build = action sortante proprio (GO).",
+    "permissions_v1": "iOS: NSMicrophoneUsageDescription + background audio. Android: RECORD_AUDIO + FOREGROUND_SERVICE. PAS de camera en V1 (audio-only).",
+    "backend_dark": "LIVE-0..5 livrables DARK sans toucher au mobile; LIVE-6 (mobile) seul incrementa besoin du GO build."
+  },
+  "conventions": {
+    "validation": "Tout body POST passe par ZodValidationPipe. Le gateway WS /live rejoue la meme validation (cf. chat.gateway).",
+    "authz": "Actions host (end/invite/kick) exigent hostId === req.user.id (pas d'IDOR). join gate par visibility+amitie.",
+    "privacy": "visibility <= privacy du compte. Un compte private ne peut pas exposer de live (cf. ADR §6). Badge map = enrichissement de marqueurs deja autorises."
+  },
+  "endpoints": [
+    {
+      "id": "LV-001",
+      "method": "POST",
+      "path": "/live",
+      "auth": true,
+      "description": "Demarrer un live AUDIO. Cree la LiveSession (audioOnly=true) + room LiveKit, renvoie le token host (publish AUDIO).",
+      "request": {
+        "body": {
+          "title": "string — optionnel, max 120",
+          "visibility": "enum public|friends|private — requis, doit etre <= privacy du compte",
+          "latitude": "number — optionnel, snapshot geo pour badge map",
+          "longitude": "number — optionnel"
+        }
+      },
+      "responses": {
+        "201": { "description": "Live audio demarre", "body": { "status": "success", "data": { "id": "uuid", "roomName": "string", "livekitUrl": "string", "token": "string (publish audio, TTL court)", "visibility": "enum", "audioOnly": true } } },
+        "403": { "description": "Compte private tente un live public/friends, ou lives interdits aux comptes private (Q7)" },
+        "409": { "description": "Un live actif existe deja pour ce host, ou plafond lives_max_concurrent atteint (503-like), voir 429" },
+        "422": { "description": "Validation Zod echouee" },
+        "429": { "description": "Plafond global lives_max_concurrent atteint, ou quota lives_per_user_per_day depasse" },
+        "503": { "description": "feature_disabled (lives_enabled=false)" }
+      }
+    },
+    {
+      "id": "LV-002",
+      "method": "POST",
+      "path": "/live/:id/end",
+      "auth": true,
+      "description": "Arreter le live. Host uniquement. Ferme la room LiveKit, pose endedAt, fige peakViewers.",
+      "request": { "params": { "id": "uuid — LiveSession" } },
+      "responses": {
+        "200": { "description": "Live termine", "body": { "status": "success", "data": { "id": "uuid", "status": "ended", "peakViewers": "number" } } },
+        "403": { "description": "hostId !== userId" },
+        "404": { "description": "Live introuvable" }
+      }
+    },
+    {
+      "id": "LV-003",
+      "method": "GET",
+      "path": "/live/:id",
+      "auth": true,
+      "description": "Detail d'un live si le viewer a le droit de le voir (visibility + amitie).",
+      "request": { "params": { "id": "uuid" } },
+      "responses": {
+        "200": { "description": "Detail", "body": { "status": "success", "data": { "id": "uuid", "host": { "userId": "uuid", "displayName": "string", "avatarUrl": "string|null" }, "status": "live|ended", "visibility": "enum", "title": "string|null", "viewerCount": "number", "cohosts": [ { "userId": "uuid", "status": "joined|invited", "displayName": "string" } ], "startedAt": "iso" } } },
+        "403": { "description": "Live friends et viewer non-ami / live private" },
+        "404": { "description": "Introuvable" }
+      }
+    },
+    {
+      "id": "LV-004",
+      "method": "GET",
+      "path": "/live",
+      "auth": true,
+      "description": "Liste paginee des lives ACTIFS visibles par le viewer (public + friends dont il est ami). Jamais les private d'autrui.",
+      "request": { "query": { "cursor": "uuid — optionnel", "limit": "int 1..50 default 20" } },
+      "responses": {
+        "200": { "description": "Lives visibles", "body": { "status": "success", "data": [ { "id": "uuid", "host": { "userId": "uuid", "displayName": "string", "avatarUrl": "string|null" }, "title": "string|null", "viewerCount": "number", "visibility": "public|friends" } ], "nextCursor": "uuid|null" } }
+      }
+    },
+    {
+      "id": "LV-005",
+      "method": "POST",
+      "path": "/live/:id/join",
+      "auth": true,
+      "description": "Rejoindre un live audio comme spectateur. Renvoie un token subscribe LiveKit (audio) SI autorise. Incremente le compteur viewers (Redis).",
+      "request": { "params": { "id": "uuid" } },
+      "responses": {
+        "200": { "description": "Autorise", "body": { "status": "success", "data": { "livekitUrl": "string", "token": "string (subscribe audio seul, TTL court)", "viewerCount": "number" } } },
+        "403": { "description": "Non autorise (visibility friends + non-ami, ou live private)" },
+        "404": { "description": "Live introuvable ou termine" },
+        "429": { "description": "Plafond live_max_viewers atteint sur ce live" }
+      }
+    },
+    {
+      "id": "LV-006",
+      "method": "POST",
+      "path": "/live/:id/cohosts",
+      "auth": true,
+      "description": "Host invite un utilisateur comme co-diffuseur. Max 2 co-hosts 'joined' (3 publishers). Push WS live:cohost:invite sur user:{id}.",
+      "request": { "params": { "id": "uuid" }, "body": { "userId": "uuid — invite, requis" } },
+      "responses": {
+        "201": { "description": "Invitation creee", "body": { "status": "success", "data": { "sessionId": "uuid", "userId": "uuid", "status": "invited" } } },
+        "403": { "description": "hostId !== userId" },
+        "409": { "description": "Deja invite, ou 2 co-hosts joined atteints (max 3 flux)" },
+        "422": { "description": "Validation" }
+      }
+    },
+    {
+      "id": "LV-007",
+      "method": "POST",
+      "path": "/live/:id/cohosts/accept",
+      "auth": true,
+      "description": "L'invite accepte la co-diffusion audio. Renvoie un token publish (AUDIO). Passe status 'joined', joinedAt. Verifie que le plafond de 2 joined n'est pas depasse (lock optimiste).",
+      "request": { "params": { "id": "uuid" } },
+      "responses": {
+        "200": { "description": "Accepte", "body": { "status": "success", "data": { "livekitUrl": "string", "token": "string (publish)", "status": "joined" } } },
+        "403": { "description": "Non invite sur ce live" },
+        "409": { "description": "Plafond 2 co-hosts atteint entre-temps" },
+        "404": { "description": "Live introuvable/termine" }
+      }
+    },
+    {
+      "id": "LV-008",
+      "method": "POST",
+      "path": "/live/:id/cohosts/:userId/kick",
+      "auth": true,
+      "description": "Host retire un co-host (revoque publish cote LiveKit + status 'removed').",
+      "request": { "params": { "id": "uuid", "userId": "uuid" } },
+      "responses": {
+        "200": { "description": "Retire", "body": { "status": "success", "data": { "userId": "uuid", "status": "removed" } } },
+        "403": { "description": "hostId !== userId" },
+        "404": { "description": "Live ou co-host introuvable" }
+      }
+    },
+    {
+      "id": "LV-009",
+      "method": "POST",
+      "path": "/live/:id/report",
+      "auth": true,
+      "description": "Signaler un live (moderation). Journalise + compteur; escalade humaine hors V1.",
+      "request": { "params": { "id": "uuid" }, "body": { "reason": "enum spam|nudity|violence|hate|other — requis", "detail": "string — optionnel, max 500" } },
+      "responses": {
+        "202": { "description": "Signalement enregistre" },
+        "404": { "description": "Live introuvable" },
+        "422": { "description": "Validation" }
+      }
+    }
+  ],
+  "websocket": {
+    "namespace": "/live",
+    "auth": "Identique a /chat: JWT RS256 en handshake (auth.token/Bearer/query), rejet si jti blackliste (Redis). Reconnexion re-join des rooms live: actifs.",
+    "rooms": "live:{sessionId} (par live), user:{userId} (push cible)",
+    "rateLimit": "Reutilise le compteur Redis du chat (ratelimit:live:{userId}) — reactions/chat plafonnes par utilisateur, robustes au reconnect.",
+    "clientToServer": [
+      { "event": "live:join", "payload": { "sessionId": "uuid" }, "effect": "Verifie l'autorisation (visibility+amitie), SADD live:viewers:{id} {userId}, join room live:{id}, broadcast live:viewers. Ack { ok, viewerCount }." },
+      { "event": "live:leave", "payload": { "sessionId": "uuid" }, "effect": "SREM live:viewers, leave room, broadcast live:viewers." },
+      { "event": "live:chat:send", "payload": { "sessionId": "uuid", "content": "string 1..500" }, "validation": "Zod rejoue (comme socketSendMessageSchema)", "effect": "Rate-limit Redis; broadcast live:chat:new a la room. Ack { ok, error? }." },
+      { "event": "live:react", "payload": { "sessionId": "uuid", "emoji": "enum whitelist (heart/laugh/wow/clap/fire/sad)" }, "effect": "Rate-limit + agregation Redis; broadcast throttle live:reaction." }
+    ],
+    "serverToClient": [
+      { "event": "live:viewers", "payload": { "sessionId": "uuid", "count": "number" }, "note": "Emis (throttle) a la room a chaque join/leave." },
+      { "event": "live:chat:new", "payload": { "sessionId": "uuid", "userId": "uuid", "displayName": "string", "avatarUrl": "string|null", "content": "string", "at": "iso" } },
+      { "event": "live:reaction", "payload": { "sessionId": "uuid", "emoji": "string", "count": "number (agrege sur fenetre)" } },
+      { "event": "live:cohost:invite", "target": "user:{userId}", "payload": { "sessionId": "uuid", "hostDisplayName": "string" } },
+      { "event": "live:cohost:joined", "payload": { "sessionId": "uuid", "userId": "uuid", "displayName": "string" } },
+      { "event": "live:ended", "payload": { "sessionId": "uuid" }, "note": "Host end ou webhook LiveKit room_finished -> ferme cote clients." }
+    ]
+  },
+  "geoBadge": {
+    "type_change": "IndividualMarker (apps/mobile/services/geoApi.ts + shared-types) recoit un champ optionnel isLiveNow?: boolean.",
+    "server": "geo.service.ts individuals(): nouveau helper liveHostsAmong(userIds, viewerId) calque sur activeStoryAuthors(). Filtre les LiveSession status=live par visibility ET amitie AVANT enrichissement. Fail-open a false.",
+    "privacy_invariants": [
+      "Un compte private n'est jamais dans individuals() -> aucun badge possible (fuite structurellement impossible).",
+      "visibility=friends -> isLiveNow pose uniquement pour les amis (comme hasActiveStory).",
+      "visibility=public -> isLiveNow pose pour les marqueurs deja visibles.",
+      "visibility=private -> jamais de badge.",
+      "Position badge = snapshot LiveSession.lat/lng au demarrage, pas la position temps reel du user.",
+      "Aucun nouvel endpoint geo: le badge passe par getMarkers() existant."
+    ]
+  },
+  "webhooks": {
+    "provider": "LiveKit OSS (self-hosted)",
+    "events": ["room_finished -> pose endedAt/status=ended (sessions orphelines), emet live:ended", "participant_left -> reconcilie compteur viewers"]
+  }
+}

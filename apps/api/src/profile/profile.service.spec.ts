@@ -153,10 +153,18 @@ describe('ProfileService', () => {
           status: 'active',
         })),
       },
+      userPhoto: { count: jest.fn(async () => 3) },
+      friendship: { count: jest.fn(async () => 7) },
+      associationMember: { findMany: jest.fn(async () => []) },
+      post: { count: jest.fn(async () => 12) },
     };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
+    // Public profile: real totals, uncapped by any page size.
+    expect(result.friendsCount).toBe(7);
+    expect(result.postsCount).toBe(12);
+    expect(result.photosCount).toBe(3);
   });
 
   it('friends-only profile returns the basic header to any viewer (so search hits stay clickable)', async () => {
@@ -172,11 +180,21 @@ describe('ProfileService', () => {
           status: 'active',
         })),
       },
+      userPhoto: { count: jest.fn(async () => 3) },
+      friendship: { count: jest.fn(async () => 0) },
+      post: { count: jest.fn(async () => 12) },
     };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
     expect(result.privacyLevel).toBe('friends');
+    // SECURITY: viewer is a stranger (0 accepted friendship rows) — the real
+    // network size must NOT leak, and must be `null` (not 0, which would
+    // itself be information the viewer isn't entitled to).
+    expect(result.friendsCount).toBeNull();
+    expect(result.postsCount).toBeNull();
+    // photosCount is never gated beyond the header itself (see getPhotos).
+    expect(result.photosCount).toBe(3);
   });
 
   it('listFriendsOf 404s when target is friends-only and viewer is not actually a friend', async () => {
@@ -193,6 +211,8 @@ describe('ProfileService', () => {
         findMany: jest.fn(),
       },
       block: { findMany: jest.fn(async () => []) },
+      userPhoto: { count: jest.fn(async () => 0) },
+      post: { count: jest.fn(async () => 0) },
     };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     await expect(svc.listFriendsOf('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
@@ -215,11 +235,100 @@ describe('ProfileService', () => {
         findMany: jest.fn(async () => []),
       },
       block: { findMany: jest.fn(async () => []) },
+      userPhoto: { count: jest.fn(async () => 0) },
+      associationMember: { findMany: jest.fn(async () => []) },
+      post: { count: jest.fn(async () => 0) },
     };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
     const result = await svc.listFriendsOf('viewer', 'other');
     expect(result.items).toEqual([]);
     expect(prisma.friendship.findMany).toHaveBeenCalled();
+  });
+
+  it('getMe returns the authoritative friends total, not capped by a page size', async () => {
+    // Bug this PR fixes: mobile used to derive "nb d'amis" from the length of
+    // the first friends-list page (capped ~30). A member with 500 friends
+    // showed "30". getMe must return the real Prisma count instead.
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'u1', privacyLevel: 'public' })),
+      },
+      userPhoto: { count: jest.fn(async () => 4) },
+      friendship: { count: jest.fn(async () => 500) },
+      post: { count: jest.fn(async () => 42) },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const result = await svc.getMe('u1');
+    // Page size elsewhere in this file (listFriendsOf) defaults/caps at 30.
+    expect(result.friendsCount).toBe(500);
+    expect(result.friendsCount).toBeGreaterThan(30);
+    expect(result.postsCount).toBe(42);
+    expect(result.photosCount).toBe(4);
+  });
+
+  it('getById of a friends-only profile viewed by an ACCEPTED friend reveals the real counts', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'other',
+          privacyLevel: 'friends',
+          status: 'active',
+        })),
+      },
+      userPhoto: { count: jest.fn(async () => 1) },
+      friendship: { count: jest.fn(async () => 1) },
+      associationMember: { findMany: jest.fn(async () => []) },
+      post: { count: jest.fn(async () => 9) },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const result = await svc.getById('viewer', 'other');
+    expect(result.friendsCount).toBe(1);
+    expect(result.postsCount).toBe(9);
+  });
+
+  it('stranger of a PUBLIC profile counts only PUBLIC posts, not friends-only ones', async () => {
+    // BUG (S3 MEDIUM): loadCounts counted ALL non-story posts regardless of
+    // per-post visibility. A stranger opening a public profile saw the header
+    // total include `friends`/`association` posts they can't actually list —
+    // the header diverged from the wall AND minorly leaked how many restricted
+    // posts exist. postsCount must mirror getUserPosts: a stranger of a public
+    // profile counts `public` posts only.
+    const TOTAL = 12; // e.g. 4 public + 8 friends-only
+    const PUBLIC_ONLY = 4;
+    const postCount = jest.fn(async (args: { where: { visibility?: unknown } }) =>
+      args.where.visibility === 'public' ? PUBLIC_ONLY : TOTAL,
+    );
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'other',
+          privacyLevel: 'public',
+          status: 'active',
+        })),
+      },
+      userPhoto: { count: jest.fn(async () => 0) },
+      // Viewer is NOT an accepted friend of the target.
+      friendship: { count: jest.fn(async () => 0) },
+      associationMember: { findMany: jest.fn(async () => []) },
+      post: { count: postCount },
+    };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const result = await svc.getById('viewer', 'other');
+    // Only PUBLIC posts are counted — not the friends-only ones the stranger
+    // cannot see on the wall.
+    expect(result.postsCount).toBe(PUBLIC_ONLY);
+    expect(result.postsCount).not.toBe(TOTAL);
+    // The count query was scoped to public visibility (mirrors getUserPosts).
+    expect(postCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          authorId: 'other',
+          isStory: false,
+          deletedAt: null,
+          visibility: 'public',
+        }),
+      }),
+    );
   });
 
   it('validates the avatar URL against the owner bucket before storing it', async () => {

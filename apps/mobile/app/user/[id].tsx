@@ -88,6 +88,12 @@ const PHOTO_GAP = 3;
 const PHOTO_CELL =
   (Dimensions.get('window').width - Spacing.md * 2 - PHOTO_GAP * (PHOTO_COLS - 1)) / PHOTO_COLS;
 
+// Preview caps — the full lists live behind dedicated "voir tout" links so a
+// user with hundreds of friends/photos doesn't turn this header into an
+// endless scroll before reaching the posts.
+const FRIENDS_PREVIEW_MAX = 10;
+const PHOTOS_PREVIEW_MAX = 9;
+
 export default function UserScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -253,8 +259,16 @@ export default function UserScreen() {
   // (the PublicUser placeholder doesn't carry them).
   const invitedBy: InvitedBy | null = 'invitedBy' in u ? u.invitedBy ?? null : null;
   const inviteesCount: number = 'inviteesCount' in u ? u.inviteesCount ?? 0 : 0;
+  // Authoritative total from `/profile/:id` (S3/PR1). `null` means the viewer
+  // isn't allowed to see the list (friends-only profile, not a friend) — never
+  // render a number in that case. `undefined` = older backend / placeholder
+  // data, fall back to the loaded page's length like before.
+  const friendsCount: number | null | undefined = 'friendsCount' in u ? u.friendsCount : undefined;
   const friendsError = friendsQuery.isError;
   const postsError = postsQuery.isError;
+  const friendsPreview = friends.slice(0, FRIENDS_PREVIEW_MAX);
+  const friendsTotal = friendsCount ?? friends.length;
+  const showAllFriendsLink = !friendsError && friendsTotal > friendsPreview.length;
 
   // Flatten every image this user posted into a single gallery (videos
   // excluded — the viewer only renders stills). Order follows the posts feed
@@ -264,6 +278,8 @@ export default function UserScreen() {
     .flatMap((p) => p.media)
     .filter((m) => m.mediaType === 'image');
   const photoUrls = photoMedia.map((m) => m.mediaUrl);
+  const photoPreview = photoMedia.slice(0, PHOTOS_PREVIEW_MAX);
+  const showAllPhotosLink = photoMedia.length > photoPreview.length;
 
   // Open the shared full-screen pager at a given index.
   const openViewer = (urls: string[], index: number) =>
@@ -454,7 +470,21 @@ export default function UserScreen() {
             ) : null}
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Amis</Text>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                  Amis{typeof friendsCount === 'number' ? ` · ${friendsCount}` : ''}
+                </Text>
+                {showAllFriendsLink ? (
+                  <Pressable
+                    onPress={() => router.push(`/user/${id}/friends`)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Voir tous les amis"
+                  >
+                    <Text style={styles.seeAll}>Voir tout ›</Text>
+                  </Pressable>
+                ) : null}
+              </View>
               {friendsError ? (
                 <View style={styles.hintRow}>
                   <Feather name="lock" size={13} color={Colors.tan500} />
@@ -466,7 +496,7 @@ export default function UserScreen() {
                 <Text style={styles.sectionHint}>Aucun ami visible</Text>
               ) : (
                 <FlatList
-                  data={friends}
+                  data={friendsPreview}
                   keyExtractor={(f) => f.id}
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -494,9 +524,21 @@ export default function UserScreen() {
 
             {photoUrls.length > 0 ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Photos</Text>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Photos</Text>
+                  {showAllPhotosLink ? (
+                    <Pressable
+                      onPress={() => openViewer(photoUrls, 0)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Voir toutes les photos"
+                    >
+                      <Text style={styles.seeAll}>Voir tout ›</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 <View style={styles.photoGrid}>
-                  {photoMedia.map((m, i) => (
+                  {photoPreview.map((m, i) => (
                     <Pressable
                       key={m.id}
                       onPress={() => openViewer(photoUrls, i)}
@@ -681,11 +723,22 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     paddingHorizontal: Spacing.md,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
   sectionTitle: {
     fontSize: Typography.sizes.md,
     fontWeight: '800',
     color: Colors.brown,
     marginBottom: Spacing.sm,
+  },
+  seeAll: {
+    color: Colors.orange,
+    fontSize: Typography.sizes.sm,
+    fontWeight: '600',
   },
   sectionHint: {
     fontSize: Typography.sizes.sm,
