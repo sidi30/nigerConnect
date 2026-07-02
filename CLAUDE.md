@@ -66,7 +66,8 @@ Détail complet + comptes (Apple/Expo/Play/VPS) : voir **`DEPLOY_PLAYBOOK.md`**.
 ## Sécurité
 
 - Agent **gwani-pentest** (`~/.claude/agents/gwani-pentest.md`) : audit OWASP/SAST/DAST du diff, corrige + teste, verdict `BLOCK_DEPLOY`/`OK_TO_DEPLOY`. Hook `pre-push` optionnel (read-only, bloque si critical/high ; bypass `SKIP_PENTEST=1 git push`).
-- Aucun secret en repo : `git ls-files | grep -E "\.p8$|\.pem$|\.keystore$|service-account.*\.json$|google-services\.json$|\.env"` doit ne RIEN renvoyer.
+- Aucun secret en repo : `git ls-files | grep -E "\.p8$|\.pem$|\.keystore$|service-account.*\.json$|\.env" | grep -v "\.example$"` doit ne RIEN renvoyer.
+- **Exception assumée** : `apps/mobile/google-services.json` est tracké volontairement (voir `.gitignore` lignes 24-28) — contenu déjà embarqué dans chaque APK distribué (pas un secret de fait), et EAS Build le lit depuis git pour le FCM Sender ID. Ne PAS le dé-tracker sans migrer vers un fichier-secret EAS + `app.config.js`.
 
 ## Workflow imposé par le proprio
 
