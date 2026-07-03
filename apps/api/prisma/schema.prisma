@@ -263,6 +263,11 @@ enum ServiceStatus {
   closed
 }
 
+enum ServiceIntent {
+  help_free
+  paid_service
+}
+
 enum AssociationCategory {
   generaliste
   etudiants
@@ -647,6 +652,9 @@ model ServiceRequest {
   title         String          @db.VarChar(200)
   description   String?         @db.Text
   category      ServiceCategory
+  // Discriminates free help requests (default) from paid service listings.
+  // `budget` only carries meaning when intent = paid_service (Zod-enforced).
+  intent        ServiceIntent   @default(help_free)
   urgency       ServiceUrgency  @default(normal)
   budget        String?         @db.VarChar(50)
   city          String?         @db.VarChar(100)
@@ -658,11 +666,34 @@ model ServiceRequest {
 
   responses ServiceResponse[]
   ratings   ServiceRating[]
+  media     ServiceMedia[]
 
   @@index([status, createdAt(sort: Desc)])
   @@index([category, status])
   @@index([countryCode, status])
+  // Powers the two "Entraide" sections (free-first landing / paid) — filter by
+  // intent + status, ordered most-recent.
+  @@index([intent, status, createdAt(sort: Desc)])
   @@map("service_requests")
+}
+
+// Ordered image gallery for a service request — mirrors PostMedia (image only
+// in V1, ready for video later). Bound to the owner via S3Service on write.
+model ServiceMedia {
+  id           String         @id @default(uuid()) @db.Uuid
+  requestId    String         @map("request_id") @db.Uuid
+  request      ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  mediaUrl     String         @map("media_url") @db.VarChar(500)
+  thumbnailUrl String?        @map("thumbnail_url") @db.VarChar(500)
+  mediaType    MediaType      @map("media_type")
+  width        Int?
+  height       Int?
+  blurhash     String?        @db.VarChar(100)
+  sortOrder    Int            @default(0) @map("sort_order")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([requestId])
+  @@map("service_media")
 }
 
 model ServiceResponse {

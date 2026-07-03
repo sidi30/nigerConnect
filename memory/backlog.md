@@ -41,10 +41,11 @@ Audit confirmé (ask #3) :
 - **PR4** (revue+sécu) : gwani-reviewer + gwani-pentest (le compteur ne doit pas fuiter la taille du réseau d'un compte privé).
 - Livraison : API deploy (pas de migration). Mobile OTA iOS, **pas de bump**.
 
-## E-MARKET — Marketplace « sexy mais SECONDAIRE » · **Prio 4.0 — READY, mais GATE positionnement** (ask #2)
-> **GATE proprio** : garder l'onglet « Services » pair (actuel — déjà très visible pour un « secondaire ») OU le
-> fondre sous un onglet « Entraide » (défaut = communautaire gratuit ; payant = filtre secondaire) — reco conseiller.
-> Impacte la tab-bar (déjà 6 onglets). À trancher avant la refonte nav.
+## E-MARKET — Marketplace « sexy mais SECONDAIRE » · **Prio 4.0 — SPRINT S4 EN COURS (GO proprio)** (ask #2)
+> **POSITIONNEMENT TRANCHÉ (proprio 2026-07-02)** : un onglet **« Entraide » UNIQUE** — demandes d'aide GRATUITES
+> en premier (landing), annonces/services PAYANTS en **section secondaire** (jamais le défaut). Refonte nav :
+> l'onglet « Services » actuel devient « Entraide » ; aucun commerce dans Fil/Carte. Formulaire **intention-first**
+> (« J'ai besoin d'aide » gratuit par défaut vs « Je propose un service » révèle tarif/champs pro).
 - Multi-images par annonce : **le modèle `ServiceRequest` n'a AUCUN champ image** (`services.service.ts:26-40`, `dto/service.dto.ts:14-22`) ⇒ **migration Prisma** (relation images ou `String[]`) + binder chaque URL via `S3Service.assertOwnedPublicImage` (clé `users/{userId}/...`). Galerie responsive sur la carte + page détail.
 - Tarif optionnel : `budget` (string) existe déjà — structurer (montant + « gratuit/à débattre »).
 - **Formulaire dynamique intention-first** : 1re question = intention (« J'ai besoin d'aide » gratuit par défaut vs « Je propose un service » payant révèle les champs pro). Verbes d'entrée chaleureux (Proposer/Donner/Demander) plutôt que « Vendre ».
@@ -81,6 +82,40 @@ Priorisés par le conseiller + `market.md` (fort levier rétention/acquisition, 
 2. **Entraide « Démarches » structurée** localisée par pays d'accueil (titre de séjour, passeport consulaire, équivalences…) + contributeurs de confiance (ambassadeurs). Récurrent (rétention) + partageable/SEO web (acquisition).
 3. **i18n haoussa/zarma/français** (aucun concurrent ne le fait, coût faible) ; **groupes par ville d'accueil** ; **annonces officielles vérifiées**.
 À dé-prioriser (me-too, les géants gagnent) : reels/short-video, marketplace commerce générique, stickers DM.
+
+---
+
+## NOUVELLES FEATURES RÉTENTION (validées proprio 2026-07-02) — spec par gwani-pm-spec APRÈS E-MARKET
+> Toutes : coût infra ~0, ZÉRO dépendance payante, AUCUN paiement in-app. À spécifier (pm-spec) puis architecturer.
+
+### E-GP — Colis-voyageurs « GP » · **Prio 4.5 (valeur max, synergie Entraide)**
+**Story** : En tant que voyageur, je publie mon trajet (ex. Niamey→Paris le 12, 10 kg dispo) ; en tant que membre, je cherche à envoyer un colis/documents. **MISE EN RELATION UNIQUEMENT** — aucun paiement, aucune transaction dans l'app (négociation via le chat existant).
+- S'intègre SOUS « Entraide » (section dédiée ou type d'annonce). Réutilise le modèle d'annonces + chat existant.
+- Sécurité/confiance : profils vérifiés (email déjà vérifié, badge identité), signalement, visibilité selon la privacy existante (un compte private ne fuit pas). **Disclaimer légal clair** : contenu des colis = responsabilité des utilisateurs, rappel douanes.
+- Modèle : `TripAnnouncement` (origine, destination, date, capacité kg) + `ParcelRequest` (ou réutiliser ServiceRequest typé `gp`). Zod, AuthZ owner, pas de médias sensibles. C'est la feature n°1 des groupes WhatsApp diaspora.
+
+### E-TAUX — Taux du jour + prix crowdsourcés · **Prio 4.0 (habitude quotidienne)**
+**Story** : En tant que membre de la diaspora, je vois en tête de feed le taux XOF↔EUR/USD/CAD et des prix signalés par la communauté (billet d'avion Niamey↔diaspora, frais d'envoi d'argent WU/Wave/…, kilo de colis), afin d'ouvrir l'app tous les jours.
+- Taux : source GRATUITE (ex. taux de référence BCE/open-data recalculé, OU saisie communautaire modérée) — **PAS d'API payante**.
+- Prix : saisie communautaire + **votes de confiance** + horodatage. Modèle `CommunityPrice` (type, route, montant, devise, votes, createdAt), modération/report.
+- Affichage : bandeau léger en tête de feed. Zod, AuthZ (1 saisie/vote par user), anti-spam.
+
+### E-DIGEST — Digest hebdo push · **Prio 3.0 (rappel des dormants, quick-win)**
+**Story** : En tant que membre inactif, je reçois une notif hebdo personnalisée (« cette semaine : N événements près de toi, N nouvelles annonces entraide, N nouveaux membres de ta région ») pour revenir dans l'app.
+- Réutilise les données existantes + **1 cron** (comme le cron stories/invitations). Expo Push (gratuit). Opt-out simple dans les réglages.
+- **Privacy stricte** : jamais révéler un compte private ; agrégats seulement. Quick-win si le comptage reste simple.
+
+## E-DIASPORA — Événements géolocalisés (rappel) · **Prio 3.5**
+Événements sur la carte Leaflet existante (RSVP + « qui y va » scopé friends), coût infra ~0. Cf. section E-DIASPORA plus haut.
+
+## ROADMAP PRIORISÉE (arbitrage PO, sous réserve vélocité)
+1. **S3 Profil** — ✅ livré + déployé (2026-07-02).
+2. **S4 E-MARKET** — 🚧 EN COURS (multi-images + détail + formulaire intention-first, sous « Entraide »).
+3. **S5 E-GP** — colis-voyageurs (valeur max, synergie Entraide, réutilise annonces+chat).
+4. **S6 E-DIASPORA événements** — carte existante, coût ~0.
+5. **S7 E-TAUX** — taux + prix crowdsourcés (habitude quotidienne).
+6. **S8 E-DIGEST** — digest hebdo (quick-win, peut se glisser plus tôt si vraiment petit).
+> E-LIVES : ❌ écartée (abandonnée, ne pas re-proposer). Sprints Animations (ANIM-*) : conservés au backlog, ANIM-8 à re-cadrer sur react-native-maps (déjà présent, gratuit) et non Mapbox.
 
 ---
 

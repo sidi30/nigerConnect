@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -16,10 +18,12 @@ import {
   listServicesSchema,
   rateSchema,
   respondSchema,
+  updateServiceSchema,
   type CreateServiceDto,
   type ListServicesDto,
   type RateDto,
   type RespondDto,
+  type UpdateServiceDto,
 } from './dto/service.dto';
 
 @Controller('services')
@@ -47,6 +51,24 @@ export class ServicesController {
   @Get(':id')
   get(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.services.getById(id);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(updateServiceSchema)) dto: UpdateServiceDto,
+  ) {
+    return this.services.update(me.sub, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.services.remove(me.sub, id);
   }
 
   @Post(':id/respond')

@@ -213,6 +213,40 @@ export async function pickImage(
 }
 
 /**
+ * Pick SEVERAL images at once from the library (no upload yet), resized
+ * on-device. Uses `allowsMultipleSelection` — on OS/picker versions that don't
+ * support it the picker simply returns a single asset, so the caller
+ * transparently degrades to a mono selection (still fully OTA-safe). Camera
+ * capture stays single-shot (`pickImage`), which is the native behaviour.
+ * Returns [] if the user cancels.
+ */
+export async function pickImages(
+  kind: UploadKind,
+  max = 6,
+): Promise<PickedImage[]> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) {
+    throw new UploadError(
+      "Autorise l'accès à tes photos dans les réglages de ton appareil.",
+      'permission_denied',
+    );
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsMultipleSelection: true,
+    selectionLimit: max,
+    quality: 1,
+    exif: false,
+  });
+  if (result.canceled || result.assets.length === 0) return [];
+
+  const assets = result.assets.slice(0, max);
+  // Resize/compress each shot on-device before it ever hits the network.
+  return Promise.all(assets.map((asset) => resizeForUpload(asset, kind)));
+}
+
+/**
  * Upload a previously-picked local image to S3 and return its public URL.
  * Throws `UploadError` on failure so callers can render a feedback banner.
  */

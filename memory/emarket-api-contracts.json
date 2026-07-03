@@ -1,0 +1,239 @@
+{
+  "version": "1.0",
+  "sprint": "S4 E-MARKET",
+  "module": "marketplace (surface « Entraide »)",
+  "baseUrl": "/api",
+  "prefix": "/services",
+  "auth": "JWT RS256 (existant) — toutes les routes /services exigent l'auth + EmailVerifiedGuard global",
+  "notes": [
+    "ADR: docs/adr/ADR-marketplace-entraide.md",
+    "Additif uniquement: aucun endpoint existant supprimé/breaking. Ajouts = intent, media[], PATCH, DELETE.",
+    "Médias: chaque mediaUrl bindée via S3Service.assertOwnedPublicImage(url, me.sub) — rejet si clé != users/{me.sub}/... . URL CDN canonique persistée.",
+    "Upload: réutilise POST /api/profile/me/photos/presign (kind='photo'), aucun nouveau endpoint de presign.",
+    "AuthZ owner (403 si authorId != me.sub) sur PATCH et DELETE, idiome resolve/rate existant.",
+    "Confidentialité: service-requests PUBLICS par nature (pas de niveau private). AUTHOR_SELECT n'expose ni email ni position."
+  ],
+  "enums": {
+    "ServiceIntent": ["help_free", "paid_service"],
+    "ServiceCategory": ["logement", "transport", "admin_category", "sante", "emploi", "business", "education", "autre"],
+    "ServiceUrgency": ["urgent", "normal"],
+    "ServiceStatus": ["open", "in_progress", "resolved", "closed"],
+    "MediaType_v1": ["image"]
+  },
+  "schemas": {
+    "ServiceMedia": {
+      "mirror": "PostMedia",
+      "fields": {
+        "mediaUrl": "string — url, max 500, requis (presigned, bindée owner)",
+        "thumbnailUrl": "string — url, max 500, optionnel",
+        "mediaType": "'image' — V1 image uniquement (enum prêt pour video plus tard)",
+        "width": "int > 0, optionnel",
+        "height": "int > 0, optionnel",
+        "blurhash": "string, max 100, optionnel",
+        "sortOrder": "int >= 0, optionnel (défaut = index)"
+      }
+    }
+  },
+  "endpoints": [
+    {
+      "id": "EP-SVC-CREATE",
+      "method": "POST",
+      "path": "/services",
+      "auth": true,
+      "change": "MODIFIÉ (+intent, +media[])",
+      "description": "Créer une demande d'aide gratuite (défaut) ou une annonce/service payant",
+      "request": {
+        "body": {
+          "intent": "enum ServiceIntent — défaut 'help_free'",
+          "title": "string — min 1, max 200, requis",
+          "description": "string — max 5000, optionnel",
+          "category": "enum ServiceCategory — requis",
+          "urgency": "enum ServiceUrgency — défaut 'normal'",
+          "budget": "string — max 50, optionnel; REFUSÉ (422) si intent='help_free' (superRefine)",
+          "city": "string — max 100, optionnel",
+          "countryCode": "string — length 2, uppercase, optionnel",
+          "media": "ServiceMedia[] — max 6, optionnel; chaque mediaUrl bindée via assertOwnedPublicImage"
+        }
+      },
+      "responses": {
+        "201": { "description": "Créée", "body": "ServiceRequest (avec author + media[] ordonné par sortOrder)" },
+        "401": { "description": "Non authentifié" },
+        "403": { "description": "Média non-owner (assertOwnedPublicImage rejette une clé qui n'est pas users/{me.sub}/...)" },
+        "422": { "description": "Validation Zod (budget avec help_free, media > 6, url invalide, etc.)" }
+      }
+    },
+    {
+      "id": "EP-SVC-LIST",
+      "method": "GET",
+      "path": "/services",
+      "auth": true,
+      "change": "MODIFIÉ (+filtre intent)",
+      "description": "Liste paginée. La landing « Entraide » appelle 2 fois: intent=help_free (section 1, défaut) puis intent=paid_service (section 2, secondaire)",
+      "request": {
+        "query": {
+          "intent": "enum ServiceIntent — optionnel (segmente gratuit/payant)",
+          "category": "enum ServiceCategory — optionnel",
+          "country": "string — length 2, uppercase, optionnel",
+          "urgency": "enum ServiceUrgency — optionnel",
+          "status": "enum ServiceStatus — défaut 'open'",
+          "q": "string — trim, min 1, max 100, optionnel (title/description/city)",
+          "sort": "enum ['recent','urgent_first'] — défaut 'recent'",
+          "cursor": "uuid — optionnel",
+          "limit": "int — min 1, max 50, défaut 20"
+        }
+      },
+      "responses": {
+        "200": { "description": "Page", "body": { "items": "ServiceRequest[] (author + media[])", "nextCursor": "uuid | null" } },
+        "401": { "description": "Non authentifié" },
+        "422": { "description": "Validation query" }
+      }
+    },
+    {
+      "id": "EP-SVC-GET",
+      "method": "GET",
+      "path": "/services/:id",
+      "auth": true,
+      "change": "MODIFIÉ (+media[] ordonné)",
+      "description": "Détail + galerie médias",
+      "request": { "params": { "id": "uuid (ParseUUIDPipe)" } },
+      "responses": {
+        "200": { "description": "OK", "body": "ServiceRequest (author + media[] trié sortOrder asc)" },
+        "401": { "description": "Non authentifié" },
+        "404": { "description": "Introuvable" }
+      }
+    },
+    {
+      "id": "EP-SVC-UPDATE",
+      "method": "PATCH",
+      "path": "/services/:id",
+      "auth": true,
+      "change": "NOUVEAU",
+      "description": "Éditer sa demande/annonce. media[] fourni = REMPLACEMENT COMPLET de la galerie (delete + recreate).",
+      "request": {
+        "params": { "id": "uuid (ParseUUIDPipe)" },
+        "body": {
+          "intent": "enum ServiceIntent — optionnel",
+          "title": "string — min 1, max 200, optionnel",
+          "description": "string — max 5000, optionnel",
+          "category": "enum ServiceCategory — optionnel",
+          "urgency": "enum ServiceUrgency — optionnel",
+          "budget": "string — max 50, optionnel; refusé si intent effectif = help_free",
+          "city": "string — max 100, optionnel",
+          "countryCode": "string — length 2, uppercase, optionnel",
+          "media": "ServiceMedia[] — max 6, optionnel; si présent remplace toute la galerie; chaque mediaUrl re-bindée owner"
+        }
+      },
+      "responses": {
+        "200": { "description": "Mise à jour", "body": "ServiceRequest (author + media[])" },
+        "401": { "description": "Non authentifié" },
+        "403": { "description": "authorId != me.sub (pas le propriétaire) OU média non-owner" },
+        "404": { "description": "Introuvable" },
+        "422": { "description": "Validation Zod" }
+      }
+    },
+    {
+      "id": "EP-SVC-DELETE",
+      "method": "DELETE",
+      "path": "/services/:id",
+      "auth": true,
+      "change": "NOUVEAU",
+      "description": "Supprimer sa demande/annonce (cascade media/responses/ratings)",
+      "request": { "params": { "id": "uuid (ParseUUIDPipe)" } },
+      "responses": {
+        "204": { "description": "Supprimée" },
+        "401": { "description": "Non authentifié" },
+        "403": { "description": "authorId != me.sub (pas le propriétaire)" },
+        "404": { "description": "Introuvable" }
+      }
+    },
+    {
+      "id": "EP-SVC-MINE",
+      "method": "GET",
+      "path": "/services/mine",
+      "auth": true,
+      "change": "INCHANGÉ",
+      "description": "Mes demandes/annonces",
+      "responses": { "200": { "description": "OK", "body": "ServiceRequest[]" }, "401": { "description": "Non authentifié" } }
+    },
+    {
+      "id": "EP-SVC-RESPOND",
+      "method": "POST",
+      "path": "/services/:id/respond",
+      "auth": true,
+      "change": "INCHANGÉ",
+      "description": "Répondre à une demande (interdit sur la sienne)",
+      "request": { "params": { "id": "uuid" }, "body": { "message": "string — min 1, max 1000, requis" } },
+      "responses": {
+        "201": { "description": "Réponse créée + notification à l'auteur", "body": "ServiceResponse (responder)" },
+        "403": { "description": "Sa propre demande OU demande non 'open'" },
+        "404": { "description": "Introuvable" },
+        "422": { "description": "Validation" }
+      }
+    },
+    {
+      "id": "EP-SVC-RESPONSES",
+      "method": "GET",
+      "path": "/services/:id/responses",
+      "auth": true,
+      "change": "INCHANGÉ",
+      "description": "Voir les réponses (auteur uniquement)",
+      "request": { "params": { "id": "uuid" } },
+      "responses": {
+        "200": { "description": "OK", "body": "ServiceResponse[]" },
+        "403": { "description": "Pas l'auteur de la demande" },
+        "404": { "description": "Introuvable" }
+      }
+    },
+    {
+      "id": "EP-SVC-RESOLVE",
+      "method": "PATCH",
+      "path": "/services/:id/resolve",
+      "auth": true,
+      "change": "INCHANGÉ",
+      "description": "Clôturer sa demande (owner)",
+      "request": { "params": { "id": "uuid" } },
+      "responses": {
+        "200": { "description": "status='resolved'", "body": "ServiceRequest" },
+        "403": { "description": "Pas l'auteur" },
+        "404": { "description": "Introuvable" }
+      }
+    },
+    {
+      "id": "EP-SVC-RATE",
+      "method": "POST",
+      "path": "/services/:id/rate",
+      "auth": true,
+      "change": "INCHANGÉ (module review existant)",
+      "description": "Noter un répondant après résolution (owner)",
+      "request": {
+        "params": { "id": "uuid" },
+        "body": { "ratedUserId": "uuid, requis", "rating": "int 1..5, requis", "comment": "string max 500, optionnel" }
+      },
+      "responses": {
+        "200": { "description": "Note upsert", "body": "ServiceRating" },
+        "403": { "description": "Pas l'auteur / demande non résolue / user n'a pas répondu" },
+        "404": { "description": "Introuvable" },
+        "422": { "description": "Validation" }
+      }
+    },
+    {
+      "id": "EP-PRESIGN-REUSE",
+      "method": "POST",
+      "path": "/profile/me/photos/presign",
+      "auth": true,
+      "change": "RÉUTILISÉ (aucune modif)",
+      "description": "Presign d'upload S3 existant — utiliser kind='photo' pour les médias d'annonce (clé users/{me.sub}/photo/..., bucket public)",
+      "request": { "body": { "contentType": "enum ['image/jpeg','image/png','image/webp']", "kind": "'photo'" } },
+      "responses": { "200": { "description": "URL presignée d'upload + URL publique finale à renvoyer ensuite dans media[].mediaUrl" } }
+    }
+  ],
+  "sharedTypesChanges": {
+    "ServiceRequest": "+ intent: ServiceIntent; + media: ServiceMedia[];",
+    "new": "ServiceIntent = 'help_free' | 'paid_service'; ServiceMedia { id; mediaUrl; thumbnailUrl: string|null; mediaType: 'image'; width: number|null; height: number|null; blurhash: string|null; sortOrder: number }"
+  },
+  "delivery": {
+    "api": "DEPLOY requis: prisma migrate deploy (additif: table service_media + colonne intent + enum + index) puis recreate api. Backup pré-deploy. Déployer AVANT l'OTA mobile.",
+    "mobile": "OTA-safe (aucun module natif nouveau; expo-image-picker déjà embarqué). eas update --channel preview. runtimeVersion 1.8.0 INCHANGÉE (ne pas bumper: orphelinerait l'OTA).",
+    "order": "1) API (migrate+deploy)  2) OTA mobile"
+  }
+}

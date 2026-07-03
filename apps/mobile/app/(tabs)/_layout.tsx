@@ -247,9 +247,9 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="services"
           options={{
-            title: 'Services',
+            title: 'Entraide',
             tabBarIcon: ({ focused, color }) => (
-              <TabIcon name="briefcase" color={color} focused={focused} />
+              <TabIcon name="heart" color={color} focused={focused} />
             ),
           }}
         />

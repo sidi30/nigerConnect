@@ -12,13 +12,16 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { NCImage } from '@/components/ui/NCImage';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { servicesApi } from '@/services/servicesApi';
 import { chatApi } from '@/services/chatApi';
 import { useAuthStore } from '@/stores/authStore';
@@ -87,6 +90,25 @@ export default function ServiceDetailScreen() {
     onSuccess: (c) => router.push(`/chat/${c.id}`),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: () => servicesApi.remove(id!),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['services'] });
+      router.back();
+    },
+    onError: (e) => {
+      const err = e as { response?: { data?: { message?: string } } };
+      Alert.alert('Erreur', err.response?.data?.message ?? 'Suppression impossible');
+    },
+  });
+
+  function confirmDelete() {
+    Alert.alert('Supprimer', 'Cette publication sera définitivement supprimée.', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: () => deleteMut.mutate() },
+    ]);
+  }
+
   if (svcQuery.isLoading || !svc) {
     return (
       <SafeAreaView style={styles.container}>
@@ -103,7 +125,7 @@ export default function ServiceDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={15}>
           <Text style={styles.back}>←</Text>
         </Pressable>
-        <Text style={styles.title}>Demande</Text>
+        <Text style={styles.title}>{svc.intent === 'paid_service' ? 'Service' : 'Demande'}</Text>
         <View style={{ width: 34 }} />
       </View>
 
@@ -151,6 +173,56 @@ export default function ServiceDetailScreen() {
 
           <Text style={styles.svcTitle}>{svc.title}</Text>
           {svc.description ? <Text style={styles.svcDesc}>{svc.description}</Text> : null}
+
+          {svc.media.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.gallery}
+              contentContainerStyle={styles.galleryContent}
+            >
+              {svc.media.map((m, i) => (
+                <Pressable
+                  key={m.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/photos/viewer',
+                      params: { photos: JSON.stringify(svc.media.map((x) => x.mediaUrl)), index: String(i) },
+                    })
+                  }
+                >
+                  <NCImage
+                    source={{ uri: m.thumbnailUrl ?? m.mediaUrl }}
+                    placeholder={m.blurhash ? { blurhash: m.blurhash } : undefined}
+                    style={[styles.galleryImg, svc.media.length === 1 && styles.gallerySingle]}
+                    recyclingKey={m.id}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+
+          {isAuthor ? (
+            <View style={styles.ownerActions}>
+              <Pressable
+                onPress={() => router.push(`/services/new?id=${svc.id}` as never)}
+                style={styles.ownerBtn}
+              >
+                <Feather name="edit-2" size={14} color={Colors.brown} />
+                <Text style={styles.ownerBtnLabel}>Modifier</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmDelete}
+                disabled={deleteMut.isPending}
+                style={[styles.ownerBtn, styles.ownerBtnDanger]}
+              >
+                <Feather name="trash-2" size={14} color={Colors.danger} />
+                <Text style={[styles.ownerBtnLabel, { color: Colors.danger }]}>
+                  {deleteMut.isPending ? '…' : 'Supprimer'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           <View style={styles.infoGrid}>
             {svc.budget ? (
@@ -201,6 +273,9 @@ export default function ServiceDetailScreen() {
             )}
           </View>
         ) : null}
+
+        {/* Reviews about the author — anyone but the author can leave one. */}
+        <ReviewsSection targetType="user" targetId={svc.author.id} canReview={!isAuthor} />
       </ScrollView>
 
       <View style={styles.footer}>
@@ -225,16 +300,24 @@ export default function ServiceDetailScreen() {
               </Text>
             </View>
           )
-        ) : svc.status === 'open' ? (
-          <Pressable onPress={() => setReplyOpen(true)} style={styles.respondBtn}>
-            <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-            <Text style={styles.primaryLabel}>💬 Répondre à la demande</Text>
-          </Pressable>
         ) : (
-          <View style={[styles.resolveBtn, { backgroundColor: Colors.tan100 }]}>
-            <Text style={[styles.primaryLabel, { color: Colors.tan600 }]}>
-              Demande {status.label.toLowerCase()}
-            </Text>
+          <View style={styles.footerRow}>
+            <Pressable
+              onPress={() => openConvoMut.mutate(svc.author.id)}
+              disabled={openConvoMut.isPending}
+              style={styles.contactPrimary}
+            >
+              <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+              <Feather name="message-circle" size={16} color={Colors.white} />
+              <Text style={styles.primaryLabel}>
+                {openConvoMut.isPending ? '…' : 'Contacter'}
+              </Text>
+            </Pressable>
+            {svc.status === 'open' ? (
+              <Pressable onPress={() => setReplyOpen(true)} style={styles.respondOutline}>
+                <Text style={styles.respondOutlineLabel}>Répondre</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
       </View>
@@ -414,13 +497,50 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.tan200,
     backgroundColor: Colors.cream,
   },
-  respondBtn: {
+  gallery: { marginTop: Spacing.lg, marginHorizontal: -Spacing.xs },
+  galleryContent: { gap: Spacing.sm, paddingHorizontal: Spacing.xs },
+  galleryImg: {
+    width: 150,
+    height: 150,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.tan100,
+  },
+  gallerySingle: { width: 260 },
+  ownerActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
+  ownerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.tan300,
+    backgroundColor: Colors.white,
+  },
+  ownerBtnDanger: { borderColor: Colors.dangerSoft, backgroundColor: Colors.dangerSoft },
+  ownerBtnLabel: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.brown },
+  footerRow: { flexDirection: 'row', gap: Spacing.md },
+  contactPrimary: {
+    flex: 1,
+    flexDirection: 'row',
     height: 54,
     borderRadius: Radii.lg,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
+  respondOutline: {
+    height: 54,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.tan300,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  respondOutlineLabel: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.brown },
   resolveBtn: {
     height: 54,
     borderRadius: Radii.lg,

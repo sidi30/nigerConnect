@@ -1,0 +1,90 @@
+{
+  "audit": "SAST/DAST interne — Sprint S4 E-MARKET (surface marketplace « Entraide »)",
+  "date": "2026-07-03",
+  "auditor": "gwani-pentest",
+  "mode": "A (audit post-diff, working tree non commité)",
+  "scope": [
+    "apps/api/prisma/schema.prisma",
+    "apps/api/prisma/migrations/20260702000000_add_service_media_intent/migration.sql",
+    "apps/api/src/marketplace/dto/service.dto.ts",
+    "apps/api/src/marketplace/services.service.ts",
+    "apps/api/src/marketplace/services.controller.ts",
+    "packages/shared-types/src/service-request.ts",
+    "apps/mobile/services/servicesApi.ts",
+    "apps/mobile/services/uploadService.ts"
+  ],
+  "referentials": ["OWASP Top 10 2021", "OWASP API Security Top 10 2023", "CWE"],
+  "severity_counts": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "verdict": "OK_TO_DEPLOY",
+  "threats_evaluated": [
+    {
+      "id": "V1",
+      "name": "IDOR média (bind d'une URL appartenant à un autre user)",
+      "owasp": "A01 Broken Access Control / API1 BOLA (CWE-639)",
+      "result": "NEUTRALISÉ",
+      "evidence": "services.service.ts:53-70 bindMedia() appelle s3.assertOwnedPublicImage(m.mediaUrl, authorId) ET (m.thumbnailUrl, authorId) pour CHAQUE item. create() passe authorId=me.sub (l.72-73), update() passe userId=me.sub (l.113-116). s3.service.ts:217-219 impose key.startsWith('users/<ownerId>/') sinon BadRequestException. parsePublicKey (s3.service.ts:183-199) rejette host étranger, bucket privé, traversal (..), //, clé absolue.",
+      "tests": [
+        "services.service.spec.ts (a): create bind chaque URL avec me — 2 appels vérifiés",
+        "services.service.spec.ts (d): URL non-owner => BadRequestException, rien persisté",
+        "services.service.spec.ts (e) [AJOUTÉ]: update rebinde la galerie de remplacement avec userId (pas le body), deleteMany avant recreate"
+      ]
+    },
+    {
+      "id": "V2",
+      "name": "IDOR ownership PATCH/DELETE (non-propriétaire édite/supprime)",
+      "owasp": "A01 Broken Access Control / API1 BOLA (CWE-284)",
+      "result": "NEUTRALISÉ",
+      "evidence": "services.service.ts update() l.97-102: findUnique puis 'existing.authorId !== userId => ForbiddenException' AVANT bindMedia (l.113) et AVANT la transaction (l.132). remove() l.151-157: même garde AVANT prisma.delete. 404 si introuvable (NotFoundException). Controller protège l'id via ParseUUIDPipe (controller.ts:59,69).",
+      "tests": [
+        "services.service.spec.ts (c): update non-owner => Forbidden, aucun bind média déclenché",
+        "services.service.spec.ts (c bis) [AJOUTÉ]: remove non-owner => Forbidden, prisma.delete jamais appelé"
+      ]
+    },
+    {
+      "id": "V3",
+      "name": "Bypass validation Zod (budget sur help_free, media>6, URL non-http, intent invalide, mass-assignment)",
+      "owasp": "A03 Injection / A04 Insecure Design / API3 (CWE-20)",
+      "result": "NEUTRALISÉ",
+      "evidence": "service.dto.ts: superRefine (l.44-52 create / l.72-80 update) rejette budget!=null quand intent=help_free (défaut applique intent avant refine). media z.array().max(6) (l.40,70). intent serviceIntentEnum (l.14). URL non-CDN/non-http neutralisée en défense-profondeur par parsePublicKey (=>null=>400). Zod object non-strict STRIP les clés inconnues => pas de mass-assignment; authorId/status/responseCount jamais issus du body: create()/update() mappent explicitement chaque champ (services.service.ts:76-87, 120-130). update merge l'intent effectif (l.107-111) + force budget=null si help_free effectif (l.130) pour cohérence DB.",
+      "tests": [
+        "services.service.spec.ts (b): budget sur help_free => safeParse.success=false",
+        "services.service.spec.ts (b bis): help_free sans budget OK + intent défaut",
+        "services.service.spec.ts: update budget sur intent effectif help_free => BadRequestException"
+      ]
+    },
+    {
+      "id": "V4",
+      "name": "DELETE cascade — orphelins / fuite service_media/responses/ratings",
+      "owasp": "A04 Insecure Design (CWE-459)",
+      "result": "NEUTRALISÉ",
+      "evidence": "schema.prisma: ServiceMedia l.685, ServiceResponse l.702, ServiceRating l.716 déclarent tous request ... onDelete: Cascade. migration.sql l.34-35: FK service_media_request_id_fkey ON DELETE CASCADE. remove() (services.service.ts:157) supprime la racine => cascade DB, aucun orphelin. update() replace-galerie: deleteMany puis createMany dans une $transaction (l.132-140), pas de partiel.",
+      "tests": ["Vérifié par revue schema + migration (contrainte FK CASCADE), invariant DB non falsifiable en unit"]
+    },
+    {
+      "id": "V5",
+      "name": "Fuite privacy via AUTHOR_SELECT (email/position/DOB)",
+      "owasp": "A01 / A02 (CWE-359 Exposure of Private Info)",
+      "result": "NEUTRALISÉ / NON-FINDING",
+      "evidence": "services.service.ts:20-30 AUTHOR_SELECT = {id, displayName, firstName, lastName, avatarUrl, city, countryCode, identityStatus, isAmbassador}. Aucun email, latitude, longitude, dateOfBirth, phone. Projection STRICTEMENT identique à la forme publique établie du codebase (social/friends.service.ts:14-23). city/countryCode = grain-ville déjà public (schema commentaire l.92). Les service-requests sont publics par nature (pas de niveau private) — cohérent avec le contrat."
+    },
+    {
+      "id": "V6",
+      "name": "Énumération / oracle (404 vs 403 fuite d'existence)",
+      "owasp": "A01 / A04 (CWE-204)",
+      "result": "NON EXPLOITABLE",
+      "evidence": "getById renvoie 404 si absent (services.service.ts:197). update/remove renvoient 404 si absent puis 403 si non-owner. La distinction 404/403 révèle l'existence, MAIS les service-requests sont PUBLICS (GET /services/:id lisible par tout membre authentifié) — révéler l'existence n'ajoute aucune fuite. Pas de ressource privée dérrière cet oracle."
+    }
+  ],
+  "observations_non_blocking": [
+    "Doc-mismatch (non-sécu): le contrat cite POST /profile/uploads/presign; uploadService.ts:261 appelle /profile/me/photos/presign (endpoint pré-existant hors périmètre). À aligner dans la doc, sans impact sécurité.",
+    "Mobile n'est pas une frontière de confiance: toutes les URLs client sont re-bindées serveur-side (assertOwnedPublicImage). RAS."
+  ],
+  "changes_made": [
+    "apps/api/src/marketplace/services.service.spec.ts: +2 tests de régression sécurité (c bis DELETE non-owner, e rebind média owner à l'update). Aucun code de prod modifié (aucune vuln à corriger)."
+  ],
+  "proof": {
+    "command": "cd apps/api && npx jest src/marketplace && npx tsc --noEmit",
+    "jest": "15 passed / 15 total",
+    "tsc": "exit 0"
+  }
+}

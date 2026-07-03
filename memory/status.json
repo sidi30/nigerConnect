@@ -1,6 +1,29 @@
 {
-  "current": "READY_FOR_DEPLOY",
-  "updatedAt": "2026-07-02",
+  "current": "S3_DEPLOYED | S4_EMARKET_READY_FOR_DEPLOY (attente GO proprio)",
+  "updatedAt": "2026-07-03",
+  "s4": {
+    "sprint": "S4 E-MARKET (surface Entraide)",
+    "status": "READY_FOR_DEPLOY",
+    "codeState": "working tree non commite (backend + mobile + shared-types + migration additive)",
+    "gates": {
+      "sharedTypesBuild": "vert",
+      "apiTsc": "vert",
+      "mobileTsc": "vert (corrige: 12 styles manquants dans app/services/[id].tsx ajoutes)",
+      "jest": "330->332/332 verts (marketplace 15/15 dont 2 tests regression securite ajoutes par pentest)",
+      "pentest": "OK_TO_DEPLOY (0 critical/high/medium/low) -- V1..V6 neutralises, rapport memory/security.json",
+      "reviewer": "NON ENCORE PASSE (optionnel: pentest couvre IDOR/Zod/privacy/cascade)"
+    },
+    "delivery": "1) API prisma migrate deploy (additif: service_media + intent + enum) + recreate api  2) OTA iOS eas update --channel preview. runtimeVersion 1.8.0 INCHANGEE (pas de bump, pas de module natif nouveau). Deployer API AVANT OTA.",
+    "blockedBy": "APPROBATION EXPLICITE PROPRIO (jamais de deploy sans GO). checkpoints.deploy_approved_scope actuel = S3 uniquement.",
+    "docFix": "emarket-api-contracts.json presign path corrige -> /profile/me/photos/presign (etait /profile/uploads/presign)"
+  },
+  "lastDeploy": {
+    "sprint": "S3 profil",
+    "commit": "e8ce4a5",
+    "api": "DEPLOYED healthy (db ok, redis ok), 0 migration, backup pre-deploy-e8ce4a5 pris, rollback vers bdfd7f4 pret",
+    "mobileOTA": "canal preview, iOS update 019f248d-7a22-744a-874e-50bff0ce7873 + Android 019f248e-28c5-7771-80ba-b02040006e12, runtimeVersion 1.8.0 inchangee",
+    "note": "google-services.json trackee en git (pre-existant, commit d2bb9e9, assume: embarque dans l'APK de toute facon) -- signale, non bloquant"
+  },
   "activeWave": {
     "id": "W360",
     "title": "Vague 360deg (juillet 2026): LIVES + Marketplace secondaire + Profil + gaps diaspora",
@@ -9,8 +32,10 @@
       "strategy": "diagnostic gwani-conseiller-strategique (2026-07-02): deconseille la VIDEO live complete en V1; recommande LIVE AUDIO Salons",
       "adr_lives": "docs/adr/ADR-LIVES-streaming.md (+ memory/lives-api-contracts.json): si video => LiveKit Cloud, self-host SFU sur VPS prod exclu, rebuild EAS + bump 1.8->1.9"
     },
-    "decisionGates": [
-      "MARKETPLACE: garder l'onglet Services pair OU le fondre sous un onglet Entraide (reco conseiller) -- DECISION PROPRIO de positionnement avant la refonte nav"
+    "decisionGates": [],
+    "decisionsResolved": [
+      "MARKETPLACE 2026-07-02: fondu sous onglet Entraide (aide gratuite en 1er, payant en section secondaire). E-MARKET debloque (sprint S4).",
+      "LIVES 2026-07-02: ABANDONNEE definitivement (cout ressource VPS refuse). ADR REJECTED, ne pas re-proposer."
     ],
     "hardRules": [
       "ZERO solution payante (absolue, 2026-07-02): gratuit + OSS + securise + auto-hebergeable VPS, sinon feature ABANDONNEE (jamais degrader la securite).",
@@ -49,9 +74,12 @@
   },
   "backlogEpics": [
     { "id": "E-LIVES", "title": "LIVES (streaming live)", "status": "ecartee", "note": "ABANDONNEE 2026-07-02 (decision proprio): cout ressource VPS partage refuse; video = payant sans alternative; audio self-hoste (LiveKit OSS+coturn) refuse aussi. ADR docs/adr/ADR-LIVES-streaming.md = REJECTED (trace). NE PAS re-proposer sans demande explicite." },
-    { "id": "E-MARKET", "title": "Marketplace secondaire (multi-images, tarif optionnel, page detail, formulaire dynamique intention-first)", "status": "ready-pending-decision", "blockedBy": "positionnement nav (onglet Services vs fondu sous Entraide)", "note": "Multi-images => migration Prisma (ServiceRequest n'a aucun champ image) + S3Service.assertOwnedPublicImage. Formulaire intention-first (aide gratuite vs service payant)." },
-    { "id": "E-PROFILE", "title": "Profil a l'echelle", "status": "in_sprint", "note": "Sprint S3 en cours." },
-    { "id": "E-DIASPORA", "title": "Gaps diaspora (evenements geolocalises + RSVP, entraide Demarches structuree, i18n haoussa/zarma, groupes par ville d'accueil, annonces officielles verifiees)", "status": "backlog", "note": "Fort levier moat vs me-too selon conseiller + market.md. Evenements = infra ~0, se branche sur la carte existante." }
+    { "id": "E-MARKET", "title": "Marketplace secondaire sous onglet Entraide (multi-images, tarif optionnel, page detail, formulaire intention-first)", "status": "in_sprint_S4", "note": "Positionnement tranche: fondu sous Entraide. Multi-images => migration Prisma (ServiceRequest n'a aucun champ image) + S3Service.assertOwnedPublicImage sur chaque image. Bump version mobile a evaluer (migration + routes)." },
+    { "id": "E-PROFILE", "title": "Profil a l'echelle", "status": "delivered_deployed", "note": "Sprint S3 livre + deploye 2026-07-02 (commit e8ce4a5)." },
+    { "id": "E-GP", "title": "Colis-voyageurs GP (mise en relation uniquement, sous Entraide)", "status": "backlog_S5", "note": "Valeur max, synergie Entraide. Aucun paiement in-app, disclaimer douanes, profils verifies. Spec par gwani-pm-spec apres E-MARKET." },
+    { "id": "E-DIASPORA", "title": "Evenements geolocalises + RSVP (carte Leaflet existante)", "status": "backlog_S6", "note": "Cout infra ~0. Se branche sur la carte existante." },
+    { "id": "E-TAUX", "title": "Taux du jour + prix crowdsources (habitude quotidienne)", "status": "backlog_S7", "note": "Source GRATUITE (BCE/open-data ou saisie communautaire moderee), PAS d'API payante. Votes de confiance + horodatage." },
+    { "id": "E-DIGEST", "title": "Digest hebdo push (rappel dormants)", "status": "backlog_S8", "note": "1 cron + Expo Push (gratuit), opt-out, privacy stricte (jamais un compte private). Quick-win possible." }
   ],
   "pausedSprints": [
     {
@@ -69,7 +97,7 @@
     { "id": "S-ANIM-2", "title": "Sprint Animations v2 (Vague B = natifs) -- 1 rebuild 1.8.0", "status": "blocked", "blockedBy": "ANIM-7 ADR carte native valide proprio + GO build" }
   ],
   "agents": {},
-  "checkpoints": { "deploy_approved": false },
+  "checkpoints": { "deploy_approved": true, "deploy_approved_scope": "Sprint S3 profil uniquement (GO proprio 2026-07-02 via team-lead)" },
   "iterations": {},
   "openQuestions": [
     "MARKETPLACE: positionnement -- onglet Services pair (actuel, deja tres visible) vs fondu sous onglet Entraide avec formulaire intention-first (reco conseiller). Impacte la tab-bar (deja 6 onglets).",

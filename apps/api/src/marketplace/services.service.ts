@@ -1,8 +1,21 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { S3Service } from '../common/storage/s3.service';
 import { NotificationService } from '../notification/notification.service';
-import type { CreateServiceDto, ListServicesDto, RespondDto, RateDto } from './dto/service.dto';
+import type {
+  CreateServiceDto,
+  ListServicesDto,
+  RespondDto,
+  RateDto,
+  ServiceMediaDto,
+  UpdateServiceDto,
+} from './dto/service.dto';
 
 const AUTHOR_SELECT = {
   id: true,
@@ -16,31 +29,137 @@ const AUTHOR_SELECT = {
   isAmbassador: true,
 } as const satisfies Prisma.UserSelect;
 
+// Gallery is always returned oldest-slot-first so the client renders the same
+// order the author arranged (matches PostMedia handling in the feed).
+const REQUEST_INCLUDE = {
+  author: { select: AUTHOR_SELECT },
+  media: { orderBy: { sortOrder: 'asc' } },
+} as const satisfies Prisma.ServiceRequestInclude;
+
 @Injectable()
 export class ServicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly s3: S3Service,
   ) {}
 
-  create(authorId: string, dto: CreateServiceDto) {
+  /**
+   * Client-supplied media URLs are only shape-checked by Zod. Bind each one to
+   * the author's own public-bucket prefix (rejects a key that isn't
+   * `users/<authorId>/…`) and persist the canonical CDN URL the helper returns.
+   * Same guard as posts/stories/chat — no raw client URL is ever stored.
+   */
+  private async bindMedia(
+    authorId: string,
+    media: ServiceMediaDto[],
+  ): Promise<Prisma.ServiceMediaCreateManyRequestInput[]> {
+    return Promise.all(
+      media.map(async (m, i) => ({
+        mediaUrl: await this.s3.assertOwnedPublicImage(m.mediaUrl, authorId),
+        thumbnailUrl: m.thumbnailUrl
+          ? await this.s3.assertOwnedPublicImage(m.thumbnailUrl, authorId)
+          : null,
+        mediaType: m.mediaType,
+        width: m.width ?? null,
+        height: m.height ?? null,
+        blurhash: m.blurhash ?? null,
+        sortOrder: m.sortOrder ?? i,
+      })),
+    );
+  }
+
+  async create(authorId: string, dto: CreateServiceDto) {
+    const media = dto.media?.length ? await this.bindMedia(authorId, dto.media) : undefined;
+
     return this.prisma.serviceRequest.create({
       data: {
         authorId,
         title: dto.title,
         description: dto.description ?? null,
         category: dto.category,
+        intent: dto.intent,
         urgency: dto.urgency,
         budget: dto.budget ?? null,
         city: dto.city ?? null,
         countryCode: dto.countryCode ?? null,
+        media: media ? { createMany: { data: media } } : undefined,
       },
-      include: { author: { select: AUTHOR_SELECT } },
+      include: REQUEST_INCLUDE,
     });
+  }
+
+  /**
+   * Owner-only edit. `media`, when provided, REPLACES the whole gallery
+   * (delete + recreate) in a single transaction — no partial diff (ADR-003).
+   */
+  async update(userId: string, id: string, dto: UpdateServiceDto) {
+    const existing = await this.prisma.serviceRequest.findUnique({
+      where: { id },
+      select: { authorId: true, intent: true, budget: true },
+    });
+    if (!existing) throw new NotFoundException('Service request not found');
+    if (existing.authorId !== userId) throw new ForbiddenException('Not your request');
+
+    // A budget only makes sense on a paid listing. Guard against the merged
+    // (effective) state too: patching a budget onto a request that stays
+    // help_free must fail even when the body doesn't restate `intent`.
+    const effectiveIntent = dto.intent ?? existing.intent;
+    const effectiveBudget = dto.budget !== undefined ? dto.budget : existing.budget;
+    if (effectiveIntent === 'help_free' && effectiveBudget != null) {
+      throw new BadRequestException('budget is only allowed when intent = paid_service');
+    }
+
+    const media =
+      dto.media !== undefined
+        ? dto.media.length
+          ? await this.bindMedia(userId, dto.media)
+          : []
+        : undefined;
+
+    const data: Prisma.ServiceRequestUpdateInput = {};
+    if (dto.intent !== undefined) data.intent = dto.intent;
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.category !== undefined) data.category = dto.category;
+    if (dto.urgency !== undefined) data.urgency = dto.urgency;
+    if (dto.budget !== undefined) data.budget = dto.budget;
+    if (dto.city !== undefined) data.city = dto.city;
+    if (dto.countryCode !== undefined) data.countryCode = dto.countryCode;
+    // Clearing budget when a request flips back to help_free keeps DB coherent.
+    if (effectiveIntent === 'help_free') data.budget = null;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (media !== undefined) {
+        await tx.serviceMedia.deleteMany({ where: { requestId: id } });
+        if (media.length) {
+          await tx.serviceMedia.createMany({
+            data: media.map((m) => ({ ...m, requestId: id })),
+          });
+        }
+      }
+      return tx.serviceRequest.update({
+        where: { id },
+        data,
+        include: REQUEST_INCLUDE,
+      });
+    });
+  }
+
+  /** Owner-only delete. FK cascade drops media / responses / ratings. */
+  async remove(userId: string, id: string) {
+    const existing = await this.prisma.serviceRequest.findUnique({
+      where: { id },
+      select: { authorId: true },
+    });
+    if (!existing) throw new NotFoundException('Service request not found');
+    if (existing.authorId !== userId) throw new ForbiddenException('Not your request');
+    await this.prisma.serviceRequest.delete({ where: { id } });
   }
 
   async list(dto: ListServicesDto) {
     const where: Prisma.ServiceRequestWhereInput = {};
+    if (dto.intent) where.intent = dto.intent;
     if (dto.category) where.category = dto.category;
     if (dto.country) where.countryCode = dto.country;
     if (dto.urgency) where.urgency = dto.urgency;
@@ -63,7 +182,7 @@ export class ServicesService {
       orderBy,
       take: dto.limit + 1,
       ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
-      include: { author: { select: AUTHOR_SELECT } },
+      include: REQUEST_INCLUDE,
     });
     const hasMore = items.length > dto.limit;
     const page = hasMore ? items.slice(0, dto.limit) : items;
@@ -73,7 +192,7 @@ export class ServicesService {
   async getById(id: string) {
     const req = await this.prisma.serviceRequest.findUnique({
       where: { id },
-      include: { author: { select: AUTHOR_SELECT } },
+      include: REQUEST_INCLUDE,
     });
     if (!req) throw new NotFoundException('Service request not found');
     return req;

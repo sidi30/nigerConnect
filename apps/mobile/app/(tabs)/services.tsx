@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { NCImage } from '@/components/ui/NCImage';
 import {
   Colors,
   CountryNames,
@@ -26,7 +27,7 @@ import {
 } from '@/constants/theme';
 import { colorForId, relativeTime, SERVICE_CATEGORY_LABELS } from '@/constants/lookups';
 import { servicesApi } from '@/services/servicesApi';
-import type { ServiceCategory, ServiceUrgency } from '@nigerconnect/shared-types';
+import type { ServiceCategory, ServiceRequest, ServiceUrgency } from '@nigerconnect/shared-types';
 
 const CATEGORIES: Array<{ id: ServiceCategory; icon: string; label: string }> = [
   { id: 'logement', icon: '🏠', label: 'Logement' },
@@ -40,6 +41,84 @@ const CATEGORIES: Array<{ id: ServiceCategory; icon: string; label: string }> = 
 ];
 
 type SortOption = 'recent' | 'urgent_first';
+
+/** One request card — shows a gallery thumbnail when the request has media. */
+function ServiceCard({
+  svc,
+  onPress,
+  onPressAuthor,
+}: {
+  svc: ServiceRequest;
+  onPress: () => void;
+  onPressAuthor: () => void;
+}) {
+  const author = svc.author;
+  const thumb = svc.media?.[0];
+  return (
+    <Pressable onPress={onPress} style={styles.card}>
+      <View style={{ flexDirection: 'row', gap: Spacing.md }}>
+        <Pressable onPress={onPressAuthor} hitSlop={4}>
+          <Avatar
+            uri={author.avatarUrl}
+            name={author.displayName ?? 'N'}
+            size={42}
+            borderColor={colorForId(author.id)}
+          />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <View style={styles.catRow}>
+            <Text style={styles.catTag}>
+              {SERVICE_CATEGORY_LABELS[svc.category] ?? svc.category}
+            </Text>
+            {svc.urgency === 'urgent' && (
+              <View style={styles.urgencyPill}>
+                <Feather name="alert-circle" size={11} color={Colors.warningDark} />
+                <Text style={styles.urgencyLabel}>Urgent</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.svcTitle} numberOfLines={2}>
+            {svc.title}
+          </Text>
+          <Text style={styles.metaAuthor} numberOfLines={1}>
+            {author.displayName} · {author.city ?? ''}{' '}
+            {author.countryCode ? Flags[author.countryCode] ?? '' : ''} ·{' '}
+            {relativeTime(svc.createdAt)}
+          </Text>
+          {svc.description ? (
+            <Text style={styles.desc} numberOfLines={2}>
+              {svc.description}
+            </Text>
+          ) : null}
+          <View style={styles.footer}>
+            {svc.budget ? (
+              <View style={styles.footerItem}>
+                <Feather name="dollar-sign" size={13} color={Colors.orange} />
+                <Text style={styles.budget}>{svc.budget}</Text>
+              </View>
+            ) : null}
+            <View style={{ flex: 1 }} />
+            <View style={styles.footerItem}>
+              <Feather name="message-circle" size={13} color={Colors.tan500} />
+              <Text style={styles.responses}>
+                {svc.responseCount}{' '}
+                {svc.responseCount === 1 ? 'réponse' : 'réponses'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        {thumb ? (
+          <NCImage
+            source={{ uri: thumb.thumbnailUrl ?? thumb.mediaUrl }}
+            placeholder={thumb.blurhash ? { blurhash: thumb.blurhash } : undefined}
+            style={styles.thumb}
+            recyclingKey={thumb.id}
+          />
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
 
 export default function ServicesTab() {
   const router = useRouter();
@@ -57,22 +136,27 @@ export default function ServicesTab() {
     return () => clearTimeout(id);
   }, [search]);
 
-  const servicesQuery = useQuery({
-    queryKey: [
-      'services',
-      { cat: selectedCat, urg: urgencyFilter, country: countryFilter, sort, q: debouncedQ },
-    ],
-    queryFn: () =>
-      servicesApi.list({
-        category: selectedCat ?? undefined,
-        urgency: urgencyFilter ?? undefined,
-        country: countryFilter ?? undefined,
-        q: debouncedQ || undefined,
-        sort,
-      }),
+  const commonParams = {
+    category: selectedCat ?? undefined,
+    urgency: urgencyFilter ?? undefined,
+    country: countryFilter ?? undefined,
+    q: debouncedQ || undefined,
+    sort,
+  };
+  const filterKey = { cat: selectedCat, urg: urgencyFilter, country: countryFilter, sort, q: debouncedQ };
+
+  // Two intent segments: free help FIRST (landing/default), paid SECONDARY.
+  const helpQuery = useQuery({
+    queryKey: ['services', 'help_free', filterKey],
+    queryFn: () => servicesApi.list({ ...commonParams, intent: 'help_free' }),
+  });
+  const paidQuery = useQuery({
+    queryKey: ['services', 'paid_service', filterKey],
+    queryFn: () => servicesApi.list({ ...commonParams, intent: 'paid_service' }),
   });
 
-  const services = servicesQuery.data?.items ?? [];
+  const helpItems = helpQuery.data?.items ?? [];
+  const paidItems = paidQuery.data?.items ?? [];
 
   const hasFilters = selectedCat || urgencyFilter || countryFilter || debouncedQ;
 
@@ -89,8 +173,8 @@ export default function ServicesTab() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <Feather name="users" size={20} color={Colors.brown} />
-          <Text style={styles.title}>Services & Entraide</Text>
+          <Feather name="heart" size={20} color={Colors.brown} />
+          <Text style={styles.title}>Entraide</Text>
         </View>
         <Pressable style={styles.sortBtn} onPress={() => setSort(sort === 'recent' ? 'urgent_first' : 'recent')}>
           <Feather
@@ -107,7 +191,7 @@ export default function ServicesTab() {
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Rechercher un service…"
+          placeholder="Rechercher dans l'entraide…"
           placeholderTextColor={Colors.tan400}
           style={styles.searchInput}
           returnKeyType="search"
@@ -124,8 +208,11 @@ export default function ServicesTab() {
         contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={
           <RefreshControl
-            refreshing={servicesQuery.isRefetching}
-            onRefresh={() => void servicesQuery.refetch()}
+            refreshing={helpQuery.isRefetching || paidQuery.isRefetching}
+            onRefresh={() => {
+              void helpQuery.refetch();
+              void paidQuery.refetch();
+            }}
             tintColor={Colors.orange}
           />
         }
@@ -235,93 +322,74 @@ export default function ServicesTab() {
           </View>
         )}
 
-        {servicesQuery.isLoading ? (
+        {/* Section 1 — Besoin d'aide (gratuit) : le cœur, en premier. */}
+        <View style={styles.sectionHead}>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="heart" size={16} color={Colors.orange} />
+            <Text style={styles.sectionTitle}>Besoin d&apos;aide</Text>
+          </View>
+          <Text style={styles.sectionSubtitle}>Demandes d&apos;entraide gratuites</Text>
+        </View>
+
+        {helpQuery.isLoading ? (
           <View style={styles.loader}>
             <Loader style={{ marginTop: 0 }} />
           </View>
-        ) : services.length === 0 ? (
+        ) : helpItems.length === 0 ? (
           <View style={styles.empty}>
-            <Feather name="users" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
+            <Feather name="heart" size={40} color={Colors.tan400} style={styles.emptyEmoji} />
             <Text style={styles.emptyTitle}>Aucune demande</Text>
             <Text style={styles.emptyText}>
               {hasFilters
                 ? 'Aucune demande ne correspond aux filtres.'
-                : 'Sois le premier à publier une demande d\u2019entraide.'}
+                : 'Sois le premier à demander un coup de main.'}
             </Text>
           </View>
         ) : (
-          services.map((svc) => {
-            const author = svc.author;
-            return (
-              <Pressable
-                key={svc.id}
-                onPress={() => router.push(`/services/${svc.id}` as never)}
-                style={styles.card}
-              >
-                <View style={{ flexDirection: 'row', gap: Spacing.md }}>
-                  <Pressable
-                    onPress={() => router.push(`/user/${author.id}`)}
-                    hitSlop={4}
-                  >
-                    <Avatar
-                      uri={author.avatarUrl}
-                      name={author.displayName ?? 'N'}
-                      size={42}
-                      borderColor={colorForId(author.id)}
-                    />
-                  </Pressable>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.catRow}>
-                      <Text style={styles.catTag}>
-                        {SERVICE_CATEGORY_LABELS[svc.category] ?? svc.category}
-                      </Text>
-                      {svc.urgency === 'urgent' && (
-                        <View style={styles.urgencyPill}>
-                          <Feather name="alert-circle" size={11} color={Colors.warningDark} />
-                          <Text style={styles.urgencyLabel}>Urgent</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.svcTitle} numberOfLines={2}>
-                      {svc.title}
-                    </Text>
-                    <Text style={styles.metaAuthor} numberOfLines={1}>
-                      {author.displayName} · {author.city ?? ''}{' '}
-                      {author.countryCode ? Flags[author.countryCode] ?? '' : ''} ·{' '}
-                      {relativeTime(svc.createdAt)}
-                    </Text>
-                    {svc.description ? (
-                      <Text style={styles.desc} numberOfLines={2}>
-                        {svc.description}
-                      </Text>
-                    ) : null}
-                    <View style={styles.footer}>
-                      {svc.budget ? (
-                        <View style={styles.footerItem}>
-                          <Feather name="dollar-sign" size={13} color={Colors.orange} />
-                          <Text style={styles.budget}>{svc.budget}</Text>
-                        </View>
-                      ) : null}
-                      <View style={{ flex: 1 }} />
-                      <View style={styles.footerItem}>
-                        <Feather name="message-circle" size={13} color={Colors.tan500} />
-                        <Text style={styles.responses}>
-                          {svc.responseCount}{' '}
-                          {svc.responseCount === 1 ? 'réponse' : 'réponses'}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </Pressable>
-            );
-          })
+          helpItems.map((svc) => (
+            <ServiceCard
+              key={svc.id}
+              svc={svc}
+              onPress={() => router.push(`/services/${svc.id}` as never)}
+              onPressAuthor={() => router.push(`/user/${svc.author.id}`)}
+            />
+          ))
+        )}
+
+        {/* Section 2 — Services (payant) : secondaire, jamais le défaut. */}
+        <View style={[styles.sectionHead, styles.sectionHeadSecondary]}>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="briefcase" size={15} color={Colors.tan600} />
+            <Text style={[styles.sectionTitle, styles.sectionTitleSecondary]}>Services (payant)</Text>
+          </View>
+          <Text style={styles.sectionSubtitle}>Prestations proposées par la communauté</Text>
+        </View>
+
+        {paidQuery.isLoading ? (
+          <View style={styles.loader}>
+            <Loader style={{ marginTop: 0 }} />
+          </View>
+        ) : paidItems.length === 0 ? (
+          <View style={styles.emptySecondary}>
+            <Text style={styles.emptyText}>
+              {hasFilters ? 'Aucun service ne correspond aux filtres.' : 'Aucun service proposé pour l’instant.'}
+            </Text>
+          </View>
+        ) : (
+          paidItems.map((svc) => (
+            <ServiceCard
+              key={svc.id}
+              svc={svc}
+              onPress={() => router.push(`/services/${svc.id}` as never)}
+              onPressAuthor={() => router.push(`/user/${svc.author.id}`)}
+            />
+          ))
         )}
       </ScrollView>
 
       <Pressable style={styles.fab} onPress={() => router.push('/services/new')}>
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-        <Text style={styles.fabLabel}>+ Publier une demande</Text>
+        <Text style={styles.fabLabel}>+ Publier</Text>
       </Pressable>
     </SafeAreaView>
   );
@@ -440,6 +508,25 @@ const styles = StyleSheet.create({
   countryChipActive: { backgroundColor: Colors.peach50, borderColor: Colors.orange },
   countryFlag: { fontSize: 16 },
   countryName: { fontSize: Typography.sizes.xs + 1, fontWeight: '600', color: Colors.brown },
+  sectionHead: {
+    paddingHorizontal: Spacing.md + 2,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  sectionHeadSecondary: {
+    marginTop: Spacing.xl,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.tan200,
+  },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionTitle: {
+    fontSize: Typography.sizes.lg,
+    fontWeight: '800',
+    color: Colors.brown,
+  },
+  sectionTitleSecondary: { fontSize: Typography.sizes.md, color: Colors.tan600 },
+  sectionSubtitle: { fontSize: Typography.sizes.xs, color: Colors.tan500, marginTop: 2 },
   card: {
     backgroundColor: Colors.white,
     borderRadius: Radii.lg,
@@ -448,6 +535,12 @@ const styles = StyleSheet.create({
     padding: Spacing.md + 2,
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md - 2,
+  },
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.tan100,
   },
   catRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   catTag: {
@@ -495,9 +588,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   responses: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, fontWeight: '600' },
-  loader: { padding: Spacing.xxl, alignItems: 'center' },
+  loader: { padding: Spacing.xl, alignItems: 'center' },
   empty: { padding: Spacing.xxl, alignItems: 'center' },
-  emptyEmoji: { fontSize: 40, marginBottom: Spacing.md },
+  emptySecondary: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.lg, alignItems: 'center' },
+  emptyEmoji: { marginBottom: Spacing.md },
   emptyTitle: { fontSize: Typography.sizes.lg, fontWeight: '700', color: Colors.brown },
   emptyText: {
     fontSize: Typography.sizes.sm,
