@@ -174,6 +174,15 @@ export class S3Service {
   ]);
 
   /**
+   * Max bytes accepted for a public VIDEO (story clip). 25 Mo — a 30 s / 720p
+   * H.265 clip lands ~15–25 Mo. This is the ONLY hard duration/codec proxy the
+   * server can enforce (no ffprobe by design, ADR-002/SD-1): the cap on bytes
+   * bounds the disk; duration/resolution stay a client promise.
+   */
+  static readonly MAX_PUBLIC_VIDEO_BYTES = 25 * 1024 * 1024;
+  private static readonly ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime']);
+
+  /**
    * Extract the bucket key from a URL the client claims to have uploaded.
    * Accepts only URLs that point at THIS deployment's public surface:
    *   - `${CDN_URL}/<key>`         (prod / proxied MinIO)
@@ -240,6 +249,80 @@ export class S3Service {
     return this.publicUrl(key);
   }
 
+  /**
+   * Unified attach-time guard for BOTH images and videos. Superset of
+   * assertOwnedPublicImage that additionally CONFRONTS the client-declared
+   * `expectedMediaType` against the REAL Content-Type of the uploaded object
+   * (HEAD) — closing the image↔video spoof that lets a caller lie about what
+   * they uploaded (broken display, dodged quotas). Also generalises the
+   * ownership check to an arbitrary `requiredPrefix` (e.g. `stories/{ownerId}/`).
+   *
+   * Returns the canonical CDN URL to persist. Callers that need the byte size
+   * (video quota accounting) should use assertOwnedPublicMediaDetailed instead —
+   * this thin wrapper exists to satisfy the public contract shape (→ string).
+   *
+   * @param expectedMediaType the mediaType the client DECLARED ('image'|'video').
+   * @param requiredPrefix    key prefix the object MUST live under (anti-IDOR).
+   * @throws BadRequestException on any failure — caller maps to 400.
+   */
+  async assertOwnedPublicMedia(
+    url: string,
+    expectedMediaType: 'image' | 'video',
+    requiredPrefix: string,
+  ): Promise<string> {
+    return (await this.assertOwnedPublicMediaDetailed(url, expectedMediaType, requiredPrefix)).url;
+  }
+
+  /**
+   * Same guard as assertOwnedPublicMedia but also returns the object's real
+   * byte size and content-type, so callers enforcing a per-user byte quota
+   * (stories video: 200 Mo / 24h) don't have to HEAD the object twice.
+   */
+  async assertOwnedPublicMediaDetailed(
+    url: string,
+    expectedMediaType: 'image' | 'video',
+    requiredPrefix: string,
+  ): Promise<{ url: string; bytes: number; contentType: string }> {
+    const key = this.parsePublicKey(url);
+    if (!key) {
+      throw new BadRequestException('Media URL must point to an uploaded file on this platform');
+    }
+    if (!key.startsWith(requiredPrefix)) {
+      throw new BadRequestException('Media does not belong to you');
+    }
+    let head;
+    try {
+      head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.publicBucket, Key: key }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `assertOwnedPublicMedia HEAD failed for ${this.publicBucket}/${key}: ${String(error)}`,
+      );
+      throw new BadRequestException('Uploaded file not found — upload it before attaching');
+    }
+    const contentType = (head.ContentType ?? '').toLowerCase();
+
+    // Source of truth = the REAL content-type. Map it to a kind, then reject any
+    // divergence from what the client declared (the anti-spoof gate).
+    let realKind: 'image' | 'video';
+    if (S3Service.ALLOWED_IMAGE_TYPES.has(contentType)) realKind = 'image';
+    else if (S3Service.ALLOWED_VIDEO_TYPES.has(contentType)) realKind = 'video';
+    else throw new BadRequestException(`Unsupported media type: ${contentType || 'unknown'}`);
+
+    if (realKind !== expectedMediaType) {
+      throw new BadRequestException('Declared media type does not match the uploaded file');
+    }
+
+    const bytes = head.ContentLength ?? 0;
+    const cap =
+      realKind === 'video' ? S3Service.MAX_PUBLIC_VIDEO_BYTES : S3Service.MAX_PUBLIC_IMAGE_BYTES;
+    if (bytes > cap) {
+      throw new BadRequestException('Uploaded file is too large');
+    }
+    return { url: this.publicUrl(key), bytes, contentType };
+  }
+
   async deleteObject(key: string, bucket: string = this.publicBucket): Promise<void> {
     try {
       await this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
@@ -262,6 +345,8 @@ export class S3Service {
       'image/png': '.png',
       'image/webp': '.webp',
       'image/heic': '.heic',
+      'video/mp4': '.mp4',
+      'video/quicktime': '.mov',
       'application/pdf': '.pdf',
     };
     return map[contentType.toLowerCase()] ?? '';

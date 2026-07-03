@@ -1,6 +1,6 @@
 import { api } from './api';
 
-export type ReportTargetType = 'user' | 'post' | 'message' | 'association' | 'comment';
+export type ReportTargetType = 'user' | 'post' | 'message' | 'association' | 'comment' | 'community_price';
 export type ReportReason =
   | 'spam'
   | 'harassment'

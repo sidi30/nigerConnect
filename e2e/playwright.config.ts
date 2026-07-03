@@ -268,6 +268,36 @@ export default defineConfig({
       },
     },
 
+    // ── S-BETA: video stories-first + E-TAUX + E-DIGEST ──────────────────────
+    {
+      name: 'api-video-stories',
+      testMatch: 'api/video-stories.spec.ts',
+      // Serial: the video kill-switch is a GLOBAL app_settings row toggled per
+      // describe block. Parallel workers would race on video_enabled (a create
+      // in one block would see the ON/OFF set by another). One worker = stable.
+      fullyParallel: false,
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-rates-etaux',
+      testMatch: 'api/rates-etaux.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+    {
+      name: 'api-digest-optout',
+      testMatch: 'api/digest-optout.spec.ts',
+      use: {
+        baseURL: API_BASE_URL,
+        extraHTTPHeaders: { 'Content-Type': 'application/json' },
+      },
+    },
+
     // ── Browser tests against the Next.js web app ────────────────────────────
     {
       name: 'web-auth-pages',

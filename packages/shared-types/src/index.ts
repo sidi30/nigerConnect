@@ -9,6 +9,7 @@ export * from './page';
 export * from './poll';
 export * from './review';
 export * from './proximity';
+export * from './rates';
 
 export interface CursorPage<T> {
   items: T[];

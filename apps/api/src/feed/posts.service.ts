@@ -1,22 +1,37 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
-import { S3Service } from '../common/storage/s3.service';
+import { S3Service, type PresignedUpload } from '../common/storage/s3.service';
+import { SettingsService } from '../common/settings/settings.service';
 import { BlockService } from '../social/block.service';
 import { MentionsService } from './mentions.service';
-import type { CreatePostDto, CreateStoryDto, UpdatePostDto } from './dto/post.dto';
+import type { CreatePostDto, CreateStoryDto, PresignVideoDto, UpdatePostDto } from './dto/post.dto';
 
 const FEED_CACHE_TTL = 120;
 // Only the default-limit start page is cached. Caching arbitrary limits would
 // require multi-key invalidation; non-default limits skip the cache instead.
 const FEED_CACHE_LIMIT = 20;
 const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// ── Stories-video quota (ADR-005 — deployable INERTE, enforced only for videos) ──
+/** Max simultaneously-active (unexpired) videos a user may keep. DB-authoritative. */
+const VIDEO_MAX_ACTIVE_PER_USER = 10;
+/** Max uploaded video bytes per rolling UTC day (Redis counter). 200 Mo. */
+const VIDEO_MAX_BYTES_PER_DAY = 200 * 1024 * 1024;
+/** Max video CREATE/presign operations per UTC day (Redis counter). Anti-flood. */
+const VIDEO_MAX_UPLOADS_PER_DAY = 5;
+/** TTL of the daily Redis counters (24h). Counters are per-UTC-day, not sliding. */
+const VIDEO_COUNTER_TTL_SECONDS = 24 * 60 * 60;
+/** TTL of a story-video presigned PUT (900 s — slow NE/diaspora uplinks). */
+const VIDEO_PRESIGN_TTL_SECONDS = 900;
 
 const AUTHOR_SELECT = {
   id: true,
@@ -48,6 +63,7 @@ export class PostsService {
     private readonly blocks: BlockService,
     private readonly s3: S3Service,
     private readonly mentions: MentionsService,
+    private readonly settings: SettingsService,
   ) {}
 
   async create(authorId: string, dto: CreatePostDto) {
@@ -120,11 +136,140 @@ export class PostsService {
     return post;
   }
 
+  // ── Stories video: kill-switch + verified-only gate + daily/byte quota ──────
+  //
+  // The whole path is INERTE until `video_enabled` is armed (fail-closed). Image
+  // stories are untouched (they keep the existing users/ prefix binding), so a
+  // dark deploy can't regress the current photo-story flow.
+
+  /** UTC day bucket 'YYYYMMDD' for the per-day Redis counters (reset at UTC midnight). */
+  private videoDay(now = new Date()): string {
+    return now.toISOString().slice(0, 10).replace(/-/g, '');
+  }
+
+  /**
+   * Gate shared by presign + create: the kill-switch must be ON and the caller
+   * must be identity-approved (read DB FRESH, never the JWT claim — a token
+   * minted before approval/revocation must not decide this). Fail-closed.
+   */
+  private async assertVideoAllowed(userId: string): Promise<void> {
+    if (!(await this.settings.isVideoEnabled())) {
+      throw new ForbiddenException({
+        code: 'VIDEO_DISABLED',
+        message: 'La vidéo est temporairement indisponible.',
+      });
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { identityStatus: true },
+    });
+    if (user?.identityStatus !== 'approved') {
+      throw new ForbiddenException({
+        code: 'IDENTITY_NOT_APPROVED',
+        message: 'Publier une vidéo est réservé aux comptes vérifiés.',
+      });
+    }
+  }
+
+  private tooManyRequests(code: string, message: string): HttpException {
+    return new HttpException({ code, message }, HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  /**
+   * POST /stories/presign — hand out a presigned PUT for a story video, but only
+   * AFTER the gates so we never sign an upload for an object that would be
+   * refused (wasted disk / trivial disk-DoS). Enforces the daily upload cap in
+   * READ mode here (the create is the hard INCR enforcement).
+   */
+  async presignStoryVideo(userId: string, dto: PresignVideoDto): Promise<PresignedUpload> {
+    await this.assertVideoAllowed(userId);
+
+    // Read-only daily-cap check (create does the authoritative INCR). Blocks
+    // early so a user at their cap doesn't even get an upload URL.
+    const uploadsKey = `video:uploads:${userId}:${this.videoDay()}`;
+    const uploads = Number((await this.redis.get(uploadsKey)) ?? '0');
+    if (uploads >= VIDEO_MAX_UPLOADS_PER_DAY) {
+      throw this.tooManyRequests(
+        'UPLOAD_QUOTA_EXCEEDED',
+        'Limite quotidienne de vidéos atteinte. Réessayez demain.',
+      );
+    }
+
+    return this.s3.createPresignedUpload({
+      folder: `stories/${userId}`,
+      contentType: dto.contentType,
+      expiresIn: VIDEO_PRESIGN_TTL_SECONDS,
+      visibility: 'public',
+    });
+  }
+
   async createStory(authorId: string, dto: CreateStoryDto) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    // Same host-binding guard as posts — never persist an unvalidated URL.
-    const mediaUrl = await this.s3.assertOwnedPublicImage(dto.media.mediaUrl, authorId);
-    return this.prisma.post.create({
+    const isVideo = dto.media.mediaType === 'video';
+
+    let mediaUrl: string;
+    let boundBytes = 0;
+    if (isVideo) {
+      // Kill-switch + verified gate FIRST (fail-closed, INERTE by default).
+      await this.assertVideoAllowed(authorId);
+
+      // Active-video ceiling — DB-authoritative (auto-decremented by expiry).
+      const activeVideos = await this.prisma.post.count({
+        where: {
+          authorId,
+          isStory: true,
+          deletedAt: null,
+          storyExpiresAt: { gt: new Date() },
+          media: { some: { mediaType: 'video' } },
+        },
+      });
+      if (activeVideos >= VIDEO_MAX_ACTIVE_PER_USER) {
+        throw this.tooManyRequests(
+          'ACTIVE_VIDEO_QUOTA_EXCEEDED',
+          'Vous avez trop de vidéos actives. Attendez leur expiration.',
+        );
+      }
+
+      // Bind to our bucket under the caller's stories/ prefix, HEAD it, confront
+      // the REAL content-type to the declared 'video' (anti-spoof), cap 25 Mo.
+      const day = this.videoDay();
+      const uploadsKey = `video:uploads:${authorId}:${day}`;
+      const bytesKey = `video:bytes:${authorId}:${day}`;
+
+      // Enforce the daily upload cap (read → reject) before the byte check.
+      const uploads = Number((await this.redis.get(uploadsKey)) ?? '0');
+      if (uploads >= VIDEO_MAX_UPLOADS_PER_DAY) {
+        throw this.tooManyRequests(
+          'UPLOAD_QUOTA_EXCEEDED',
+          'Limite quotidienne de vidéos atteinte. Réessayez demain.',
+        );
+      }
+
+      const bound = await this.s3.assertOwnedPublicMediaDetailed(
+        dto.media.mediaUrl,
+        'video',
+        `stories/${authorId}/`,
+      );
+      mediaUrl = bound.url;
+      boundBytes = bound.bytes;
+
+      // Byte quota over the rolling UTC day. Reject if this upload would push the
+      // running total past the cap (counter is INCRBY'd only after create succeeds).
+      const usedBytes = Number((await this.redis.get(bytesKey)) ?? '0');
+      if (usedBytes + boundBytes > VIDEO_MAX_BYTES_PER_DAY) {
+        throw this.tooManyRequests(
+          'BYTES_QUOTA_EXCEEDED',
+          'Quota vidéo journalier atteint (200 Mo). Réessayez demain.',
+        );
+      }
+    } else {
+      // Image story: unchanged binding (users/ prefix). assertOwnedPublicImage
+      // already confronts the real content-type to the image allowlist, so a
+      // client declaring 'image' while uploading a video is still rejected.
+      mediaUrl = await this.s3.assertOwnedPublicImage(dto.media.mediaUrl, authorId);
+    }
+
+    const post = await this.prisma.post.create({
       data: {
         authorId,
         content: dto.content ?? null,
@@ -149,6 +294,22 @@ export class PostsService {
         sharedPost: { include: SHARED_POST_INCLUDE },
       },
     });
+
+    // Bump the daily counters AFTER a successful create so a rejected/failed
+    // create never burns quota. Best-effort — a Redis blip must not 500 a story
+    // that's already persisted (the disk guard + lifecycle are the real backstop).
+    if (isVideo) {
+      const day = this.videoDay();
+      try {
+        await this.redis.incrementCounter(`video:uploads:${authorId}:${day}`, VIDEO_COUNTER_TTL_SECONDS);
+        await this.redis.client.incrby(`video:bytes:${authorId}:${day}`, boundBytes);
+        await this.redis.client.expire(`video:bytes:${authorId}:${day}`, VIDEO_COUNTER_TTL_SECONDS);
+      } catch {
+        // Swallow — quota accounting is advisory; the hard disk ceiling is the guard.
+      }
+    }
+
+    return post;
   }
 
   /**
@@ -284,15 +445,46 @@ export class PostsService {
    * but we treat stories as their own resource since the UX is distinct.
    */
   async deleteStory(authorId: string, storyId: string): Promise<void> {
-    const story = await this.prisma.post.findUnique({ where: { id: storyId } });
+    const story = await this.prisma.post.findUnique({
+      where: { id: storyId },
+      include: { media: { select: { mediaUrl: true, thumbnailUrl: true } } },
+    });
     if (!story || story.deletedAt || !story.isStory) {
       throw new NotFoundException('Story not found');
     }
     if (story.authorId !== authorId) throw new ForbiddenException('Not your story');
+    // Free the disk BEFORE the soft-delete: once deletedAt is set the media rows
+    // are still there, but doing it in this order means a crash leaves an
+    // orphaned-but-purgeable object rather than a live row pointing at nothing.
+    await this.purgePostMedia(story.media);
     await this.prisma.post.update({
       where: { id: storyId },
       data: { deletedAt: new Date() },
     });
+  }
+
+  /**
+   * Best-effort S3 purge for a set of PostMedia rows. Each object (and its
+   * thumbnail, if it lives on our bucket too) is deleteObject'd; a failure on one
+   * never blocks the others. Returns the count of delete attempts issued.
+   *
+   * This is the primary disk-reclamation mechanism (ADR-004 layer a): the MinIO
+   * lifecycle is only a 48h backstop for the stories/ prefix.
+   */
+  private async purgePostMedia(
+    media: ReadonlyArray<{ mediaUrl: string; thumbnailUrl?: string | null }>,
+  ): Promise<number> {
+    let purged = 0;
+    for (const m of media) {
+      for (const url of [m.mediaUrl, m.thumbnailUrl]) {
+        if (!url) continue;
+        const key = this.s3.parsePublicKey(url);
+        if (!key) continue;
+        await this.s3.deleteObject(key);
+        purged += 1;
+      }
+    }
+    return purged;
   }
 
   async share(sharerId: string, postId: string, content?: string) {
@@ -595,12 +787,35 @@ export class PostsService {
     return Array.from(grouped.values());
   }
 
+  /**
+   * Purge expired stories: reclaim the S3 objects THEN soft-delete the rows.
+   * Batched (≤200/pass) so a large backlog can't blow the heap. Returns the
+   * number of stories soft-deleted. S3 deletes are best-effort (a purge failure
+   * is logged inside deleteObject and never blocks the DB soft-delete — the
+   * MinIO lifecycle sweeps any residue at 48h).
+   */
   async deleteExpiredStories(): Promise<number> {
-    const result = await this.prisma.post.updateMany({
-      where: { isStory: true, deletedAt: null, storyExpiresAt: { lt: new Date() } },
-      data: { deletedAt: new Date() },
-    });
-    return result.count;
+    const BATCH = 200;
+    let total = 0;
+    for (;;) {
+      const expired = await this.prisma.post.findMany({
+        where: { isStory: true, deletedAt: null, storyExpiresAt: { lt: new Date() } },
+        select: { id: true, media: { select: { mediaUrl: true, thumbnailUrl: true } } },
+        take: BATCH,
+      });
+      if (expired.length === 0) break;
+
+      for (const story of expired) {
+        await this.purgePostMedia(story.media);
+      }
+      const result = await this.prisma.post.updateMany({
+        where: { id: { in: expired.map((s) => s.id) } },
+        data: { deletedAt: new Date() },
+      });
+      total += result.count;
+      if (expired.length < BATCH) break;
+    }
+    return total;
   }
 
   async invalidateFeedCache(authorId: string): Promise<void> {

@@ -1,10 +1,18 @@
 import { NotFoundException } from '@nestjs/common';
 import { ModerationService } from './moderation.service';
 
+/** S3 mock: parsePublicKey echoes the key for our-bucket URLs, deleteObject is spied. */
+function makeS3() {
+  return {
+    parsePublicKey: jest.fn((url: string) => (url.startsWith('https://cdn/') ? url.slice(12) : null)),
+    deleteObject: jest.fn(async () => undefined),
+  };
+}
+
 describe('ModerationService', () => {
   it('throws NotFound on unknown report', async () => {
     const prisma = { report: { findUnique: jest.fn(async () => null) } };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await expect(
       svc.resolve('admin', 'r1', { action: 'warning' } as never),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -16,17 +24,45 @@ describe('ModerationService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'post', targetId: 'p1' })),
         update: jest.fn(async () => ({})),
       },
-      post: { update: jest.fn(async () => ({})) },
+      post: {
+        findUnique: jest.fn(async () => ({ media: [] })),
+        update: jest.fn(async () => ({})),
+      },
       user: { update: jest.fn() },
       message: { update: jest.fn() },
       comment: { update: jest.fn() },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.resolve('admin', 'r1', { action: 'content_removed' });
     expect(prisma.post.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ deletedAt: expect.any(Date) }),
       }),
+    );
+  });
+
+  it('takedown PURGES the S3 media objects before the soft-delete (disk reclaim)', async () => {
+    const prisma = {
+      report: {
+        findUnique: jest.fn(async () => ({ id: 'r1', targetType: 'post', targetId: 'p1' })),
+        update: jest.fn(async () => ({})),
+      },
+      post: {
+        findUnique: jest.fn(async () => ({
+          media: [
+            { mediaUrl: 'https://cdn/stories/u1/a.mp4', thumbnailUrl: 'https://cdn/stories/u1/a.jpg' },
+          ],
+        })),
+        update: jest.fn(async () => ({})),
+      },
+    };
+    const s3 = makeS3();
+    const svc = new ModerationService(prisma as never, s3 as never);
+    await svc.resolve('admin', 'r1', { action: 'content_removed' });
+    // Both the video and its thumbnail are deleteObject'd, then the row soft-deleted.
+    expect(s3.deleteObject).toHaveBeenCalledTimes(2);
+    expect(prisma.post.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deletedAt: expect.any(Date) }) }),
     );
   });
 
@@ -44,7 +80,7 @@ describe('ModerationService', () => {
       // Banning revokes the user's active reusable invite links (parrainage §11).
       invitation: { updateMany: jest.fn(async () => ({})) },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.resolve('admin', 'r1', { action: 'banned' });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
@@ -67,7 +103,7 @@ describe('ModerationService', () => {
       post: { update: jest.fn() },
       invitation: { updateMany: jest.fn(async () => ({})) },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.resolve('admin', 'r1', { action: 'banned' });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'parrain-1' },
@@ -88,7 +124,7 @@ describe('ModerationService', () => {
       },
       post: { update: jest.fn() },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.resolve('admin', 'r1', { action: 'banned' });
     // Already banned → only the (idempotent) status update, no flag increment.
     expect(prisma.user.update).toHaveBeenCalledTimes(1);
@@ -98,7 +134,7 @@ describe('ModerationService', () => {
 
   it('getTarget throws NotFound on unknown report (no arbitrary content fetch)', async () => {
     const prisma = { report: { findUnique: jest.fn(async () => null) } };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await expect(svc.getTarget('missing')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -111,7 +147,7 @@ describe('ModerationService', () => {
         findUnique: jest.fn(async () => ({ id: 'p1', content: 'x', media: [] })),
       },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.getTarget('r1');
     // The post is read by the report's own targetId — never a caller-supplied id.
     expect(prisma.post.findUnique).toHaveBeenCalledWith(
@@ -126,7 +162,7 @@ describe('ModerationService', () => {
       },
       user: { findUnique: jest.fn(async () => ({ id: 'u1', displayName: 'A' })) },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.getTarget('r1');
     const arg = (prisma.user.findUnique.mock.calls as unknown[][])[0]?.[0] as {
       select: Record<string, unknown>;
@@ -145,7 +181,7 @@ describe('ModerationService', () => {
       },
       message: { findUnique: jest.fn(async () => null) },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await expect(svc.getTarget('r1')).resolves.toEqual({ type: 'message', found: false });
   });
 
@@ -161,7 +197,7 @@ describe('ModerationService', () => {
       },
       post: { update: jest.fn() },
     };
-    const svc = new ModerationService(prisma as never);
+    const svc = new ModerationService(prisma as never, makeS3() as never);
     await svc.resolve('admin', 'r1', { action: 'suspended' });
     // Status update only — no second update to flag the inviter.
     expect(prisma.user.update).toHaveBeenCalledTimes(1);

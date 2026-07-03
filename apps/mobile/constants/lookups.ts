@@ -13,6 +13,12 @@ export const SERVICE_CATEGORY_LABELS: Record<string, string> = {
 
 export const SERVICE_CATEGORIES = Object.keys(SERVICE_CATEGORY_LABELS);
 
+export const COMMUNITY_PRICE_TYPE_LABELS: Record<string, string> = {
+  billet_avion: '✈️ Billet d’avion',
+  transfert_argent: '💸 Transfert d’argent',
+  colis_kg: '📦 Colis (kg)',
+};
+
 export const ASSOCIATION_CATEGORY_LABELS: Record<string, string> = {
   generaliste: '🏛️ Généraliste',
   etudiants: '🎓 Étudiants',

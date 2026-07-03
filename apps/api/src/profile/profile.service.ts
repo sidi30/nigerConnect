@@ -230,6 +230,7 @@ export class ProfileService {
     if (dto.languages !== undefined) data.languages = dto.languages;
     if (dto.privacyLevel !== undefined) data.privacyLevel = dto.privacyLevel;
     if (dto.newsletterOptIn !== undefined) data.newsletterOptIn = dto.newsletterOptIn;
+    if (dto.digestOptIn !== undefined) data.digestOptIn = dto.digestOptIn;
 
     // Location pin. users.latitude/longitude are a CITY-coarse, publicly read
     // position (centroid + jitter). We must never persist the device's raw GPS

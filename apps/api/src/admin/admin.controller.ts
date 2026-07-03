@@ -44,6 +44,13 @@ const patchSettingsSchema = z
     // Support override: when on, an admin sees every member on the map + can open
     // any (even private) profile. Privacy-sensitive — off by default.
     adminFullVisibility: z.boolean().optional(),
+    // Master kill-switch for the stories-video beta. Off by default (ships DARK);
+    // the disk guard also forces it off — this is how an admin RE-ARMS it after
+    // reclaiming disk.
+    videoEnabled: z.boolean().optional(),
+    // Master kill-switch for the weekly regional digest (E-DIGEST). Off by
+    // default (ships DARK); this is how an admin RE-ARMS it without SQL.
+    digestEnabled: z.boolean().optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field is required' });

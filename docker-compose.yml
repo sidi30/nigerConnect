@@ -77,6 +77,7 @@ services:
       mc mb --ignore-existing local/nigerconnect-private;
       mc anonymous set download local/nigerconnect;
       mc anonymous set none local/nigerconnect-private;
+      mc ilm rule add local/nigerconnect --expire-days 2 --prefix 'stories/' || mc ilm add --expiry-days 2 --prefix 'stories/' local/nigerconnect || echo 'ilm skipped';
       exit 0;
       "
 

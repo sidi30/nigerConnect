@@ -163,6 +163,7 @@ services:
       mc mb --ignore-existing local/${S3_PRIVATE_BUCKET};
       mc anonymous set download local/${S3_BUCKET};
       mc anonymous set none local/${S3_PRIVATE_BUCKET};
+      mc ilm rule add local/${S3_BUCKET} --expire-days 2 --prefix 'stories/' || mc ilm add --expiry-days 2 --prefix 'stories/' local/${S3_BUCKET} || echo 'ilm rule add skipped (already present or unsupported syntax)';
       echo 'Buckets ready.';
       "
     networks:

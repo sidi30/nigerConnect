@@ -20,7 +20,8 @@ export type NotificationType =
   | 'system'
   | 'invite_accepted'
   | 'mention'
-  | 'announcement';
+  | 'announcement'
+  | 'weekly_digest';
 
 export interface Notification {
   id: string;

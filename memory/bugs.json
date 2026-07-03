@@ -1,0 +1,53 @@
+{
+  "scan_at": "2026-07-03",
+  "scope": "S-BETA — video stories-first (S-VIDEO-1/2 backend+mobile), E-TAUX, E-DIGEST",
+  "scanned_by": "gwani-qa-tester",
+  "total": 1,
+  "by_severity": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "open_count": 0,
+  "resolved_count": 1,
+  "verdict": "RESOLVED — BUG-001 (fuite PII E-TAUX) corrige par gwani-debugger (double barriere: routes auth-gated + projection submitter PII-free). Baseline jest 392 -> 393/393 VERTE (+1 test de projection), 0 regression. api/mobile/e2e tsc verts.",
+  "bugs": [
+    {
+      "id": "BUG-001",
+      "severity": "high",
+      "area": "api",
+      "feature": "E-TAUX",
+      "title": "Fuite PII: /community-prices + /rates/banner @Public exposent nom/ville/pays du contributeur a l'anonyme",
+      "steps": "1. Un membre POST /community-prices (signale un prix). 2. Un appelant NON authentifie (aucun header Authorization) fait GET /api/community-prices (ou /community-prices/:id, ou /rates/banner). 3. La reponse inclut submitter = { id, displayName, firstName, lastName, avatarUrl, city, countryCode, identityStatus, isAmbassador } — projection PII complete.",
+      "expected": "Un appelant anonyme ne doit PAS recevoir firstName/lastName/city/countryCode d'un tiers. Le precedent cite dans la spec (marketplace /services) est AUTH-GATED (pas @Public) — meme projection mais reservee aux authentifies. Aligner: soit retirer @Public de /community-prices (list + :id) et /rates/banner, soit restreindre la projection anonyme a { id, displayName, avatarUrl, isAmbassador } et masquer firstName/lastName/city/countryCode.",
+      "actual": "list, :id (community-prices) et banner (rates) sont @Public et renvoient la projection SUBMITTER_SELECT complete. Un scraper non authentifie peut moissonner nom complet + ville + pays + avatar de chaque contributeur, y compris un compte privacyLevel='private' (privacyLevel totalement ignore dans la projection) — deanonymisation + localisation grossiere, contraire au modele de confidentialite de l'app (un compte private ne doit fuiter ni feed, ni recherche, ni carte).",
+      "files": [
+        "apps/api/src/rates/community-prices.controller.ts:33 (@Public @Get list)",
+        "apps/api/src/rates/community-prices.controller.ts:44 (@Public @Get :id)",
+        "apps/api/src/rates/rates.controller.ts:17 (@Public @Get banner — inclut prices.submitter)",
+        "apps/api/src/rates/community-prices.service.ts:23 (SUBMITTER_SELECT: firstName/lastName/city/countryCode)",
+        "apps/api/src/rates/rates.service.ts:15 (SUBMITTER_SELECT idem, utilise par getBanner)"
+      ],
+      "precedent": "apps/api/src/marketplace/services.controller.ts:41 (@Get list SANS @Public — auth-gated) + services.service.ts:20 AUTHOR_SELECT (meme forme, mais jamais expose a l'anonyme).",
+      "regression_test": "e2e/tests/api/rates-etaux.spec.ts — describe 'privacy: anonymous listing must not leak contributor PII' (BUG-001). ROUGE attendu jusqu'au fix.",
+      "note_reviewer": "Egalement releve par gwani-reviewer (CHANGES_REQUESTED, meme diagnostic). Convergence QA+revue.",
+      "status": "resolved",
+      "iterations": 1,
+      "fix_summary": "Double barriere defense-in-depth alignee sur marketplace /services. (1) AUTH-GATE: retire @Public de GET /community-prices (list + :id) et GET /rates/banner (embarque des prix avec submitter) => un anonyme recoit desormais 401, plus aucun submitter servi sans auth. /rates/today (FX pur, AUCUN submitter) reste @Public. (2) PROJECTION PII-FREE: SUBMITTER_SELECT reduit a { id, displayName, avatarUrl, isAmbassador } dans community-prices.service.ts ET rates.service.ts => firstName/lastName/city/countryCode/identityStatus retires de la reponse, meme entre membres authentifies (aucune geoloc grossiere d'un contributeur). shared-types: nouveau type CommunityPriceSubmitter (remplace PublicUser sur CommunityPrice.submitter), rebuild. Mobile CommunityPriceCard/ratesApi/rates n'utilisent que id/displayName/avatarUrl => compilent inchanges. Nit reviewer traite: toggle admin digest_enabled cable dans admin.patchSettings + getSettings + DTO (miroir de videoEnabled) => kill-switch E-DIGEST re-armable via PATCH /admin/settings.",
+      "fixed_at": "2026-07-03",
+      "fixed_by": "gwani-debugger",
+      "files_changed": [
+        "packages/shared-types/src/rates.ts (CommunityPriceSubmitter, CommunityPrice.submitter, drop PublicUser import)",
+        "apps/api/src/rates/community-prices.service.ts (SUBMITTER_SELECT PII-free)",
+        "apps/api/src/rates/rates.service.ts (SUBMITTER_SELECT PII-free)",
+        "apps/api/src/rates/community-prices.controller.ts (retire @Public list + :id)",
+        "apps/api/src/rates/rates.controller.ts (retire @Public banner; today reste @Public)",
+        "apps/api/src/admin/admin.controller.ts (patchSettingsSchema += digestEnabled)",
+        "apps/api/src/admin/admin.service.ts (getSettings + patchSettings digest_enabled)",
+        "apps/api/src/rates/community-prices.service.spec.ts (+1 test projection PII-free)",
+        "e2e/tests/api/rates-etaux.spec.ts (guard BUG-001 mis a jour: anonyme 401 + projection authentifiee PII-free; banner/list auth)"
+      ]
+    }
+  ],
+  "coverage_notes": {
+    "jest_executed": "40 suites / 392 tests PASS (2.6s). Couvre au niveau service: anti-spoof mediaType (s3.service.spec), kill-switch/verified/quotas/purge (posts.service.spec), takedown purge (moderation.service.spec), disjoncteur disque fail-closed (video-disk-guard.cron.spec), FX peg/fail-open/cache (rates.service.spec), CRUD owner-only/throttle/vote/anti-auto-vote (community-prices.service.spec), digest privacy/idempotence/kill-switch/opt-out (digest.service.spec). NB: les unit valident la LOGIQUE de projection mais pas l'exposition @Public au niveau route — d'ou BUG-001 non capte par jest.",
+    "e2e_written_not_executed": "4 suites: video-stories, rates-etaux (dont guard BUG-001), digest-optout. NON executees ici: Docker/Postgres/Redis/API down (docker daemon injoignable, /health KO). tsc e2e VERT (exit 0). A lancer en CI/manuel API up.",
+    "e2e_integration_limits": "Cas dependant d'un objet MinIO reel (anti-spoof HEAD, cap 25Mo, quota octets, ceiling actifs, purge S3 effective) = unit jest only. Cron digest (privacy/idempotence/kill-switch) sans surface HTTP (setInterval no-op en test) = unit-only par conception."
+  }
+}

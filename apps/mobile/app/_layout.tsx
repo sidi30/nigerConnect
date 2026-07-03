@@ -257,6 +257,13 @@ function NotificationDeepLink() {
         const actorId = typeof data.actorId === 'string' ? data.actorId : null;
         if (actorId) router.push(`/user/${actorId}` as never);
         else router.push('/(tabs)/invite' as never);
+      } else if (data.type === 'weekly_digest') {
+        // AGGREGATE-ONLY payload (digest.service.ts): only counts + a `screen`
+        // hint, never a third-party identity. Unknown/missing hint → feed.
+        const screen = typeof data.screen === 'string' ? data.screen : null;
+        router.push(
+          (screen === 'services' || screen === 'marketplace' ? '/(tabs)/services' : '/(tabs)') as never,
+        );
       } else {
         router.push('/settings/notifications' as never);
       }

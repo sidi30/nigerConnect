@@ -362,6 +362,8 @@ export class AdminService {
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
     adminFullVisibilityUntil: string | null;
+    videoEnabled: boolean;
+    digestEnabled: boolean;
   }> {
     const [
       registrationMode,
@@ -370,6 +372,8 @@ export class AdminService {
       adminMfaRequired,
       adminFullVisibility,
       adminFullVisibilityUntil,
+      videoEnabled,
+      digestEnabled,
     ] = await Promise.all([
       this.settings.getRegistrationMode(),
       this.settings.getDefaultInviteQuota(),
@@ -377,6 +381,8 @@ export class AdminService {
       this.settings.getSetting('admin_mfa_required', 'false'),
       this.settings.isFullVisibilityActive(),
       this.settings.fullVisibilityUntil(),
+      this.settings.isVideoEnabled(),
+      this.settings.isDigestEnabled(),
     ]);
     return {
       registrationMode,
@@ -385,6 +391,8 @@ export class AdminService {
       adminMfaRequired: adminMfaRequired === 'true',
       adminFullVisibility,
       adminFullVisibilityUntil,
+      videoEnabled,
+      digestEnabled,
     };
   }
 
@@ -399,6 +407,8 @@ export class AdminService {
       inviteExpiryDays?: number;
       adminMfaRequired?: boolean;
       adminFullVisibility?: boolean;
+      videoEnabled?: boolean;
+      digestEnabled?: boolean;
     },
     adminId: string,
   ): Promise<{
@@ -408,6 +418,8 @@ export class AdminService {
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
     adminFullVisibilityUntil: string | null;
+    videoEnabled: boolean;
+    digestEnabled: boolean;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -452,6 +464,20 @@ export class AdminService {
         ? new Date(Date.now() + FULL_VIS_TTL_HOURS * 3_600_000).toISOString()
         : '';
       writes.push(this.settings.setSetting('admin_full_visibility_until', until, adminId));
+    }
+    if (dto.videoEnabled !== undefined) {
+      // Re-arming (or manually cutting) the stories-video kill-switch. Write-through
+      // Redis makes it effective on the very next presign/create.
+      writes.push(
+        this.settings.setSetting('video_enabled', dto.videoEnabled ? 'true' : 'false', adminId),
+      );
+    }
+    if (dto.digestEnabled !== undefined) {
+      // Re-arming (or manually cutting) the weekly-digest kill-switch. Write-through
+      // Redis makes it effective on the very next cron tick (isDigestEnabled).
+      writes.push(
+        this.settings.setSetting('digest_enabled', dto.digestEnabled ? 'true' : 'false', adminId),
+      );
     }
     await Promise.all(writes);
     return this.getSettings();

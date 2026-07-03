@@ -10,6 +10,94 @@
 
 ---
 
+# SPRINT S-BETA — « La diaspora prend vie » (VIDÉO stories-first + E-TAUX + E-DIGEST)
+
+> **Sprint Goal** : livrer la beta vidéo *stories-first* (éphémère 24h, disque borné), réservée aux comptes
+> vérifiés, protégée par kill-switch fail-closed + modération, PLUS deux compagnons rétention (taux du jour,
+> digest hebdo) — le tout sans dégrader le VPS partagé ni la sécurité, en s'arrêtant au gate `READY_FOR_DEPLOY`.
+>
+> **Décisions proprio VERROUILLÉES** (ne pas re-débattre) : (1) format = STORIES-FIRST (vidéo éphémère 24h
+> d'abord, feed permanent gated ensuite) ; (2) cohorte = VERIFIED-ONLY (`identityStatus='approved'`) ;
+> (3) modération = OUI avec garde-fous (risque T&S résiduel accepté, borné par cohorte + kill-switch
+> `video_enabled` fail-closed + Report + takedown soft-delete+`s3.deleteObject` + rate-limit + SLA retrait) ;
+> (4) scope = VIDÉO + E-TAUX + E-DIGEST + kill-switch. E-GP au sprint SUIVANT. Carte native/Lottie EXCLUES.
+>
+> **Approche vidéo = A** (verrouillée) : compression **on-device** (H.265, clip court, cap taille dur), stockage
+> **MinIO** self-host avec **lifecycle/purge**, **ZÉRO transcode serveur**. Modules natifs
+> (`react-native-compressor`, `expo-video`) ⇒ **rebuild EAS + bump 1.9.0 → 1.10.0**. Réactiver le micro.
+>
+> **CONTRAINTES DURES (dans CHAQUE item)** : ZÉRO solution payante (OSS auto-hébergeable, sinon écartée) ·
+> VPS unique partagé (coût-ressource = critère de rejet) · **risque n°1 = disque** ⇒ bornage OBLIGATOIRE
+> (stories TTL 24h + MinIO lifecycle + garde disque globale fail-closed + purge objet S3 au delete/expiry) ·
+> Zod partout · AuthZ anti-IDOR · privacy public/friends/private (un private ne fuite JAMAIS) · médias bindés
+> owner + **Content-Type réel vérifié (HEAD) et confronté au `mediaType` client** (anti-spoofing).
+>
+> **Joints code réels confirmés (file:line)** :
+> - `s3.service.ts:212 assertOwnedPublicImage` — image-only (allowlist `image/jpeg|png|webp|heic`, cap 15 Mo),
+>   HEAD vérifie le Content-Type réel MAIS le `mediaType` client n'est jamais confronté au HEAD. Vidéo rejetée.
+>   `deleteObject` (`:243`) existe mais non câblé à l'expiry stories.
+> - `posts.service.ts:598 deleteExpiredStories` — `updateMany` **soft-delete DB uniquement**, **aucune purge S3**
+>   (dette disque à corriger). Création story `:124-136` : `storyExpiresAt=now+24h`, guard image, `isStory:true`.
+> - `docker-compose.prod.yml:153 minio-init` — `mc mb` + ACL seulement, **aucun `mc ilm` lifecycle** configuré.
+> - `schema.prisma:221 enum MediaType { image video }` + `PostMedia` complet ⇒ quasi aucune migration média.
+> - Mobile : aucun module vidéo présent ; micro OFF (`microphonePermission:false`, `RECORD_AUDIO` blocké).
+
+## S-VIDEO-0 — ADR pipeline stories-vidéo (gwani-architect) · **Prio 5.0 — GATE (bloque S-VIDEO-1/2/3)**
+**But** : figer le contrat technique complet AVANT tout code, et trancher les 3 sous-décisions restantes avec une reco.
+- Contrat presign vidéo (`video/mp4` + `video/quicktime`), **garde média vidéo** = nouveau
+  `assertOwnedPublicMedia(url, ownerId, expectedMediaType)` : HEAD → Content-Type réel ∈ allowlist vidéo,
+  **confronter au `mediaType` déclaré client** (rejet si divergence = anti-spoofing image↔vidéo), cap taille
+  vidéo dure, garder le garde image existant pour les photos.
+- **Bornage disque** : MinIO lifecycle sur préfixe éphémère stories (`mc ilm rule add`, expire 48h) à ajouter au
+  `minio-init` ; **purge objet S3 dans `deleteExpiredStories`** (corriger la dette soft-delete) et au delete/takedown ;
+  **garde disque globale fail-closed** (au-delà d'un seuil volume MinIO → bascule `video_enabled=false` + alerte).
+- **Quota/user** (Redis, throttle existant) + **rate-limit upload** ; **gate verified-only** (`identityStatus='approved'`) ;
+  kill-switch `video_enabled` (AppSetting, **fail-closed**) ; flux modération (Report existant → takedown soft-delete +
+  `s3.deleteObject`) ; privacy stories vidéo.
+- **Sous-décisions à trancher (reco + marquer ce qui exige un OK proprio explicite)** :
+  1. Limites exactes (défauts proposés : 30 s stories / 720p / ≤25 Mo / quota 10 vidéos ou 200 Mo/user / 5 uploads/j).
+  2. Audio sonore (réactiver `RECORD_AUDIO`) vs muet d'abord.
+  3. Privacy : parité bucket public + uuid vs bucket privé + presigned GET pour `friends`/`private`.
+- **Livrable** : `docs/adr/ADR-video-stories.md` + `memory/video-api-contracts.json`. Ne bloque pas : applique les
+  défauts s'ils sont raisonnables, marque explicitement ce qui requiert un GO proprio.
+**DoD** : ADR complet, contrat presign+garde+caps+quota+lifecycle+purge+garde-disque+kill-switch+modération+gate
+verified figés ; empreinte ressource chiffrée (hôte partagé) ; 0 dépendance payante ; sous-décisions tranchées/marquées.
+
+## S-VIDEO-1 — Backend DARK (gwani-backend) · **Prio 5.0 — dépend de S-VIDEO-0**
+Presign vidéo · garde média vidéo (`assertOwnedPublicMedia` : Content-Type réel HEAD confronté au `mediaType` client +
+caps vidéo) · quota/user Redis + rate-limit upload · **MinIO lifecycle stories + purge objet S3 au delete/expiry
+(corrige `deleteExpiredStories`)** · **garde disque globale fail-closed** · kill-switch `video_enabled` fail-closed ·
+**gate verified-only** sur publication vidéo · flux Report→takedown (soft-delete + `s3.deleteObject`). **AUCUN mobile.**
+Déployable et **INERTE tant que `video_enabled=false`**.
+**DoD** : Zod tout body · AuthZ anti-IDOR · privacy respectée · média bindé owner + Content-Type vérifié ·
+lifecycle + garde disque + purge **testés** (disque borné prouvé) · flag OFF prouvé inerte · `tsc` api + jest verts.
+
+## S-VIDEO-2 — Mobile rebuild vidéo (gwani-frontend) · **Prio 4.5 — dépend de S-VIDEO-1 (contrat)**
+Capture/pick vidéo + compression **H.265** (`react-native-compressor`) + vignette + player (`expo-video`) dans le
+story composer/viewer · progress/retry/cancel · **pas d'autoplay cellular** (vignette + tap-to-play) · réactiver le
+micro (`microphonePermission`, retirer `RECORD_AUDIO` de `blockedPermissions`, ajouter `READ_MEDIA_VIDEO`) ·
+**bump `app.json` 1.9.0 → 1.10.0** (module natif ⇒ rebuild). **Le build EAS = action SORTANTE ⇒ NE PAS lancer** (gate proprio).
+**DoD** : `tsc` mobile vert · flux capture→compress→upload→lecture démontré · no-autoplay-cellular · bump 1.10.0 fait.
+
+## S-VIDEO-3 — QA + Sécurité (gwani-qa-tester → gwani-pentest) · **Prio 5.0 — GATE DUR**
+e2e + unit · pentest OBLIGATOIRE : binding média, **spoofing `mediaType` vs Content-Type**, IDOR, fuite privacy
+stories-vidéo, quota/rate-limit contournables, kill-switch fail-closed, gate verified-only, purge/lifecycle disque.
+**DoD** : suites vertes (api tsc + mobile tsc + jest + e2e) · verdict `gwani-pentest` = **OK_TO_DEPLOY** (0 critical/high).
+
+## E-TAUX — Taux du jour + prix crowdsourcés (gwani-pm-spec → backend/frontend) · **Prio 4.0 — OTA-safe sur 1.10.0**
+Taux XOF↔EUR/USD/CAD (**source GRATUITE** : open-data recalculé OU saisie communautaire modérée, **PAS d'API payante**)
++ prix signalés (`CommunityPrice` : type/route/montant/devise/votes/createdAt) + bandeau léger en tête de feed.
+Zod, AuthZ (1 saisie/vote par user), **anti-spam**, modération/report. Parallélisable avec S-VIDEO-*.
+**DoD** : Zod · AuthZ · anti-spam · aucune source payante · tests verts · revue + pentest.
+
+## E-DIGEST — Digest hebdo push (gwani-pm-spec → backend) · **Prio 3.0 — API-only, OTA-safe**
+1 cron (comme stories/invitations) + **Expo Push (gratuit)** · notif hebdo agrégée (événements/annonces/nouveaux
+membres de la région) · **opt-out** simple dans les réglages · **privacy stricte : jamais révéler un compte private**
+(agrégats seulement). Parallélisable.
+**DoD** : Zod · privacy stricte (compte private jamais exposé) · opt-out respecté · cron idempotent · tests verts.
+
+---
+
 # VAGUE 360° — juillet 2026 (LIVES · Marketplace secondaire · Profil · gaps diaspora)
 
 > Discovery livrée : recherche marché `memory/market.md`, diagnostic stratégique (gwani-conseiller-strategique

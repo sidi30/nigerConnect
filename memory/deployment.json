@@ -1,54 +1,39 @@
 {
-  "deployed_at": "2026-07-02T20:30:39Z",
-  "git_sha": "e8ce4a5",
-  "commit_message": "feat(profile): compteurs autoritatifs (amis/posts/photos) + apercu borne & ecran amis pagine",
+  "deployed_at": "2026-07-03T05:55:00Z",
+  "git_sha": "1c9e9b4",
+  "commit_message": "feat(marketplace): surface Entraide — intent-first, galerie multi-images, edit/delete",
   "status": "DEPLOYED",
+  "sprint_scope": "S4 E-MARKET (surface Entraide) — GO proprio explicite 2026-07-03 (\"GO deploy and build\")",
   "server": "root@46.224.193.109",
   "app_dir": "/opt/apps/nigerConnect",
   "api_domain": "api.nigerconnect.app",
   "web_domain": "nigerconnect.app",
   "method": "git archive HEAD | ssh -> scripts/deploy-vps.sh",
-  "sprint_scope": "S3 profil uniquement (checkpoints.deploy_approved_scope, memory/status.json)",
-  "preflight": {
-    "all_passed": true,
-    "P1_deploy_approved": "ok — memory/status.json checkpoints.deploy_approved=true, scope=S3 profil",
-    "P2_pipeline_status": "ok — current=READY_FOR_DEPLOY",
-    "P3_security_severity": "ok (source alternative) — memory/security.json et memory/review.md n'existent pas comme fichiers dedies dans ce repo; verdict consolide dans memory/status.json: sprint.result.pentest = 'OK_TO_DEPLOY (0 critical, 0 high)', reviewer = 'READY (aucun bloquant)'. Ecart de forme signale, pas de blocage.",
-    "P4_review_approved": "ok (source alternative, voir P3)",
-    "P5_target": "ok — fourni explicitement par l'orchestrateur dans ce message (app_dir=/opt/apps/nigerConnect, API_CTN=nigerconnect-api) + confirme par CLAUDE.md",
-    "P6_ssh": "ok — echo OK",
-    "P7_script_present": "ok — scripts/deploy-vps.sh present localement (exec) ET sur le serveur; .env.prod present sur le serveur",
-    "P8_commit_clean": "ok (nuance) — HEAD=e8ce4a5 correspond au commit attendu; seul memory/status.json modifie localement (bookkeeping, hors app code, exclu de git archive HEAD)"
-  },
-  "backup_before": "backups/pre-deploy-e8ce4a5-20260702-223039.sql.gz (60K) — verifie: dump PostgreSQL valide (en-tete pg_dump + schema nigerconnect present)",
+  "backup_before": "backups/pre-deploy-1c9e9b4-20260703-055359.sql.gz (60K, pg_dump valide) — pris manuellement (deploy-vps.sh ne backup pas)",
   "migration": {
     "status": "ok",
-    "detail": "32 migrations trouvees, 'No pending migrations to apply' — conforme a l'attendu (compteurs via _count Prisma, zero migration de schema pour ce sprint)"
-  },
-  "build": {
-    "images": ["nigerconnect-api:latest", "nigerconnect-web:latest"],
-    "result": "Built ok (essentiellement depuis le cache Docker, layers app rebuild pour le nouveau code)"
+    "applied": ["20260702000000_add_service_media_intent"],
+    "detail": "Additif reversible: enum ServiceIntent + colonne service_requests.intent (default help_free), table service_media (cascade FK -> service_requests). Verifie live: table + index + FK CASCADE + enum {help_free,paid_service} presents."
   },
   "health_checks": {
-    "internal_api_x3": [
-      "{\"status\":\"ok\",...,\"checks\":{\"db\":\"ok\",\"redis\":\"ok\"}}",
-      "{\"status\":\"ok\",...,\"checks\":{\"db\":\"ok\",\"redis\":\"ok\"}}",
-      "{\"status\":\"ok\",...,\"checks\":{\"db\":\"ok\",\"redis\":\"ok\"}}"
-    ],
-    "containers": "nigerconnect-api Up (healthy), nigerconnect-web Up (healthy), nigerconnect-minio/redis/postgres inchanges et healthy",
-    "public_https": "curl -sf https://api.nigerconnect.app/health (depuis le serveur) -> 200, {status:ok, db:ok, redis:ok}",
-    "post_deploy_error_grep": "aucune ligne ERROR/FATAL/Exception dans les 150 dernieres lignes de logs api"
+    "internal_api": "{\"status\":\"ok\",\"checks\":{\"db\":\"ok\",\"redis\":\"ok\"}} (uptime 17s post-recreate)",
+    "containers": "api + web recreated & started; postgres/redis/minio healthy inchanges",
+    "post_deploy_error_grep": "aucune ligne error/fatal/exception dans les 120 dernieres lignes de logs api"
   },
-  "security_checks": {
-    "S1_https_public": "ok — https://api.nigerconnect.app/health repond HTTP/2 200 (TLS Traefik/acme valide). Note: http://api.nigerconnect.app/health (port 80) repond 404 (pas de redirect 301/308 visible) — comportement pre-existant du routeur Traefik, non modifie par ce deploy (aucun changement de labels/compose dans ce sprint); signale pour info, non bloquant, a verifier au niveau infra globale si souhaite.",
-    "S3_db_unexposed": "ok — docker ps: nigerconnect-postgres n'expose que 5432/tcp (interne au reseau compose), aucun mapping 0.0.0.0:5432 sur l'hote",
-    "S4_api_unexposed": "ok — nigerconnect-api n'expose que 3000/tcp (interne), Traefik uniquement en frontal",
-    "S5_nonroot": "ok — api User=nodejs, web User=nextjs (aucun conteneur applicatif en root)",
-    "S6_no_secrets_in_repo": "ATTENTION (pre-existant, hors scope de ce deploy) — git ls-files remonte apps/mobile/google-services.json trackee depuis le commit d2bb9e9 (01/05/2026, message 'Track google-services.json so EAS Build can embed it'), decision deliberee documentee dans .gitignore ('google-services.json itself is shipped inside every APK we build'). Fichier mobile, non touche par e8ce4a5, sans lien avec le deploy API/web de ce sprint. Pas de .pem/.p8/.keystore/service-account/.env trackes. Signale a titre informatif, pas traite comme blocage pour CE deploy (rollback API/web n'y changerait rien).",
-    "S7_backup_created": "ok — backups/pre-deploy-e8ce4a5-20260702-223039.sql.gz present et verifie sur le serveur"
+  "security": {
+    "pentest": "OK_TO_DEPLOY (0 critical/high/medium/low) — memory/security.json. IDOR media/ownership, Zod, cascade DELETE, privacy AUTHOR_SELECT neutralises.",
+    "tests": "jest 332/332 (marketplace 15/15 dont 2 regression securite), api tsc + mobile tsc verts"
   },
-  "rollback_command": "git archive bdfd7f4 | ssh -o BatchMode=yes root@46.224.193.109 'cd /opt/apps/nigerConnect && tar xf - && find . -name \"*.sh\" -exec sed -i \"s/\\r$//\" {} + && chmod +x scripts/*.sh && ./scripts/deploy-vps.sh'",
-  "rollback_db": "gunzip -c backups/pre-deploy-e8ce4a5-20260702-223039.sql.gz | docker exec -i nigerconnect-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB",
-  "rollback_note": "Non necessaire — aucune migration jouee (0 pending), pas de mutation de schema. Backup conserve par precaution standard.",
-  "notes": "Deploy nominal, scope S3 profil (compteurs autoritatifs). Deux ecarts de forme signales sans impact bloquant: (1) memory/security.json et memory/review.md n'existent pas comme fichiers dedies dans ce repo — l'info equivalente vit dans memory/status.json (pentest OK_TO_DEPLOY 0/0, reviewer READY); (2) apps/mobile/google-services.json trackee en git — decision assumee et documentee, anterieure et sans rapport avec ce sprint. Health interne + public + conteneurs tous verts, zero erreur post-demarrage."
+  "mobile_build": {
+    "delivery": "BUILD EAS (pas OTA) — gros changement, bump 1.8.0 -> 1.9.0",
+    "command": "eas build --platform all --profile production --auto-submit --non-interactive --no-wait",
+    "version": "1.9.0",
+    "android": { "buildId": "c0512a90-5334-4299-94b4-6cfc6f07f31e", "versionCode": 11, "submit": "Play track internal", "submissionId": "60642fe8-47b5-4b98-97e6-5286ce8d49d6" },
+    "ios": { "buildId": "c9e3709f-022a-4005-8e52-f762352abdda", "buildNumber": 29, "submit": "TestFlight (ASC key D7QVR3G93J)", "submissionId": "82a7eb4e-6ac8-4432-a600-16186fe1e29b" },
+    "note": "Cloud EAS (--no-wait): suivre expo.dev/accounts/sidi30/projects/nigerconnect, ne pas poller. iOS 1er submit de version -> repondre Export Compliance dans ASC (chiffrement standard = Non)."
+  },
+  "rollback_command": "git archive e8ce4a5 | ssh -o BatchMode=yes root@46.224.193.109 'cd /opt/apps/nigerConnect && tar xf - && find . -name \"*.sh\" -exec sed -i \"s/\\r$//\" {} + && chmod +x scripts/*.sh && ./scripts/deploy-vps.sh'",
+  "rollback_db": "gunzip -c backups/pre-deploy-1c9e9b4-20260703-055359.sql.gz | docker exec -i nigerconnect-postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'",
+  "rollback_note": "Migration additive (add column default + add table) — rollback code seul (e8ce4a5) laisse la table/enum en place sans casser l'ancien code (colonnes ignorees). Restaurer la DB uniquement si necessaire.",
+  "notes": "S4 E-MARKET deploye API + build mobile 1.9.0 soumis. git push origin NON effectue (non demande). Deploy nominal, health verte, 0 erreur."
 }

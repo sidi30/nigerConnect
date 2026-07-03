@@ -94,6 +94,16 @@ const envSchema = z
 
     SENTRY_DSN: z.string().optional(),
     AXIOM_TOKEN: z.string().optional(),
+
+    // Global disk ceiling for the stories-video beta. When MinIO's reported
+    // usage for the public bucket crosses this, VideoDiskGuardCron trips the
+    // `video_enabled` kill-switch (fail-closed) — new uploads stop, existing
+    // content stays until expiry. Default 10 Go. Re-arm is MANUAL only (admin).
+    // Raising this beyond the provisioned MinIO volume = owner GO (disk risk).
+    VIDEO_DISK_GUARD_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024 * 1024),
+    // Internal MinIO Prometheus metrics endpoint scraped by the disk guard
+    // (bucket usage is maintained by MinIO's own scanner — zero API CPU).
+    MINIO_METRICS_URL: z.string().url().default('http://minio:9000/minio/v2/metrics/cluster'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;

@@ -103,3 +103,16 @@ describe('SettingsService — proximity kill-switch + city allowlist', () => {
     expect(await svc.isProximityRegionAllowed(null, null)).toBe(false);
   });
 });
+
+describe('SettingsService — stories-video kill-switch', () => {
+  it('video disabled by default (fail-closed, ships DARK)', async () => {
+    expect(await makeService({}).isVideoEnabled()).toBe(false);
+    expect(await makeService({ video_enabled: 'false' }).isVideoEnabled()).toBe(false);
+  });
+
+  it('video enabled only when explicitly "true"', async () => {
+    expect(await makeService({ video_enabled: 'true' }).isVideoEnabled()).toBe(true);
+    // Any other truthy-looking value is still OFF (strict equality).
+    expect(await makeService({ video_enabled: '1' }).isVideoEnabled()).toBe(false);
+  });
+});

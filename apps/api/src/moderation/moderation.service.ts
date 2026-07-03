@@ -1,11 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { ReportTargetType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { S3Service } from '../common/storage/s3.service';
 import type { CreateReportDto, ListReportsDto, ResolveReportDto } from './dto/report.dto';
 
 @Injectable()
 export class ModerationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ModerationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3: S3Service,
+  ) {}
 
   async create(reporterId: string, dto: CreateReportDto) {
     return this.prisma.report.create({
@@ -134,6 +140,32 @@ export class ModerationService {
         if (!association) return { type: 'association' as const, found: false as const };
         return { type: 'association' as const, found: true as const, ...association };
       }
+      case 'community_price': {
+        const price = await this.prisma.communityPrice.findUnique({
+          where: { id: targetId },
+          select: {
+            id: true,
+            type: true,
+            originCity: true,
+            originCountry: true,
+            destCity: true,
+            destCountry: true,
+            provider: true,
+            amount: true,
+            currency: true,
+            note: true,
+            trustScore: true,
+            status: true,
+            createdAt: true,
+            submitter: { select: authorSelect },
+          },
+        });
+        if (!price) return { type: 'community_price' as const, found: false as const };
+        // The entity itself has a `type` column (billet/transfert/colis) — expose
+        // it as `priceType` so it doesn't collide with the target discriminator.
+        const { type: priceType, ...rest } = price;
+        return { type: 'community_price' as const, found: true as const, priceType, ...rest };
+      }
       default:
         return { type: targetType, found: false as const };
     }
@@ -179,9 +211,29 @@ export class ModerationService {
   private async removeContent(type: ReportTargetType, id: string): Promise<void> {
     const now = new Date();
     switch (type) {
-      case 'post':
+      case 'post': {
+        // Takedown must also free the disk (posts include stories). Purge each
+        // media object best-effort BEFORE the soft-delete so a resolved report
+        // never leaves an S3 ghost behind (ADR-006). A purge failure is logged,
+        // not fatal — the row still gets soft-deleted.
+        const post = await this.prisma.post.findUnique({
+          where: { id },
+          select: { media: { select: { mediaUrl: true, thumbnailUrl: true } } },
+        });
+        let purged = 0;
+        for (const m of post?.media ?? []) {
+          for (const url of [m.mediaUrl, m.thumbnailUrl]) {
+            if (!url) continue;
+            const key = this.s3.parsePublicKey(url);
+            if (!key) continue;
+            await this.s3.deleteObject(key);
+            purged += 1;
+          }
+        }
         await this.prisma.post.update({ where: { id }, data: { deletedAt: now } });
+        this.logger.log(`content_removed post=${id} purged=${purged}`);
         return;
+      }
       case 'message':
         await this.prisma.message.update({
           where: { id },
@@ -190,6 +242,12 @@ export class ModerationService {
         return;
       case 'comment':
         await this.prisma.comment.update({ where: { id }, data: { deletedAt: now } });
+        return;
+      case 'community_price':
+        // Takedown = soft status flip (no media to purge). Hidden from the
+        // default list and vote-locked while removed.
+        await this.prisma.communityPrice.update({ where: { id }, data: { status: 'removed' } });
+        this.logger.log(`content_removed community_price=${id}`);
         return;
       default:
         return;

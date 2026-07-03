@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { StoryVideoPlayer } from '@/components/feed/StoryVideoPlayer';
 import { feedApi } from '@/services/feedApi';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, palette, Spacing, Typography } from '@/constants/theme';
@@ -38,7 +39,12 @@ export default function StoryViewerScreen() {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoNeedsTap, setVideoNeedsTap] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
+
+  const activeMedia = stories[index]?.media[0];
+  const isVideoStory = activeMedia?.mediaType === 'video';
 
   const deleteMut = useMutation({
     mutationFn: (storyId: string) => feedApi.deleteStory(storyId),
@@ -58,8 +64,16 @@ export default function StoryViewerScreen() {
     },
   });
 
+  // Reset the per-clip video progress whenever we move to another story.
+  useEffect(() => {
+    setVideoProgress(0);
+  }, [index]);
+
   useEffect(() => {
     if (stories.length === 0) return;
+    // Video stories drive their own timing (advance on `playToEnd`) — no auto
+    // timer, so a paused/tap-gated clip doesn't get skipped after 5 s.
+    if (isVideoStory) return;
     if (paused || confirmDelete) return;
     progress.setValue(0);
     const anim = Animated.timing(progress, {
@@ -76,7 +90,7 @@ export default function StoryViewerScreen() {
       }
     });
     return () => anim.stop();
-  }, [index, stories.length, progress, router, paused, confirmDelete]);
+  }, [index, stories.length, progress, router, paused, confirmDelete, isVideoStory]);
 
   function prev() {
     progress.setValue(0);
@@ -101,9 +115,27 @@ export default function StoryViewerScreen() {
   }
   const media = current.media[0];
 
+  const advance = () => {
+    if (index < stories.length - 1) {
+      setIndex(index + 1);
+    } else {
+      router.back();
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {media ? (
+      {media && media.mediaType === 'video' ? (
+        <StoryVideoPlayer
+          uri={media.mediaUrl}
+          posterUri={media.thumbnailUrl}
+          isActive
+          paused={paused || confirmDelete}
+          onComplete={advance}
+          onProgress={setVideoProgress}
+          onNeedsTapChange={setVideoNeedsTap}
+        />
+      ) : media ? (
         <Image source={{ uri: media.mediaUrl }} style={styles.image} contentFit="cover" />
       ) : (
         <View style={[styles.image, { backgroundColor: Colors.brown }]} />
@@ -118,12 +150,15 @@ export default function StoryViewerScreen() {
                 style={[
                   styles.progressFill,
                   i < index && { width: '100%' },
-                  i === index && {
-                    width: progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  },
+                  i === index &&
+                    (isVideoStory
+                      ? { width: `${Math.round(videoProgress * 100)}%` }
+                      : {
+                          width: progress.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0%', '100%'],
+                          }),
+                        }),
                 ]}
               />
             </View>
@@ -173,8 +208,9 @@ export default function StoryViewerScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Tap zones — left = prev, right = next. Disabled while the confirm modal is open. */}
-      {!confirmDelete ? (
+      {/* Tap zones — left = prev, right = next. Hidden while the confirm modal is
+          open, or while a video awaits its first tap (so the play button wins). */}
+      {!confirmDelete && !(isVideoStory && videoNeedsTap) ? (
         <>
           <Pressable style={styles.tapLeft} onPress={prev} />
           <Pressable style={styles.tapRight} onPress={next} />

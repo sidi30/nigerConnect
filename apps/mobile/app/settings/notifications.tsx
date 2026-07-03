@@ -72,6 +72,14 @@ function routeForNotification(n: Notification): string | null {
       const actor = str('actorId');
       return actor ? `/user/${actor}` : '/(tabs)/invite';
     }
+    case 'weekly_digest': {
+      // AGGREGATE-ONLY payload (see digest.service.ts): only numbers + a
+      // `screen` hint, never a third-party identity. Unknown/missing hints
+      // fall back to the feed.
+      const screen = str('screen');
+      if (screen === 'services' || screen === 'marketplace') return '/(tabs)/services';
+      return '/(tabs)';
+    }
     default:
       return null;
   }
@@ -96,6 +104,7 @@ const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
   poll_new: { icon: 'bar-chart-2', color: Colors.info },
   review_received: { icon: 'star', color: Colors.orange },
   invite_accepted: { icon: 'gift', color: Colors.green },
+  weekly_digest: { icon: 'trending-up', color: Colors.info },
   announcement: { icon: 'volume-2', color: Colors.orange },
   system: { icon: 'volume-2', color: Colors.tan500 },
 };

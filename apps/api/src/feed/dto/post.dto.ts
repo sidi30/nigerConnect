@@ -36,6 +36,17 @@ export const createStorySchema = z.object({
 });
 export type CreateStoryDto = z.infer<typeof createStorySchema>;
 
+/**
+ * Body of POST /stories/presign. The allowlist here MUST stay in lock-step with
+ * S3Service.ALLOWED_VIDEO_TYPES — only mp4/quicktime clips get a presigned PUT.
+ * The presign is gated (video_enabled + verified + daily-cap) BEFORE signing so
+ * an object can never land on MinIO outside the cohort / when the feature is off.
+ */
+export const presignVideoSchema = z.object({
+  contentType: z.enum(['video/mp4', 'video/quicktime']),
+});
+export type PresignVideoDto = z.infer<typeof presignVideoSchema>;
+
 export const feedQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),

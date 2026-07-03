@@ -84,6 +84,12 @@ model User {
   newsletterOptIn Boolean  @default(true) @map("newsletter_opt_in")
   newsletterToken String?  @unique @map("newsletter_token") @db.VarChar(64)
   proximityRadius Int      @default(100) @map("proximity_radius")
+  // Weekly regional digest (E-DIGEST). Opt-OUT: ON by default; the member toggles
+  // it in Privacy settings. lastDigestSentAt stamps the last successful send and
+  // enforces at-most-once per 7-day sliding window (idempotent cron, no double push
+  // on restart/relaunch — the stamp is written BEFORE the push is fired).
+  digestOptIn      Boolean   @default(true) @map("digest_opt_in")
+  lastDigestSentAt DateTime? @map("last_digest_sent_at") @db.Timestamptz
 
   // Ephemeral, PRIVATE proximity-matching position. Written by the foreground
   // proximity ping and used ONLY by the Haversine matcher (filtered by
@@ -160,6 +166,8 @@ model User {
   pollVotes               PollVote[]
   reviewsAuthored         Review[]             @relation("ReviewAuthor")
   reviewsReceived         Review[]             @relation("ReviewTargetUser")
+  communityPrices         CommunityPrice[]
+  communityPriceVotes     CommunityPriceVote[]
 
   // ── Parrainage ──────────────────────────────────────────────────
   // Parrain direct (arbre). SetNull si le parrain supprime son compte —
@@ -195,6 +203,9 @@ model User {
   @@index([showOnMap, status])
   @@index([invitedById])
   @@index([invitedViaId])
+  // Powers the E-DIGEST batch selection (opt-in + due members), keeping the
+  // hourly cron scan cheap even as the member table grows.
+  @@index([digestOptIn, lastDigestSentAt])
   @@map("users")
 }
 
@@ -330,6 +341,10 @@ enum NotificationType {
   invite_accepted
   mention
   announcement
+  // Weekly regional retention digest (E-DIGEST). Aggregate-only push
+  // (counts of events / help requests / new PUBLIC members near the member);
+  // never carries a third-party name/id. Sent at most once per 7-day window.
+  weekly_digest
 }
 
 // ── Parrainage ────────────────────────────────────────────────────
@@ -355,6 +370,7 @@ enum ReportTargetType {
   message
   association
   comment
+  community_price
 }
 
 enum ReportReason {
@@ -722,6 +738,81 @@ model ServiceRating {
   @@unique([requestId, ratedUserId])
   @@index([ratedUserId])
   @@map("service_ratings")
+}
+
+// ── E-TAUX : taux du jour + prix crowdsourcés ─────────────────────────────
+// FX snapshot published by the ECB (eurofxref-daily.xml — free, no key, no
+// quota). One row per published TARGET business day. EUR/XOF is NOT stored:
+// it is a regulatory constant (1 EUR = 655.957 XOF, UEMOA peg since 1999),
+// coded in the service layer. XOF/USD & XOF/CAD are derived at read time from
+// the latest snapshot + peg — never stored, never user-supplied.
+model FxRateSnapshot {
+  id        String   @id @default(uuid()) @db.Uuid
+  asOf      DateTime  @unique @map("as_of") @db.Date // ECB publication day
+  eurUsd    Decimal  @map("eur_usd") @db.Decimal(10, 6)
+  eurCad    Decimal  @map("eur_cad") @db.Decimal(10, 6)
+  source    String   @default("ecb") @db.VarChar(20)
+  fetchedAt DateTime @default(now()) @map("fetched_at") @db.Timestamptz
+
+  @@index([asOf(sort: Desc)])
+  @@map("fx_rate_snapshots")
+}
+
+enum CommunityPriceType {
+  billet_avion
+  transfert_argent
+  colis_kg
+}
+
+enum CommunityPriceStatus {
+  active
+  removed // takedown modération (Report → content_removed)
+}
+
+// A community-reported price (plane ticket / money transfer / parcel per kg).
+// No official free source exists for these, so they are crowdsourced + voted
+// for trust. No media field → no S3 dependency.
+model CommunityPrice {
+  id            String               @id @default(uuid()) @db.Uuid
+  submitterId   String               @map("submitter_id") @db.Uuid
+  submitter     User                 @relation(fields: [submitterId], references: [id], onDelete: Cascade)
+  type          CommunityPriceType
+  originCity    String?              @map("origin_city") @db.VarChar(100)
+  originCountry String?              @map("origin_country") @db.Char(2)
+  destCity      String?              @map("dest_city") @db.VarChar(100)
+  destCountry   String?              @map("dest_country") @db.Char(2)
+  provider      String?              @db.VarChar(100)
+  amount        Decimal              @db.Decimal(12, 2)
+  currency      String               @db.Char(3)
+  note          String?              @db.VarChar(280)
+  // Denormalised sum of votes, kept coherent with the vote rows in the same
+  // transaction (mirror of Comment.likeCount).
+  trustScore    Int                  @default(0) @map("trust_score")
+  status        CommunityPriceStatus @default(active)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz
+
+  votes CommunityPriceVote[]
+
+  @@index([type, status, createdAt(sort: Desc)])
+  @@index([type, originCountry, destCountry, status])
+  @@index([submitterId])
+  @@map("community_prices")
+}
+
+// Trust vote on a community price. Composite PK (userId, priceId) makes the
+// vote unique per user (anti double-vote) — mirror of CommentLike.
+model CommunityPriceVote {
+  userId    String         @map("user_id") @db.Uuid
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  priceId   String         @map("price_id") @db.Uuid
+  price     CommunityPrice @relation(fields: [priceId], references: [id], onDelete: Cascade)
+  value     Int // 1 = fiable, -1 = pas fiable
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([userId, priceId])
+  @@index([priceId])
+  @@map("community_price_votes")
 }
 
 model Association {

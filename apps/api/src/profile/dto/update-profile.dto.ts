@@ -24,6 +24,9 @@ export const updateProfileSchema = z.object({
   languages: z.array(z.string().min(2).max(5)).max(10).optional(),
   privacyLevel: z.enum(['public', 'friends', 'private']).optional(),
   newsletterOptIn: z.boolean().optional(),
+  // E-DIGEST opt-out (weekly regional digest). ON by default; mirror of
+  // newsletterOptIn — an independent toggle in Privacy settings.
+  digestOptIn: z.boolean().optional(),
 });
 
 export type UpdateProfileDto = z.infer<typeof updateProfileSchema>;

@@ -11,6 +11,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { PostsService } from './posts.service';
@@ -21,12 +22,14 @@ import {
   createPostSchema,
   createStorySchema,
   feedQuerySchema,
+  presignVideoSchema,
   reactSchema,
   updatePostSchema,
   type CreateCommentDto,
   type CreatePostDto,
   type CreateStoryDto,
   type FeedQueryDto,
+  type PresignVideoDto,
   type ReactDto,
   type UpdatePostDto,
 } from './dto/post.dto';
@@ -180,6 +183,23 @@ export class FeedController {
   }
 
   // ── Stories ────────────────────────────────────────────────
+
+  /**
+   * POST /stories/presign — presigned PUT for a story VIDEO. Gated (kill-switch +
+   * verified + daily-cap) inside the service BEFORE any URL is signed. Tightened
+   * throttle: 5/min per IP (the create is 10/min). Rejected with 403 while the
+   * feature ships DARK (video_enabled off).
+   */
+  @Throttle({ short: { limit: 5, ttl: 60_000 } })
+  @Post('stories/presign')
+  presignStoryVideo(
+    @CurrentUser() me: JwtUserPayload,
+    @Body(new ZodValidationPipe(presignVideoSchema)) dto: PresignVideoDto,
+  ) {
+    return this.posts.presignStoryVideo(me.sub, dto);
+  }
+
+  @Throttle({ short: { limit: 10, ttl: 60_000 } })
   @Post('stories')
   createStory(
     @CurrentUser() me: JwtUserPayload,

@@ -18,6 +18,7 @@ import { Loader } from '@/components/ui/Loader';
 import { FeedSkeletonList } from '@/components/ui/Skeleton';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FriendRequestsBanner } from '@/components/feed/FriendRequestsBanner';
+import { RatesBanner } from '@/components/feed/RatesBanner';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +26,7 @@ import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme
 import { feedApi } from '@/services/feedApi';
 import { friendsApi } from '@/services/friendsApi';
 import { notificationApi } from '@/services/notificationApi';
+import { ratesApi } from '@/services/ratesApi';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/stores/toastStore';
 
@@ -51,6 +53,14 @@ export default function FeedTab() {
   const storiesQuery = useQuery({
     queryKey: ['stories'],
     queryFn: () => feedApi.stories(),
+  });
+
+  // Feed-head banner: taux du jour + 1 prix communautaire par type. Public
+  // endpoint, cache-first server-side (~5min) — safe to refetch on focus.
+  const ratesQuery = useQuery({
+    queryKey: ['rates', 'banner'],
+    queryFn: () => ratesApi.banner(),
+    staleTime: 60_000,
   });
 
   const requestsQuery = useQuery({
@@ -239,6 +249,11 @@ export default function FeedTab() {
                 <Feather name="chevron-right" size={22} color={Colors.orange} />
               </Pressable>
             ) : null}
+            <RatesBanner
+              rates={ratesQuery.data?.rates}
+              loading={ratesQuery.isLoading}
+              onPress={() => router.push('/rates' as never)}
+            />
             <StoriesRow
               storyGroups={storiesQuery.data ?? []}
               onCreate={() => router.push('/stories/new' as never)}
@@ -280,6 +295,7 @@ export default function FeedTab() {
               void feedQuery.refetch();
               void storiesQuery.refetch();
               void requestsQuery.refetch();
+              void ratesQuery.refetch();
             }}
             tintColor={Colors.orange}
           />

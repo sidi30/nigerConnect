@@ -145,6 +145,30 @@ export class SettingsService {
     return false;
   }
 
+  /**
+   * Master kill-switch for the "stories video" beta feature. OFF by default so
+   * the pipeline ships DARK and a misconfig / DB+Redis failure fails CLOSED
+   * (getSetting returns the 'false' default on total outage). Mirror of
+   * isProximityEnabled. Checked at BOTH the video presign and the video create,
+   * and flipped OFF automatically by the disk guard when MinIO usage trips the
+   * ceiling. Re-arming is manual only (admin PATCH /admin/settings).
+   */
+  async isVideoEnabled(): Promise<boolean> {
+    return (await this.getSetting('video_enabled', 'false')) === 'true';
+  }
+
+  /**
+   * Master kill-switch for the weekly regional digest (E-DIGEST). OFF by default
+   * so the feature ships DARK and a misconfig / DB+Redis outage fails CLOSED
+   * (getSetting returns the 'false' default → no push, no lastDigestSentAt stamp).
+   * Mirror of isProximityEnabled / isVideoEnabled. Read at the head of every cron
+   * tick before any member is selected. Re-arming is manual only (admin PATCH
+   * /admin/settings, key `digest_enabled`).
+   */
+  async isDigestEnabled(): Promise<boolean> {
+    return (await this.getSetting('digest_enabled', 'false')) === 'true';
+  }
+
   private parseCsv(raw: string): string[] {
     return raw
       .split(',')

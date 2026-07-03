@@ -1,90 +1,65 @@
 {
-  "audit": "SAST/DAST interne — Sprint S4 E-MARKET (surface marketplace « Entraide »)",
-  "date": "2026-07-03",
-  "auditor": "gwani-pentest",
-  "mode": "A (audit post-diff, working tree non commité)",
-  "scope": [
-    "apps/api/prisma/schema.prisma",
-    "apps/api/prisma/migrations/20260702000000_add_service_media_intent/migration.sql",
-    "apps/api/src/marketplace/dto/service.dto.ts",
-    "apps/api/src/marketplace/services.service.ts",
-    "apps/api/src/marketplace/services.controller.ts",
-    "packages/shared-types/src/service-request.ts",
-    "apps/mobile/services/servicesApi.ts",
-    "apps/mobile/services/uploadService.ts"
-  ],
-  "referentials": ["OWASP Top 10 2021", "OWASP API Security Top 10 2023", "CWE"],
-  "severity_counts": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+  "scan_at": "2026-07-03",
+  "scanned_by": "gwani-pentest",
+  "scope": "S-BETA diff complet — video stories-first (S-VIDEO-1/2, backend INERTE flag off), E-TAUX, E-DIGEST",
+  "method": "SAST du working tree (git diff) + revue offensive OWASP (A01 access control, A03 injection, A08 integrity, A10 SSRF) + verification des mitigations ADR-video-stories + relecture du fix BUG-001. Preuve par tests: apps/api tsc + jest (baseline 393 -> 394).",
   "verdict": "OK_TO_DEPLOY",
-  "threats_evaluated": [
+  "gate": "S-VIDEO-3 (dur, 0 critical/high non resolu)",
+  "supersedes": "Ce fichier remplace l'audit S4 E-MARKET precedent (verdict etait OK_TO_DEPLOY, 0 finding ouvert) — nouveau scope S-BETA.",
+  "by_severity": { "critical": 0, "high": 0, "medium": 1, "low": 0 },
+  "open_count": 0,
+  "resolved_count": 1,
+  "secrets_scan": "git ls-files | grep -E '\\.p8$|\\.pem$|\\.keystore$|service-account.*\\.json$|\\.env' | grep -v '\\.example$' => AUCUN secret introduit. Le diff ne touche que .env.example / .env.prod.example (documentation de VIDEO_DISK_GUARD_BYTES + MINIO_METRICS_URL, pas de valeur reelle).",
+  "test_proof": {
+    "api_tsc": "vert (npx tsc --noEmit, 0 erreur)",
+    "jest": "394/394 verts (40 suites), baseline 393 + 1 test de non-regression securite (SEC-002). 0 regression.",
+    "note": "e2e Playwright non executes (Docker/Postgres/Redis down en local, deja documente par gwani-qa-tester dans memory/bugs.json). tsc e2e vert."
+  },
+  "findings": [
     {
-      "id": "V1",
-      "name": "IDOR média (bind d'une URL appartenant à un autre user)",
-      "owasp": "A01 Broken Access Control / API1 BOLA (CWE-639)",
-      "result": "NEUTRALISÉ",
-      "evidence": "services.service.ts:53-70 bindMedia() appelle s3.assertOwnedPublicImage(m.mediaUrl, authorId) ET (m.thumbnailUrl, authorId) pour CHAQUE item. create() passe authorId=me.sub (l.72-73), update() passe userId=me.sub (l.113-116). s3.service.ts:217-219 impose key.startsWith('users/<ownerId>/') sinon BadRequestException. parsePublicKey (s3.service.ts:183-199) rejette host étranger, bucket privé, traversal (..), //, clé absolue.",
-      "tests": [
-        "services.service.spec.ts (a): create bind chaque URL avec me — 2 appels vérifiés",
-        "services.service.spec.ts (d): URL non-owner => BadRequestException, rien persisté",
-        "services.service.spec.ts (e) [AJOUTÉ]: update rebinde la galerie de remplacement avec userId (pas le body), deleteMany avant recreate"
-      ]
-    },
-    {
-      "id": "V2",
-      "name": "IDOR ownership PATCH/DELETE (non-propriétaire édite/supprime)",
-      "owasp": "A01 Broken Access Control / API1 BOLA (CWE-284)",
-      "result": "NEUTRALISÉ",
-      "evidence": "services.service.ts update() l.97-102: findUnique puis 'existing.authorId !== userId => ForbiddenException' AVANT bindMedia (l.113) et AVANT la transaction (l.132). remove() l.151-157: même garde AVANT prisma.delete. 404 si introuvable (NotFoundException). Controller protège l'id via ParseUUIDPipe (controller.ts:59,69).",
-      "tests": [
-        "services.service.spec.ts (c): update non-owner => Forbidden, aucun bind média déclenché",
-        "services.service.spec.ts (c bis) [AJOUTÉ]: remove non-owner => Forbidden, prisma.delete jamais appelé"
-      ]
-    },
-    {
-      "id": "V3",
-      "name": "Bypass validation Zod (budget sur help_free, media>6, URL non-http, intent invalide, mass-assignment)",
-      "owasp": "A03 Injection / A04 Insecure Design / API3 (CWE-20)",
-      "result": "NEUTRALISÉ",
-      "evidence": "service.dto.ts: superRefine (l.44-52 create / l.72-80 update) rejette budget!=null quand intent=help_free (défaut applique intent avant refine). media z.array().max(6) (l.40,70). intent serviceIntentEnum (l.14). URL non-CDN/non-http neutralisée en défense-profondeur par parsePublicKey (=>null=>400). Zod object non-strict STRIP les clés inconnues => pas de mass-assignment; authorId/status/responseCount jamais issus du body: create()/update() mappent explicitement chaque champ (services.service.ts:76-87, 120-130). update merge l'intent effectif (l.107-111) + force budget=null si help_free effectif (l.130) pour cohérence DB.",
-      "tests": [
-        "services.service.spec.ts (b): budget sur help_free => safeParse.success=false",
-        "services.service.spec.ts (b bis): help_free sans budget OK + intent défaut",
-        "services.service.spec.ts: update budget sur intent effectif help_free => BadRequestException"
-      ]
-    },
-    {
-      "id": "V4",
-      "name": "DELETE cascade — orphelins / fuite service_media/responses/ratings",
-      "owasp": "A04 Insecure Design (CWE-459)",
-      "result": "NEUTRALISÉ",
-      "evidence": "schema.prisma: ServiceMedia l.685, ServiceResponse l.702, ServiceRating l.716 déclarent tous request ... onDelete: Cascade. migration.sql l.34-35: FK service_media_request_id_fkey ON DELETE CASCADE. remove() (services.service.ts:157) supprime la racine => cascade DB, aucun orphelin. update() replace-galerie: deleteMany puis createMany dans une $transaction (l.132-140), pas de partiel.",
-      "tests": ["Vérifié par revue schema + migration (contrainte FK CASCADE), invariant DB non falsifiable en unit"]
-    },
-    {
-      "id": "V5",
-      "name": "Fuite privacy via AUTHOR_SELECT (email/position/DOB)",
-      "owasp": "A01 / A02 (CWE-359 Exposure of Private Info)",
-      "result": "NEUTRALISÉ / NON-FINDING",
-      "evidence": "services.service.ts:20-30 AUTHOR_SELECT = {id, displayName, firstName, lastName, avatarUrl, city, countryCode, identityStatus, isAmbassador}. Aucun email, latitude, longitude, dateOfBirth, phone. Projection STRICTEMENT identique à la forme publique établie du codebase (social/friends.service.ts:14-23). city/countryCode = grain-ville déjà public (schema commentaire l.92). Les service-requests sont publics par nature (pas de niveau private) — cohérent avec le contrat."
-    },
-    {
-      "id": "V6",
-      "name": "Énumération / oracle (404 vs 403 fuite d'existence)",
-      "owasp": "A01 / A04 (CWE-204)",
-      "result": "NON EXPLOITABLE",
-      "evidence": "getById renvoie 404 si absent (services.service.ts:197). update/remove renvoient 404 si absent puis 403 si non-owner. La distinction 404/403 révèle l'existence, MAIS les service-requests sont PUBLICS (GET /services/:id lisible par tout membre authentifié) — révéler l'existence n'ajoute aucune fuite. Pas de ressource privée dérrière cet oracle."
+      "id": "SEC-002",
+      "severity": "medium",
+      "owasp": "A01:2021 Broken Access Control",
+      "cwe": "CWE-639 Authorization Bypass Through User-Controlled Key",
+      "cvss": 4.3,
+      "area": "api",
+      "feature": "E-TAUX",
+      "title": "Contournement du takedown de moderation via ?status=removed sur GET /community-prices",
+      "where": "apps/api/src/rates/dto/rate.dto.ts (listCommunityPricesSchema.status) -> apps/api/src/rates/community-prices.service.ts:112 (where: { status: dto.status })",
+      "evidence": "Le schema de liste declarait status: z.enum(['active','removed']).default('active') alors que le commentaire du meme code affirmait 'only active is listable publicly (a removed filter would be a moderation console concern)'. Le service applique tel quel where.status = dto.status. Consequence: n'importe quel membre authentifie pouvait appeler GET /api/community-prices?status=removed et re-lister TOUS les signalements retires par la moderation (contenu scam/abusif taken-down via Report -> content_removed). La projection submitter est PII-free (post BUG-001) donc pas de fuite d'identite, mais la mesure de moderation (takedown) etait annulable par un simple parametre de requete, et l'enumeration des UUID retires ouvrait aussi GET /community-prices/:id sur ces memes lignes.",
+      "impact": "Un takedown moderateur (prix frauduleux/abusif) ne masque pas reellement le contenu: il reste listable par tout compte authentifie. Contredit AC-F4-02 (un signalement retire n'apparait plus) et le modele de moderation du produit.",
+      "poc": "GET /api/community-prices?status=removed (Authorization: Bearer <jwt membre standard>) => 200 avec la liste des CommunityPrice status=removed. Attendu apres fix: 400 (status verrouille au litteral 'active').",
+      "fix": "APPLIQUE. rate.dto.ts: status: z.literal('active').default('active') — un status=removed explicite est desormais rejete (400) au lieu d'etre servi. La consultation du contenu retire reste possible UNIQUEMENT via la console de moderation role-gatee (ModerationService.getTarget, admin/moderator).",
+      "verified": "Test de non-regression ajoute dans apps/api/src/rates/community-prices.service.spec.ts ('list schema defaults status to active and rejects status=removed'): default => 'active', status:'removed' => safeParse.success=false, status:'active' => success=true. jest 394/394 verts, api tsc vert.",
+      "files_changed": [
+        "apps/api/src/rates/dto/rate.dto.ts (listCommunityPricesSchema.status verrouille au litteral 'active')",
+        "apps/api/src/rates/community-prices.service.spec.ts (+1 test de non-regression securite)"
+      ],
+      "status": "resolved",
+      "fixed_by": "gwani-pentest",
+      "fixed_at": "2026-07-03"
     }
   ],
-  "observations_non_blocking": [
-    "Doc-mismatch (non-sécu): le contrat cite POST /profile/uploads/presign; uploadService.ts:261 appelle /profile/me/photos/presign (endpoint pré-existant hors périmètre). À aligner dans la doc, sans impact sécurité.",
-    "Mobile n'est pas une frontière de confiance: toutes les URLs client sont re-bindées serveur-side (assertOwnedPublicImage). RAS."
-  ],
-  "changes_made": [
-    "apps/api/src/marketplace/services.service.spec.ts: +2 tests de régression sécurité (c bis DELETE non-owner, e rebind média owner à l'update). Aucun code de prod modifié (aucune vuln à corriger)."
-  ],
-  "proof": {
-    "command": "cd apps/api && npx jest src/marketplace && npx tsc --noEmit",
-    "jest": "15 passed / 15 total",
-    "tsc": "exit 0"
-  }
+  "verified_safe": {
+    "E-TAUX_BUG-001": "CLOS et re-verifie. Double barriere: (1) routes GET /community-prices (list + :id) et GET /rates/banner ne portent plus @Public => JwtAuthGuard global (APP_GUARD auth/auth.module.ts) impose 401 a l'anonyme; seul /rates/today (FX pur, aucun submitter) reste @Public. (2) SUBMITTER_SELECT reduit a {id,displayName,avatarUrl,isAmbassador} dans community-prices.service.ts ET rates.service.ts => plus de firstName/lastName/city/countryCode/identityStatus, meme entre membres. Aucune autre surface ne re-expose le submitter PII (verifie moderation.getTarget = authorSelect {id,displayName,avatarUrl} role-gate; mine/getById = meme projection PII-free).",
+    "E-TAUX_authz": "submitterId derive du JWT (me.sub), jamais du body (anti-IDOR); update/delete owner-only (submitterId!==userId => 403); anti-auto-vote (submitterId===userId => 403); vote unique par contrainte composite @@id([userId,priceId]); trustScore transactionnel ($transaction, jamais de derive); pas de vote sur status=removed (403); throttle Redis 5/jour/user (clef UTC) + @Throttle IP 10/min create, 30/min vote.",
+    "video_killswitch": "isVideoEnabled() = getSetting('video_enabled','false')==='true'. getSetting renvoie le DEFAUT 'false' sur panne Redis ET DB (settings.service.ts:50-53) => fail-closed prouve. Verifie a presign ET create. Ship DARK (defaut absent => OFF).",
+    "video_verified_gate": "assertVideoAllowed lit identityStatus FRESH en DB (jamais le claim JWT) => un token minte avant approbation/revocation ne decide pas. !=='approved' => 403 IDENTITY_NOT_APPROVED. Applique a presign + create.",
+    "video_antispoof": "assertOwnedPublicMediaDetailed HEAD l'objet, mappe le Content-Type REEL a un realKind, et rejette (400) si realKind !== mediaType declare => spoof image<->video ferme cote serveur. Chemin image-story garde assertOwnedPublicImage (confronte aussi le type reel a l'allowlist image).",
+    "video_idor_prefix": "parsePublicKey borne l'URL a l'hote CDN/bucket de ce deploiement (rejette hote etranger, bucket prive, path traversal .. et //). requiredPrefix='stories/{authorId}/' => impossible d'attacher l'objet d'autrui ou un prefixe devine.",
+    "video_quotas": "5 uploads/jour (Redis, refus a l'egal), 200 Mo/24h (Redis INCRBY apres bind, refus si depassement projete), 10 videos actives (COUNT DB autoritatif, auto-decremente par expiry). Compteurs INCR apres create reussi (un create rejete ne brule pas de quota). Reset minuit UTC assume/documente (ADR-005).",
+    "video_disk_purge": "purgePostMedia (deleteObject best-effort par media+thumbnail, parsePublicKey) appele AVANT le soft-delete dans deleteStory, deleteExpiredStories (batch 200) ET moderation.removeContent(post). Disjoncteur VideoDiskGuardCron: scrape metrics MinIO, usage>=seuil => setSetting('video_enabled','false') + log.error, JAMAIS de re-arm auto, fail-safe (ne touche pas le switch) si metrics injoignable ou bucket absent.",
+    "video_privacy": "story video = visibility 'friends' (herite createStory), bucket public + cle UUID non-enumerable, feed filtre par friendIds. Residuel URL-devinable identique aux stories image, assume ADR-007. assertCanViewPost renvoie 404 (pas 403) sur ressource non visible (pas d'oracle d'existence).",
+    "video_disk_guard_ssrf": "MINIO_METRICS_URL est un env valide Zod (.url()) avec defaut interne fixe http://minio:9000/... — non controlable par l'utilisateur => pas de vecteur SSRF.",
+    "E-DIGEST_privacy": "computeAggregates ne compte les nouveaux membres QUE privacyLevel='public' + status='active', exclut le destinataire; private/friends JAMAIS comptes ni nommes. Payload notification = numbers only (eventsCount/annoncesCount/newMembersCount + screen:'home'), aucun id/nom/avatar de tiers. USER_SELF_SELECT ajoute digestOptIn (self only), pas de fuite dans une projection publique.",
+    "E-DIGEST_idempotence": "lastDigestSentAt stampe AVANT le push (at-most-once); selection exclut lastDigestSentAt<7j => pas de double envoi sur relance/restart. Batch borne 200/tick.",
+    "E-DIGEST_optout_killswitch": "digestOptIn=false => jamais selectionne (where.digestOptIn=true). isDigestEnabled() fail-closed (defaut 'false' sur panne). Kill-switch re-armable via PATCH /admin/settings (digestEnabled, Zod boolean .strict(), role admin RolesGuard).",
+    "injection": "Aucune interpolation SQL dans le diff des nouveaux modules (rates/digest = Prisma query builder + $transaction types). parseEcbXml = regex defensif sur XML BCE (skip+null si inattendu, jamais de valeur inventee). Les $queryRaw admin preexistants utilisent Prisma.sql/bind params (hors scope diff)."
+  },
+  "residual_accepted": [
+    "Compteurs Redis video journaliers (reset minuit UTC, pas glissants) — assume beta, documente ADR-005.",
+    "Duree/codec/absence-audio video = promesse client (pas de ffprobe serveur) — borne par cohorte verified + cap taille 25Mo + Report/takedown, assume ADR-002/SD-2.",
+    "URL CDN d'une story friends lisible sans auth si devinee (UUID non-enumerable, ephemere 24h) — identique aux stories image, assume ADR-007.",
+    "Oracle petit-nombre 'nouveaux membres' E-DIGEST — mitige: seuls les comptes public (deja decouvrables) sont comptes, jamais private/friends."
+  ]
 }

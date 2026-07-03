@@ -30,6 +30,8 @@ export interface User extends PublicUser {
   proximityRadius: number;
   /** Receive NigerConnect announcements & newsletter (opt-out, default true). */
   newsletterOptIn: boolean;
+  /** Receive the weekly activity digest (opt-out, default true). */
+  digestOptIn: boolean;
   languages: string[];
   privacyLevel: PrivacyLevel;
   emailVerified: boolean;

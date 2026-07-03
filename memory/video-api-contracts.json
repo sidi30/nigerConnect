@@ -1,0 +1,289 @@
+{
+  "version": "1.0",
+  "adr": "docs/adr/ADR-video-stories.md",
+  "sprintItem": "S-VIDEO-1",
+  "baseUrl": "/api",
+  "auth": "JWT RS256 (existant). EmailVerifiedGuard global actif. CurrentUser.sub = userId.",
+  "delivery": "INERTE: video_enabled absent/'false' => aucun upload/publication video possible en prod.",
+  "conventions": {
+    "validation": "Tout body via Zod + ZodValidationPipe (idem existant).",
+    "authz": "Ownership media par prefixe cle 'stories/{ownerId}/' (anti-IDOR).",
+    "media_binding": "Ne jamais persister une URL client brute: passer par S3Service.assertOwnedPublicMedia.",
+    "privacy": "Story video = visibility 'friends' (herite de createStory). Feed filtre par friendIds. Bucket public + UUID (parite images)."
+  },
+
+  "settings": {
+    "video_enabled": {
+      "model": "AppSetting (key/value)",
+      "key": "video_enabled",
+      "values": ["true", "false"],
+      "default_when_absent": "false",
+      "failClosed": true,
+      "reason": "settings.getSetting('video_enabled','false') renvoie 'false' si Redis ET DB echouent => panne = video OFF.",
+      "helper": "SettingsService.isVideoEnabled(): Promise<boolean> = (await getSetting('video_enabled','false')) === 'true'",
+      "adminManaged": "PATCH /api/admin/settings { videoEnabled: boolean } (rearme le disjoncteur)"
+    }
+  },
+
+  "gates": {
+    "killSwitch": {
+      "where": ["POST /stories/presign", "POST /stories (si mediaType=video)"],
+      "check": "await settings.isVideoEnabled() === true",
+      "onFail": { "status": 403, "code": "VIDEO_DISABLED", "message": "La video est temporairement indisponible." }
+    },
+    "verifiedOnly": {
+      "where": ["POST /stories/presign", "POST /stories (si mediaType=video)"],
+      "check": "Lecture DB FRAICHE: prisma.user.findUnique({where:{id:userId},select:{identityStatus:true}}); identityStatus === 'approved'",
+      "note": "Lire la DB (pas le claim JWT) pour ne pas dependre d'un token perime. Modele: association.service.ts:43-45.",
+      "onFail": { "status": 403, "code": "IDENTITY_NOT_APPROVED", "message": "Publier une video est reserve aux comptes verifies." }
+    }
+  },
+
+  "limits": {
+    "story": {
+      "durationSeconds": 30,
+      "resolution": "720p",
+      "durationEnforced": "client-only (pas de ffprobe serveur)",
+      "resolutionEnforced": "client-only"
+    },
+    "maxVideoBytes": 26214400,
+    "maxVideoBytes_human": "25 Mo",
+    "maxVideoBytesEnforced": "SERVEUR via HEAD ContentLength dans assertOwnedPublicMedia",
+    "maxImageBytes": 15728640,
+    "quota": {
+      "activeVideosPerUser": 10,
+      "activeVideosSource": "DB COUNT(post WHERE authorId, isStory, deletedAt null, storyExpiresAt>now, media.mediaType='video')",
+      "bytesPer24hPerUser": 209715200,
+      "bytesPer24hPerUser_human": "200 Mo / fenetre 24h",
+      "uploadsPerDayPerUser": 5
+    },
+    "presignTtlSeconds": 900,
+    "note": "Augmenter maxVideoBytes ou quota au-dela du budget disque = GO PROPRIO (impact disjoncteur)."
+  },
+
+  "redisKeys": {
+    "uploadsDaily": {
+      "pattern": "video:uploads:{userId}:{YYYYMMDD}",
+      "op": "INCR a chaque create video reussi; TTL 86400s; refus si valeur > 5",
+      "checkedAt": ["presign (lecture)", "create (INCR/enforce)"]
+    },
+    "bytesDaily": {
+      "pattern": "video:bytes:{userId}:{YYYYMMDD}",
+      "op": "INCRBY(ContentLength) APRES binding reussi; TTL 86400s; refus si cumul > 209715200",
+      "checkedAt": ["create"]
+    },
+    "note": "Compteurs journaliers (reset minuit UTC), pas glissants — acceptable beta. Vidéos actives = DB (autoritatif), pas Redis."
+  },
+
+  "throttle": {
+    "presign": "@Throttle({ short: { limit: 5, ttl: 60000 } })",
+    "create": "@Throttle({ short: { limit: 10, ttl: 60000 } })",
+    "module": "common/throttle/throttle.module.ts (existant), decorateur @nestjs/throttler"
+  },
+
+  "s3": {
+    "guardMethod": {
+      "signature": "assertOwnedPublicMedia(url: string, expectedMediaType: 'image'|'video', requiredPrefix: string): Promise<string>",
+      "file": "apps/api/src/common/storage/s3.service.ts",
+      "logic": [
+        "key = parsePublicKey(url); si null => 400 MEDIA_URL_INVALID",
+        "si !key.startsWith(requiredPrefix) => 400 MEDIA_NOT_OWNED",
+        "HEAD object; si echec => 400 MEDIA_NOT_FOUND",
+        "realType = head.ContentType.toLowerCase()",
+        "realKind = image si realType in ALLOWED_IMAGE_TYPES; video si in ALLOWED_VIDEO_TYPES; sinon 400 MEDIA_TYPE_UNSUPPORTED",
+        "si realKind !== expectedMediaType => 400 MEDIA_TYPE_MISMATCH (ferme le spoof)",
+        "cap = image?15Mo:25Mo; si ContentLength > cap => 400 MEDIA_TOO_LARGE",
+        "return publicUrl(key)"
+      ],
+      "constants": {
+        "MAX_PUBLIC_VIDEO_BYTES": 26214400,
+        "ALLOWED_VIDEO_TYPES": ["video/mp4", "video/quicktime"],
+        "MAX_PUBLIC_IMAGE_BYTES": 15728640,
+        "ALLOWED_IMAGE_TYPES": ["image/jpeg", "image/png", "image/webp", "image/heic"]
+      },
+      "callSites": {
+        "createStory": "assertOwnedPublicMedia(dto.media.mediaUrl, dto.media.mediaType, `stories/${authorId}/`)"
+      },
+      "keep": "assertOwnedPublicImage reste pour photos/avatars/covers/associations (prefixe users/{id}/)."
+    },
+    "keyLayout": {
+      "storyEphemeral": "stories/{userId}/{uuid}.{mp4|mov}",
+      "permanent": "users/{userId}/{kind}/... (inchange, hors lifecycle)",
+      "reason": "Prefixe de tete 'stories/' pour permettre mc ilm (filtre prefixe racine) sans toucher au media permanent."
+    },
+    "extensionMap": { "video/mp4": ".mp4", "video/quicktime": ".mov" },
+    "presignFolder": "stories/{userId}",
+    "bucket": "public (S3_BUCKET) — parite images",
+    "sse": "sseRequired renvoye tel quel (false sur MinIO)"
+  },
+
+  "endpoints": [
+    {
+      "id": "VID-EP-001",
+      "method": "POST",
+      "path": "/stories/presign",
+      "controller": "feed.controller.ts (@Controller() -> /api/stories/presign)",
+      "auth": true,
+      "gates": ["killSwitch", "verifiedOnly", "throttle.presign", "uploadsDaily<5"],
+      "description": "Obtenir une URL d'upload PUT presignee pour une video de story.",
+      "requestZodSchema": {
+        "name": "presignVideoSchema",
+        "definition": "z.object({ contentType: z.enum(['video/mp4','video/quicktime']) })"
+      },
+      "request": { "body": { "contentType": "'video/mp4' | 'video/quicktime' (requis)" } },
+      "responses": {
+        "201": {
+          "description": "Presign emis",
+          "body": {
+            "uploadUrl": "string (PUT presigne, TTL 900s)",
+            "publicUrl": "string (URL CDN canonique a renvoyer au create)",
+            "key": "string (stories/{userId}/{uuid}.ext)",
+            "bucket": "string",
+            "visibility": "'public'",
+            "expiresIn": 900,
+            "sseRequired": "boolean"
+          }
+        },
+        "401": { "description": "Non authentifie" },
+        "403": { "description": "VIDEO_DISABLED | IDENTITY_NOT_APPROVED" },
+        "422": { "description": "contentType invalide (Zod)" },
+        "429": { "description": "Throttle ou quota uploadsDaily depasse (code UPLOAD_QUOTA_EXCEEDED)" }
+      }
+    },
+    {
+      "id": "VID-EP-002",
+      "method": "POST",
+      "path": "/stories",
+      "controller": "feed.controller.ts:183 (EXISTANT, a etendre)",
+      "auth": true,
+      "gates": ["si mediaType=video: killSwitch + verifiedOnly + quota(active<10, bytes<200Mo/24h)", "throttle.create"],
+      "description": "Creer une story (image OU video). Video: binding anti-spoof + quotas + compteurs.",
+      "requestZodSchema": {
+        "name": "createStorySchema (EXISTANT, inchange)",
+        "definition": "z.object({ content: z.string().max(500).optional(), media: postMediaSchema })",
+        "postMediaSchema": "z.object({ mediaUrl: z.string().url().max(500), thumbnailUrl: z.string().url().max(500).optional(), mediaType: z.enum(['image','video']), width: z.number().int().positive().optional(), height: z.number().int().positive().optional(), blurhash: z.string().max(100).optional(), sortOrder: z.number().int().min(0).optional() })"
+      },
+      "serverLogic": [
+        "si media.mediaType==='video': isVideoEnabled() sinon 403 VIDEO_DISABLED",
+        "si video: identityStatus DB==='approved' sinon 403 IDENTITY_NOT_APPROVED",
+        "si video: activeCount=COUNT(...) ; si >=10 => 429 ACTIVE_VIDEO_QUOTA_EXCEEDED",
+        "bind = assertOwnedPublicMedia(media.mediaUrl, media.mediaType, `stories/${userId}/`)  (fixe cap 25Mo/15Mo + anti-spoof + ownership)",
+        "si video: bytes24h + ContentLength > 200Mo => 429 BYTES_QUOTA_EXCEEDED",
+        "create Post{isStory:true, visibility:'friends', storyExpiresAt: now+24h} + PostMedia",
+        "si video: INCR video:uploads:{u}:{day} (TTL 24h) + INCRBY video:bytes:{u}:{day} (ContentLength)"
+      ],
+      "responses": {
+        "201": { "description": "Story creee", "body": { "id": "uuid", "media": "[{mediaUrl,thumbnailUrl,mediaType,...}]", "author": "{...}", "storyExpiresAt": "ISO" } },
+        "400": { "description": "MEDIA_URL_INVALID | MEDIA_NOT_OWNED | MEDIA_NOT_FOUND | MEDIA_TYPE_UNSUPPORTED | MEDIA_TYPE_MISMATCH | MEDIA_TOO_LARGE" },
+        "401": { "description": "Non authentifie" },
+        "403": { "description": "VIDEO_DISABLED | IDENTITY_NOT_APPROVED" },
+        "422": { "description": "Body invalide (Zod)" },
+        "429": { "description": "ACTIVE_VIDEO_QUOTA_EXCEEDED | BYTES_QUOTA_EXCEEDED | UPLOAD_QUOTA_EXCEEDED | throttle" }
+      }
+    },
+    {
+      "id": "VID-EP-003",
+      "method": "DELETE",
+      "path": "/stories/:id",
+      "controller": "feed.controller.ts:196 (EXISTANT, a etendre: purge S3)",
+      "auth": true,
+      "gates": ["owner (authorId===userId sinon 403)"],
+      "description": "Supprimer sa story + PURGER l'objet S3 (corrige la dette).",
+      "serverLogic": [
+        "findUnique story (isStory, non deleted) sinon 404",
+        "authorId !== userId => 403",
+        "pour chaque PostMedia: key=parsePublicKey(mediaUrl); si key: s3.deleteObject(key) best-effort (+thumbnail)",
+        "puis soft-delete post.deletedAt"
+      ],
+      "responses": { "204": { "description": "Supprimee" }, "403": { "description": "Not your story" }, "404": { "description": "Story not found" } }
+    },
+    {
+      "id": "VID-EP-004",
+      "method": "POST",
+      "path": "/reports",
+      "controller": "moderation.controller.ts (EXISTANT, inchange)",
+      "auth": true,
+      "description": "Signaler une story video (targetType='post').",
+      "requestZodSchema": "createReportSchema (EXISTANT): { targetType:'post', targetId: uuid, reason: enum, description?: string<=1000 }",
+      "responses": { "201": { "description": "Report cree" }, "422": { "description": "Zod" } }
+    },
+    {
+      "id": "VID-EP-005",
+      "method": "PATCH",
+      "path": "/reports/:id/resolve",
+      "controller": "moderation.controller.ts (EXISTANT) — removeContent(post) A ETENDRE: purge S3",
+      "auth": true,
+      "roles": ["admin", "moderator"],
+      "description": "Takedown: action 'content_removed' => purge S3 des PostMedia PUIS soft-delete.",
+      "requestZodSchema": "resolveReportSchema (EXISTANT): { action:'content_removed'|..., note?: string }",
+      "serverLogic": [
+        "moderation.service.removeContent(type='post', id): charger post.media; deleteObject par media; puis post.deletedAt=now"
+      ],
+      "responses": { "204": { "description": "Resolu" }, "403": { "description": "Role insuffisant" }, "404": { "description": "Report not found" } }
+    },
+    {
+      "id": "VID-EP-006",
+      "method": "PATCH",
+      "path": "/admin/settings",
+      "controller": "admin.controller.ts (EXISTANT, a etendre)",
+      "auth": true,
+      "roles": ["admin"],
+      "description": "Armer/desarmer le kill-switch video (rearmement disjoncteur apres purge).",
+      "requestPatch": "ajouter champ optionnel { videoEnabled?: boolean } -> setSetting('video_enabled', bool?'true':'false')",
+      "getSettingsAdd": "exposer videoEnabled: (getSetting('video_enabled','false'))==='true'",
+      "responses": { "200": { "description": "Settings a jour (inclut videoEnabled)" }, "403": { "description": "Non admin" } }
+    }
+  ],
+
+  "diskBounding": {
+    "layerA_cronPurge": {
+      "file": "apps/api/src/feed/posts.service.ts:598 deleteExpiredStories (CORRIGER)",
+      "logic": "findMany(stories expirees, include media) par batch (~200); pour chaque media: parsePublicKey -> deleteObject best-effort (+thumbnail); PUIS updateMany(deletedAt). Idem deleteStory (manuel) et removeContent (takedown).",
+      "cron": "feed/stories.cron.ts horaire (existant)"
+    },
+    "layerB_minioLifecycle": {
+      "file": "docker-compose.prod.yml:153 minio-init (AJOUTER)",
+      "command": "mc ilm rule add local/${S3_BUCKET} --expire-days 2 --prefix \"stories/\"",
+      "fallbackSyntax": "mc ilm add --expiry-days 2 --prefix \"stories/\" local/${S3_BUCKET} (selon version mc)",
+      "role": "Backstop ~48h si le cron A echoue durablement. Ne touche jamais 'users/'."
+    },
+    "layerC_diskGuard": {
+      "newFile": "apps/api/src/feed/video-disk-guard.cron.ts (horaire)",
+      "read": "GET http://minio:9000/minio/v2/metrics/cluster -> metrique minio_bucket_usage_total_bytes{bucket=S3_BUCKET} (scanner interne MinIO, ZERO CPU API)",
+      "threshold": "env VIDEO_DISK_GUARD_BYTES (default 10737418240 = 10 Go)",
+      "onTrip": "settings.setSetting('video_enabled','false') + logger.error('[disk-guard] tripped ...')",
+      "rearm": "MANUEL uniquement (admin PATCH /admin/settings). Jamais de reactivation auto.",
+      "onMetricsError": "log warn; NE PAS reactiver (fail-safe: on ne relache pas la garde sur incertitude)."
+    }
+  },
+
+  "env": {
+    "VIDEO_DISK_GUARD_BYTES": { "type": "number", "default": 10737418240, "validation": "env.validation.ts (Zod) — coerce number, >0" },
+    "note": "maxVideoBytes/quotas peuvent rester en constantes; externaliser si besoin d'ajustement sans redeploy (=> AppSetting)."
+  },
+
+  "errorCodes": {
+    "VIDEO_DISABLED": 403,
+    "IDENTITY_NOT_APPROVED": 403,
+    "MEDIA_URL_INVALID": 400,
+    "MEDIA_NOT_OWNED": 400,
+    "MEDIA_NOT_FOUND": 400,
+    "MEDIA_TYPE_UNSUPPORTED": 400,
+    "MEDIA_TYPE_MISMATCH": 400,
+    "MEDIA_TOO_LARGE": 400,
+    "ACTIVE_VIDEO_QUOTA_EXCEEDED": 429,
+    "BYTES_QUOTA_EXCEEDED": 429,
+    "UPLOAD_QUOTA_EXCEEDED": 429
+  },
+
+  "migrations": {
+    "required": "AUCUNE migration media (enum MediaType{image video} + PostMedia deja complets, schema.prisma:221,494). AppSetting generique => 'video_enabled' sans migration.",
+    "sharedTypes": "Aucun nouveau type partage requis (mediaType existe). Si le DTO presign video est expose au mobile: rebuild @nigerconnect/shared-types."
+  },
+
+  "audio": {
+    "beta": "MUET. RECORD_AUDIO reste bloque, microphonePermission:false. Compressor mobile strippe la piste audio.",
+    "serverGuarantee": "AUCUNE (pas de ffprobe): 'muet' = promesse client, bornee par cohorte verified + report.",
+    "reactivation": "GO PROPRIO explicite + rebuild EAS obligatoire (permission native)."
+  }
+}

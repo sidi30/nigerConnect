@@ -29,6 +29,7 @@ export default function PrivacyScreen() {
   const [proximityAlerts, setProximityAlerts] = useState(user?.proximityAlerts ?? false);
   const [proximityRadius, setProximityRadius] = useState(user?.proximityRadius ?? 500);
   const [newsletterOptIn, setNewsletterOptIn] = useState(user?.newsletterOptIn ?? true);
+  const [digestOptIn, setDigestOptIn] = useState(user?.digestOptIn ?? true);
 
   const blocksQuery = useQuery({
     queryKey: ['blocks'],
@@ -58,6 +59,13 @@ export default function PrivacyScreen() {
     },
   });
 
+  const saveDigestMut = useMutation({
+    mutationFn: (input: { digestOptIn: boolean }) => profileApi.updateMe(input),
+    onSuccess: (updated) => {
+      setUser(updated);
+    },
+  });
+
   const unblockMut = useMutation({
     mutationFn: (userId: string) => blocksApi.unblock(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['blocks'] }),
@@ -66,6 +74,21 @@ export default function PrivacyScreen() {
   function saveNewsletter(optIn: boolean) {
     setNewsletterOptIn(optIn);
     saveNewsletterMut.mutate({ newsletterOptIn: optIn });
+  }
+
+  function saveDigest(optIn: boolean) {
+    // Optimistic toggle, rolled back if the PATCH fails (e.g. offline).
+    const previous = digestOptIn;
+    setDigestOptIn(optIn);
+    saveDigestMut.mutate(
+      { digestOptIn: optIn },
+      {
+        onError: () => {
+          setDigestOptIn(previous);
+          Alert.alert('Erreur', 'Impossible de mettre à jour ce réglage. Réessaie.');
+        },
+      },
+    );
   }
 
   function savePrivacy(level: 'public' | 'friends' | 'private', mapVisible: boolean) {
@@ -219,6 +242,23 @@ export default function PrivacyScreen() {
           value={newsletterOptIn}
           disabled={saveNewsletterMut.isPending}
           onValueChange={saveNewsletter}
+          trackColor={{ false: Colors.tan300, true: Colors.orange }}
+          thumbColor={Colors.white}
+        />
+      </View>
+
+      <View style={styles.switchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.switchLabel}>Résumé hebdomadaire</Text>
+          <Text style={styles.switchHint}>
+            Une notification par semaine avec le nombre d&apos;événements, d&apos;annonces
+            entraide et de nouveaux membres près de chez toi.
+          </Text>
+        </View>
+        <Switch
+          value={digestOptIn}
+          disabled={saveDigestMut.isPending}
+          onValueChange={saveDigest}
           trackColor={{ false: Colors.tan300, true: Colors.orange }}
           thumbColor={Colors.white}
         />

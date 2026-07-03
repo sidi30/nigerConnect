@@ -19,6 +19,7 @@ import { FeedModule } from './feed/feed.module';
 import { ChatModule } from './chat/chat.module';
 import { GeoModule } from './geo/geo.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
+import { RatesModule } from './rates/rates.module';
 import { AssociationModule } from './association/association.module';
 import { NotificationModule } from './notification/notification.module';
 import { ModerationModule } from './moderation/moderation.module';
@@ -28,6 +29,7 @@ import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { InvitationsModule } from './invitations/invitations.module';
+import { DigestModule } from './digest/digest.module';
 
 @Module({
   imports: [
@@ -48,6 +50,7 @@ import { InvitationsModule } from './invitations/invitations.module';
     ChatModule,
     GeoModule,
     MarketplaceModule,
+    RatesModule,
     AssociationModule,
     NotificationModule,
     ModerationModule,
@@ -57,6 +60,7 @@ import { InvitationsModule } from './invitations/invitations.module';
     AdminModule,
     NewsletterModule,
     InvitationsModule,
+    DigestModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
