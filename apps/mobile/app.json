@@ -222,8 +222,7 @@
           "supportsBackgroundPlayback": false,
           "supportsPictureInPicture": false
         }
-      ],
-      "react-native-compressor"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
