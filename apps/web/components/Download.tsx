@@ -37,7 +37,9 @@ export function Download() {
             <IconArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
           </a>
           <a
-            href="#"
+            href="https://play.google.com/store/apps/details?id=com.sidi30.nigerconnect"
+            target="_blank"
+            rel="noopener noreferrer"
             className="group inline-flex items-center gap-3 rounded-full bg-white px-6 py-4 text-brand-brown shadow-lg transition hover:scale-[1.02]"
           >
             <IconGooglePlay className="h-8 w-8 text-brand-orange" />
