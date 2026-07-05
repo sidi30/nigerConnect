@@ -9,7 +9,7 @@
 (le gateway WS rejoue la même validation que le REST). JWT **RS256** (iss/aud vérifiés, révocation par `jti`).
 Médias bindés via `S3Service.assertOwnedPublicImage(url, userId)` (clé `users/{userId}/...`). Confidentialité
 `public` / `friends` / `private` (un compte `private` ne fuite ni map, ni feed, ni recherche, ni proximité).
-Mail = **SMTP IONOS** (`contact@gwani.fr`). Push = **Expo Push**.
+Mail = **SMTP IONOS** (`contact@nigerconnect.app`). Push = **Expo Push**.
 
 > ℹ️ La **Partie 2 (contrat d'API)** fait autorité pour les chemins/méthodes exacts. Les Parties 1, 3 et 4
 > décrivent le métier, les parcours et le mobile ; en cas d'écart de nommage d'endpoint, se référer à la Partie 2.
@@ -611,7 +611,7 @@ Rate limit subscribe : 5/min 20/h.
    ├─ User.create({ …, emailVerified: false })
    ├─ Fire-and-forget sendVerificationEmail():
    │  ├─ EmailTokenService.createWithCode(userId, 'verify_email') → { token, code(6 chiffres) }
-   │  └─ MailerService.sendEmailVerification() via SMTP IONOS contact@gwani.fr ; lien APP_WEB_URL/verify-email?token=…
+   │  └─ MailerService.sendEmailVerification() via SMTP IONOS contact@nigerconnect.app ; lien APP_WEB_URL/verify-email?token=…
    └─ TokenService.issueTokens() → JWT RS256 { sub, role, identityStatus, jti } + refresh (hashé, 7j)
 3. [DB] User créé (emailVerified=false, role=user, identityStatus=not_submitted, status=active)
 4. [Email] code 6 chiffres + lien de vérification

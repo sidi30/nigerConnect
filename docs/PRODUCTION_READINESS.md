@@ -93,7 +93,7 @@ Build :    ✅ API build OK (Dockerfile multi-stage testé en CI)
 | Créer le réseau Docker `traefik-public` + un Traefik avec resolver `letsencrypt-dns` | VPS | Le compose attend ce réseau externe |
 | Créer 3 enregistrements **DNS A** Cloudflare (proxied=ON) → IP du VPS | Cloudflare | TLS Universal SSL (1 niveau de sous-domaine) |
 | Créer une **org Sentry** + 3 projets (api / web / mobile) | sentry.io | Observabilité erreurs |
-| Provisionner une **boîte SMTP** (prod actuelle = IONOS `contact@gwani.fr`) + publier DKIM/SPF du domaine d'envoi | IONOS | Envoi de mails de prod (nodemailer+SMTP, pas de SDK Resend) |
+| Provisionner une **boîte SMTP** (prod actuelle = IONOS `contact@nigerconnect.app`) + publier DKIM/SPF du domaine d'envoi | IONOS | Envoi de mails de prod (nodemailer+SMTP, pas de SDK Resend) |
 | Créer le projet **Firebase** + télécharger le **service account JSON** (FCM) | Firebase Console | Push notifications |
 | Créer 3 **OAuth clients Google** (Web / Android / iOS) | Google Cloud Console | Sign-in avec Google |
 | (iOS) Apple Developer Program + Service ID + Key `.p8` | developer.apple.com | Sign in with Apple — **uniquement si on submit iOS** |

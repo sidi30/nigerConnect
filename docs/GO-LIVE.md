@@ -146,29 +146,29 @@ Apple Developer → Keys → "+" → enable APNs → upload du `.p8` dans Fireba
 
 **Transport réel** : le code (`apps/api/src/common/mail/mailer.service.ts`) utilise **nodemailer + SMTP uniquement**. Il lit `SMTP_HOST/PORT/SECURE/USER/PASS` ; si `SMTP_HOST` est absent → transport console (dev). `RESEND_API_KEY` peut exister dans l'env mais **n'est PAS utilisé** par le code — ne pas suivre un guide Resend.
 
-**Config prod actuelle — IONOS, expéditeur `contact@gwani.fr` :**
+**Config prod actuelle — IONOS, expéditeur `contact@nigerconnect.app` :**
 
-1. Boîte mail IONOS `contact@gwani.fr` (déjà provisionnée).
+1. Boîte mail IONOS `contact@nigerconnect.app` (déjà provisionnée).
 2. `.env.prod` :
    ```
-   MAIL_FROM=NigerConnect <contact@gwani.fr>
+   MAIL_FROM=NigerConnect <contact@nigerconnect.app>
    SMTP_HOST=smtp.ionos.fr
    SMTP_PORT=587
    SMTP_SECURE=false          # STARTTLS sur 587
-   SMTP_USER=contact@gwani.fr
+   SMTP_USER=contact@nigerconnect.app
    SMTP_PASS=<mot de passe boîte IONOS>
    ```
-3. **DKIM** (anti-spam, signé côté app) — publier la clé publique en DNS `nc1._domainkey.gwani.fr`, puis `.env.prod` :
+3. **DKIM** (anti-spam, signé côté app) — publier la clé publique en DNS `nc1._domainkey.nigerconnect.app`, puis `.env.prod` :
    ```
-   DKIM_DOMAIN=gwani.fr
+   DKIM_DOMAIN=nigerconnect.app
    DKIM_SELECTOR=nc1
    DKIM_PRIVATE_KEY_B64=<clé privée PEM encodée base64>
    ```
-4. **SPF** sur la zone `gwani.fr` (TXT) : autoriser l'envoi IONOS (include `_spf.ionos.fr` / `_spf.perfora.net` selon IONOS).
+4. **SPF** sur la zone `nigerconnect.app` (TXT) : autoriser l'envoi IONOS (include `_spf.ionos.fr` / `_spf.perfora.net` selon IONOS).
 
-> ⚠️ Migrer l'expéditeur vers `@nigerconnect.app` exigerait d'abord de vérifier ce domaine côté IONOS (boîte + DKIM/SPF). Tant que ce n'est pas fait, **garder `contact@gwani.fr`** — sinon SPF/DKIM cassent et les mails partent en spam/bounce.
+> ⚠️ **Prérequis délivrabilité** : le domaine d'envoi `nigerconnect.app` DOIT être vérifié côté IONOS (boîte + **DKIM `nc1._domainkey.nigerconnect.app`** + **SPF** incluant IONOS + idéalement **DMARC**). Si `DKIM_DOMAIN`/SPF restent sur `gwani.fr` alors que `MAIL_FROM` passe à `@nigerconnect.app`, l'alignement DKIM/SPF casse → mails en spam/bounce.
 
-**Test** : après deploy, signup avec ton email → tu dois recevoir l'email de vérification. Vérif côté serveur : le log de `nigerconnect-api` doit afficher `Mailer: SMTP → smtp.ionos.fr (DKIM: nc1._domainkey.gwani.fr)` puis `✉️  Sent to ...`.
+**Test** : après deploy, signup avec ton email → tu dois recevoir l'email de vérification. Vérif côté serveur : le log de `nigerconnect-api` doit afficher `Mailer: SMTP → smtp.ionos.fr (DKIM: nc1._domainkey.nigerconnect.app)` puis `✉️  Sent to ...`.
 
 ---
 
@@ -337,7 +337,7 @@ Premier upload sur le track `internal` → tester avec quelques comptes → prom
 | 2 | `google-services.json` | `apps/mobile/` | Firebase Android app |
 | 2 | `GoogleService-Info.plist` | `apps/mobile/` | Firebase iOS app (plus tard) |
 | 3 | `GOOGLE_CLIENT_ID_WEB / ANDROID / IOS` | `.env.prod` + `app.json` | Google Cloud Console (3 clients) |
-| 4 | `SMTP_HOST/PORT/SECURE/USER/PASS` + `MAIL_FROM` + `DKIM_*` | `.env.prod` | Boîte IONOS `contact@gwani.fr` |
+| 4 | `SMTP_HOST/PORT/SECURE/USER/PASS` + `MAIL_FROM` + `DKIM_*` | `.env.prod` | Boîte IONOS `contact@nigerconnect.app` |
 | 8 | `__SHA256_FROM_EAS_CREDENTIALS__` | `assetlinks.json` | `eas credentials -p android` après 1er build |
 
 ---
@@ -345,7 +345,7 @@ Premier upload sur le track `internal` → tester avec quelques comptes → prom
 ## Ordre conseillé d'exécution
 
 1. ☐ Sentry (5 min) → 3 DSN
-2. ☐ SMTP IONOS (boîte `contact@gwani.fr` + DKIM/SPF DNS) → SMTP_PASS
+2. ☐ SMTP IONOS (boîte `contact@nigerconnect.app` + DKIM/SPF DNS) → SMTP_PASS
 3. ☐ Firebase + FCM (15 min) → google-services.json + base64 JSON
 4. ☐ DNS Cloudflare (5 min, propagation 1-5 min)
 5. ☐ Coller secrets dans `.env.prod`

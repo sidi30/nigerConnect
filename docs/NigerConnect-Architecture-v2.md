@@ -115,7 +115,7 @@ peut tourner dans le même process NestJS (Gateway) ou être extrait plus tard.
 | **Temps réel** | Socket.io (intégré NestJS Gateway) | Chat, présence, notifications live. |
 | **Auth OAuth** | Passport.js (Google, Facebook, Apple) | Standard, bien intégré NestJS. |
 | **Push notifications** | Expo Push Service (FCM optionnel) | Transport réel = Expo Push pour tous les tokens ; FCM désactivé sauf si credentials fournis. iOS + Android. |
-| **Emails** | nodemailer + SMTP (IONOS `smtp.ionos.fr`, expéditeur `contact@gwani.fr`, DKIM `nc1`) | Transport SMTP direct ; pas de SDK Resend dans le code. |
+| **Emails** | nodemailer + SMTP (IONOS `smtp.ionos.fr`, expéditeur `contact@nigerconnect.app`, DKIM `nc1`) | Transport SMTP direct ; pas de SDK Resend dans le code. |
 | **SMS** | Twilio | OTP, alertes. Standard mondial. |
 | **Queues (background jobs)** | BullMQ + Redis | Traitement images, emails, notifications. Fiable. |
 | **Validation** | Zod | Validation et typage partagés front/back. |
