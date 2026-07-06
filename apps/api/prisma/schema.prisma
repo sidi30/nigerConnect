@@ -107,6 +107,12 @@ model User {
   isAmbassador   Boolean        @default(false) @map("is_ambassador")
   role           UserRole       @default(user)
   status         UserStatus     @default(active)
+  // Sanction metadata (set alongside status by the admin console). statusReason
+  // is the human-readable motive shown back to the sanctioned user; statusExpiresAt
+  // is the optional auto-lift instant for a temporary suspension (null = permanent /
+  // until manually lifted). Both are cleared when the status returns to `active`.
+  statusReason    String?   @map("status_reason") @db.VarChar(500)
+  statusExpiresAt DateTime? @map("status_expires_at") @db.Timestamptz
 
   // Aggregate of reviews received on this profile (Feature: avis).
   // Maintained transactionally by ReviewService — never written elsewhere.
@@ -847,6 +853,23 @@ model AdminAccessLog {
 
   @@index([action, createdAt])
   @@map("admin_access_logs")
+}
+
+// Audit trail of sensitive admin USER-MANAGEMENT actions (status change / sanction,
+// force-logout, MFA reset). Distinct from AdminAccessLog (which tracks the map/profile
+// "full visibility" override). actorId + targetUserId are bare uuids (no FK) so the
+// log survives either account's deletion. meta carries the action payload (motive,
+// expiry, revoked count, …).
+model AdminAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorId      String   @map("actor_id") @db.Uuid
+  action       String   @db.VarChar(50)
+  targetUserId String?  @map("target_user_id") @db.Uuid
+  meta         Json?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([targetUserId, createdAt])
+  @@map("admin_audit_logs")
 }
 
 // Single-use TOTP recovery codes. Stored hashed (sha256); the plaintext is

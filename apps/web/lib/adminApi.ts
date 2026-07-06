@@ -838,6 +838,8 @@ export interface AdminUser {
   countryCode: string | null;
   role: UserRole;
   status: UserStatus;
+  statusReason: string | null;
+  statusExpiresAt: string | null;
   emailVerified: boolean;
   identityStatus: IdentityDistStatus;
   isAmbassador: boolean;
@@ -850,29 +852,60 @@ export interface AdminUserList {
   nextCursor: string | null;
 }
 
-/** GET /admin/users — paginated list with optional name/email search + status filter. */
+/** Advanced filters for GET /admin/users (all optional). */
+export interface AdminUserFilters {
+  q?: string;
+  status?: UserStatus;
+  role?: UserRole;
+  emailVerified?: boolean;
+  countryCode?: string;
+  identityStatus?: IdentityDistStatus;
+  ambassador?: boolean;
+  /** ISO date/datetime — members created at/after this instant. */
+  createdAfter?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+/** GET /admin/users — paginated list with name/email search + advanced filters. */
 export function listAdminUsers(
-  params: { q?: string; status?: UserStatus; cursor?: string; limit?: number } = {},
+  params: AdminUserFilters = {},
   signal?: AbortSignal,
 ): Promise<AdminUserList> {
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
   if (params.status) qs.set("status", params.status);
+  if (params.role) qs.set("role", params.role);
+  if (params.emailVerified !== undefined) qs.set("emailVerified", String(params.emailVerified));
+  if (params.countryCode) qs.set("countryCode", params.countryCode);
+  if (params.identityStatus) qs.set("identityStatus", params.identityStatus);
+  if (params.ambassador !== undefined) qs.set("ambassador", String(params.ambassador));
+  if (params.createdAfter) qs.set("createdAfter", params.createdAfter);
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const s = qs.toString();
   return adminFetch<AdminUserList>(`/admin/users${s ? `?${s}` : ""}`, { signal });
 }
 
-/** PATCH /admin/users/:id/status — block/unblock (active|suspended|banned). */
+/**
+ * PATCH /admin/users/:id/status — sanction (active|suspended|banned) with an
+ * optional motive + expiry. `reason` is required server-side for suspend/ban;
+ * `expiresAt` (ISO) sets a temporary suspension that auto-lifts.
+ */
 export function setUserStatus(
   userId: string,
   status: UserStatus,
-): Promise<{ id: string; status: UserStatus }> {
-  return adminFetch<{ id: string; status: UserStatus }>(`/admin/users/${userId}/status`, {
-    method: "PATCH",
-    body: { status },
-  });
+  opts?: { reason?: string; expiresAt?: string },
+): Promise<{
+  id: string;
+  status: UserStatus;
+  statusReason: string | null;
+  statusExpiresAt: string | null;
+}> {
+  const body: { status: UserStatus; reason?: string; expiresAt?: string } = { status };
+  if (opts?.reason) body.reason = opts.reason;
+  if (opts?.expiresAt) body.expiresAt = opts.expiresAt;
+  return adminFetch(`/admin/users/${userId}/status`, { method: "PATCH", body });
 }
 
 /** PATCH /admin/users/:id — edit profile fields and/or role (admin-only). */
@@ -905,4 +938,100 @@ export function setBulkInviteRight(
     `/admin/users/${userId}/bulk-invite`,
     { method: "PATCH", body: { allowed } },
   );
+}
+
+// ── User mgmt: sanctions + detail ──────────────────────────────────────────────
+
+/** One live session/device (non-revoked, non-expired refresh token). */
+export interface AdminUserSession {
+  id: string;
+  deviceName: string | null;
+  createdAt: string;
+  usedAt: string | null;
+  expiresAt: string;
+}
+
+/** GET /admin/users/:id/detail — full account view for the admin drawer. */
+export interface AdminUserDetail {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  coverUrl: string | null;
+  bio: string | null;
+  city: string | null;
+  countryCode: string | null;
+  role: UserRole;
+  status: UserStatus;
+  statusReason: string | null;
+  statusExpiresAt: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  identityStatus: IdentityDistStatus;
+  isAmbassador: boolean;
+  mfaEnabled: boolean;
+  canBulkInvite: boolean;
+  privacyLevel: string;
+  showOnMap: boolean;
+  proximityAlerts: boolean;
+  lastLoginAt: string | null;
+  lastLoginIp: string | null;
+  createdAt: string;
+  updatedAt: string;
+  invitedBy: { id: string; displayName: string | null } | null;
+  counts: {
+    posts: number;
+    comments: number;
+    reportsReceived: number;
+    reportsMade: number;
+  };
+  invitations: { sent: number; accepted: number };
+  sessions: AdminUserSession[];
+}
+
+/** One row of the sensitive-action audit trail for a user. */
+export interface AdminUserAuditRow {
+  id: string;
+  actorId: string;
+  action: string;
+  targetUserId: string | null;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+/** GET /admin/users/:id/detail — profile + counters + sessions. Admin + moderator. */
+export function fetchUserDetail(
+  userId: string,
+  signal?: AbortSignal,
+): Promise<AdminUserDetail> {
+  return adminFetch<AdminUserDetail>(`/admin/users/${userId}/detail`, { signal });
+}
+
+/** GET /admin/users/:id/audit — sensitive-action trail (newest first). Admin-only. */
+export function fetchUserAudit(
+  userId: string,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<AdminUserAuditRow[]> {
+  return adminFetch<AdminUserAuditRow[]>(
+    `/admin/users/${userId}/audit?limit=${limit}`,
+    { signal },
+  );
+}
+
+/** POST /admin/users/:id/force-logout — revoke every live session. Admin-only. */
+export function forceLogoutUser(userId: string): Promise<{ revoked: number }> {
+  return adminFetch<{ revoked: number }>(`/admin/users/${userId}/force-logout`, {
+    method: "POST",
+  });
+}
+
+/** POST /admin/users/:id/reset-mfa — clear the user's TOTP enrollment. Admin-only. */
+export function resetUserMfa(userId: string): Promise<{ id: string; mfaEnabled: false }> {
+  return adminFetch<{ id: string; mfaEnabled: false }>(`/admin/users/${userId}/reset-mfa`, {
+    method: "POST",
+  });
 }
