@@ -324,7 +324,7 @@ export class MailerService implements OnModuleInit {
       <p style="margin:0 0 12px;">${greeting}</p>
       <p style="margin:0 0 20px;">Plus qu'une étape. Saisis ce code dans l'application NigerConnect pour activer ton compte :</p>
       ${this.codeBlock(code)}
-      <p style="margin:18px 0 24px;text-align:center;font-size:13px;color:${b.tan500};">Code valable <strong>24 heures</strong>.</p>
+      <p style="margin:18px 0 24px;text-align:center;font-size:13px;color:${b.tan500};">Code valable <strong>15 minutes</strong>.</p>
       <p style="margin:0 0 12px;font-size:14px;color:${b.tan500};">Tu ouvres cet email sur ordinateur ? Tu peux aussi cliquer :</p>
       ${this.button(link, 'Activer mon compte')}
       <p style="margin:24px 0 0;font-size:13px;color:${b.tan500};">Si tu n'es pas à l'origine de cette inscription, ignore ce message.</p>
@@ -332,7 +332,7 @@ export class MailerService implements OnModuleInit {
     const text =
       `NigerConnect — Active ton compte\n\n${greeting}\n` +
       `Ton code d'activation : ${code}\n` +
-      `Saisis-le dans l'application (valable 24h).\n\n` +
+      `Saisis-le dans l'application (valable 15 minutes).\n\n` +
       `Sur ordinateur, tu peux aussi cliquer : ${link}\n\n` +
       `Si tu n'es pas à l'origine de cette inscription, ignore ce message.`;
     const html = this.layout({ preheader: `Ton code d'activation NigerConnect : ${code}`, bodyHtml });
