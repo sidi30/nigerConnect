@@ -965,6 +965,9 @@ export class AdminService {
    * an audit row with the revoked count. Admin-only.
    */
   async forceLogout(actor: { id: string }, targetId: string): Promise<{ revoked: number }> {
+    if (targetId === actor.id) {
+      throw new ForbiddenException('Déconnecte-toi via ton propre compte, pas via la console admin.');
+    }
     await this.assertTargetExists(targetId);
     const revoked = await this.prisma.refreshToken.updateMany({
       where: { userId: targetId, revokedAt: null },
@@ -991,6 +994,9 @@ export class AdminService {
    * not injected). TODO(auth): expose an admin resend-verification hook.
    */
   async resetMfa(actor: { id: string }, targetId: string): Promise<{ id: string; mfaEnabled: false }> {
+    if (targetId === actor.id) {
+      throw new ForbiddenException('Gère ton propre MFA via les paramètres de ton compte.');
+    }
     await this.assertTargetExists(targetId);
     await this.prisma.$transaction([
       this.prisma.user.update({

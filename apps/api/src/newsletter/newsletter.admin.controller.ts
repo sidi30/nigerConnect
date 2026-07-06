@@ -80,6 +80,9 @@ export class NewsletterAdminController {
   }
 
   // Estimate a recipient count for an UNSAVED targeting draft (compose screen).
+  // Throttled like the other admin POSTs so a stuck compose UI (or a compromised
+  // session) can't hammer the counting queries.
+  @Throttle({ short: { limit: 30, ttl: 60_000 }, long: { limit: 300, ttl: 3_600_000 } })
   @Post('recipients/preview')
   @HttpCode(200)
   async previewRecipients(

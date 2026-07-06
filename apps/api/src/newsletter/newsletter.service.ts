@@ -669,7 +669,13 @@ export class NewsletterService {
         continue;
       }
       try {
-        const res = await fetch(item.url);
+        // Own-bucket URL only (checked above). Refuse redirects (a CDN open-redirect
+        // must not bounce us to an internal host) and cap the wait so a hung GET
+        // can't stall the whole campaign dispatcher.
+        const res = await fetch(item.url, {
+          redirect: 'error',
+          signal: AbortSignal.timeout(15_000),
+        });
         if (!res.ok) {
           this.logger.warn(`Attachment fetch ${item.url} → HTTP ${res.status}`);
           continue;
