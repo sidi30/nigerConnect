@@ -100,14 +100,21 @@ export class MailerService implements OnModuleInit {
       const info = await this.transporter.sendMail({
         from: this.from,
         to: input.to,
+        // Pin the SMTP envelope (Return-Path / MAIL FROM) to the bare sending
+        // address so SPF stays aligned with the header From under DMARC,
+        // independent of how nodemailer parses MAIL_FROM. IONOS already keeps the
+        // envelope on @nigerconnect.app, but making it explicit is free insurance:
+        // SPF *and* DKIM aligned ⇒ DMARC=pass on both identities.
+        envelope: { from: this.fromAddress, to: input.to },
         subject: input.subject,
         html: input.html,
         text: input.text,
         replyTo: this.fromAddress,
         // Pin the Message-ID to the sending domain. By default nodemailer derives
-        // it from the container's os.hostname() (a random hex id), which trips
-        // SpamAssassin's "suspicious message ID" heuristic (FONT_INVIS_MSGID) and
-        // weakens domain alignment. Always emit <uuid@nigerconnect.app>.
+        // it from the container's os.hostname() (a random hex id), which weakens
+        // domain alignment and looks suspicious. Always emit <uuid@nigerconnect.app>.
+        // (The invisible-text SpamAssassin rule FONT_INVIS_MSGID is defused on the
+        // font side — the preheader no longer uses opacity:0/color:transparent.)
         messageId: `<${randomUUID()}@${this.fromAddress.split('@')[1] ?? 'nigerconnect.app'}>`,
         ...(input.attachments ? { attachments: input.attachments } : {}),
         // List-Unsubscribe improves inbox placement even for transactional mail.
@@ -224,7 +231,7 @@ export class MailerService implements OnModuleInit {
 <title>NigerConnect</title>
 </head>
 <body style="margin:0;padding:0;background:${b.cream};">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${this.esc(opts.preheader)}</div>
+  <div style="display:none;max-height:0;max-width:0;overflow:hidden;mso-hide:all;">${this.esc(opts.preheader)}</div>
   <table role="presentation" width="100%" border="0" cellpadding="0" cellspacing="0" style="background:${b.cream};">
     <tr>
       <td align="center" style="padding:32px 16px;">
