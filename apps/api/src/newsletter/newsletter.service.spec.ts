@@ -45,15 +45,36 @@ function makeConfig(apiUrl = 'https://api.nigerconnect.app') {
   return { get: jest.fn(() => apiUrl) };
 }
 
+// S3 stub: parsePublicKey accepts our CDN host, rejects everything else — enough
+// for attachment normalization / presign tests.
+function makeS3() {
+  return {
+    parsePublicKey: jest.fn((url: string) =>
+      url.startsWith('https://cdn.nigerconnect.app/') ? url.split('/').slice(3).join('/') : null,
+    ),
+    createPresignedUpload: jest.fn(async () => ({
+      uploadUrl: 'https://cdn.nigerconnect.app/put',
+      publicUrl: 'https://cdn.nigerconnect.app/newsletter/x.png',
+      key: 'newsletter/x.png',
+      bucket: 'public',
+      visibility: 'public' as const,
+      expiresIn: 600,
+      sseRequired: false,
+    })),
+  };
+}
+
 function makeSvc(
   prisma = makePrisma(),
   mailer = makeMailer(),
   notifications = makeNotifications(),
+  s3 = makeS3(),
 ) {
   return new NewsletterService(
     prisma as never,
     mailer as never,
     notifications as never,
+    s3 as never,
     makeConfig() as never,
   );
 }
@@ -215,6 +236,232 @@ describe('NewsletterService', () => {
       await svc.sendCampaign('id');
       const countWhere = (prisma.user.count as AnyFn).mock.calls[0][0].where;
       expect(countWhere).toEqual({ status: 'active' });
+    });
+  });
+
+  describe('targeting: segment audience', () => {
+    it('builds a segmented WHERE (country/city/verified/ambassador/activeSince) and keeps the opt-out', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.findUnique as AnyFn).mockResolvedValue({
+        id: 'id',
+        status: 'draft',
+        subject: 'Niamey',
+        bodyHtml: '<p>x</p>',
+        bodyText: 'x',
+        audience: 'segment',
+        critical: false,
+        segment: {
+          countryCode: 'NE',
+          city: 'Niamey',
+          verifiedOnly: true,
+          ambassadorOnly: true,
+          activeSince: '2026-01-01T00:00:00.000Z',
+        },
+        includeEmails: [],
+        excludeEmails: [],
+      });
+      (prisma.user.count as AnyFn).mockResolvedValue(4);
+      (prisma.user.findMany as AnyFn).mockResolvedValue([]);
+      const svc = makeSvc(prisma);
+
+      const res = await svc.sendCampaign('id');
+      expect(res).toEqual({ totalRecipients: 4 });
+      const where = (prisma.user.count as AnyFn).mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        status: 'active',
+        newsletterOptIn: true, // non-critical → opt-out always enforced
+        countryCode: 'NE',
+        city: { equals: 'Niamey', mode: 'insensitive' },
+        identityStatus: 'approved',
+        isAmbassador: true,
+      });
+      expect(where.lastLoginAt).toEqual({ gte: new Date('2026-01-01T00:00:00.000Z') });
+    });
+  });
+
+  describe('targeting: dedup + exclusions', () => {
+    it('does not mail an address twice across the subscriber list and the include list', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.findUnique as AnyFn).mockResolvedValue({
+        id: 'id',
+        status: 'draft',
+        subject: 'Hi',
+        bodyHtml: '<p>x</p>',
+        bodyText: 'x',
+        audience: 'subscribers',
+        critical: false,
+        includeEmails: ['dup@x.com', 'extra@x.com'],
+        excludeEmails: [],
+      });
+      (prisma.newsletterSubscriber.count as AnyFn).mockResolvedValue(1);
+      (prisma.newsletterSubscriber.findMany as AnyFn)
+        .mockResolvedValueOnce([{ id: 's1', email: 'DUP@x.com', unsubscribeToken: 't1' }])
+        .mockResolvedValue([]);
+      const mailer = makeMailer();
+      const svc = makeSvc(prisma, mailer);
+
+      await svc.sendCampaign('id');
+      await new Promise((r) => setImmediate(r));
+
+      const recipients = (mailer.sendNewsletter as AnyFn).mock.calls.map((c: unknown[]) =>
+        String(c[0]).toLowerCase(),
+      );
+      // dup@x.com present in both sources but mailed once; extra@x.com added once.
+      expect(recipients.sort()).toEqual(['dup@x.com', 'extra@x.com']);
+    });
+
+    it('honours excludeEmails (individual removal) against the subscriber list', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.findUnique as AnyFn).mockResolvedValue({
+        id: 'id',
+        status: 'draft',
+        subject: 'Hi',
+        bodyHtml: '<p>x</p>',
+        bodyText: 'x',
+        audience: 'subscribers',
+        critical: false,
+        includeEmails: [],
+        excludeEmails: ['blocked@x.com'],
+      });
+      (prisma.newsletterSubscriber.count as AnyFn).mockResolvedValue(2);
+      (prisma.newsletterSubscriber.findMany as AnyFn)
+        .mockResolvedValueOnce([
+          { id: 's1', email: 'blocked@x.com', unsubscribeToken: 't1' },
+          { id: 's2', email: 'ok@x.com', unsubscribeToken: 't2' },
+        ])
+        .mockResolvedValue([]);
+      const mailer = makeMailer();
+      const svc = makeSvc(prisma, mailer);
+
+      await svc.sendCampaign('id');
+      await new Promise((r) => setImmediate(r));
+
+      const recipients = (mailer.sendNewsletter as AnyFn).mock.calls.map((c: unknown[]) => c[0]);
+      expect(recipients).toEqual(['ok@x.com']);
+    });
+  });
+
+  describe('targeting: custom audience', () => {
+    it('counts only the include list and mails exactly those addresses', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.findUnique as AnyFn).mockResolvedValue({
+        id: 'id',
+        status: 'draft',
+        subject: 'Custom',
+        bodyHtml: '<p>x</p>',
+        bodyText: 'x',
+        audience: 'custom',
+        critical: false,
+        includeEmails: ['a@x.com', 'b@x.com'],
+        excludeEmails: [],
+      });
+      const mailer = makeMailer();
+      const svc = makeSvc(prisma, mailer);
+
+      const res = await svc.sendCampaign('id');
+      expect(res).toEqual({ totalRecipients: 2 });
+      // No base audience query for 'custom'.
+      expect(prisma.newsletterSubscriber.count).not.toHaveBeenCalled();
+      expect(prisma.user.count).not.toHaveBeenCalled();
+      await new Promise((r) => setImmediate(r));
+      const recipients = (mailer.sendNewsletter as AnyFn).mock.calls.map((c: unknown[]) => c[0]);
+      expect(recipients.sort()).toEqual(['a@x.com', 'b@x.com']);
+    });
+
+    it('rejects a custom campaign with no included addresses', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.findUnique as AnyFn).mockResolvedValue({
+        id: 'id',
+        status: 'draft',
+        subject: 'Empty',
+        bodyHtml: '<p>x</p>',
+        bodyText: 'x',
+        audience: 'custom',
+        critical: false,
+        includeEmails: [],
+        excludeEmails: [],
+      });
+      const svc = makeSvc(prisma);
+      await expect(svc.sendCampaign('id')).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('previewRecipients', () => {
+    it('estimates base − excluded + included', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterSubscriber.count as AnyFn).mockResolvedValue(10);
+      const svc = makeSvc(prisma);
+      const n = await svc.previewRecipients({
+        audience: 'subscribers',
+        critical: false,
+        includeEmails: ['a@x.com', 'b@x.com'],
+        excludeEmails: ['c@x.com'],
+      });
+      expect(n).toBe(10 - 1 + 2);
+    });
+  });
+
+  describe('uploadMedia', () => {
+    it('presigns an image upload under the newsletter/ prefix', async () => {
+      const s3 = makeS3();
+      const svc = makeSvc(makePrisma(), makeMailer(), makeNotifications(), s3);
+      const res = await svc.uploadMedia({ contentType: 'image/png' });
+      expect(res.publicUrl).toContain('newsletter/');
+      const arg = (s3.createPresignedUpload as AnyFn).mock.calls[0][0];
+      expect(arg).toMatchObject({ folder: 'newsletter', visibility: 'public' });
+    });
+
+    it('rejects a non-image content-type', async () => {
+      const svc = makeSvc();
+      await expect(svc.uploadMedia({ contentType: 'application/pdf' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('createCampaign', () => {
+    it('strips <script> from admin HTML and stores targeting fields', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.create as AnyFn).mockResolvedValue({ id: 'c1' });
+      const svc = makeSvc(prisma);
+      await svc.createCampaign(
+        {
+          subject: 'S',
+          bodyHtml: '<p>hi</p><script>alert(1)</script>',
+          bodyText: 'hi',
+          audience: 'segment',
+          critical: true,
+          segment: { countryCode: 'NE' },
+          includeEmails: ['a@x.com'],
+          excludeEmails: [],
+        } as never,
+        'admin1',
+      );
+      const data = (prisma.newsletterCampaign.create as AnyFn).mock.calls[0][0].data;
+      expect(data.bodyHtml).not.toContain('<script');
+      expect(data.bodyHtml).toContain('<p>hi</p>');
+      expect(data.audience).toBe('segment');
+      expect(data.critical).toBe(true); // segment is a user audience → critical kept
+      expect(data.segment).toEqual({ countryCode: 'NE' });
+      expect(data.includeEmails).toEqual(['a@x.com']);
+    });
+
+    it('forces critical=false for a non-user audience', async () => {
+      const prisma = makePrisma();
+      (prisma.newsletterCampaign.create as AnyFn).mockResolvedValue({ id: 'c1' });
+      const svc = makeSvc(prisma);
+      await svc.createCampaign(
+        {
+          subject: 'S',
+          bodyHtml: '<p>hi</p>',
+          bodyText: 'hi',
+          audience: 'subscribers',
+          critical: true,
+        } as never,
+        'admin1',
+      );
+      const data = (prisma.newsletterCampaign.create as AnyFn).mock.calls[0][0].data;
+      expect(data.critical).toBe(false);
     });
   });
 

@@ -39,14 +39,67 @@ const campaignContentSchema = z.object({
   bodyText: z.string().min(1).max(100_000),
 });
 
+/** All four targeting modes. See {@link campaignAudienceSchema}. */
+export const campaignAudienceSchema = z.enum([
+  'subscribers', // public landing email list (legacy default)
+  'app_users', // every registered account (in-app notif + push + email)
+  'segment', // registered accounts filtered by {@link segmentSchema}
+  'custom', // only the hand-picked `includeEmails`
+]);
+
+/**
+ * `segment` audience filters (registered accounts only). All optional and
+ * AND-combined. `verifiedOnly` = identity-approved; `activeSince` = last login
+ * on/after that instant. The per-user opt-out is ALWAYS enforced for a
+ * non-critical send regardless of `optInOnly` (privacy rule).
+ */
+export const segmentSchema = z
+  .object({
+    countryCode: z.string().trim().length(2).toUpperCase().optional(),
+    city: z.string().trim().min(1).max(100).optional(),
+    verifiedOnly: z.boolean().optional(),
+    ambassadorOnly: z.boolean().optional(),
+    optInOnly: z.boolean().optional(),
+    activeSince: z.string().datetime().optional(),
+  })
+  .strict();
+export type SegmentDto = z.infer<typeof segmentSchema>;
+
+/** One email attachment reference (object already uploaded to our own bucket). */
+export const attachmentSchema = z
+  .object({
+    url: z.string().url().max(1024),
+    filename: z.string().trim().min(1).max(200),
+    contentType: z.string().trim().min(1).max(100),
+  })
+  .strict();
+export type AttachmentDto = z.infer<typeof attachmentSchema>;
+
+/** Individual add/remove lists — lower-cased + deduped emails, capped. */
+const emailListSchema = z
+  .array(z.string().trim().toLowerCase().email().max(255))
+  .max(1000)
+  .transform((list) => Array.from(new Set(list)));
+
+const targetingSchema = z.object({
+  segment: segmentSchema.optional(),
+  includeEmails: emailListSchema.optional(),
+  excludeEmails: emailListSchema.optional(),
+  attachments: z.array(attachmentSchema).max(10).optional(),
+});
+
 /**
  * Admin: create a campaign draft.
- * - `audience` 'subscribers' = legacy public email list; 'app_users' = registered
- *   accounts (in-app notif + push + email).
- * - `critical` (app_users only) bypasses the per-user opt-out — service notices.
+ * - `audience` 'subscribers' = legacy public email list; 'app_users' = every
+ *   registered account; 'segment' = registered accounts filtered by `segment`;
+ *   'custom' = only the hand-picked `includeEmails`.
+ * - `critical` (app_users / segment only) bypasses the per-user opt-out.
+ * - `includeEmails` / `excludeEmails` add or remove individual addresses on top
+ *   of the resolved audience (deduped by email at send time).
+ * - `attachments` are files already uploaded via POST /admin/newsletter/upload.
  */
-export const createCampaignSchema = campaignContentSchema.extend({
-  audience: z.enum(['subscribers', 'app_users']).default('subscribers'),
+export const createCampaignSchema = campaignContentSchema.merge(targetingSchema).extend({
+  audience: campaignAudienceSchema.default('subscribers'),
   critical: z.boolean().default(false),
 });
 export type CreateCampaignDto = z.infer<typeof createCampaignSchema>;
@@ -55,11 +108,32 @@ export type CreateCampaignDto = z.infer<typeof createCampaignSchema>;
  * Admin: edit a draft (all fields optional — defaults intentionally omitted so a
  * PATCH never silently resets audience/critical on an existing draft).
  */
-export const updateCampaignSchema = campaignContentSchema.partial().extend({
-  audience: z.enum(['subscribers', 'app_users']).optional(),
-  critical: z.boolean().optional(),
-});
+export const updateCampaignSchema = campaignContentSchema
+  .partial()
+  .merge(targetingSchema)
+  .extend({
+    audience: campaignAudienceSchema.optional(),
+    critical: z.boolean().optional(),
+  });
 export type UpdateCampaignDto = z.infer<typeof updateCampaignSchema>;
+
+/** Admin: presign an image upload for a campaign (body image or attachment). */
+export const uploadNewsletterMediaSchema = z
+  .object({
+    contentType: z.string().trim().min(1).max(100),
+    filename: z.string().trim().max(200).optional(),
+  })
+  .strict();
+export type UploadNewsletterMediaDto = z.infer<typeof uploadNewsletterMediaSchema>;
+
+/** Admin: estimate a recipient count from an unsaved targeting draft (preview). */
+export const previewRecipientsSchema = z
+  .object({
+    audience: campaignAudienceSchema.default('subscribers'),
+    critical: z.boolean().default(false),
+  })
+  .merge(targetingSchema);
+export type PreviewRecipientsDto = z.infer<typeof previewRecipientsSchema>;
 
 /** Admin: send a single test message of a campaign to one address. */
 export const testCampaignSchema = z.object({

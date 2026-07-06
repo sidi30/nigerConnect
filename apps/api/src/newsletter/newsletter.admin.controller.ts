@@ -19,12 +19,16 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import {
   createCampaignSchema,
   listSubscribersSchema,
+  previewRecipientsSchema,
   testCampaignSchema,
   updateCampaignSchema,
+  uploadNewsletterMediaSchema,
   type CreateCampaignDto,
   type ListSubscribersDto,
+  type PreviewRecipientsDto,
   type TestCampaignDto,
   type UpdateCampaignDto,
+  type UploadNewsletterMediaDto,
 } from './dto/newsletter.dto';
 import { NewsletterService } from './newsletter.service';
 
@@ -61,6 +65,27 @@ export class NewsletterAdminController {
   @Get('campaigns/:id')
   getCampaign(@Param('id', ParseUUIDPipe) id: string) {
     return this.newsletter.getCampaign(id);
+  }
+
+  // Presign an image upload (body image or attachment). Same throttle profile as
+  // the test send so a compromised admin session can't spam presigns; the service
+  // restricts the content-type to images and bounds the object size.
+  @Throttle({ short: { limit: 20, ttl: 60_000 }, long: { limit: 200, ttl: 3_600_000 } })
+  @Post('upload')
+  @HttpCode(200)
+  uploadMedia(
+    @Body(new ZodValidationPipe(uploadNewsletterMediaSchema)) dto: UploadNewsletterMediaDto,
+  ) {
+    return this.newsletter.uploadMedia(dto);
+  }
+
+  // Estimate a recipient count for an UNSAVED targeting draft (compose screen).
+  @Post('recipients/preview')
+  @HttpCode(200)
+  async previewRecipients(
+    @Body(new ZodValidationPipe(previewRecipientsSchema)) dto: PreviewRecipientsDto,
+  ): Promise<{ totalRecipients: number }> {
+    return { totalRecipients: await this.newsletter.previewRecipients(dto) };
   }
 
   @Post('campaigns')

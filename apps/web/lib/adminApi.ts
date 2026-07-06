@@ -560,8 +560,33 @@ export interface NewsletterStats {
 }
 
 export type CampaignStatus = "draft" | "sending" | "sent" | "failed";
-/** 'subscribers' = public email list; 'app_users' = registered accounts (notif+push+email). */
-export type CampaignAudience = "subscribers" | "app_users";
+/**
+ * 'subscribers' = public email list; 'app_users' = every registered account
+ * (notif+push+email); 'segment' = registered accounts filtered by criteria;
+ * 'custom' = only the hand-picked include list.
+ */
+export type CampaignAudience =
+  | "subscribers"
+  | "app_users"
+  | "segment"
+  | "custom";
+
+/** Segment filters (registered accounts). All optional, AND-combined. */
+export interface CampaignSegment {
+  countryCode?: string;
+  city?: string;
+  verifiedOnly?: boolean;
+  ambassadorOnly?: boolean;
+  optInOnly?: boolean;
+  activeSince?: string; // ISO datetime
+}
+
+/** An email attachment uploaded to our own bucket. */
+export interface CampaignAttachment {
+  url: string;
+  filename: string;
+  contentType: string;
+}
 
 export interface NewsletterCampaign {
   id: string;
@@ -570,6 +595,10 @@ export interface NewsletterCampaign {
   bodyText: string;
   audience: CampaignAudience;
   critical: boolean;
+  segment: CampaignSegment | null;
+  includeEmails: string[];
+  excludeEmails: string[];
+  attachments: CampaignAttachment[] | null;
   status: CampaignStatus;
   totalRecipients: number;
   sentCount: number;
@@ -616,6 +645,10 @@ export function createCampaign(input: {
   bodyText: string;
   audience: CampaignAudience;
   critical: boolean;
+  segment?: CampaignSegment;
+  includeEmails?: string[];
+  excludeEmails?: string[];
+  attachments?: CampaignAttachment[];
 }): Promise<NewsletterCampaign> {
   return adminFetch<NewsletterCampaign>("/admin/newsletter/campaigns", {
     method: "POST",
@@ -904,5 +937,72 @@ export function setBulkInviteRight(
   return adminFetch<{ id: string; canBulkInvite: boolean }>(
     `/admin/users/${userId}/bulk-invite`,
     { method: "PATCH", body: { allowed } },
+  );
+}
+
+// ── Newsletter rich/targeting ──────────────────────────────────────────────
+// Rich content (image upload) + recipient targeting for the campaign composer.
+// Kept in a trailing block to minimise merge collisions with the sections above.
+
+export interface NewsletterUploadResult {
+  uploadUrl: string;
+  publicUrl: string;
+  key: string;
+  contentType: string;
+  sseRequired: boolean;
+  expiresIn: number;
+}
+
+/**
+ * POST /admin/newsletter/upload — presign an image PUT under `newsletter/…`.
+ * Returns the CDN URL to embed in the body / attach. Images only, admin-only.
+ */
+export function presignNewsletterUpload(
+  contentType: string,
+  filename?: string,
+): Promise<NewsletterUploadResult> {
+  return adminFetch<NewsletterUploadResult>("/admin/newsletter/upload", {
+    method: "POST",
+    body: filename ? { contentType, filename } : { contentType },
+  });
+}
+
+/**
+ * Upload a File: presign, PUT the bytes to MinIO/CDN, return the public URL.
+ * Echoes the SSE header only when the presign asks for it (parity with S3Service).
+ */
+export async function uploadNewsletterImage(file: File): Promise<string> {
+  const presigned = await presignNewsletterUpload(file.type, file.name);
+  const headers: Record<string, string> = { "Content-Type": file.type };
+  if (presigned.sseRequired) {
+    headers["x-amz-server-side-encryption"] = "AES256";
+  }
+  const put = await fetch(presigned.uploadUrl, {
+    method: "PUT",
+    headers,
+    body: file,
+  });
+  if (!put.ok) {
+    throw new AdminApiError(put.status, "Échec de l'envoi du fichier.");
+  }
+  return presigned.publicUrl;
+}
+
+/**
+ * POST /admin/newsletter/recipients/preview — estimate the recipient count for
+ * an unsaved targeting draft (audience + segment + include/exclude lists).
+ */
+export function previewNewsletterRecipients(input: {
+  audience: CampaignAudience;
+  critical?: boolean;
+  segment?: CampaignSegment;
+  includeEmails?: string[];
+  excludeEmails?: string[];
+  signal?: AbortSignal;
+}): Promise<{ totalRecipients: number }> {
+  const { signal, ...body } = input;
+  return adminFetch<{ totalRecipients: number }>(
+    "/admin/newsletter/recipients/preview",
+    { method: "POST", body, signal },
   );
 }
