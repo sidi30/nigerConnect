@@ -41,8 +41,18 @@ const mfaVerifySchema = z
 type MfaVerifyDto = z.infer<typeof mfaVerifySchema>;
 import { registerSchema } from './dto/register.dto';
 import type { RegisterDto } from './dto/register.dto';
-import { reviewIdentitySchema, submitIdentitySchema } from './dto/verify-identity.dto';
-import type { ReviewIdentityDto, SubmitIdentityDto } from './dto/verify-identity.dto';
+import {
+  manualApproveIdentitySchema,
+  reviewIdentitySchema,
+  revokeIdentitySchema,
+  submitIdentitySchema,
+} from './dto/verify-identity.dto';
+import type {
+  ManualApproveIdentityDto,
+  ReviewIdentityDto,
+  RevokeIdentityDto,
+  SubmitIdentityDto,
+} from './dto/verify-identity.dto';
 import {
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -338,6 +348,34 @@ export class AuthController {
       dto.dateOfBirth,
     );
     return { status: dto.decision };
+  }
+
+  /**
+   * Manually verify a member's identity WITHOUT a submitted document.
+   * ADMIN-ONLY — a deliberately stronger bar than /identity/review (which
+   * moderators can use): bypassing the document proof is an admin prerogative.
+   */
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @Patch('identity/manual-approve')
+  async manualApproveIdentity(
+    @CurrentUser() admin: JwtUserPayload,
+    @Body(new ZodValidationPipe(manualApproveIdentitySchema)) dto: ManualApproveIdentityDto,
+  ) {
+    await this.auth.manualApproveIdentity(admin.sub, dto.userId, dto.dateOfBirth, dto.reason);
+    return { status: 'approved' };
+  }
+
+  /** Revoke a member's identity verification. ADMIN-ONLY, motive recorded. */
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @Patch('identity/revoke')
+  async revokeIdentity(
+    @CurrentUser() admin: JwtUserPayload,
+    @Body(new ZodValidationPipe(revokeIdentitySchema)) dto: RevokeIdentityDto,
+  ) {
+    await this.auth.revokeIdentity(admin.sub, dto.userId, dto.reason);
+    return { status: 'revoked' };
   }
 
   private getIp(req: Request): string | undefined {

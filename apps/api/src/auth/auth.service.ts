@@ -904,6 +904,161 @@ export class AuthService {
   }
 
   /**
+   * Manually verify a user's identity WITHOUT a submitted document (admin-only).
+   *
+   * Unlike reviewIdentity this does NOT require a pending upload: it UPSERTs a
+   * synthetic `documentType='manual'` row (fileUrl=null, status='approved') and
+   * flips the user to `approved`. DOB is mandatory (18+ gate for proximity) and
+   * `reason` is recorded for audit. Idempotent: re-approving an already-manual
+   * user rewrites the reviewer/reason/DOB in place.
+   */
+  async manualApproveIdentity(
+    adminId: string,
+    targetUserId: string,
+    dateOfBirth: string,
+    reason: string,
+  ): Promise<void> {
+    // Validate the DOB here (not only in the DTO) so the service is safe when
+    // called directly and so the 18+ gate is enforced regardless of caller.
+    const dob = this.parseAdultDob(dateOfBirth);
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+
+    // An admin self-approving through this admin-only path is legitimate (global
+    // action) but noteworthy — trace it for audit.
+    if (adminId === targetUserId) {
+      this.logger.warn(`Admin ${adminId} manually approved their OWN identity`);
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 86_400_000);
+
+    // UPSERT the manual doc: no natural unique key on (userId, 'manual'), so we
+    // look up an existing manual row and rewrite it, otherwise create one.
+    const existing = await this.prisma.identityDocument.findFirst({
+      where: { userId: targetUserId, documentType: 'manual' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const docWrite = existing
+      ? this.prisma.identityDocument.update({
+          where: { id: existing.id },
+          data: {
+            status: 'approved',
+            fileUrl: null,
+            reviewedById: adminId,
+            reviewedAt: now,
+            reason,
+            rejectionReason: null,
+            dateOfBirth: dob,
+            expiresAt,
+          },
+        })
+      : this.prisma.identityDocument.create({
+          data: {
+            userId: targetUserId,
+            documentType: 'manual',
+            fileUrl: null,
+            status: 'approved',
+            reviewedById: adminId,
+            reviewedAt: now,
+            reason,
+            dateOfBirth: dob,
+            expiresAt,
+          },
+        });
+
+    await this.prisma.$transaction([
+      docWrite,
+      this.prisma.user.update({
+        where: { id: targetUserId },
+        data: { identityStatus: 'approved' },
+      }),
+    ]);
+
+    this.sendIdentityApprovedEmail(targetUserId);
+  }
+
+  /**
+   * Revoke a user's identity verification (admin-only). Flips the user back to
+   * `rejected` when they have a document on file (marking the latest doc rejected
+   * with the motive), or `not_submitted` when they never submitted anything.
+   */
+  async revokeIdentity(adminId: string, targetUserId: string, reason: string): Promise<void> {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+
+    const latest = await this.prisma.identityDocument.findFirst({
+      where: { userId: targetUserId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const now = new Date();
+
+    if (latest) {
+      await this.prisma.$transaction([
+        this.prisma.identityDocument.update({
+          where: { id: latest.id },
+          data: {
+            status: 'rejected',
+            reviewedById: adminId,
+            reviewedAt: now,
+            rejectionReason: reason,
+            reason,
+            expiresAt: null,
+          },
+        }),
+        this.prisma.user.update({
+          where: { id: targetUserId },
+          data: { identityStatus: 'rejected' },
+        }),
+      ]);
+    } else {
+      // No document ever submitted — there's nothing to mark rejected; just move
+      // the account back to the neutral not_submitted state.
+      await this.prisma.user.update({
+        where: { id: targetUserId },
+        data: { identityStatus: 'not_submitted' },
+      });
+    }
+  }
+
+  /**
+   * Parse a YYYY-MM-DD DOB into a UTC-midnight Date, rejecting a missing value,
+   * an invalid string, a future date, or an under-18 age. Shared by the manual
+   * verification path so the 18+ proximity gate stays reliable.
+   */
+  private parseAdultDob(dateOfBirth?: string): Date {
+    if (!dateOfBirth) {
+      throw new BadRequestException('La date de naissance est obligatoire.');
+    }
+    const ts = Date.parse(`${dateOfBirth}T00:00:00.000Z`);
+    if (Number.isNaN(ts)) {
+      throw new BadRequestException('Date de naissance invalide.');
+    }
+    const dob = new Date(ts);
+    const now = new Date();
+    if (dob.getTime() > now.getTime()) {
+      throw new BadRequestException('La date de naissance ne peut pas être dans le futur.');
+    }
+    // 18th birthday at UTC midnight — the user is an adult once "now" reaches it.
+    const eighteenth = new Date(
+      Date.UTC(dob.getUTCFullYear() + 18, dob.getUTCMonth(), dob.getUTCDate()),
+    );
+    if (eighteenth.getTime() > now.getTime()) {
+      throw new BadRequestException("L'utilisateur doit avoir au moins 18 ans.");
+    }
+    return dob;
+  }
+
+  /**
    * Notify a user their identity was verified. Fire-and-forget, never throws
    * into the review flow.
    */

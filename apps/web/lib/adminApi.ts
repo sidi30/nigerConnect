@@ -906,3 +906,33 @@ export function setBulkInviteRight(
     { method: "PATCH", body: { allowed } },
   );
 }
+
+// ── Manual identity verification ──
+// Admin-only: verify (or revoke) a member's identity WITHOUT an uploaded piece.
+// Distinct from reviewIdentity (which acts on a pending upload). Both PATCH /auth.
+
+/**
+ * PATCH /auth/identity/manual-approve — mark a member verified without a document.
+ * DOB is mandatory (18+ proximity gate) and reason is recorded for audit.
+ */
+export function manualApproveIdentity(
+  userId: string,
+  dateOfBirth: string,
+  reason: string,
+): Promise<{ status: "approved" }> {
+  return adminFetch<{ status: "approved" }>("/auth/identity/manual-approve", {
+    method: "PATCH",
+    body: { userId, dateOfBirth, reason },
+  });
+}
+
+/** PATCH /auth/identity/revoke — revoke a member's identity verification. */
+export function revokeIdentityVerification(
+  userId: string,
+  reason: string,
+): Promise<{ status: "revoked" }> {
+  return adminFetch<{ status: "revoked" }>("/auth/identity/revoke", {
+    method: "PATCH",
+    body: { userId, reason },
+  });
+}
