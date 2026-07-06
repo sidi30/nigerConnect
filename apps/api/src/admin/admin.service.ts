@@ -704,6 +704,8 @@ export class AdminService {
     countryCode: true,
     role: true,
     status: true,
+    statusReason: true,
+    statusExpiresAt: true,
     emailVerified: true,
     identityStatus: true,
     isAmbassador: true,
@@ -718,11 +720,28 @@ export class AdminService {
   async listUsers(opts: {
     q?: string;
     status?: 'active' | 'suspended' | 'banned';
+    role?: 'user' | 'moderator' | 'admin';
+    emailVerified?: boolean;
+    countryCode?: string;
+    identityStatus?: 'not_submitted' | 'pending' | 'approved' | 'rejected';
+    ambassador?: boolean;
+    createdAfter?: Date;
     cursor?: string;
     limit: number;
   }) {
+    // Auto-lift expired suspensions before reading so the list reflects reality
+    // (a temporary suspension whose statusExpiresAt has passed is flipped back to
+    // active platform-wide — see autoLiftExpiredSanctions).
+    await this.autoLiftExpiredSanctions();
+
     const where: Prisma.UserWhereInput = {};
     if (opts.status) where.status = opts.status;
+    if (opts.role) where.role = opts.role;
+    if (opts.emailVerified !== undefined) where.emailVerified = opts.emailVerified;
+    if (opts.countryCode) where.countryCode = opts.countryCode;
+    if (opts.identityStatus) where.identityStatus = opts.identityStatus;
+    if (opts.ambassador !== undefined) where.isAmbassador = opts.ambassador;
+    if (opts.createdAfter) where.createdAt = { gte: opts.createdAfter };
     if (opts.q) {
       where.OR = [
         { displayName: { contains: opts.q, mode: 'insensitive' } },
@@ -744,17 +763,28 @@ export class AdminService {
   }
 
   /**
-   * Block / unblock a user. Suspending or banning revokes their refresh tokens so
-   * no new access token can be minted; the global guard then cuts off the
-   * existing access token on its next use, and login already refuses these
-   * statuses. Guards: nobody can change their OWN status here, and a moderator
-   * cannot act on staff (admin/moderator) — only an admin can.
+   * Block / unblock a user WITH a sanction motive + optional expiry. Suspending or
+   * banning revokes their refresh tokens so no new access token can be minted; the
+   * global guard then cuts off the existing access token on its next use, and login
+   * already refuses these statuses. Reactivating clears the motive + expiry.
+   *
+   * Guards: nobody can change their OWN status here, and a moderator cannot act on
+   * staff (admin/moderator) — only an admin can. Every change writes an audit row
+   * (same transaction) with the motive + expiry.
+   *
+   * `reason` is required by the controller schema when status !== active; we still
+   * only persist it for a non-active status (and null it out on reactivation).
    */
   async setUserStatus(
     actor: { id: string; role: string },
     targetId: string,
-    status: 'active' | 'suspended' | 'banned',
-  ): Promise<{ id: string; status: string }> {
+    input: {
+      status: 'active' | 'suspended' | 'banned';
+      reason?: string;
+      expiresAt?: string | Date | null;
+    },
+  ): Promise<{ id: string; status: string; statusReason: string | null; statusExpiresAt: Date | null }> {
+    const { status } = input;
     if (targetId === actor.id) {
       throw new ForbiddenException('Vous ne pouvez pas changer votre propre statut.');
     }
@@ -767,8 +797,17 @@ export class AdminService {
       throw new ForbiddenException("Seul un admin peut modifier le statut d'un membre du staff.");
     }
 
+    // Reactivation wipes the sanction metadata; a sanction records motive + expiry.
+    const statusReason = status === 'active' ? null : (input.reason ?? null);
+    const statusExpiresAt =
+      status === 'active' || !input.expiresAt ? null : new Date(input.expiresAt);
+
     const ops: Prisma.PrismaPromise<unknown>[] = [
-      this.prisma.user.update({ where: { id: targetId }, data: { status }, select: { id: true } }),
+      this.prisma.user.update({
+        where: { id: targetId },
+        data: { status, statusReason, statusExpiresAt },
+        select: { id: true },
+      }),
     ];
     if (status !== 'active') {
       // Force-logout across devices: revoke every live refresh token.
@@ -779,8 +818,192 @@ export class AdminService {
         }),
       );
     }
+    ops.push(
+      this.prisma.adminAuditLog.create({
+        data: {
+          actorId: actor.id,
+          action: `user.status.${status}`,
+          targetUserId: targetId,
+          meta: {
+            reason: statusReason,
+            expiresAt: statusExpiresAt ? statusExpiresAt.toISOString() : null,
+          },
+        },
+      }),
+    );
     await this.prisma.$transaction(ops);
-    return { id: targetId, status };
+    return { id: targetId, status, statusReason, statusExpiresAt };
+  }
+
+  /**
+   * Flip expired temporary suspensions back to `active` and clear their sanction
+   * metadata. Bounded (only rows whose statusExpiresAt has passed). Banned accounts
+   * are never auto-lifted (permanent until an admin reactivates). Called on every
+   * admin read of the user list / a single user detail. Pass a userId to scope the
+   * sweep to one account (detail view).
+   */
+  private async autoLiftExpiredSanctions(userId?: string): Promise<void> {
+    await this.prisma.user.updateMany({
+      where: {
+        ...(userId ? { id: userId } : {}),
+        status: 'suspended',
+        statusExpiresAt: { not: null, lt: new Date() },
+      },
+      data: { status: 'active', statusReason: null, statusExpiresAt: null },
+    });
+  }
+
+  /** Loads a target user or throws 404. Selects nothing sensitive. */
+  private async assertTargetExists(targetId: string): Promise<void> {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('Utilisateur introuvable');
+  }
+
+  // Detailed profile fields for the admin user drawer. NEVER selects secrets
+  // (passwordHash, mfaSecret, oauthProviderId, newsletterToken, …).
+  private static readonly ADMIN_USER_DETAIL_SELECT = {
+    id: true,
+    email: true,
+    phone: true,
+    displayName: true,
+    firstName: true,
+    lastName: true,
+    avatarUrl: true,
+    coverUrl: true,
+    bio: true,
+    city: true,
+    countryCode: true,
+    role: true,
+    status: true,
+    statusReason: true,
+    statusExpiresAt: true,
+    emailVerified: true,
+    phoneVerified: true,
+    identityStatus: true,
+    isAmbassador: true,
+    mfaEnabled: true,
+    canBulkInvite: true,
+    privacyLevel: true,
+    showOnMap: true,
+    proximityAlerts: true,
+    lastLoginAt: true,
+    lastLoginIp: true,
+    createdAt: true,
+    updatedAt: true,
+    invitedBy: { select: { id: true, displayName: true } },
+  } as const satisfies Prisma.UserSelect;
+
+  /**
+   * GET /admin/users/:id/detail — full moderator/admin view of one account:
+   * profile + sanction state + counters (posts, comments, reports received/sent),
+   * invitation stats, and the live sessions/devices. No secrets are ever selected.
+   */
+  async getUserDetail(targetId: string) {
+    // Reflect an elapsed suspension before we render the sanction state.
+    await this.autoLiftExpiredSanctions(targetId);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: AdminService.ADMIN_USER_DETAIL_SELECT,
+    });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    const now = new Date();
+    const [
+      posts,
+      comments,
+      reportsReceived,
+      reportsMade,
+      invitesSent,
+      invitesAccepted,
+      sessions,
+    ] = await Promise.all([
+      this.prisma.post.count({ where: { authorId: targetId, deletedAt: null } }),
+      this.prisma.comment.count({ where: { authorId: targetId, deletedAt: null } }),
+      // Reports whose target is THIS user (generic targetType/targetId pair).
+      this.prisma.report.count({ where: { targetType: 'user', targetId } }),
+      this.prisma.report.count({ where: { reporterId: targetId } }),
+      this.prisma.invitation.count({ where: { inviterId: targetId } }),
+      // Filleuls réellement inscrits (source de vérité : User.invitedById).
+      this.prisma.user.count({ where: { invitedById: targetId } }),
+      // Live sessions = non-revoked, non-expired refresh tokens (one per device).
+      this.prisma.refreshToken.findMany({
+        where: { userId: targetId, revokedAt: null, expiresAt: { gt: now } },
+        select: { id: true, deviceName: true, createdAt: true, usedAt: true, expiresAt: true },
+        orderBy: { usedAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+
+    return {
+      ...user,
+      counts: { posts, comments, reportsReceived, reportsMade },
+      invitations: { sent: invitesSent, accepted: invitesAccepted },
+      sessions,
+    };
+  }
+
+  /**
+   * GET /admin/users/:id/audit — the sensitive-action audit trail for one user
+   * (status/sanction, force-logout, MFA reset). Admin-only. Newest first.
+   */
+  async getUserAudit(targetId: string, limit: number) {
+    return this.prisma.adminAuditLog.findMany({
+      where: { targetUserId: targetId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  /**
+   * POST /admin/users/:id/force-logout — revoke every live refresh token so all
+   * the user's devices are logged out on their next token refresh (the global
+   * guard also cuts the current access token within its short cache TTL). Records
+   * an audit row with the revoked count. Admin-only.
+   */
+  async forceLogout(actor: { id: string }, targetId: string): Promise<{ revoked: number }> {
+    await this.assertTargetExists(targetId);
+    const revoked = await this.prisma.refreshToken.updateMany({
+      where: { userId: targetId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.prisma.adminAuditLog.create({
+      data: {
+        actorId: actor.id,
+        action: 'user.force_logout',
+        targetUserId: targetId,
+        meta: { revoked: revoked.count },
+      },
+    });
+    return { revoked: revoked.count };
+  }
+
+  /**
+   * POST /admin/users/:id/reset-mfa — clear the user's TOTP enrollment (secret +
+   * recovery codes) so a member who lost their authenticator can re-enroll on next
+   * login. Records an audit row. Admin-only. Does NOT touch the account status.
+   *
+   * NOTE: `resend-verification` is intentionally NOT implemented here — the email
+   * token + mailer brick lives in the auth module (out of this module's scope /
+   * not injected). TODO(auth): expose an admin resend-verification hook.
+   */
+  async resetMfa(actor: { id: string }, targetId: string): Promise<{ id: string; mfaEnabled: false }> {
+    await this.assertTargetExists(targetId);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: targetId },
+        data: { mfaEnabled: false, mfaSecret: null },
+        select: { id: true },
+      }),
+      this.prisma.mfaRecoveryCode.deleteMany({ where: { userId: targetId } }),
+      this.prisma.adminAuditLog.create({
+        data: { actorId: actor.id, action: 'user.reset_mfa', targetUserId: targetId },
+      }),
+    ]);
+    return { id: targetId, mfaEnabled: false };
   }
 
   /**

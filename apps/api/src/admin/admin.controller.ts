@@ -79,15 +79,50 @@ type AmbassadorDto = z.infer<typeof ambassadorSchema>;
 const listUsersSchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   status: z.enum(['active', 'suspended', 'banned']).optional(),
+  role: z.enum(['user', 'moderator', 'admin']).optional(),
+  // Query-string booleans: only the literal 'true'/'false' are accepted (z.coerce
+  // .boolean would turn 'false' into true).
+  emailVerified: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  countryCode: z.string().trim().length(2).toUpperCase().optional(),
+  identityStatus: z.enum(['not_submitted', 'pending', 'approved', 'rejected']).optional(),
+  ambassador: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  createdAfter: z.coerce.date().optional(),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 type ListUsersDto = z.infer<typeof listUsersSchema>;
 
 const userStatusSchema = z
-  .object({ status: z.enum(['active', 'suspended', 'banned']) })
-  .strict();
+  .object({
+    status: z.enum(['active', 'suspended', 'banned']),
+    // Motive shown back to the sanctioned user; required for a suspension/ban.
+    reason: z.string().trim().min(1).max(500).optional(),
+    // Optional auto-lift instant for a temporary suspension (omit = permanent).
+    expiresAt: z.coerce.date().optional(),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    if (d.status !== 'active' && !d.reason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reason'],
+        message: 'Un motif est requis pour suspendre ou bannir un compte.',
+      });
+    }
+    if (d.expiresAt && d.expiresAt.getTime() <= Date.now()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiresAt'],
+        message: "La date d'expiration doit être dans le futur.",
+      });
+    }
+  });
 type UserStatusDto = z.infer<typeof userStatusSchema>;
+
+const userAuditSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+type UserAuditDto = z.infer<typeof userAuditSchema>;
 
 const updateUserSchema = z
   .object({
@@ -267,8 +302,30 @@ export class AdminController {
   }
 
   /**
-   * PATCH /admin/users/:id/status — block/unblock (active|suspended|banned).
-   * Admin + moderator. Self-status and acting on staff are refused in the service.
+   * GET /admin/users/:id/detail — full profile + sanction state + counters +
+   * invitation stats + live sessions. Admin + moderator (moderation needs it).
+   */
+  @Get('users/:id/detail')
+  userDetail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.admin.getUserDetail(id);
+  }
+
+  /**
+   * GET /admin/users/:id/audit — sensitive-action audit trail for one user. Admin-only.
+   */
+  @Get('users/:id/audit')
+  @Roles('admin')
+  userAudit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query(new ZodValidationPipe(userAuditSchema)) dto: UserAuditDto,
+  ) {
+    return this.admin.getUserAudit(id, dto.limit);
+  }
+
+  /**
+   * PATCH /admin/users/:id/status — sanction (active|suspended|banned) with a
+   * motive + optional expiry. Admin + moderator. Self-status and acting on staff
+   * are refused in the service; reason is required (schema) for suspend/ban.
    */
   @Patch('users/:id/status')
   @HttpCode(HttpStatus.OK)
@@ -277,7 +334,33 @@ export class AdminController {
     @Body(new ZodValidationPipe(userStatusSchema)) dto: UserStatusDto,
     @CurrentUser() me: JwtUserPayload,
   ) {
-    return this.admin.setUserStatus({ id: me.sub, role: me.role }, id, dto.status);
+    return this.admin.setUserStatus({ id: me.sub, role: me.role }, id, {
+      status: dto.status,
+      reason: dto.reason,
+      expiresAt: dto.expiresAt,
+    });
+  }
+
+  /**
+   * POST /admin/users/:id/force-logout — revoke every live session/refresh token.
+   * Admin-only.
+   */
+  @Post('users/:id/force-logout')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  forceLogout(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() me: JwtUserPayload) {
+    return this.admin.forceLogout({ id: me.sub }, id);
+  }
+
+  /**
+   * POST /admin/users/:id/reset-mfa — clear the user's TOTP enrollment so they can
+   * re-enroll (lost authenticator). Admin-only.
+   */
+  @Post('users/:id/reset-mfa')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  resetMfa(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() me: JwtUserPayload) {
+    return this.admin.resetMfa({ id: me.sub }, id);
   }
 
   /**
