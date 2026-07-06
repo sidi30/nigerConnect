@@ -6,11 +6,11 @@ import { PrismaService } from '../common/prisma/prisma.service';
 
 const TTL_MS: Record<EmailTokenType, number> = {
   reset_password: 60 * 60_000, // 1 hour
-  verify_email: 15 * 60_000, // 15 minutes — short activation window
+  verify_email: 30 * 60_000, // 30 minutes — activation window (a touch of slack for slow/spam-filtered delivery)
 };
 
 // A 6-digit code is low-entropy (1M combos) — cap guesses hard so it can't be
-// brute-forced even within the 15-minute validity window. After this many wrong
+// brute-forced even within the 30-minute validity window. After this many wrong
 // tries the whole token row is burned and the user must request a fresh code.
 const MAX_CODE_ATTEMPTS = 6;
 

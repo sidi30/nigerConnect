@@ -59,7 +59,7 @@ describe('EmailTokenService', () => {
       expect(sha256(code)).toEqual(codeRow.codeHash);
     });
 
-    it('sets a 15-minute expiry on the verify_email rows', async () => {
+    it('sets a 30-minute expiry on the verify_email rows', async () => {
       const before = Date.now();
       await service.createWithCode('user-1', 'verify_email');
       const after = Date.now();
@@ -67,8 +67,8 @@ describe('EmailTokenService', () => {
       const rows = createMany.mock.calls[0][0].data as Array<{ expiresAt: Date }>;
       for (const r of rows) {
         const ttl = r.expiresAt.getTime();
-        expect(ttl).toBeGreaterThanOrEqual(before + 15 * 60_000);
-        expect(ttl).toBeLessThanOrEqual(after + 15 * 60_000);
+        expect(ttl).toBeGreaterThanOrEqual(before + 30 * 60_000);
+        expect(ttl).toBeLessThanOrEqual(after + 30 * 60_000);
       }
     });
 
