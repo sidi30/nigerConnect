@@ -1168,6 +1168,15 @@ model NewsletterCampaign {
   audience        String         @default("subscribers") @db.VarChar(20)
   // Critical service message: reaches ALL active users regardless of opt-in.
   critical        Boolean        @default(false)
+  // Segment filters for the 'segment' audience (registered accounts):
+  // { countryCode?, city?, verifiedOnly?, ambassadorOnly?, optInOnly?, activeSince? }.
+  segment         Json?
+  // Individual add/remove lists applied ON TOP of the resolved audience. Emails
+  // are lower-cased; the dispatcher dedupes by email so no one is mailed twice.
+  includeEmails   String[]       @default([]) @map("include_emails")
+  excludeEmails   String[]       @default([]) @map("exclude_emails")
+  // File attachments already uploaded to our own bucket: [{ url, filename, contentType }].
+  attachments     Json?
   status          CampaignStatus @default(draft)
   totalRecipients Int            @default(0) @map("total_recipients")
   sentCount       Int            @default(0) @map("sent_count")

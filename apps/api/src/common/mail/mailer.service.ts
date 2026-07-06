@@ -528,6 +528,7 @@ export class MailerService implements OnModuleInit {
     bodyHtml: string,
     bodyText: string,
     unsubscribeUrl: string,
+    attachments?: SendMailInput['attachments'],
   ): Promise<void> {
     const b = MailerService.BRAND;
     const fullBody = `
@@ -539,6 +540,6 @@ export class MailerService implements OnModuleInit {
       </p>`;
     const text = `${bodyText}\n\n—\nSe désinscrire : ${unsubscribeUrl}`;
     const html = this.layout({ preheader: subject, bodyHtml: fullBody });
-    await this.send({ to, subject, html, text, unsubscribeUrl });
+    await this.send({ to, subject, html, text, unsubscribeUrl, attachments });
   }
 }

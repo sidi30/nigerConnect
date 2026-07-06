@@ -2,15 +2,25 @@
 
 // "Newsletter" — admin console for the launch waitlist + campaigns.
 //   - Stats (abonnés / désinscrits)
-//   - Composer: create a draft from a subject + a plain-text message
+//   - Composer: rich HTML editor + image upload + recipient targeting
+//     (audience / segment / autocomplete include+exclude) with a live count
 //   - Campaign list: send a test, send to all, delete drafts, watch progress
 //
-// Plain-text composition (no HTML editor): the admin types a message, we escape
-// it and turn line breaks into paragraphs client-side, so a campaign can never
-// inject markup into the email layout.
+// The composer emits email-safe HTML via TipTap (see NewsletterEditor); the
+// backend additionally sanitizes it, so a campaign can never inject active markup
+// into the branded email layout.
 
-import { useCallback, useEffect, useState } from "react";
-import { Mail, Send, Trash2, Users, UserMinus, Megaphone } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Mail,
+  Send,
+  Trash2,
+  Users,
+  UserMinus,
+  Megaphone,
+  X,
+  Plus,
+} from "lucide-react";
 import {
   AdminApiError,
   createCampaign,
@@ -18,14 +28,19 @@ import {
   fetchCampaigns,
   fetchNewsletterStats,
   fetchSubscribers,
+  previewNewsletterRecipients,
+  searchAdminUsers,
   sendCampaign,
   sendTestCampaign,
+  type AdminUserSummary,
   type CampaignAudience,
+  type CampaignSegment,
   type CampaignStatus,
   type NewsletterCampaign,
   type NewsletterStats,
   type NewsletterSubscriber,
 } from "@/lib/adminApi";
+import NewsletterEditor from "./NewsletterEditor";
 import {
   Card,
   CardHeader,
@@ -40,25 +55,32 @@ import {
   type ChipTone,
 } from "./ui";
 
-// Plain text → escaped HTML paragraphs (one <p> per non-empty line block).
-function textToHtml(text: string): string {
-  const esc = (s: string) =>
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  return text
-    .split(/\n{2,}/)
-    .map((para) => para.trim())
-    .filter(Boolean)
-    .map(
-      (para) =>
-        `<p style="margin:0 0 16px;">${esc(para).replace(/\n/g, "<br />")}</p>`,
-    )
-    .join("");
-}
+const AUDIENCE_OPTIONS: Array<{
+  value: CampaignAudience;
+  title: string;
+  desc: string;
+}> = [
+  {
+    value: "app_users",
+    title: "Utilisateurs de l'app",
+    desc: "Notification in-app + push + email (tous les comptes)",
+  },
+  {
+    value: "subscribers",
+    title: "Liste email (waitlist)",
+    desc: "Abonnés publics, email uniquement",
+  },
+  {
+    value: "segment",
+    title: "Segment",
+    desc: "Comptes filtrés (pays, ville, vérifié, ambassadeur…)",
+  },
+  {
+    value: "custom",
+    title: "Sur-mesure",
+    desc: "Uniquement les adresses ajoutées à la main",
+  },
+];
 
 const STATUS_LABEL: Record<CampaignStatus, string> = {
   draft: "Brouillon",
@@ -252,17 +274,78 @@ export default function NewsletterSection() {
 // --------------------------------------------------------------------------
 // Composer
 // --------------------------------------------------------------------------
+
+const inputCls =
+  "w-full rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 text-sm text-[#1A0F0A] outline-none focus:border-[#E05206] focus:ring-2 focus:ring-[#E05206]/20";
+
+/** Strip empty segment fields so we never send blank criteria to the API. */
+function cleanSegment(seg: CampaignSegment): CampaignSegment | undefined {
+  const out: CampaignSegment = {};
+  if (seg.countryCode?.trim()) out.countryCode = seg.countryCode.trim().toUpperCase();
+  if (seg.city?.trim()) out.city = seg.city.trim();
+  if (seg.verifiedOnly) out.verifiedOnly = true;
+  if (seg.ambassadorOnly) out.ambassadorOnly = true;
+  if (seg.optInOnly) out.optInOnly = true;
+  if (seg.activeSince) out.activeSince = new Date(seg.activeSince).toISOString();
+  return Object.keys(out).length ? out : undefined;
+}
+
+function isUserAudience(a: CampaignAudience): boolean {
+  return a === "app_users" || a === "segment";
+}
+
 function Composer({ onCreated }: { onCreated: () => void }) {
   const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
+  const [bodyHtml, setBodyHtml] = useState("<p></p>");
+  const [bodyText, setBodyText] = useState("");
   const [audience, setAudience] = useState<CampaignAudience>("app_users");
   const [critical, setCritical] = useState(false);
+  const [segment, setSegment] = useState<CampaignSegment>({});
+  const [includeEmails, setIncludeEmails] = useState<string[]>([]);
+  const [excludeEmails, setExcludeEmails] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Live recipient estimate (debounced) — reflects audience + segment + lists.
+  const [count, setCount] = useState<number | null>(null);
+  const [countBusy, setCountBusy] = useState(false);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    const t = setTimeout(() => {
+      setCountBusy(true);
+      previewNewsletterRecipients({
+        audience,
+        critical: isUserAudience(audience) ? critical : false,
+        segment: audience === "segment" ? cleanSegment(segment) : undefined,
+        includeEmails,
+        excludeEmails,
+        signal: ac.signal,
+      })
+        .then((r) => setCount(r.totalRecipients))
+        .catch((e: unknown) => {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          setCount(null);
+        })
+        .finally(() => setCountBusy(false));
+    }, 400);
+    return () => {
+      ac.abort();
+      clearTimeout(t);
+    };
+  }, [audience, critical, segment, includeEmails, excludeEmails]);
+
   async function create() {
-    if (!subject.trim() || !message.trim()) {
-      setError("Sujet et message requis.");
+    if (!subject.trim()) {
+      setError("Sujet requis.");
+      return;
+    }
+    if (!bodyText.trim()) {
+      setError("Le corps du message est vide.");
+      return;
+    }
+    if (audience === "custom" && includeEmails.length === 0) {
+      setError("Ajoute au moins un destinataire pour une campagne sur-mesure.");
       return;
     }
     setBusy(true);
@@ -270,15 +353,21 @@ function Composer({ onCreated }: { onCreated: () => void }) {
     try {
       await createCampaign({
         subject: subject.trim(),
-        bodyHtml: textToHtml(message),
-        bodyText: message.trim(),
+        bodyHtml,
+        bodyText: bodyText.trim(),
         audience,
-        // critical only meaningful for app users
-        critical: audience === "app_users" ? critical : false,
+        critical: isUserAudience(audience) ? critical : false,
+        segment: audience === "segment" ? cleanSegment(segment) : undefined,
+        includeEmails: includeEmails.length ? includeEmails : undefined,
+        excludeEmails: excludeEmails.length ? excludeEmails : undefined,
       });
       setSubject("");
-      setMessage("");
+      setBodyHtml("<p></p>");
+      setBodyText("");
       setCritical(false);
+      setSegment({});
+      setIncludeEmails([]);
+      setExcludeEmails([]);
       onCreated();
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Échec de la création.");
@@ -292,9 +381,9 @@ function Composer({ onCreated }: { onCreated: () => void }) {
       <CardHeader
         icon={Mail}
         title="Nouvelle campagne"
-        subtitle="Le message est mis en forme dans le gabarit NigerConnect."
+        subtitle="Éditeur riche + ciblage des destinataires — mis en forme dans le gabarit NigerConnect."
       />
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div>
           <label
             htmlFor="nl-subject"
@@ -309,67 +398,61 @@ function Composer({ onCreated }: { onCreated: () => void }) {
             onChange={(e) => setSubject(e.target.value)}
             maxLength={200}
             placeholder="NigerConnect est lancé ! 🇳🇪"
-            className="w-full rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 text-sm text-[#1A0F0A] outline-none focus:border-[#E05206] focus:ring-2 focus:ring-[#E05206]/20"
+            className={inputCls}
           />
         </div>
+
         <div>
-          <label
-            htmlFor="nl-message"
-            className="block text-xs font-semibold text-[#5A4634] mb-1"
-          >
+          <label className="block text-xs font-semibold text-[#5A4634] mb-1">
             Message
           </label>
-          <textarea
-            id="nl-message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={6}
-            placeholder={"Bonjour,\n\nL'application est enfin disponible…"}
-            className="w-full rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 text-sm text-[#1A0F0A] outline-none focus:border-[#E05206] focus:ring-2 focus:ring-[#E05206]/20 resize-y"
+          <NewsletterEditor
+            value={bodyHtml}
+            onChange={(html, text) => {
+              setBodyHtml(html);
+              setBodyText(text);
+            }}
           />
           <p className="mt-1 text-xs text-[#8A6B4D]">
-            Laisse une ligne vide pour séparer les paragraphes.
+            Gras, couleur, taille, liens, listes et images. Les images sont
+            hébergées sur notre CDN et intégrées au mail.
           </p>
         </div>
+
+        {/* Audience selector */}
         <div>
           <label className="block text-xs font-semibold text-[#5A4634] mb-1">
             Destinataires
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setAudience("app_users")}
-              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
-                audience === "app_users"
-                  ? "border-[#E05206] bg-[#FFF4EC] text-[#1A0F0A]"
-                  : "border-[#E8DFD3] bg-[#FDFBF7] text-[#5A4634]"
-              }`}
-            >
-              <span className="font-semibold">Utilisateurs de l&apos;app</span>
-              <span className="block text-xs text-[#8A6B4D]">
-                Notification in-app + push + email
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAudience("subscribers");
-                setCritical(false);
-              }}
-              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
-                audience === "subscribers"
-                  ? "border-[#E05206] bg-[#FFF4EC] text-[#1A0F0A]"
-                  : "border-[#E8DFD3] bg-[#FDFBF7] text-[#5A4634]"
-              }`}
-            >
-              <span className="font-semibold">Liste email (waitlist)</span>
-              <span className="block text-xs text-[#8A6B4D]">
-                Abonnés publics, email uniquement
-              </span>
-            </button>
+            {AUDIENCE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  setAudience(opt.value);
+                  if (!isUserAudience(opt.value)) setCritical(false);
+                }}
+                className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                  audience === opt.value
+                    ? "border-[#E05206] bg-[#FFF4EC] text-[#1A0F0A]"
+                    : "border-[#E8DFD3] bg-[#FDFBF7] text-[#5A4634]"
+                }`}
+              >
+                <span className="font-semibold">{opt.title}</span>
+                <span className="block text-xs text-[#8A6B4D]">{opt.desc}</span>
+              </button>
+            ))}
           </div>
         </div>
-        {audience === "app_users" ? (
+
+        {/* Segment criteria */}
+        {audience === "segment" ? (
+          <SegmentFields segment={segment} onChange={setSegment} />
+        ) : null}
+
+        {/* Critical toggle (user audiences only) */}
+        {isUserAudience(audience) ? (
           <label className="flex items-start gap-2 rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] px-3 py-2 cursor-pointer">
             <input
               type="checkbox"
@@ -387,6 +470,48 @@ function Composer({ onCreated }: { onCreated: () => void }) {
             </span>
           </label>
         ) : null}
+
+        {/* Individual add / remove */}
+        <div className="grid grid-cols-1 gap-3">
+          <EmailPicker
+            label={
+              audience === "custom"
+                ? "Destinataires (ajout individuel)"
+                : "Ajouter des destinataires"
+            }
+            placeholder="nom ou email…"
+            tone="add"
+            emails={includeEmails}
+            onChange={setIncludeEmails}
+          />
+          {audience !== "custom" ? (
+            <EmailPicker
+              label="Exclure des destinataires"
+              placeholder="nom ou email à retirer…"
+              tone="remove"
+              emails={excludeEmails}
+              onChange={setExcludeEmails}
+            />
+          ) : null}
+        </div>
+
+        {/* Recipient counter */}
+        <div className="flex items-center gap-2 rounded-lg bg-[#FFF4EC] border border-[#F3D8C4] px-3 py-2">
+          <Users size={16} className="text-[#E05206]" aria-hidden="true" />
+          <span className="text-sm text-[#1A0F0A]">
+            {countBusy ? (
+              "Estimation…"
+            ) : count === null ? (
+              "Destinataires : —"
+            ) : (
+              <>
+                <span className="font-semibold">{count.toLocaleString("fr-FR")}</span>{" "}
+                destinataire{count > 1 ? "s" : ""} estimé{count > 1 ? "s" : ""}
+              </>
+            )}
+          </span>
+        </div>
+
         {error ? <ErrorBanner message={error} /> : null}
         <div className="flex justify-end">
           <PrimaryButton onClick={create} disabled={busy}>
@@ -395,6 +520,249 @@ function Composer({ onCreated }: { onCreated: () => void }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Segment criteria fields
+// --------------------------------------------------------------------------
+function SegmentFields({
+  segment,
+  onChange,
+}: {
+  segment: CampaignSegment;
+  onChange: (s: CampaignSegment) => void;
+}) {
+  const set = (patch: Partial<CampaignSegment>) =>
+    onChange({ ...segment, ...patch });
+
+  return (
+    <div className="rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] p-3 space-y-3">
+      <p className="text-xs font-semibold text-[#5A4634]">
+        Critères du segment (comptes actifs)
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <input
+          type="text"
+          value={segment.countryCode ?? ""}
+          onChange={(e) => set({ countryCode: e.target.value.toUpperCase() })}
+          maxLength={2}
+          placeholder="Pays (code ISO, ex. NE)"
+          className={inputCls}
+        />
+        <input
+          type="text"
+          value={segment.city ?? ""}
+          onChange={(e) => set({ city: e.target.value })}
+          maxLength={100}
+          placeholder="Ville (ex. Niamey)"
+          className={inputCls}
+        />
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-2">
+        <SegCheck
+          label="Vérifiés (identité)"
+          checked={!!segment.verifiedOnly}
+          onChange={(v) => set({ verifiedOnly: v })}
+        />
+        <SegCheck
+          label="Ambassadeurs"
+          checked={!!segment.ambassadorOnly}
+          onChange={(v) => set({ ambassadorOnly: v })}
+        />
+        <SegCheck
+          label="Opt-in newsletter"
+          checked={!!segment.optInOnly}
+          onChange={(v) => set({ optInOnly: v })}
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-[#8A6B4D] mb-1">
+          Actifs depuis (dernière connexion ≥)
+        </label>
+        <input
+          type="date"
+          value={segment.activeSince ? segment.activeSince.slice(0, 10) : ""}
+          onChange={(e) =>
+            set({
+              activeSince: e.target.value
+                ? new Date(e.target.value).toISOString()
+                : undefined,
+            })
+          }
+          className={inputCls}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SegCheck({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-[#1A0F0A] cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 accent-[#E05206]"
+      />
+      {label}
+    </label>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Email picker — autocomplete over members + free email entry, chip list
+// --------------------------------------------------------------------------
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function EmailPicker({
+  label,
+  placeholder,
+  tone,
+  emails,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  tone: "add" | "remove";
+  emails: string[];
+  onChange: (emails: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<AdminUserSummary[]>([]);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Debounced member search.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    const ac = new AbortController();
+    const t = setTimeout(() => {
+      searchAdminUsers(q, 8, ac.signal)
+        .then((r) => {
+          setResults(r.items);
+          setOpen(true);
+        })
+        .catch(() => setResults([]));
+    }, 250);
+    return () => {
+      ac.abort();
+      clearTimeout(t);
+    };
+  }, [query]);
+
+  // Close dropdown on outside click.
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  function add(email: string) {
+    const e = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(e)) return;
+    if (!emails.includes(e)) onChange([...emails, e]);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  }
+
+  function remove(email: string) {
+    onChange(emails.filter((e) => e !== email));
+  }
+
+  const chipCls =
+    tone === "remove"
+      ? "bg-[#FCE8E8] text-[#B91C1C] border-[#F3C4C4]"
+      : "bg-[#E7F4EC] text-[#15803D] border-[#C4E3CE]";
+
+  return (
+    <div ref={boxRef} className="relative">
+      <label className="block text-xs font-semibold text-[#5A4634] mb-1">
+        {label}
+      </label>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (EMAIL_RE.test(query.trim())) add(query);
+            }
+          }}
+          placeholder={placeholder}
+          className={inputCls}
+        />
+        <GhostButton
+          onClick={() => add(query)}
+          disabled={!EMAIL_RE.test(query.trim())}
+        >
+          <Plus size={14} aria-hidden="true" />
+        </GhostButton>
+      </div>
+
+      {open && results.length > 0 ? (
+        <ul className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-[#E8DFD3] bg-white shadow-lg">
+          {results.map((u) => (
+            <li key={u.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => add(u.email)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#FDFBF7]"
+              >
+                <span className="font-medium text-[#1A0F0A]">
+                  {u.displayName ??
+                    [u.firstName, u.lastName].filter(Boolean).join(" ") ??
+                    u.email}
+                </span>
+                <span className="text-xs text-[#8A6B4D] truncate">{u.email}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {emails.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {emails.map((e) => (
+            <span
+              key={e}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${chipCls}`}
+            >
+              {e}
+              <button
+                type="button"
+                onClick={() => remove(e)}
+                aria-label={`Retirer ${e}`}
+                className="hover:opacity-70"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
