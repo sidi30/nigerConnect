@@ -1076,10 +1076,16 @@ export class AdminService {
    * GET /admin/referrals
    * Arbre de parrainage (vue plate paginée) : chaque membre récemment inscrit
    * avec SON parrain et le type d'invitation utilisé. Curseur sur user.id.
+   *
+   * `q` (optionnel) filtre les lignes dont l'email du FILLEUL ou du PARRAIN
+   * matche (contains, insensible à la casse). L'email sert uniquement au filtre
+   * serveur — il n'est jamais renvoyé par cette vue (parité avec la vue publique
+   * du réseau de parrainage, qui n'expose que displayName/avatar).
    */
   async listReferrals(
     limit: number,
     cursor?: string,
+    q?: string,
   ): Promise<{
     items: Array<{
       id: string;
@@ -1092,8 +1098,16 @@ export class AdminService {
     }>;
     nextCursor: string | null;
   }> {
+    const where: Prisma.UserWhereInput = { invitedById: { not: null } };
+    if (q) {
+      // Match sur l'email du filleul (la ligne = le User) OU du parrain (relation).
+      where.OR = [
+        { email: { contains: q, mode: 'insensitive' } },
+        { invitedBy: { email: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
     const rows = await this.prisma.user.findMany({
-      where: { invitedById: { not: null } },
+      where,
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'desc' },

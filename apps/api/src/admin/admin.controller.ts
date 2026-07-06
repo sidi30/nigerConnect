@@ -139,6 +139,9 @@ const updateUserSchema = z
 type UpdateUserDto = z.infer<typeof updateUserSchema>;
 
 const listReferralsSchema = z.object({
+  // Recherche par email (parrain OU filleul), insensible à la casse. Filtre
+  // serveur uniquement : l'email n'est jamais renvoyé par cette vue.
+  q: z.string().trim().min(2).max(100).optional(),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
@@ -393,7 +396,7 @@ export class AdminController {
    */
   @Get('referrals')
   referrals(@Query(new ZodValidationPipe(listReferralsSchema)) dto: ListReferralsDto) {
-    return this.admin.listReferrals(dto.limit, dto.cursor);
+    return this.admin.listReferrals(dto.limit, dto.cursor, dto.q);
   }
 
   /**

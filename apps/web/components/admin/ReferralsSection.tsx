@@ -6,7 +6,15 @@
 // Also exposes a control to grant / revoke canBulkInvite for any user.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Link2, Network, UserCheck, Users } from "lucide-react";
+import {
+  CheckCircle2,
+  Link2,
+  Network,
+  Search,
+  UserCheck,
+  Users,
+  X,
+} from "lucide-react";
 import {
   AdminApiError,
   listReferrals,
@@ -259,35 +267,52 @@ function ReferralsTable() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await listReferrals(undefined, PAGE_SIZE, signal);
-      setItems(res.items);
-      setNextCursor(res.nextCursor);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(
-        e instanceof AdminApiError ? e.message : "Erreur de chargement.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Recherche par email (parrain OU filleul). `query` = saisie brute ;
+  // `search` = valeur débouncée (≥2 car.) réellement envoyée à l'API.
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Debounce ~300ms : une recherche <2 caractères est traitée comme "vide"
+  // (le backend exige min 2) → on retombe sur la liste complète.
+  useEffect(() => {
+    const trimmed = query.trim();
+    const next = trimmed.length >= 2 ? trimmed : "";
+    const t = setTimeout(() => setSearch(next), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const load = useCallback(
+    async (signal?: AbortSignal, q?: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await listReferrals(undefined, PAGE_SIZE, signal, q || undefined);
+        setItems(res.items);
+        setNextCursor(res.nextCursor);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setError(
+          e instanceof AdminApiError ? e.message : "Erreur de chargement.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const ac = new AbortController();
-    void load(ac.signal);
+    void load(ac.signal, search);
     return () => ac.abort();
-  }, [load]);
+  }, [load, search]);
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     setError(null);
     try {
-      const res = await listReferrals(nextCursor, PAGE_SIZE);
+      const res = await listReferrals(nextCursor, PAGE_SIZE, undefined, search || undefined);
       setItems((prev) => [...prev, ...res.items]);
       setNextCursor(res.nextCursor);
     } catch (e) {
@@ -299,6 +324,8 @@ function ReferralsTable() {
     }
   }
 
+  const isSearching = search.length > 0;
+
   return (
     <Card className="p-5">
       <CardHeader
@@ -306,17 +333,50 @@ function ReferralsTable() {
         title="Réseau de parrainage"
         subtitle="Membres récents — parrain, type d'invitation et filleuls directs"
         right={
-          <GhostButton onClick={() => void load()} disabled={loading}>
+          <GhostButton onClick={() => void load(undefined, search)} disabled={loading}>
             Actualiser
           </GhostButton>
         }
       />
 
+      {/* Recherche par email (parrain ou filleul) */}
+      <div className="mb-4">
+        <label htmlFor="referrals-search" className="sr-only">
+          Rechercher par email
+        </label>
+        <div className="relative">
+          <Search
+            size={16}
+            strokeWidth={2}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#A89882]"
+          />
+          <input
+            id="referrals-search"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher par email (parrain ou filleul)…"
+            className="w-full rounded-lg border border-[#E8DFD3] bg-[#FDFBF7] pl-9 pr-9 py-2 text-sm text-[#1A0F0A] placeholder:text-[#A89882] focus:outline-none focus:ring-2 focus:ring-[#E05206]"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Effacer la recherche"
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-6 h-6 rounded-md text-[#8A6B4D] hover:bg-[#F1E9DD] hover:text-[#1A0F0A] focus:outline-none focus:ring-2 focus:ring-[#E05206]"
+            >
+              <X size={15} strokeWidth={2.5} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
       {error ? (
         <div className="mb-4">
           <ErrorBanner
             message={error}
-            onRetry={items.length === 0 ? () => void load() : undefined}
+            onRetry={items.length === 0 ? () => void load(undefined, search) : undefined}
           />
         </div>
       ) : null}
@@ -335,8 +395,20 @@ function ReferralsTable() {
       ) : !loading && items.length === 0 ? (
         <EmptyState>
           <div className="flex flex-col items-center gap-2 text-[#8A6B4D]">
-            <Users size={28} strokeWidth={1.75} aria-hidden="true" />
-            <span>Aucun membre avec parrain pour l&apos;instant</span>
+            {isSearching ? (
+              <>
+                <Search size={28} strokeWidth={1.75} aria-hidden="true" />
+                <span>Aucun résultat pour «&nbsp;{search}&nbsp;»</span>
+                <GhostButton onClick={() => setQuery("")}>
+                  Effacer la recherche
+                </GhostButton>
+              </>
+            ) : (
+              <>
+                <Users size={28} strokeWidth={1.75} aria-hidden="true" />
+                <span>Aucun membre avec parrain pour l&apos;instant</span>
+              </>
+            )}
           </div>
         </EmptyState>
       ) : (

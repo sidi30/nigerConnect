@@ -795,17 +795,21 @@ export interface ReferralListResponse {
 }
 
 /**
- * GET /admin/referrals?cursor=&limit=
- * Paginated list of recent members with their parrain chain.
+ * GET /admin/referrals?cursor=&limit=&q=
+ * Paginated list of recent members with their parrain chain. `q` (>= 2 chars)
+ * filters rows whose sponsor OR invitee email matches (server-side only — the
+ * email itself is never returned by this view).
  */
 export function listReferrals(
   cursor?: string,
   limit?: number,
   signal?: AbortSignal,
+  q?: string,
 ): Promise<ReferralListResponse> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   if (limit !== undefined) params.set("limit", String(limit));
+  if (q) params.set("q", q);
   const qs = params.toString();
   return adminFetch<ReferralListResponse>(
     `/admin/referrals${qs ? `?${qs}` : ""}`,
