@@ -911,8 +911,12 @@ model IdentityDocument {
   id              String         @id @default(uuid()) @db.Uuid
   userId          String         @map("user_id") @db.Uuid
   user            User           @relation("UserIdentityDocuments", fields: [userId], references: [id], onDelete: Cascade)
+  // 'passport' | 'id_card' | 'driver_license' | 'residence_permit' — or 'manual'
+  // for an admin-driven verification with no uploaded document (fileUrl stays null).
   documentType    String         @map("document_type") @db.VarChar(30)
-  fileUrl         String         @map("file_url") @db.VarChar(500)
+  // Nullable: a manual admin verification has no uploaded piece. User-submitted
+  // documents always carry the private-bucket pointer.
+  fileUrl         String?        @map("file_url") @db.VarChar(500)
   // Captured/validated by the admin at manual review. Used ONLY for the 18+ gate
   // (proximity feature) — private, never serialised to another user.
   dateOfBirth     DateTime?      @map("date_of_birth") @db.Date
@@ -921,6 +925,9 @@ model IdentityDocument {
   reviewedBy      User?          @relation("DocumentReviewer", fields: [reviewedById], references: [id])
   reviewedAt      DateTime?      @map("reviewed_at") @db.Timestamptz
   rejectionReason String?        @map("rejection_reason") @db.Text
+  // Admin justification recorded on a manual approve/revoke. Kept separate from
+  // rejectionReason (the user-facing rejection motive) for audit clarity.
+  reason          String?        @map("reason") @db.Text
   expiresAt       DateTime?      @map("expires_at") @db.Timestamptz
   createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
 

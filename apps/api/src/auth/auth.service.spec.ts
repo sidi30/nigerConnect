@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  NotFoundException,
   UnauthorizedException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -857,6 +858,197 @@ describe('AuthService', () => {
           }),
         }),
       );
+    });
+  });
+
+  // ── Manual identity verification (admin, no document) ───────────────────────
+
+  describe('manualApproveIdentity', () => {
+    // A safely-past adult DOB (well over 18) used across the happy-path tests.
+    const ADULT_DOB = '1990-06-15';
+
+    it('UPSERTs a manual approved doc and flips the user to approved (no prior doc)', async () => {
+      const prisma = makePrisma({
+        user: {
+          findUnique: jest.fn(async () => ({ id: 'u1' })),
+          update: jest.fn(async () => ({})),
+        },
+        identityDocument: {
+          findFirst: jest.fn(async () => null), // no existing manual doc → create
+          create: jest.fn(async () => ({ id: 'doc-new' })),
+          update: jest.fn(),
+        },
+      });
+      const svc = makeSvc({ prisma });
+
+      await svc.manualApproveIdentity('admin-1', 'u1', ADULT_DOB, 'Vérifié en personne');
+
+      expect(prisma.identityDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'u1',
+            documentType: 'manual',
+            fileUrl: null,
+            status: 'approved',
+            reviewedById: 'admin-1',
+            reason: 'Vérifié en personne',
+            dateOfBirth: new Date('1990-06-15T00:00:00.000Z'),
+          }),
+        }),
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u1' },
+          data: { identityStatus: 'approved' },
+        }),
+      );
+    });
+
+    it('rewrites the existing manual doc when re-approving (idempotent)', async () => {
+      const prisma = makePrisma({
+        user: {
+          findUnique: jest.fn(async () => ({ id: 'u1' })),
+          update: jest.fn(async () => ({})),
+        },
+        identityDocument: {
+          findFirst: jest.fn(async () => ({ id: 'doc-existing' })),
+          create: jest.fn(),
+          update: jest.fn(async () => ({})),
+        },
+      });
+      const svc = makeSvc({ prisma });
+
+      await svc.manualApproveIdentity('admin-2', 'u1', ADULT_DOB, 'Re-validé');
+
+      expect(prisma.identityDocument.create).not.toHaveBeenCalled();
+      expect(prisma.identityDocument.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'doc-existing' },
+          data: expect.objectContaining({
+            status: 'approved',
+            fileUrl: null,
+            reviewedById: 'admin-2',
+            reason: 'Re-validé',
+          }),
+        }),
+      );
+    });
+
+    it('rejects a missing date of birth', async () => {
+      const prisma = makePrisma();
+      const svc = makeSvc({ prisma });
+      await expect(
+        svc.manualApproveIdentity('admin-1', 'u1', '', 'reason'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // Bails out before any write.
+      expect(prisma.identityDocument.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects an under-18 date of birth (18+ gate)', async () => {
+      const prisma = makePrisma();
+      const svc = makeSvc({ prisma });
+      // Someone who turns "old enough" only next year — 10 years old today.
+      const tenYearsAgo = new Date();
+      tenYearsAgo.setUTCFullYear(tenYearsAgo.getUTCFullYear() - 10);
+      const minorDob = tenYearsAgo.toISOString().slice(0, 10);
+      await expect(
+        svc.manualApproveIdentity('admin-1', 'u1', minorDob, 'reason'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.identityDocument.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a future date of birth', async () => {
+      const prisma = makePrisma();
+      const svc = makeSvc({ prisma });
+      const nextYear = new Date();
+      nextYear.setUTCFullYear(nextYear.getUTCFullYear() + 1);
+      const futureDob = nextYear.toISOString().slice(0, 10);
+      await expect(
+        svc.manualApproveIdentity('admin-1', 'u1', futureDob, 'reason'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('404s when the target user does not exist', async () => {
+      const prisma = makePrisma({
+        user: { findUnique: jest.fn(async () => null) },
+      });
+      const svc = makeSvc({ prisma });
+      await expect(
+        svc.manualApproveIdentity('admin-1', 'ghost', ADULT_DOB, 'reason'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('revokeIdentity', () => {
+    it('marks the latest doc rejected and flips the user to rejected', async () => {
+      const prisma = makePrisma({
+        user: {
+          findUnique: jest.fn(async () => ({ id: 'u1' })),
+          update: jest.fn(async () => ({})),
+        },
+        identityDocument: {
+          findFirst: jest.fn(async () => ({ id: 'doc-1' })),
+          update: jest.fn(async () => ({})),
+          create: jest.fn(),
+        },
+      });
+      const svc = makeSvc({ prisma });
+
+      await svc.revokeIdentity('admin-1', 'u1', 'Fraude constatée');
+
+      expect(prisma.identityDocument.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'doc-1' },
+          data: expect.objectContaining({
+            status: 'rejected',
+            reviewedById: 'admin-1',
+            rejectionReason: 'Fraude constatée',
+            reason: 'Fraude constatée',
+          }),
+        }),
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u1' },
+          data: { identityStatus: 'rejected' },
+        }),
+      );
+    });
+
+    it('falls back to not_submitted when the user never submitted a doc', async () => {
+      const prisma = makePrisma({
+        user: {
+          findUnique: jest.fn(async () => ({ id: 'u1' })),
+          update: jest.fn(async () => ({})),
+        },
+        identityDocument: {
+          findFirst: jest.fn(async () => null),
+          update: jest.fn(),
+          create: jest.fn(),
+        },
+      });
+      const svc = makeSvc({ prisma });
+
+      await svc.revokeIdentity('admin-1', 'u1', 'Compte nettoyé');
+
+      expect(prisma.identityDocument.update).not.toHaveBeenCalled();
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u1' },
+          data: { identityStatus: 'not_submitted' },
+        }),
+      );
+    });
+
+    it('404s when the target user does not exist', async () => {
+      const prisma = makePrisma({
+        user: { findUnique: jest.fn(async () => null) },
+      });
+      const svc = makeSvc({ prisma });
+      await expect(
+        svc.revokeIdentity('admin-1', 'ghost', 'reason'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

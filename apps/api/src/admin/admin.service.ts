@@ -1027,7 +1027,9 @@ export class AdminService {
   }
 
   /** Turn an `s3://<privateBucket>/<key>` pointer into a short presigned GET. */
-  private async presignDoc(fileUrl: string): Promise<string | null> {
+  private async presignDoc(fileUrl: string | null): Promise<string | null> {
+    // Manual verifications carry no uploaded piece (fileUrl null) → nothing to presign.
+    if (!fileUrl) return null;
     const prefix = `s3://${this.privateBucket}/`;
     if (!fileUrl.startsWith(prefix)) return null;
     const key = fileUrl.slice(prefix.length).split(/[?#]/)[0];

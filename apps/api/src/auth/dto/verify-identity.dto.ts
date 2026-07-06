@@ -26,3 +26,34 @@ export const reviewIdentitySchema = z
   });
 
 export type ReviewIdentityDto = z.infer<typeof reviewIdentitySchema>;
+
+// ── Manual identity verification (admin, no document) ────────────────────────
+// An admin may verify a member's identity WITHOUT an uploaded piece (e.g. vetted
+// in person / by a trusted community process). DOB is mandatory (18+ gate for the
+// proximity feature) and must be a real, past date describing an adult. reason is
+// mandatory so every manual decision is auditable.
+const isoDate = z
+  .string()
+  .date()
+  .refine((d) => Date.parse(`${d}T00:00:00.000Z`) <= Date.now(), {
+    message: 'dateOfBirth cannot be in the future',
+  });
+
+export const manualApproveIdentitySchema = z
+  .object({
+    userId: z.string().uuid(),
+    dateOfBirth: isoDate,
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export type ManualApproveIdentityDto = z.infer<typeof manualApproveIdentitySchema>;
+
+export const revokeIdentitySchema = z
+  .object({
+    userId: z.string().uuid(),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export type RevokeIdentityDto = z.infer<typeof revokeIdentitySchema>;

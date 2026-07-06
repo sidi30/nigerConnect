@@ -54,7 +54,9 @@ export class IdentityCleanupCron implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private extractKey(url: string): string | null {
+  private extractKey(url: string | null): string | null {
+    // Manual verifications have no uploaded file (url null) → nothing to delete.
+    if (!url) return null;
     // Expected format: s3://bucket/key or https://cdn.example/key
     try {
       if (url.startsWith('s3://')) {
