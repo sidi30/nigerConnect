@@ -1,16 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ANDROID_AVAILABLE, ANDROID_STORE_URL, IOS_STORE_URL } from "@/lib/stores";
 
 export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
-// Deep-link scheme and store URLs.
+// Deep-link scheme. Store URLs live in lib/stores so this page and the landing
+// page can never disagree on what is actually published.
 const APP_SCHEME = "nigerconnect://";
-const IOS_STORE_URL =
-  "https://apps.apple.com/fr/app/nigerconnect/id6775895189";
-const ANDROID_STORE_URL =
-  "https://play.google.com/store/apps/details?id=com.sidi30.nigerconnect";
 
 interface CheckResult {
   valid: boolean;
@@ -180,11 +178,18 @@ export default async function InvitePage({
               </svg>
               App Store
             </a>
+            {/* While the Play Store listing is not live, this must not link to a
+                Google 404 — Android is the majority platform for this audience,
+                so a dead end here is where invited people are lost. */}
             <a
-              href={ANDROID_STORE_URL}
+              href={ANDROID_AVAILABLE ? ANDROID_STORE_URL : "https://nigerconnect.app/#waitlist"}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Télécharger sur Google Play"
+              aria-label={
+                ANDROID_AVAILABLE
+                  ? "Télécharger sur Google Play"
+                  : "Être prévenu de la sortie Android"
+              }
               className="flex-1 flex items-center justify-center gap-2 border border-[#E8DFD3] hover:bg-[#FDFBF7] text-[#1A0F0A] font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm"
             >
               {/* Google Play triangle glyph */}
@@ -196,7 +201,7 @@ export default async function InvitePage({
               >
                 <path d="M3.18 23.76c.34.19.73.24 1.11.14L13.88 12 4.29.1c-.38-.1-.77-.05-1.11.14C2.5.67 2.09 1.4 2.09 2.19v19.62c0 .79.41 1.52 1.09 1.95zM14.93 13.05l2.72 2.72-9.4 5.26 6.68-8zm3.95-5.57L16.66 9.7 13.88 12l2.78 2.3 2.22 1.24c.63.35 1.03.91 1.03 1.52s-.4 1.17-1.03 1.52L5.35 23.76l9.4-5.26 5.28-2.95c1.09-.61 1.79-1.72 1.79-2.95s-.7-2.34-1.79-2.95l-1.15-.17zM5.35.24l13.53 7.57-2.22 1.24L14.93 10.9 8.25 2.9z" />
               </svg>
-              Google Play
+              {ANDROID_AVAILABLE ? "Google Play" : "Android : me prévenir"}
             </a>
           </div>
         </div>
