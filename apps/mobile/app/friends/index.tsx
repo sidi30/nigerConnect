@@ -17,6 +17,8 @@ import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
+import { describeError } from '@/services/apiError';
+import { toast } from '@/stores/toastStore';
 import { Colors, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 
@@ -67,21 +69,35 @@ export default function FriendsScreen() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Every mutation here reports its failures. Without this the buttons looked
+  // dead on any refusal (already friends, blocked, rate-limited, offline) — and
+  // this is the screen the empty feed sends newcomers to, so a silent no-op is
+  // exactly where they give up.
   const acceptMut = useMutation({
     mutationFn: (id: string) => friendsApi.accept(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['friends'] });
+      toast.success('Demande acceptée 🎉');
+    },
+    onError: (e) => toast.error(describeError(e)),
   });
   const declineMut = useMutation({
     mutationFn: (id: string) => friendsApi.decline(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onError: (e) => toast.error(describeError(e)),
   });
   const sendRequestMut = useMutation({
     mutationFn: (userId: string) => friendsApi.sendRequest(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['friends'] });
+      toast.success('Demande envoyée');
+    },
+    onError: (e) => toast.error(describeError(e)),
   });
   const removeFriendMut = useMutation({
     mutationFn: (userId: string) => friendsApi.remove(userId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['friends'] }),
+    onError: (e) => toast.error(describeError(e)),
   });
 
   const counts: Record<Tab, number> = {

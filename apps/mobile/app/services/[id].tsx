@@ -35,6 +35,7 @@ import {
   Typography,
 } from '@/constants/theme';
 import { colorForId, relativeTime, SERVICE_CATEGORY_LABELS } from '@/constants/lookups';
+import { describeError } from '@/services/apiError';
 
 const STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
   open: { bg: Colors.peach50, color: Colors.orange, label: 'Ouvert' },
@@ -83,11 +84,13 @@ export default function ServiceDetailScreen() {
   const resolveMut = useMutation({
     mutationFn: () => servicesApi.resolve(id!),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['service', id] }),
+    onError: (e) => Alert.alert('Erreur', describeError(e, 'Annonce introuvable.')),
   });
 
   const openConvoMut = useMutation({
     mutationFn: (userId: string) => chatApi.createConversation([userId]),
     onSuccess: (c) => router.push(`/chat/${c.id}`),
+    onError: (e) => Alert.alert('Erreur', describeError(e, 'Membre introuvable.')),
   });
 
   const deleteMut = useMutation({

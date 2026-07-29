@@ -20,6 +20,8 @@ import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
 import { friendsApi } from '@/services/friendsApi';
+import { describeError } from '@/services/apiError';
+import { toast } from '@/stores/toastStore';
 
 export default function NewChatScreen() {
   const router = useRouter();
@@ -37,6 +39,8 @@ export default function NewChatScreen() {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
       router.replace(`/chat/${convo.id}`);
     },
+    // Silent failure here left the user tapping a name that never opened.
+    onError: (e) => toast.error(describeError(e)),
   });
 
   const friends = friendsQuery.data?.items ?? [];

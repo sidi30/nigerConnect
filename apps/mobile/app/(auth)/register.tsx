@@ -256,12 +256,12 @@ export default function RegisterScreen() {
           <Text style={gateStyles.heading}>Inscriptions momentanément fermées</Text>
           <Text style={gateStyles.body}>
             NigerConnect est en maintenance ou a temporairement suspendu les nouvelles
-            inscriptions. Les membres existants continuent d'accéder au réseau normalement.
+            inscriptions. Les membres existants continuent d&apos;accéder au réseau normalement.
           </Text>
           <Text style={gateStyles.body}>
             Reviens bientôt ou contacte-nous à{' '}
             <Text style={gateStyles.link}>contact@nigerconnect.app</Text> pour rejoindre la
-            liste d'attente.
+            liste d&apos;attente.
           </Text>
           <Pressable
             onPress={() => router.push('/(auth)/login')}
@@ -300,9 +300,9 @@ export default function RegisterScreen() {
             <View style={gateStyles.iconCircle}>
               <Feather name="gift" size={36} color={Colors.orange} />
             </View>
-            <Text style={gateStyles.heading}>Code d'invitation requis</Text>
+            <Text style={gateStyles.heading}>Code d&apos;invitation requis</Text>
             <Text style={gateStyles.body}>
-              NigerConnect fonctionne sur invitation. Saisis le code que ton parrain t'a envoyé.
+              NigerConnect fonctionne sur invitation. Saisis le code que ton parrain t&apos;a envoyé.
             </Text>
 
             {/* Success banner */}
@@ -310,14 +310,14 @@ export default function RegisterScreen() {
               <View style={gateStyles.successBanner}>
                 <Feather name="check-circle" size={18} color={Colors.green} />
                 <Text style={gateStyles.successText}>
-                  {inviterName} t'invite sur NigerConnect
+                  {inviterName} t&apos;invite sur NigerConnect
                 </Text>
               </View>
             ) : null}
 
             {/* Code input */}
             <View style={{ marginBottom: Spacing.md }}>
-              <Text style={styles.label}>Code d'invitation</Text>
+              <Text style={styles.label}>Code d&apos;invitation</Text>
               <TextInput
                 value={inviteCode}
                 onChangeText={(v) => {

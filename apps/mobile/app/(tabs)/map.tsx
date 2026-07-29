@@ -20,6 +20,8 @@ import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/const
 import { friendsApi } from '@/services/friendsApi';
 import { geoApi, type MapMarker } from '@/services/geoApi';
 import { profileApi } from '@/services/profileApi';
+import { describeError } from '@/services/apiError';
+import { toast } from '@/stores/toastStore';
 import { useAuthStore } from '@/stores/authStore';
 import { MapCanvas, type MapCanvasHandle } from '@/components/map/MapCanvas';
 
@@ -789,7 +791,9 @@ function IndividualSheet({
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['user', marker.userId, 'relationship'] });
       void qc.invalidateQueries({ queryKey: ['friends'] });
+      toast.success('Demande envoyée');
     },
+    onError: (e) => toast.error(describeError(e)),
   });
 
   const rel = relationshipQuery.data?.status ?? 'none';

@@ -72,8 +72,17 @@ export default function PrivacyScreen() {
   });
 
   function saveNewsletter(optIn: boolean) {
+    const previous = newsletterOptIn;
     setNewsletterOptIn(optIn);
-    saveNewsletterMut.mutate({ newsletterOptIn: optIn });
+    saveNewsletterMut.mutate(
+      { newsletterOptIn: optIn },
+      {
+        onError: () => {
+          setNewsletterOptIn(previous);
+          Alert.alert('Erreur', 'Impossible de mettre à jour ce réglage. Réessaie.');
+        },
+      },
+    );
   }
 
   function saveDigest(optIn: boolean) {
@@ -91,16 +100,49 @@ export default function PrivacyScreen() {
     );
   }
 
+  // These two toggles decide who can see the member and where. Showing the new
+  // state before the server confirmed it — with no rollback — meant a failed
+  // PATCH (offline is common here) left the UI claiming "Privé" while the
+  // account was still public. Same optimistic+rollback contract as the digest
+  // toggle above.
   function savePrivacy(level: 'public' | 'friends' | 'private', mapVisible: boolean) {
+    const previousLevel = privacyLevel;
+    const previousMap = showOnMap;
     setPrivacyLevel(level);
     setShowOnMap(mapVisible);
-    savePrivacyMut.mutate({ privacyLevel: level, showOnMap: mapVisible });
+    savePrivacyMut.mutate(
+      { privacyLevel: level, showOnMap: mapVisible },
+      {
+        onError: () => {
+          setPrivacyLevel(previousLevel);
+          setShowOnMap(previousMap);
+          Alert.alert(
+            'Réglage non enregistré',
+            "Ta confidentialité n'a PAS été modifiée. Vérifie ta connexion et réessaie.",
+          );
+        },
+      },
+    );
   }
 
   function saveProximity(alerts: boolean, radius: number) {
+    const previousAlerts = proximityAlerts;
+    const previousRadius = proximityRadius;
     setProximityAlerts(alerts);
     setProximityRadius(radius);
-    saveProximityMut.mutate({ proximityAlerts: alerts, proximityRadius: radius });
+    saveProximityMut.mutate(
+      { proximityAlerts: alerts, proximityRadius: radius },
+      {
+        onError: () => {
+          setProximityAlerts(previousAlerts);
+          setProximityRadius(previousRadius);
+          Alert.alert(
+            'Réglage non enregistré',
+            "Tes alertes de proximité n'ont PAS été modifiées. Vérifie ta connexion et réessaie.",
+          );
+        },
+      },
+    );
   }
 
   if (!user) return null;

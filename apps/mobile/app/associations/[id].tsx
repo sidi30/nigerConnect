@@ -34,6 +34,7 @@ import {
   Typography,
 } from '@/constants/theme';
 import { relativeTime } from '@/constants/lookups';
+import { describeError } from '@/services/apiError';
 
 /**
  * Map join/leave/fetch errors to a sentence the end user can act on. The raw
@@ -41,20 +42,6 @@ import { relativeTime } from '@/constants/lookups';
  * non-technical member. We surface the API's own message when present, then
  * fall back to status-based copy.
  */
-function describeError(err: unknown): string {
-  const e = err as {
-    message?: string;
-    response?: { status?: number; data?: { message?: string | string[] } };
-  } | null;
-  const apiMsg = e?.response?.data?.message;
-  const msg = Array.isArray(apiMsg) ? apiMsg.join(' · ') : apiMsg;
-  if (msg) return msg;
-  const status = e?.response?.status;
-  if (status === 404) return 'Association introuvable.';
-  if (status && status >= 500) return 'Le serveur ne répond pas. Réessaie dans un instant.';
-  if (/network/i.test(e?.message ?? '')) return 'Pas de connexion. Vérifie ton réseau.';
-  return e?.message ?? 'Une erreur est survenue.';
-}
 
 const ROLE_LABELS: Record<string, { color: string; bg: string; label: string }> = {
   admin: { color: Colors.orange, bg: Colors.peach50, label: 'Admin' },
@@ -107,7 +94,7 @@ export default function AssociationDetailScreen() {
           : 'Tu fais maintenant partie de cette association.',
       );
     },
-    onError: (e) => Alert.alert('Impossible de rejoindre', describeError(e)),
+    onError: (e) => Alert.alert('Impossible de rejoindre', describeError(e, 'Association introuvable.')),
   });
 
   const leaveMut = useMutation({
@@ -117,7 +104,7 @@ export default function AssociationDetailScreen() {
       void qc.invalidateQueries({ queryKey: ['association', id] });
       void qc.invalidateQueries({ queryKey: ['association', id, 'members'] });
     },
-    onError: (e) => Alert.alert('Impossible de quitter', describeError(e)),
+    onError: (e) => Alert.alert('Impossible de quitter', describeError(e, 'Association introuvable.')),
   });
 
   function confirmLeave() {
@@ -135,7 +122,7 @@ export default function AssociationDetailScreen() {
       void qc.invalidateQueries({ queryKey: ['geo'] });
       router.back();
     },
-    onError: (e) => Alert.alert('Impossible de supprimer', describeError(e)),
+    onError: (e) => Alert.alert('Impossible de supprimer', describeError(e, 'Association introuvable.')),
   });
 
   function confirmDelete() {
@@ -163,12 +150,12 @@ export default function AssociationDetailScreen() {
   const approveMut = useMutation({
     mutationFn: (userId: string) => associationsApi.approve(id!, userId),
     onSuccess: invalidateRequests,
-    onError: (e) => Alert.alert('Action impossible', describeError(e)),
+    onError: (e) => Alert.alert('Action impossible', describeError(e, 'Association introuvable.')),
   });
   const rejectMut = useMutation({
     mutationFn: (userId: string) => associationsApi.reject(id!, userId),
     onSuccess: invalidateRequests,
-    onError: (e) => Alert.alert('Action impossible', describeError(e)),
+    onError: (e) => Alert.alert('Action impossible', describeError(e, 'Association introuvable.')),
   });
 
   // ── Invite ──────────────────────────────────────────────────
@@ -186,7 +173,7 @@ export default function AssociationDetailScreen() {
     onSuccess: (_res, userId) => {
       setInvitedIds((prev) => new Set(prev).add(userId));
     },
-    onError: (e) => Alert.alert('Invitation impossible', describeError(e)),
+    onError: (e) => Alert.alert('Invitation impossible', describeError(e, 'Association introuvable.')),
   });
 
   async function shareJoinLink() {
@@ -249,7 +236,7 @@ export default function AssociationDetailScreen() {
   const deletePostMut = useMutation({
     mutationFn: (postId: string) => feedApi.deletePost(postId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: postsKey }),
-    onError: (e) => Alert.alert('Suppression impossible', describeError(e)),
+    onError: (e) => Alert.alert('Suppression impossible', describeError(e, 'Association introuvable.')),
   });
 
   if (assocQuery.isLoading) {

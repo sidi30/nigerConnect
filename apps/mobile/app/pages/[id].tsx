@@ -21,6 +21,7 @@ import { CreatePollCard } from '@/components/poll/CreatePollCard';
 import { pagesApi } from '@/services/pagesApi';
 import { pollsApi } from '@/services/pollsApi';
 import { useAuthStore } from '@/stores/authStore';
+import { describeError } from '@/services/apiError';
 import {
   Colors,
   CountryNames,
@@ -34,20 +35,6 @@ import {
 /**
  * Map page/follow/unfollow errors to actionable sentences.
  */
-function describeError(err: unknown): string {
-  const e = err as {
-    message?: string;
-    response?: { status?: number; data?: { message?: string | string[] } };
-  } | null;
-  const apiMsg = e?.response?.data?.message;
-  const msg = Array.isArray(apiMsg) ? apiMsg.join(' · ') : apiMsg;
-  if (msg) return msg;
-  const status = e?.response?.status;
-  if (status === 404) return 'Page introuvable.';
-  if (status && status >= 500) return 'Le serveur ne répond pas. Réessaie dans un instant.';
-  if (/network/i.test(e?.message ?? '')) return 'Pas de connexion. Vérifie ton réseau.';
-  return e?.message ?? 'Une erreur est survenue.';
-}
 
 const KIND_LABELS: Record<string, string> = {
   community: 'Communauté',
@@ -92,7 +79,7 @@ export default function PageDetailScreen() {
       void qc.invalidateQueries({ queryKey: ['page', id] });
       void qc.invalidateQueries({ queryKey: ['pages'] });
     },
-    onError: (e) => Alert.alert('Impossible de suivre', describeError(e)),
+    onError: (e) => Alert.alert('Impossible de suivre', describeError(e, 'Page introuvable.')),
   });
 
   const unfollowMut = useMutation({
@@ -101,7 +88,7 @@ export default function PageDetailScreen() {
       void qc.invalidateQueries({ queryKey: ['page', id] });
       void qc.invalidateQueries({ queryKey: ['pages'] });
     },
-    onError: (e) => Alert.alert('Impossible de ne plus suivre', describeError(e)),
+    onError: (e) => Alert.alert('Impossible de ne plus suivre', describeError(e, 'Page introuvable.')),
   });
 
   const removeMut = useMutation({
@@ -110,7 +97,7 @@ export default function PageDetailScreen() {
       void qc.invalidateQueries({ queryKey: ['pages'] });
       router.back();
     },
-    onError: (e) => Alert.alert('Impossible de supprimer', describeError(e)),
+    onError: (e) => Alert.alert('Impossible de supprimer', describeError(e, 'Page introuvable.')),
   });
 
   function confirmDelete() {

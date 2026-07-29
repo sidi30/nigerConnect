@@ -18,6 +18,8 @@ import { feedApi } from '@/services/feedApi';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, palette, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
+import { describeError } from '@/services/apiError';
+import { toast } from '@/stores/toastStore';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const STORY_DURATION = 5000; // 5s per story
@@ -47,6 +49,7 @@ export default function StoryViewerScreen() {
   const isVideoStory = activeMedia?.mediaType === 'video';
 
   const deleteMut = useMutation({
+    onError: (e) => toast.error(describeError(e, 'Story introuvable.')),
     mutationFn: (storyId: string) => feedApi.deleteStory(storyId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['stories'] });

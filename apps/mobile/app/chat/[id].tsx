@@ -1071,7 +1071,7 @@ export default function ChatScreen() {
         {peerIsTyping && (
           <View style={styles.typingRow}>
             <Text style={styles.typingText}>
-              {peerName} est en train d'ecrire…
+              {peerName} est en train d&apos;ecrire…
             </Text>
           </View>
         )}

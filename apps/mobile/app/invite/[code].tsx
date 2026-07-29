@@ -46,7 +46,7 @@ export default function InviteDeepLink() {
   return (
     <View style={styles.root} accessibilityRole="none">
       <ActivityIndicator size="large" color={Colors.orange} />
-      <Text style={styles.label}>Chargement de l'invitation…</Text>
+      <Text style={styles.label}>Chargement de l&apos;invitation…</Text>
     </View>
   );
 }

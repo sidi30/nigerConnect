@@ -27,6 +27,8 @@ import { friendsApi } from '@/services/friendsApi';
 import { blocksApi } from '@/services/blocksApi';
 import { feedApi } from '@/services/feedApi';
 import { chatApi } from '@/services/chatApi';
+import { describeError } from '@/services/apiError';
+import { toast } from '@/stores/toastStore';
 import {
   Colors,
   CountryNames,
@@ -164,7 +166,9 @@ export default function UserScreen() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['user', id, 'relationship'] });
       void qc.invalidateQueries({ queryKey: ['friends'] });
+      toast.success('Demande envoyée');
     },
+    onError: (e) => toast.error(describeError(e, 'Membre introuvable.')),
   });
   const acceptMut = useMutation({
     mutationFn: (friendshipId: string) => friendsApi.accept(friendshipId),
@@ -172,6 +176,7 @@ export default function UserScreen() {
       void qc.invalidateQueries({ queryKey: ['user', id, 'relationship'] });
       void qc.invalidateQueries({ queryKey: ['friends'] });
     },
+    onError: (e) => toast.error(describeError(e, 'Membre introuvable.')),
   });
   const removeMut = useMutation({
     mutationFn: () => friendsApi.remove(id!),
@@ -179,10 +184,12 @@ export default function UserScreen() {
       void qc.invalidateQueries({ queryKey: ['user', id, 'relationship'] });
       void qc.invalidateQueries({ queryKey: ['friends'] });
     },
+    onError: (e) => toast.error(describeError(e, 'Membre introuvable.')),
   });
   const openConvoMut = useMutation({
     mutationFn: () => chatApi.createConversation([id!]),
     onSuccess: (convo) => router.push(`/chat/${convo.id}`),
+    onError: (e) => toast.error(describeError(e, 'Membre introuvable.')),
   });
 
   const blockMut = useMutation({
@@ -192,6 +199,9 @@ export default function UserScreen() {
       void qc.invalidateQueries();
       router.back();
     },
+    // Blocking is a safety action: failing silently would leave someone
+    // believing they are protected when nothing was recorded.
+    onError: (e) => toast.error(describeError(e, 'Membre introuvable.')),
   });
 
   const likeMut = useMutation({

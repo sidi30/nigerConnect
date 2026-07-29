@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Notification } from '@nigerconnect/shared-types';
 import { notificationApi } from '@/services/notificationApi';
+import { describeError } from '@/services/apiError';
+import { toast } from '@/stores/toastStore';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { Loader } from '@/components/ui/Loader';
 import { relativeTime } from '@/constants/lookups';
@@ -128,13 +130,17 @@ export default function NotificationsScreen() {
     mutationFn: (id: string) => notificationApi.markRead(id),
     onSuccess: invalidate,
   });
+  // Destructive actions report their failures; the read-marking ones don't need
+  // to, since `invalidate` refetches and the unchanged list speaks for itself.
   const removeMut = useMutation({
     mutationFn: (id: string) => notificationApi.remove(id),
     onSuccess: invalidate,
+    onError: (e) => toast.error(describeError(e)),
   });
   const clearAllMut = useMutation({
     mutationFn: () => notificationApi.clearAll(),
     onSuccess: invalidate,
+    onError: (e) => toast.error(describeError(e)),
   });
 
   function confirmClearAll() {

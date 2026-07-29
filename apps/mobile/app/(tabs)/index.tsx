@@ -270,12 +270,38 @@ export default function FeedTab() {
           feedQuery.isLoading ? (
             <FeedSkeletonList count={3} />
           ) : (
+            // An empty feed is the first thing a brand-new member sees. Telling
+            // them "add friends" without giving them a way to do it is a dead
+            // end — every line below is a way out.
             <View style={styles.empty}>
               <Feather name="home" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
-              <Text style={styles.emptyTitle}>Fil vide</Text>
+              <Text style={styles.emptyTitle}>Ton fil est encore vide</Text>
               <Text style={styles.emptyText}>
-                Ajoute des amis pour voir leurs publications ici.
+                Le réseau se construit avec toi. Voilà par où commencer :
               </Text>
+              <View style={styles.emptyActions}>
+                <Pressable
+                  style={[styles.emptyBtn, styles.emptyBtnPrimary]}
+                  onPress={() => router.push('/post/new')}
+                >
+                  <Feather name="edit-2" size={16} color={Colors.white} />
+                  <Text style={styles.emptyBtnPrimaryText}>Publier quelque chose</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.emptyBtn}
+                  onPress={() => router.push('/friends' as never)}
+                >
+                  <Feather name="user-plus" size={16} color={Colors.orange} />
+                  <Text style={styles.emptyBtnText}>Découvrir des membres</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.emptyBtn}
+                  onPress={() => router.push('/(tabs)/invite')}
+                >
+                  <Feather name="send" size={16} color={Colors.orange} />
+                  <Text style={styles.emptyBtnText}>Inviter un proche</Text>
+                </Pressable>
+              </View>
             </View>
           )
         }
@@ -370,6 +396,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
+  emptyActions: { marginTop: Spacing.lg, gap: 10, alignSelf: 'stretch' },
+  emptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radii.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+  },
+  emptyBtnPrimary: { backgroundColor: Colors.orange, borderColor: Colors.orange },
+  emptyBtnText: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.orange },
+  emptyBtnPrimaryText: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.white },
   fab: {
     position: 'absolute',
     right: Spacing.lg,
