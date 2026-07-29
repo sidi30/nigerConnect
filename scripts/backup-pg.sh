@@ -26,11 +26,29 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$PROJECT_ROOT/.env.prod}"
-[[ -f "$ENV_FILE" ]] && set -a && source "$ENV_FILE" && set +a
 
-CONTAINER="${POSTGRES_CONTAINER:-nigerconnect-postgres}"
-USER="${POSTGRES_USER:?POSTGRES_USER required}"
-DB="${POSTGRES_DB:?POSTGRES_DB required}"
+# Read one key out of the env file WITHOUT executing it. `source` cannot be used
+# here: .env.prod holds unquoted values with shell metacharacters (MAIL_FROM is
+# `NigerConnect <contact@…>`, whose `<` bash reads as a redirect), so sourcing
+# errors out mid-file and every key declared after that line comes back unset.
+# Docker Compose reads the same file literally, so it never saw the problem.
+read_env() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  sed -n "s/^[[:space:]]*$1=//p" "$ENV_FILE" | tail -n1 |
+    sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+}
+
+# Real environment wins over the file, so a cron line or an operator can override
+# any of these without touching .env.prod.
+CONTAINER="${POSTGRES_CONTAINER:-$(read_env POSTGRES_CONTAINER)}"
+CONTAINER="${CONTAINER:-nigerconnect-postgres}"
+USER="${POSTGRES_USER:-$(read_env POSTGRES_USER)}"
+DB="${POSTGRES_DB:-$(read_env POSTGRES_DB)}"
+: "${USER:?POSTGRES_USER required (env or $ENV_FILE)}"
+: "${DB:?POSTGRES_DB required (env or $ENV_FILE)}"
+RCLONE_REMOTE="${RCLONE_REMOTE:-$(read_env RCLONE_REMOTE)}"
+BACKUP_WEBHOOK_URL="${BACKUP_WEBHOOK_URL:-$(read_env BACKUP_WEBHOOK_URL)}"
+BACKUP_DIR="${BACKUP_DIR:-$(read_env BACKUP_DIR)}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/nigerconnect}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$BACKUP_DIR/${TS}.sql.gz"

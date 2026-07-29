@@ -43,7 +43,7 @@
     "dashboard": "https://expo.dev/accounts/sidi30/projects/nigerconnect/updates/606aca21-d7f5-4f97-8a95-9d85e4a5f699"
   },
   "reste_a_faire": {
-    "cron_backup_pg": "NON FAIT (non retenu par le proprio le 29/07). Toujours aucune sauvegarde automatique: seuls des dumps ponctuels. scripts/backup-pg.sh est pret et executable sur le VPS, il ne manque que la ligne /etc/cron.d/nigerconnect-pg-backup.",
+    "cron_backup_pg": "FAIT le 29/07 (GO proprio en 2e temps). /etc/cron.d/nigerconnect-pg-backup (644 root): 03:15 UTC quotidien, log /var/log/nigerconnect-backup.log, creneau choisi pour eviter le backup cybersensei (0 */6). Dumps dans /var/backups/nigerconnect (700 root), retention 14 jours + dimanches 8 semaines. Prouve: commande cron exacte lancee a la main => dump 72K valide. PAS de copie hors-hote (RCLONE_REMOTE non configure) => une perte du VPS emporte les sauvegardes.",
     "flags_beta": "video_enabled + digest_enabled toujours OFF (fail-closed, features inertes) — activation via PATCH /admin/settings au rollout cohorte verified.",
     "android": "aucun build soumis. Le web pointe vers la waitlist tant que ANDROID_AVAILABLE=false (apps/web/lib/stores.ts) — basculer a true le jour du listing Play.",
     "export_compliance_asc": "a confirmer dans App Store Connect pour 1.10.0 (proprio, interactif).",
