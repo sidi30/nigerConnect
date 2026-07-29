@@ -8,6 +8,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { NotificationService } from '../notification/notification.service';
+import { BlockService } from '../social/block.service';
 import type {
   CreateServiceDto,
   ListServicesDto,
@@ -42,6 +43,7 @@ export class ServicesService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly s3: S3Service,
+    private readonly blocks: BlockService,
   ) {}
 
   /**
@@ -215,6 +217,11 @@ export class ServicesService {
       throw new ForbiddenException('Cannot respond to your own request');
     }
     if (request.status !== 'open') throw new ForbiddenException('Request is no longer open');
+    // A response carries free text straight to the author, plus a notification —
+    // i.e. a messaging channel. A block has to close it, exactly like chat.
+    if (await this.blocks.isBlocked(userId, request.authorId)) {
+      throw new ForbiddenException('Interaction impossible avec ce membre');
+    }
 
     const [response] = await this.prisma.$transaction([
       this.prisma.serviceResponse.create({

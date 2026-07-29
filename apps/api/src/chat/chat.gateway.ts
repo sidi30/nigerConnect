@@ -98,14 +98,17 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       const authed = client as AuthedSocket;
       authed.userId = payload.sub;
       authed.userJti = payload.jti;
-      client.join(`user:${payload.sub}`);
+      // `join` is synchronous with the in-memory adapter but returns a promise
+      // under a Redis adapter (multi-instance). Awaiting keeps the subscription
+      // effective before presence is broadcast, so no early event is missed.
+      await client.join(`user:${payload.sub}`);
 
       // Subscribe to all conversation rooms the user belongs to
       const convos = await this.chat['prisma'].conversationMember.findMany({
         where: { userId: payload.sub },
         select: { conversationId: true },
       });
-      for (const c of convos) client.join(`conv:${c.conversationId}`);
+      for (const c of convos) await client.join(`conv:${c.conversationId}`);
 
       await this.presence.markOnline(payload.sub);
       // Presence has to be scoped to people who can plausibly already see
@@ -360,11 +363,12 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
           algorithms: ['RS256'],
           issuer: this.issuer,
           audience: this.audience,
-        })) as JwtUserPayload;
+        }));
       } catch (err) {
         lastErr = err;
       }
     }
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrows the last verify failure verbatim (typed `unknown`); handleConnection catches it.
     throw lastErr ?? new Error('Invalid token');
   }
 }

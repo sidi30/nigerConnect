@@ -19,6 +19,10 @@ function makeS3(reject = false) {
       if (reject) throw new BadRequestException('Media URL must point to an uploaded file on this platform');
       return `https://cdn.test/users/${ownerId}/photo/canonical.jpg`;
     }),
+    parsePublicKey: jest.fn((url: string) =>
+      url.startsWith('https://cdn.test/') ? url.slice('https://cdn.test/'.length) : null,
+    ),
+    deleteObject: jest.fn(async () => undefined),
   };
 }
 
@@ -90,6 +94,37 @@ describe('ChatService', () => {
     const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.message.update).not.toHaveBeenCalled();
+  });
+
+  it('deleting an image message purges the object from the public bucket', async () => {
+    // Chat media sits in the PUBLIC bucket: nulling `mediaUrl` alone would only
+    // hide the link while the photo stayed fetchable forever by URL.
+    const prisma = {
+      message: {
+        findUnique: jest.fn(async () => ({
+          id: 'm1',
+          senderId: 'me',
+          conversationId: 'c1',
+          deletedAt: null,
+          createdAt: new Date(),
+          mediaUrl: 'https://cdn.test/users/me/photo/canonical.jpg',
+        })),
+        update: jest.fn(async () => ({ id: 'm1' })),
+        // syncPreview recomputes the conversation preview after the delete.
+        findFirst: jest.fn(async () => null),
+      },
+      conversation: { update: jest.fn(async () => ({})) },
+      conversationMember: { findMany: jest.fn(async () => [{ userId: 'me' }, { userId: 'u2' }]) },
+    };
+    const s3 = makeS3();
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never, makePresence() as never);
+
+    await svc.softDeleteMessage('me', 'm1');
+
+    expect(s3.deleteObject).toHaveBeenCalledWith('users/me/photo/canonical.jpg');
+    expect(prisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ mediaUrl: null }) }),
+    );
   });
 
   it('refuses to edit a non-editable message type (file)', async () => {

@@ -41,16 +41,20 @@ export class LikesService {
 
     if (existing) {
       if (existing.emoji === emoji) {
-        // Same reaction tapped again → remove it.
-        await this.prisma.$transaction([
+        // Same reaction tapped again → remove it. The count comes back from the
+        // UPDATE itself (same idiom as CommentsService): deriving it from the
+        // pre-transaction read returns a stale number whenever someone else
+        // reacted concurrently.
+        const [, updated] = await this.prisma.$transaction([
           this.prisma.like.delete({ where: { userId_postId: { userId, postId } } }),
           this.prisma.post.update({
             where: { id: postId },
             data: { likeCount: { decrement: 1 } },
+            select: { likeCount: true },
           }),
         ]);
         await this.invalidateCaches(userId, post.authorId);
-        return { liked: false, count: post.likeCount - 1, myReaction: null };
+        return { liked: false, count: updated.likeCount, myReaction: null };
       }
       // Switch reaction in place — count unchanged, no fresh notification.
       await this.prisma.like.update({
@@ -61,11 +65,12 @@ export class LikesService {
       return { liked: true, count: post.likeCount, myReaction: emoji };
     }
 
-    await this.prisma.$transaction([
+    const [, updated] = await this.prisma.$transaction([
       this.prisma.like.create({ data: { userId, postId, emoji } }),
       this.prisma.post.update({
         where: { id: postId },
         data: { likeCount: { increment: 1 } },
+        select: { likeCount: true },
       }),
     ]);
 
@@ -86,7 +91,7 @@ export class LikesService {
     }
 
     await this.invalidateCaches(userId, post.authorId);
-    return { liked: true, count: post.likeCount + 1, myReaction: emoji };
+    return { liked: true, count: updated.likeCount, myReaction: emoji };
   }
 
   private async invalidateCaches(likerId: string, authorId: string): Promise<void> {

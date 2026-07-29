@@ -48,6 +48,12 @@ export const inviteMemberSchema = z.object({
 });
 export type InviteMemberDto = z.infer<typeof inviteMemberSchema>;
 
+/** Optional note an admin attaches when turning down a join request. */
+export const rejectRequestSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+export type RejectRequestDto = z.infer<typeof rejectRequestSchema>;
+
 export const createEventSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(5000).optional(),

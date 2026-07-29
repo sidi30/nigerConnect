@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -29,6 +30,10 @@ import {
 export class ModerationController {
   constructor(private readonly moderation: ModerationService) {}
 
+  // Reporting is a safety valve, not a bulk action: a human flags a handful of
+  // items, never dozens per minute. Combined with the per-target dedup in the
+  // service, this bounds report-bombing of the moderation console.
+  @Throttle({ short: { limit: 5, ttl: 60_000 }, long: { limit: 30, ttl: 3_600_000 } })
   @Post()
   create(
     @CurrentUser() me: JwtUserPayload,
@@ -47,8 +52,8 @@ export class ModerationController {
   @UseGuards(RolesGuard)
   @Roles('admin', 'moderator')
   @Get(':id/target')
-  getTarget(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.moderation.getTarget(id);
+  getTarget(@CurrentUser() me: JwtUserPayload, @Param('id', new ParseUUIDPipe()) id: string) {
+    return this.moderation.getTarget(id, me.sub);
   }
 
   @UseGuards(RolesGuard)

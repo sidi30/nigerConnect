@@ -24,6 +24,7 @@ import {
   feedQuerySchema,
   presignVideoSchema,
   reactSchema,
+  shareSchema,
   updatePostSchema,
   type CreateCommentDto,
   type CreatePostDto,
@@ -31,6 +32,7 @@ import {
   type FeedQueryDto,
   type PresignVideoDto,
   type ReactDto,
+  type ShareDto,
   type UpdatePostDto,
 } from './dto/post.dto';
 
@@ -177,9 +179,9 @@ export class FeedController {
   share(
     @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
-    @Body('content') content?: string,
+    @Body(new ZodValidationPipe(shareSchema)) dto: ShareDto,
   ) {
-    return this.posts.share(me.sub, id, content);
+    return this.posts.share(me.sub, id, dto.content);
   }
 
   // ── Stories ────────────────────────────────────────────────

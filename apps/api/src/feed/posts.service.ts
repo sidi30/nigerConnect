@@ -521,6 +521,21 @@ export class PostsService {
   }
 
   // ── Feed ──────────────────────────────────────────────────────
+
+  /**
+   * Feed cursors are the previous page's last `createdAt`, ISO-encoded. A
+   * malformed one used to reach Prisma as an Invalid Date and surface as a 500;
+   * it is a caller error, so say so.
+   */
+  private parseCursorDate(cursor?: string): Date | null {
+    if (!cursor) return null;
+    const date = new Date(cursor);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid cursor');
+    }
+    return date;
+  }
+
   async getFeed(userId: string, cursor?: string, limit = 20) {
     const cacheable = !cursor && limit === FEED_CACHE_LIMIT;
     const cacheKey = `feed:${userId}:start`;
@@ -556,7 +571,7 @@ export class PostsService {
       })
     ).map((m) => m.associationId);
 
-    const cursorDate = cursor ? new Date(cursor) : null;
+    const cursorDate = this.parseCursorDate(cursor);
 
     const posts = await this.prisma.post.findMany({
       where: {
@@ -637,7 +652,7 @@ export class PostsService {
       new Set(blockedRows.map((b) => (b.blockerId === viewerId ? b.blockedId : b.blockerId))),
     );
 
-    const cursorDate = cursor ? new Date(cursor) : null;
+    const cursorDate = this.parseCursorDate(cursor);
 
     const posts = await this.prisma.post.findMany({
       where: {
@@ -726,7 +741,7 @@ export class PostsService {
           }
         : { visibility: 'public' };
 
-    const cursorDate = cursor ? new Date(cursor) : null;
+    const cursorDate = this.parseCursorDate(cursor);
     const posts = await this.prisma.post.findMany({
       where: {
         authorId,

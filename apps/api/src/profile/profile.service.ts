@@ -590,10 +590,6 @@ export class ProfileService {
    */
   async search(viewerId: string, dto: SearchDto) {
     const limit = dto.limit;
-    const conditions: Prisma.Sql[] = [
-      this.prisma.$queryRawUnsafe('TRUE') as unknown as Prisma.Sql,
-    ];
-    // Simpler: use findMany with where
     const where: Prisma.UserWhereInput = {
       AND: [
         { id: { not: viewerId } },

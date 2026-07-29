@@ -58,3 +58,9 @@ export const reactSchema = z.object({
   emoji: z.string().trim().min(1).max(16).default('❤️'),
 });
 export type ReactDto = z.infer<typeof reactSchema>;
+
+/** Optional commentary added when re-sharing a post. Same cap as a post body. */
+export const shareSchema = z.object({
+  content: z.string().max(5000).optional(),
+});
+export type ShareDto = z.infer<typeof shareSchema>;

@@ -16,12 +16,14 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AssociationService } from './association.service';
 import {
   changeRoleSchema,
+  rejectRequestSchema,
   createAssociationSchema,
   createEventSchema,
   inviteMemberSchema,
   listAssociationsSchema,
   updateAssociationSchema,
   type ChangeRoleDto,
+  type RejectRequestDto,
   type CreateAssociationDto,
   type CreateEventDto,
   type InviteMemberDto,
@@ -145,9 +147,9 @@ export class AssociationController {
     @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Param('userId', new ParseUUIDPipe()) userId: string,
-    @Body('reason') reason?: string,
+    @Body(new ZodValidationPipe(rejectRequestSchema)) dto: RejectRequestDto,
   ) {
-    return this.assoc.rejectJoinRequest(me.sub, id, userId, reason);
+    return this.assoc.rejectJoinRequest(me.sub, id, userId, dto.reason);
   }
 
   @Post('associations/:id/events')

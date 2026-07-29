@@ -169,4 +169,37 @@ describe('AssociationService', () => {
       'u1',
     );
   });
+
+  it('refuses the last admin demoting themselves to member', async () => {
+    // `leave` already blocks the last admin from walking out; demoting yourself
+    // was the unguarded door to the same orphaned-association state.
+    const prisma = {
+      associationMember: {
+        findUnique: jest.fn(async () => ({ role: 'admin', status: 'approved' })),
+        count: jest.fn(async () => 1),
+        update: jest.fn(),
+      },
+    };
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
+
+    await expect(
+      svc.changeRole('me', 'a1', 'me', { role: 'member' } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.associationMember.update).not.toHaveBeenCalled();
+  });
+
+  it('lets an admin step down when another admin remains', async () => {
+    const prisma = {
+      associationMember: {
+        findUnique: jest.fn(async () => ({ role: 'admin', status: 'approved' })),
+        count: jest.fn(async () => 2),
+        update: jest.fn(async () => ({ role: 'member' })),
+      },
+    };
+    const svc = new AssociationService(prisma as never, makeNotifsStub() as never, makeGeoStub() as never, makeS3Stub() as never);
+
+    await svc.changeRole('me', 'a1', 'me', { role: 'member' } as never);
+
+    expect(prisma.associationMember.update).toHaveBeenCalled();
+  });
 });

@@ -2,7 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
-export type AdminAuditAction = 'map_full_visibility' | 'profile_view_override';
+export type AdminAuditAction =
+  | 'map_full_visibility'
+  | 'profile_view_override'
+  // Reading a reported item in the moderation console. That read deliberately
+  // bypasses privacy (a moderator must see private posts and DM content to
+  // decide) — so it must leave a trace, exactly like the map/profile overrides.
+  | 'report_target_view';
 
 // The map refetches on every pan, so we collapse god-mode map browsing to one
 // audit row per admin per this window instead of one per request.

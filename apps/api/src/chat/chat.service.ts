@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma, MessageType } from '@prisma/client';
@@ -85,6 +86,8 @@ const MESSAGE_INCLUDE = {
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
@@ -408,6 +411,24 @@ export class ChatService {
     if (Date.now() - msg.createdAt.getTime() > MESSAGE_MUTATION_WINDOW_MS) {
       throw new ForbiddenException('Trop tard pour supprimer ce message (15 min max)');
     }
+    // Chat media lives in the PUBLIC bucket, so clearing `mediaUrl` only hides
+    // the link from the API — the object itself stays fetchable forever by
+    // anyone who kept the URL. "Supprimer pour tout le monde" has to mean it,
+    // so purge the object too (best-effort: a failure must not block the
+    // delete, same trade-off as the moderation takedown path).
+    const previous = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { mediaUrl: true },
+    });
+    const mediaKey = previous?.mediaUrl ? this.s3.parsePublicKey(previous.mediaUrl) : null;
+    if (mediaKey) {
+      try {
+        await this.s3.deleteObject(mediaKey);
+      } catch (e) {
+        this.logger.warn(`chat media purge failed for message ${messageId}: ${String(e)}`);
+      }
+    }
+
     const message = await this.prisma.message.update({
       where: { id: messageId },
       data: { deletedAt: new Date(), content: null, mediaUrl: null },

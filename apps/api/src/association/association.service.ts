@@ -397,6 +397,18 @@ export class AssociationService {
 
   async changeRole(actorId: string, id: string, targetUserId: string, dto: ChangeRoleDto) {
     await this.assertRole(actorId, id, ['admin']);
+    // `leave` already refuses to let the last admin walk out. Demoting yourself
+    // is the same exit through another door: without this check the sole admin
+    // could become a plain member and leave the association with nobody able to
+    // approve join requests, run events or manage roles.
+    if (actorId === targetUserId && dto.role !== 'admin') {
+      const adminCount = await this.prisma.associationMember.count({
+        where: { associationId: id, role: 'admin' },
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Cannot step down: you are the last admin');
+      }
+    }
     return this.prisma.associationMember.update({
       where: { associationId_userId: { associationId: id, userId: targetUserId } },
       data: { role: dto.role },

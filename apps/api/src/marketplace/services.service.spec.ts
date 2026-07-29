@@ -4,6 +4,11 @@ import { createServiceSchema } from './dto/service.dto';
 
 // Passthrough S3 stub: echoes the URL back as its "canonical" form so we can
 // assert it was invoked per-media with the owner id (owner-binding contract).
+/** No block relationship between any two users unless a test says otherwise. */
+function noBlocks() {
+  return { isBlocked: jest.fn(async () => false) };
+}
+
 const passthroughS3 = () => ({
   assertOwnedPublicImage: jest.fn(async (url: string) => `cdn:${url}`),
 });
@@ -15,7 +20,7 @@ describe('ServicesService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', authorId: 'me', status: 'open' })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(svc.respond('me', 'r1', { message: 'hi' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -27,7 +32,7 @@ describe('ServicesService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', authorId: 'other', status: 'resolved' })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(svc.respond('me', 'r1', { message: 'hi' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -39,7 +44,7 @@ describe('ServicesService', () => {
         findUnique: jest.fn(async () => ({ authorId: 'me', status: 'open' })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(
       svc.rate('me', 'r1', { ratedUserId: 'u2', rating: 5 }),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -51,13 +56,13 @@ describe('ServicesService', () => {
         findUnique: jest.fn(async () => ({ id: 'r1', authorId: 'other', status: 'open' })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(svc.resolve('me', 'r1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('throws NotFound on unknown request', async () => {
     const prisma = { serviceRequest: { findUnique: jest.fn(async () => null) } };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(svc.getById('x')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -70,7 +75,7 @@ describe('ServicesService', () => {
         create: jest.fn(async () => ({ id: 'r1' })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never, noBlocks() as never);
 
     await svc.create('me', {
       intent: 'paid_service',
@@ -128,7 +133,7 @@ describe('ServicesService', () => {
         findUnique: jest.fn(async () => ({ authorId: 'someone_else', intent: 'help_free', budget: null })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never, noBlocks() as never);
     await expect(svc.update('me', 'r1', { title: 'hijack' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -143,7 +148,7 @@ describe('ServicesService', () => {
       }),
     };
     const prisma = { serviceRequest: { create: jest.fn() } };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never, noBlocks() as never);
 
     await expect(
       svc.create('me', {
@@ -166,7 +171,7 @@ describe('ServicesService', () => {
         delete: del,
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(svc.remove('me', 'r1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(del).not.toHaveBeenCalled();
   });
@@ -187,7 +192,7 @@ describe('ServicesService', () => {
         }),
       ),
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, s3 as never, noBlocks() as never);
 
     await svc.update('me', 'r1', {
       media: [
@@ -210,7 +215,7 @@ describe('ServicesService', () => {
         findUnique: jest.fn(async () => ({ authorId: 'me', intent: 'help_free', budget: null })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(svc.update('me', 'r1', { budget: '999' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
@@ -228,7 +233,7 @@ describe('ServicesService', () => {
         upsert: jest.fn(),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
     await expect(
       svc.rate('me', 'r1', { ratedUserId: 'stranger', rating: 5 }),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -248,7 +253,7 @@ describe('ServicesService', () => {
         upsert: jest.fn(async () => ({ id: 'rating1' })),
       },
     };
-    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never);
+    const svc = new ServicesService(prisma as never, { create: jest.fn() } as never, passthroughS3() as never, noBlocks() as never);
 
     await svc.rate('me', 'r1', { ratedUserId: 'u2', rating: 4 });
     await svc.rate('me', 'r1', { ratedUserId: 'u2', rating: 2 });
@@ -261,5 +266,28 @@ describe('ServicesService', () => {
         where: { requestId_ratedUserId: { requestId: 'r1', ratedUserId: 'u2' } },
       }),
     );
+  });
+
+  it('a blocked member cannot answer a help request from the blocker', async () => {
+    // A response carries free text plus a notification straight to the author —
+    // that is a messaging channel, and a block must close it like it does chat.
+    const prisma = {
+      serviceRequest: {
+        findUnique: jest.fn(async () => ({ id: 'r1', authorId: 'author', status: 'open' })),
+      },
+      serviceResponse: { create: jest.fn() },
+    };
+    const blocks = { isBlocked: jest.fn(async () => true) };
+    const svc = new ServicesService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      passthroughS3() as never,
+      blocks as never,
+    );
+
+    await expect(svc.respond('blocked-user', 'r1', { message: 'coucou' } as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(prisma.serviceResponse.create).not.toHaveBeenCalled();
   });
 });

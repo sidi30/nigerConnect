@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { ReportTargetType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
+import { AdminAuditService } from '../common/audit/audit.service';
+import { NotificationService } from '../notification/notification.service';
 import type { CreateReportDto, ListReportsDto, ResolveReportDto } from './dto/report.dto';
 
 @Injectable()
@@ -11,10 +13,25 @@ export class ModerationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3: S3Service,
+    private readonly audit: AdminAuditService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async create(reporterId: string, dto: CreateReportDto) {
-    return this.prisma.report.create({
+    // One open report per reporter per target. Without this, a hostile group can
+    // file the same complaint hundreds of times to drown the console — and a
+    // genuine report gets buried in the noise.
+    const existing = await this.prisma.report.findFirst({
+      where: {
+        reporterId,
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+        status: 'pending',
+      },
+    });
+    if (existing) return existing;
+
+    const report = await this.prisma.report.create({
       data: {
         reporterId,
         targetType: dto.targetType,
@@ -23,6 +40,40 @@ export class ModerationService {
         description: dto.description ?? null,
       },
     });
+
+    // The Terms promise every report is looked at within 24 working hours. Until
+    // now nothing told anyone a report had arrived: it just sat in a console
+    // waiting to be opened. Alerting is what makes that promise keepable.
+    void this.alertModerators(report.id, dto.targetType);
+    return report;
+  }
+
+  /**
+   * Notify every admin/moderator that a report is waiting. Best-effort: the
+   * reporter's request must succeed even if the alert fails.
+   */
+  private async alertModerators(reportId: string, targetType: ReportTargetType): Promise<void> {
+    try {
+      const staff = await this.prisma.user.findMany({
+        where: { role: { in: ['admin', 'moderator'] }, status: 'active' },
+        select: { id: true },
+      });
+      await Promise.all(
+        staff.map((s) =>
+          this.notifications.create({
+            userId: s.id,
+            type: 'system',
+            title: 'Nouveau signalement à examiner',
+            body: `Un contenu de type « ${targetType} » vient d'être signalé.`,
+            // No expiry: a moderation task must not silently vanish after 24h.
+            expiresInHours: null,
+            data: { screen: 'moderation', reportId },
+          }),
+        ),
+      );
+    } catch (e) {
+      this.logger.warn(`moderator alert failed for report ${reportId}: ${String(e)}`);
+    }
   }
 
   async list(dto: ListReportsDto) {
@@ -47,11 +98,18 @@ export class ModerationService {
   // admin/moderator at the controller. Soft-deleted content is still returned
   // (the row is kept on content_removed) so a resolved report stays auditable;
   // `deletedAt` lets the UI flag it. Hard-deleted/missing targets return found:false.
-  async getTarget(id: string) {
+  //
+  // Because that bypass is real, every read is written to the admin audit trail
+  // (same treatment as the god-mode map and profile overrides). Without it, a
+  // moderator could fabricate a report against any message id — nothing in
+  // `create` requires the reporter to have had access to the target — and read
+  // strangers' private conversations leaving no trace at all.
+  async getTarget(id: string, viewerId?: string) {
     const report = await this.prisma.report.findUnique({ where: { id } });
     if (!report) throw new NotFoundException('Report not found');
 
     const { targetType, targetId } = report;
+    if (viewerId) void this.audit.log(viewerId, 'report_target_view', targetId);
     const authorSelect = { id: true, displayName: true, avatarUrl: true } as const;
 
     switch (targetType) {
@@ -234,12 +292,27 @@ export class ModerationService {
         this.logger.log(`content_removed post=${id} purged=${purged}`);
         return;
       }
-      case 'message':
+      case 'message': {
+        // Same rule as posts: chat media lives in the PUBLIC bucket, so nulling
+        // `mediaUrl` only hides the link — the object stays fetchable by anyone
+        // holding the URL. A taken-down image must actually leave the bucket.
+        const msg = await this.prisma.message.findUnique({
+          where: { id },
+          select: { mediaUrl: true },
+        });
+        let purged = 0;
+        const key = msg?.mediaUrl ? this.s3.parsePublicKey(msg.mediaUrl) : null;
+        if (key) {
+          await this.s3.deleteObject(key);
+          purged = 1;
+        }
         await this.prisma.message.update({
           where: { id },
           data: { deletedAt: now, content: null, mediaUrl: null },
         });
+        this.logger.log(`content_removed message=${id} purged=${purged}`);
         return;
+      }
       case 'comment':
         await this.prisma.comment.update({ where: { id }, data: { deletedAt: now } });
         return;

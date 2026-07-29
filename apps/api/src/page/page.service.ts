@@ -216,6 +216,18 @@ export class PageService {
       select: { id: true },
     });
     if (!target) throw new NotFoundException('User not found');
+    // Demoting yourself is the other way to strand a page: `removeAdmin` guards
+    // the last admin, but without the same check here the sole admin could set
+    // their own role to `editor` and leave the page with nobody able to manage
+    // its admins or delete it — permanently.
+    if (actorId === targetUserId && dto.role !== 'admin') {
+      const adminCount = await this.prisma.pageAdmin.count({
+        where: { pageId: id, role: 'admin' },
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Cannot step down: you are the last admin');
+      }
+    }
     return this.prisma.pageAdmin.upsert({
       where: { pageId_userId: { pageId: id, userId: targetUserId } },
       create: { pageId: id, userId: targetUserId, role: dto.role },

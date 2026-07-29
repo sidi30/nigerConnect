@@ -78,6 +78,22 @@ describe('PostsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+
+  it('rejects a malformed feed cursor with 400 instead of blowing up in Prisma', async () => {
+    // The cursor is the previous page last createdAt, ISO-encoded. A garbage
+    // value used to reach Prisma as an Invalid Date and surface as a 500.
+    const prisma = {
+      friendship: { findMany: jest.fn(async () => []) },
+      block: { findMany: jest.fn(async () => []) },
+      associationMember: { findMany: jest.fn(async () => []) },
+      post: { findMany: jest.fn() },
+    };
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+
+    await expect(svc.getFeed('u1', 'not-a-date')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.post.findMany).not.toHaveBeenCalled();
+  });
+
   it('create persists a post with media and invalidates cache', async () => {
     const prisma = {
       post: { create: jest.fn(async () => ({ id: 'p1', authorId: 'u1' })) },

@@ -7,6 +7,7 @@ import {
 import type { Prisma, ReviewTargetType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { BlockService } from '../social/block.service';
 import { USER_PUBLIC_SELECT } from '../common/prisma/user-select';
 import type { ListReviewsDto, UpsertReviewDto } from './dto/review.dto';
 
@@ -19,6 +20,7 @@ export class ReviewService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly blocks: BlockService,
   ) {}
 
   async upsert(authorId: string, dto: UpsertReviewDto) {
@@ -134,6 +136,13 @@ export class ReviewService {
         select: { id: true },
       });
       if (!user) throw new NotFoundException('User not found');
+      // A block cuts contact both ways — as it already does in chat. Without
+      // this, someone you blocked could still rate you one star and reach you
+      // through the review notification, which is the harassment path a block
+      // is meant to close.
+      if (await this.blocks.isBlocked(authorId, targetId)) {
+        throw new ForbiddenException('Interaction impossible avec ce membre');
+      }
       return { targetUserId: targetId, targetPageId: null };
     }
     const page = await this.prisma.page.findUnique({
