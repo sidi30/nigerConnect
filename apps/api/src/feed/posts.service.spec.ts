@@ -400,6 +400,47 @@ describe('PostsService — stories video', () => {
     expect(redis.client.incrby).toHaveBeenCalledWith(`video:bytes:u1:${day}`, 5_000_000);
   });
 
+  // M-01: the poster is displayed to every viewer, so an unbound client URL would
+  // beacon the whole audience's IP/User-Agent to a host the author chose.
+  it('binds the video poster through the owned image guard (never persists a raw client URL)', async () => {
+    const detailed = jest.fn(async (url: string) => ({ url, bytes: 1_000, contentType: 'video/mp4' }));
+    const { svc, s3, postCreate } = build({
+      videoEnabled: true,
+      s3: {
+        assertOwnedPublicMediaDetailed: detailed,
+        assertOwnedPublicImage: jest.fn(async () => 'https://cdn/users/u1/poster.jpg'),
+      },
+    });
+    await svc.createStory('u1', {
+      media: { ...videoMedia, thumbnailUrl: 'https://evil.example/track.gif' },
+    } as never);
+    expect(s3.assertOwnedPublicImage).toHaveBeenCalledWith('https://evil.example/track.gif', 'u1');
+    // What lands in the row is the canonical URL the guard returned, not the input.
+    const arg = (
+      postCreate.mock.calls[0] as unknown as [{ data: { media: { create: { thumbnailUrl: string } } } }]
+    )[0];
+    expect(arg.data.media.create.thumbnailUrl).toBe('https://cdn/users/u1/poster.jpg');
+  });
+
+  it('rejects a story whose poster fails the ownership guard (no row created)', async () => {
+    const detailed = jest.fn(async (url: string) => ({ url, bytes: 1_000, contentType: 'video/mp4' }));
+    const { svc, postCreate } = build({
+      videoEnabled: true,
+      s3: {
+        assertOwnedPublicMediaDetailed: detailed,
+        assertOwnedPublicImage: jest.fn(async () => {
+          throw new BadRequestException('Not your image');
+        }),
+      },
+    });
+    await expect(
+      svc.createStory('u1', {
+        media: { ...videoMedia, thumbnailUrl: 'https://cdn/users/u2/stolen.jpg' },
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(postCreate).not.toHaveBeenCalled();
+  });
+
   it('EXISTING image stories keep working while video is OFF (no video gate, uses image binding)', async () => {
     const { svc, s3, postCreate } = build({ videoEnabled: false });
     await svc.createStory('u1', {

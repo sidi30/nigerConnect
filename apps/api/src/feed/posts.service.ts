@@ -80,11 +80,16 @@ export class PostsService {
     // Client-supplied media URLs are only validated as well-formed URLs by the
     // DTO. Bind each one to our own public bucket and confirm it exists / is an
     // image within size caps; persist the canonical URL the helper returns.
+    // The thumbnail needs the exact same treatment: it is rendered as an image
+    // for every viewer, so an unbound one turns an attacker-chosen URL into a
+    // beacon collecting the audience's IP and User-Agent.
     const media = dto.media
       ? await Promise.all(
           dto.media.map(async (m, i) => ({
             mediaUrl: await this.s3.assertOwnedPublicImage(m.mediaUrl, authorId),
-            thumbnailUrl: m.thumbnailUrl ?? null,
+            thumbnailUrl: m.thumbnailUrl
+              ? await this.s3.assertOwnedPublicImage(m.thumbnailUrl, authorId)
+              : null,
             mediaType: m.mediaType,
             width: m.width ?? null,
             height: m.height ?? null,
@@ -269,6 +274,15 @@ export class PostsService {
       mediaUrl = await this.s3.assertOwnedPublicImage(dto.media.mediaUrl, authorId);
     }
 
+    // The video poster is a client-supplied URL like any other. The app uploads it
+    // through the owned image presign (so it lands under `users/{id}/`), but nothing
+    // forces a caller to do that — and the poster is displayed to every viewer of
+    // the story, so leaving it unbound hands an attacker a beacon on the whole
+    // audience. Bind it exactly like the clip itself.
+    const thumbnailUrl = dto.media.thumbnailUrl
+      ? await this.s3.assertOwnedPublicImage(dto.media.thumbnailUrl, authorId)
+      : null;
+
     const post = await this.prisma.post.create({
       data: {
         authorId,
@@ -279,7 +293,7 @@ export class PostsService {
         media: {
           create: {
             mediaUrl,
-            thumbnailUrl: dto.media.thumbnailUrl ?? null,
+            thumbnailUrl,
             mediaType: dto.media.mediaType,
             width: dto.media.width ?? null,
             height: dto.media.height ?? null,
