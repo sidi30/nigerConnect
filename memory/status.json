@@ -1,11 +1,19 @@
 {
-  "current": "S-BETA READY_FOR_DEPLOY (gwani-orchestrator) — attente GO proprio explicite | S4_EMARKET + S3 aussi en attente GO",
+  "current": "S-BETA DEPLOYED_DARK (API VPS, flags OFF) + iOS BUILD 1.10.0 SUBMITTED TestFlight — attente activation flags + Export Compliance ASC (proprio)",
   "updatedAt": "2026-07-03",
-  "updatedBy": "gwani-orchestrator",
+  "updatedBy": "main (deploy+build)",
   "sBeta": {
     "sprint": "S-BETA « La diaspora prend vie »",
     "goal": "Beta video stories-first (ephemere 24h, disque borne), verified-only, kill-switch fail-closed + moderation, + E-TAUX + E-DIGEST. STOP au gate READY_FOR_DEPLOY (aucun deploy/build sans GO proprio).",
-    "status": "READY_FOR_DEPLOY",
+    "status": "DEPLOYED_DARK + iOS_BUILD_SUBMITTED",
+    "shipped_2026-07-03": {
+      "commits": ["80d3478 feature", "5dfba4a fix-build (retire plugin no-op react-native-compressor bloquant eas config)"],
+      "api": "DEPLOYE DARK VPS: migrations add_etaux+add_digest OK, health ok, flags video_enabled+digest_enabled OFF fail-closed (inerte), lifecycle MinIO stories/ 2j actif, 0 erreur. Backup pre-deploy-80d3478.",
+      "ios": "BUILD EAS 1.10.0 (buildNumber 30, buildId e8207b2a) auto-submit TestFlight (ASC D7QVR3G93J), submission 76d469b6. Android NON builde (proprio: iOS seul).",
+      "reste": "Export Compliance ASC (proprio interactif). Activation flags via PATCH /admin/settings au rollout cohorte verified. git push origin non fait. Android build parite plus tard.",
+      "details": "voir memory/deployment.json"
+    },
+    "_wasReadyForDeploy": "READY_FOR_DEPLOY",
     "finalGates": {
       "sharedTypesBuild": "vert",
       "apiTsc": "vert",

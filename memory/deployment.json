@@ -1,39 +1,41 @@
 {
-  "deployed_at": "2026-07-03T05:55:00Z",
-  "git_sha": "1c9e9b4",
-  "commit_message": "feat(marketplace): surface Entraide — intent-first, galerie multi-images, edit/delete",
+  "deployed_at": "2026-07-03T10:22:00Z",
+  "git_sha": "80d3478",
+  "build_fix_sha": "5dfba4a",
+  "commit_message": "feat(beta): video stories-first + E-TAUX + E-DIGEST (DARK, flags OFF)",
   "status": "DEPLOYED",
-  "sprint_scope": "S4 E-MARKET (surface Entraide) — GO proprio explicite 2026-07-03 (\"GO deploy and build\")",
+  "sprint_scope": "S-BETA « La diaspora prend vie » — GO proprio explicite 2026-07-03 (decisions stories-first/verified/garde-fous/video+taux+digest + 'build pour ios')",
   "server": "root@46.224.193.109",
   "app_dir": "/opt/apps/nigerConnect",
-  "api_domain": "api.nigerconnect.app",
-  "web_domain": "nigerconnect.app",
   "method": "git archive HEAD | ssh -> scripts/deploy-vps.sh",
-  "backup_before": "backups/pre-deploy-1c9e9b4-20260703-055359.sql.gz (60K, pg_dump valide) — pris manuellement (deploy-vps.sh ne backup pas)",
+  "backup_before": "backups/pre-deploy-80d3478-20260703-101830.sql.gz (61K, pg_dump valide)",
   "migration": {
     "status": "ok",
-    "applied": ["20260702000000_add_service_media_intent"],
-    "detail": "Additif reversible: enum ServiceIntent + colonne service_requests.intent (default help_free), table service_media (cascade FK -> service_requests). Verifie live: table + index + FK CASCADE + enum {help_free,paid_service} presents."
+    "applied": ["20260703000000_add_etaux", "20260703100000_add_digest"],
+    "detail": "Additives. add_service_media_intent (S4) etait deja applique."
   },
+  "deploy_note": "1er run deploy-vps.sh a timeout cote client a 2min pendant le build Docker (migrations deja appliquees, mais recreate pas fait). Relance en background (bp1had7nj, exit 0) => api+web recreated proprement.",
   "health_checks": {
-    "internal_api": "{\"status\":\"ok\",\"checks\":{\"db\":\"ok\",\"redis\":\"ok\"}} (uptime 17s post-recreate)",
-    "containers": "api + web recreated & started; postgres/redis/minio healthy inchanges",
-    "post_deploy_error_grep": "aucune ligne error/fatal/exception dans les 120 dernieres lignes de logs api"
+    "internal_api": "{status:ok, db:ok, redis:ok} (uptime ~22s post-recreate)",
+    "flags": "video_enabled + digest_enabled ABSENTS de app_settings => fail-closed OFF par defaut (features inertes)",
+    "minio_lifecycle": "regle mc ilm prefix stories/ = Enabled, 2 jours (verifie)",
+    "post_deploy_error_grep": "aucune ligne error/fatal/exception dans 150 lignes logs api"
   },
   "security": {
-    "pentest": "OK_TO_DEPLOY (0 critical/high/medium/low) — memory/security.json. IDOR media/ownership, Zod, cascade DELETE, privacy AUTHOR_SELECT neutralises.",
-    "tests": "jest 332/332 (marketplace 15/15 dont 2 regression securite), api tsc + mobile tsc verts"
+    "pentest": "OK_TO_DEPLOY (0 critical/high) — memory/security.json. BUG-001 (PII E-TAUX) + SEC-002 (bypass takedown) corriges+prouves.",
+    "tests": "jest 394/394 (re-verifie localement avant deploy), api tsc + mobile tsc + shared-types verts"
   },
   "mobile_build": {
-    "delivery": "BUILD EAS (pas OTA) — gros changement, bump 1.8.0 -> 1.9.0",
-    "command": "eas build --platform all --profile production --auto-submit --non-interactive --no-wait",
-    "version": "1.9.0",
-    "android": { "buildId": "c0512a90-5334-4299-94b4-6cfc6f07f31e", "versionCode": 11, "submit": "Play track internal", "submissionId": "60642fe8-47b5-4b98-97e6-5286ce8d49d6" },
-    "ios": { "buildId": "c9e3709f-022a-4005-8e52-f762352abdda", "buildNumber": 29, "submit": "TestFlight (ASC key D7QVR3G93J)", "submissionId": "82a7eb4e-6ac8-4432-a600-16186fe1e29b" },
-    "note": "Cloud EAS (--no-wait): suivre expo.dev/accounts/sidi30/projects/nigerconnect, ne pas poller. iOS 1er submit de version -> repondre Export Compliance dans ASC (chiffrement standard = Non)."
+    "delivery": "REBUILD EAS natif (react-native-compressor + expo-video), pas OTA. Bump 1.10.0.",
+    "command": "eas build --platform ios --profile production --auto-submit --non-interactive --no-wait",
+    "ios": { "buildId": "e8207b2a-2f8d-49bf-9845-770dc5dc8c4e", "version": "1.10.0", "buildNumber": 30, "submit": "TestFlight (ASC key D7QVR3G93J)", "submissionId": "76d469b6-e917-454b-b4ff-f6f1d7cba855" },
+    "android": "NON builde (proprio a demande iOS seulement). A faire plus tard pour parite (meme rebuild natif requis).",
+    "blocker_resolu": "eas config step echouait: plugin no-op react-native-compressor dans app.json require @expo/config-plugins non resolu sous pnpm -> ConfigError silencieuse. Retire (commit 5dfba4a). Natif reste autolinke.",
+    "note": "Cloud EAS (--no-wait): suivre expo.dev/accounts/sidi30/projects/nigerconnect/builds/e8207b2a. iOS 1er submit de version -> Export Compliance dans ASC (chiffrement standard = Non)."
   },
-  "rollback_command": "git archive e8ce4a5 | ssh -o BatchMode=yes root@46.224.193.109 'cd /opt/apps/nigerConnect && tar xf - && find . -name \"*.sh\" -exec sed -i \"s/\\r$//\" {} + && chmod +x scripts/*.sh && ./scripts/deploy-vps.sh'",
-  "rollback_db": "gunzip -c backups/pre-deploy-1c9e9b4-20260703-055359.sql.gz | docker exec -i nigerconnect-postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'",
-  "rollback_note": "Migration additive (add column default + add table) — rollback code seul (e8ce4a5) laisse la table/enum en place sans casser l'ancien code (colonnes ignorees). Restaurer la DB uniquement si necessaire.",
-  "notes": "S4 E-MARKET deploye API + build mobile 1.9.0 soumis. git push origin NON effectue (non demande). Deploy nominal, health verte, 0 erreur."
+  "activation_restante": "Post-build TestFlight, les flags restent OFF. Activer video_enabled + digest_enabled via PATCH /admin/settings quand le proprio decide le rollout cohorte verified.",
+  "rollback_command": "git archive c20f930 | ssh -o BatchMode=yes root@46.224.193.109 'cd /opt/apps/nigerConnect && tar xf - && find . -name \"*.sh\" -exec sed -i \"s/\\r$//\" {} + && chmod +x scripts/*.sh && ./scripts/deploy-vps.sh'",
+  "rollback_db": "gunzip -c backups/pre-deploy-80d3478-20260703-101830.sql.gz | docker exec -i nigerconnect-postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'",
+  "rollback_note": "Migrations additives (nouvelles tables etaux/digest) — rollback code seul (c20f930 = avant S4) laisse les tables en place sans casser l'ancien code. NB: c20f930 est pre-S4; pour rollback vers S4 deploye utiliser le commit S4 (1c9e9b4). Backup conserve.",
+  "notes": "S-BETA deploye DARK (API, flags OFF, zero impact user) + build iOS 1.10.0 soumis TestFlight. git push origin NON effectue. Deux commits: 80d3478 (feature) + 5dfba4a (fix build). Health verte, 0 erreur."
 }
