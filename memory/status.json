@@ -1,7 +1,33 @@
 {
-  "current": "S-BETA DEPLOYED_DARK (API VPS, flags OFF) + iOS BUILD 1.10.0 SUBMITTED TestFlight — attente activation flags + Export Compliance ASC (proprio)",
-  "updatedAt": "2026-07-03",
-  "updatedBy": "main (deploy+build)",
+  "current": "SWEEP-2607 DEPLOYED (API+web VPS, migration last_seen_at OK) + OTA iOS 1.10.0 publie | S-BETA toujours DARK (flags video/digest OFF) — attente activation flags + Export Compliance ASC (proprio)",
+  "updatedAt": "2026-07-29",
+  "updatedBy": "main (sweep+deploy+OTA)",
+  "sweep2607": {
+    "sprint": "Sweep post-S-BETA « mesurer et durcir »",
+    "status": "DEPLOYED",
+    "go_proprio": "2026-07-29 « GO 1 2 et 4 » = deploy VPS + OTA mobile + push git. Le cron backup PG (option 3) n'a PAS ete retenu.",
+    "gates": {
+      "apiTsc": "vert",
+      "mobileTsc": "vert",
+      "jest": "448/448, 44 suites (baseline 394 -> +54, 0 regression)",
+      "eslint": "flat config ESLint 9 ajoutee sur l'API (scripts lint / lint:fix)",
+      "pentest": "hook pre-push gwani-pentest lance au push sur 70412eb..f49f1e2 (fail-open by design)"
+    },
+    "shipped": {
+      "commits": [
+        "ae93e64 feat(metrics) users.last_seen_at + LastSeenInterceptor (1 ecriture/h, verrou Redis) + activity{dau,wau,mau,stickiness} sur /admin/metrics + tuile dashboard + dormance digest corrigee",
+        "8a82781 fix(api) dedup signalements + alerte modos + audit report_target_view ; purge S3 au delete message ; likeCount non perime ; cursor feed -> 400 ; garde dernier-admin associations+pages ; blocage ferme entraide+avis ; Zod share/reject",
+        "59f9475 fix(web) CTA Android -> waitlist tant que ANDROID_AVAILABLE=false (plus de 404 Play Store)",
+        "9450838 fix(mobile) describeError() + langue persistee sur le profil + toggles privacy/notifications avec rollback (JS-only)",
+        "51b4e61 chore(lint) eslint 9 flat config",
+        "f49f1e2 chore(memory) statut"
+      ],
+      "api": "DEPLOYE VPS: migration 20260729000000_add_last_seen_at appliquee (additive/nullable), colonne + index verifies en base, health {db:ok,redis:ok}, 0 erreur dans les logs. Dump post-deploy pris et verifie (aucun backup depuis le 03/07).",
+      "mobile": "OTA channel production, runtime 1.10.0, iOS (update group 606aca21). JS-only donc PAS de bump — un bump aurait fait rater la cible aux builds installes.",
+      "reste": "Verifier activity.dau apres 24-48h de trafic (last_seen_at NULL sur les comptes existants jusqu'a leur prochaine requete). Toujours aucun cron de sauvegarde. Android jamais builde."
+    },
+    "details": "voir memory/deployment.json"
+  },
   "sBeta": {
     "sprint": "S-BETA « La diaspora prend vie »",
     "goal": "Beta video stories-first (ephemere 24h, disque borne), verified-only, kill-switch fail-closed + moderation, + E-TAUX + E-DIGEST. STOP au gate READY_FOR_DEPLOY (aucun deploy/build sans GO proprio).",
