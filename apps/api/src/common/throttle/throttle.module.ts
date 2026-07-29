@@ -10,6 +10,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
  * (Cloudflare→Traefik→api = 2) via env, otherwise every client shares one tracker.
  */
 class IpThrottlerGuard extends ThrottlerGuard {
+  // eslint-disable-next-line @typescript-eslint/require-await -- async is imposed by the ThrottlerGuard signature we override.
   protected override async getTracker(req: Record<string, any>): Promise<string> {
     return req.ip;
   }

@@ -65,6 +65,7 @@ export class PresenceService {
     await this.redis.client.expire(`presence:user:${userId}`, PRESENCE_TTL_SECONDS);
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- the work is deferred to a timer; async keeps the call site uniform with the other presence methods.
   async markOfflineDelayed(userId: string, delayMs = 10_000): Promise<void> {
     setTimeout(() => {
       void (async () => {
