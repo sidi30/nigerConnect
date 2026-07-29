@@ -383,7 +383,7 @@ function KpiRow({
         value={metrics.users.total}
         sublabel={
           <span className="tabular-nums">
-            {fmt(metrics.users.active7d)} actifs sur 7j
+            {fmt(metrics.activity.wau)} actifs sur 7j
           </span>
         }
         spark={
@@ -394,6 +394,19 @@ function KpiRow({
               color={chartColors[0]}
             />
           ) : null
+        }
+      />
+      {/* The daily-habit tile. Stickiness (DAU/MAU) is the ratio to watch: it
+          answers "do members come back every day", which signups never do. */}
+      <StatCard
+        icon={Activity}
+        label="Actifs aujourd'hui"
+        value={metrics.activity.dau}
+        sublabel={
+          <span className="tabular-nums">
+            {metrics.activity.stickiness}% de fidélité (DAU/MAU) ·{" "}
+            {fmt(metrics.activity.mau)} sur 30j
+          </span>
         }
       />
       <StatCard

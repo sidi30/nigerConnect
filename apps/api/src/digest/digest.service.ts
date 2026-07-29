@@ -65,10 +65,16 @@ export class DigestService {
         digestOptIn: true,
         // Region is mandatory — no meaningful aggregate without a country (AC-F1-04).
         countryCode: { not: null },
-        // Dormant: never logged in, or last login older than the 7-day window.
-        OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: dormantBefore } }],
-        // Due: never digested, or last digest older than the 7-day window (idempotence).
         AND: [
+          // Dormant = neither SEEN nor logged in within the window. `lastLoginAt`
+          // alone is not a dormancy signal: refresh tokens are long-lived, so a
+          // member who opens the app daily can keep a month-old lastLoginAt and
+          // would have been nudged with "come back" while actively using it.
+          // `lastSeenAt` is null for accounts predating the column, which simply
+          // falls back to the login test — conservative, never over-sends.
+          { OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: dormantBefore } }] },
+          { OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: dormantBefore } }] },
+          // Due: never digested, or last digest older than the 7-day window (idempotence).
           { OR: [{ lastDigestSentAt: null }, { lastDigestSentAt: { lt: dormantBefore } }] },
         ],
       },

@@ -45,6 +45,14 @@ export interface AdminMetrics {
     suspended: number;
     banned: number;
   };
+  /**
+   * Members who actually opened the app, from `lastSeenAt` (stamped hourly on
+   * authenticated traffic). `active7d` above counts logins instead, which badly
+   * under-reports: refresh tokens are long-lived, so a daily user may sign in
+   * once a month. `stickiness` = DAU/MAU — the standard "is this a daily habit"
+   * ratio (>20% is generally considered good).
+   */
+  activity: { dau: number; wau: number; mau: number; stickiness: number };
   identity: { pending: number; approved: number; rejected: number };
   content: { posts: number; posts7d: number; messages24h: number; comments: number };
   moderation: { reportsPending: number; resolved7d: number };
@@ -103,6 +111,7 @@ export class AdminService {
     const since24h = new Date(now - 24 * 3_600_000);
     const since7d = new Date(now - 7 * 24 * 3_600_000);
     const since14d = new Date(now - 14 * 24 * 3_600_000);
+    const since30d = new Date(now - 30 * 24 * 3_600_000);
 
     const [
       usersTotal,
@@ -126,6 +135,9 @@ export class AdminService {
       // Approximation: uses createdAt rather than resolvedAt because resolvedAt is sparse and
       // this is a cheap dashboard indicator, not an SLA metric.
       resolved7d,
+      dau,
+      wau,
+      mau,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { emailVerified: true } }),
@@ -146,6 +158,9 @@ export class AdminService {
       this.prisma.report.count({
         where: { status: { in: ['reviewed', 'resolved', 'dismissed'] }, createdAt: { gte: since7d } },
       }),
+      this.prisma.user.count({ where: { lastSeenAt: { gte: since24h } } }),
+      this.prisma.user.count({ where: { lastSeenAt: { gte: since7d } } }),
+      this.prisma.user.count({ where: { lastSeenAt: { gte: since30d } } }),
     ]);
 
     return {
@@ -159,6 +174,13 @@ export class AdminService {
         active7d,
         suspended,
         banned,
+      },
+      activity: {
+        dau,
+        wau,
+        mau,
+        // Rounded to a whole percent — this is a dashboard tile, not an SLA.
+        stickiness: mau > 0 ? Math.round((dau / mau) * 100) : 0,
       },
       identity: { pending: identityPending, approved: identityApproved, rejected: identityRejected },
       content: { posts, posts7d, messages24h, comments },

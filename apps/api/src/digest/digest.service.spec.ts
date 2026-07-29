@@ -9,6 +9,7 @@ type FakeUser = {
   status: string;
   digestOptIn: boolean;
   lastLoginAt: Date | null;
+  lastSeenAt: Date | null;
   lastDigestSentAt: Date | null;
 };
 
@@ -19,6 +20,8 @@ function isEligible(u: FakeUser, now: Date): boolean {
     u.status === 'active' &&
     u.digestOptIn === true &&
     u.countryCode != null &&
+    // Dormancy needs BOTH signals cold — see the `where` in processBatch.
+    (u.lastSeenAt == null || u.lastSeenAt.getTime() < cutoff) &&
     (u.lastLoginAt == null || u.lastLoginAt.getTime() < cutoff) &&
     (u.lastDigestSentAt == null || u.lastDigestSentAt.getTime() < cutoff)
   );
@@ -72,6 +75,7 @@ const dormant = (over: Partial<FakeUser> = {}): FakeUser => ({
   status: 'active',
   digestOptIn: true,
   lastLoginAt: null,
+  lastSeenAt: null,
   lastDigestSentAt: null,
   ...over,
 });
@@ -224,6 +228,42 @@ describe('DigestService', () => {
 
       const pushedIds = notification.create.mock.calls.map((c) => c[0].userId);
       expect(pushedIds).toEqual(['dormant']);
+    });
+
+    it('does not nudge a member who uses the app daily on a stale login', async () => {
+      // The regression this guards: refresh tokens are long-lived, so a daily
+      // user can carry a month-old lastLoginAt. Keying dormancy on the login
+      // alone sent them "come back and see your region" while they were reading
+      // the feed. lastSeenAt is the signal that reflects reality.
+      const users = [
+        dormant({ id: 'truly-dormant' }),
+        dormant({
+          id: 'daily-user-stale-login',
+          lastLoginAt: new Date(Date.now() - 30 * 24 * 3_600_000),
+          lastSeenAt: new Date(),
+        }),
+      ];
+      const prisma = makeStatefulPrisma(users, { events: 3, annonces: 2, newMembers: 1 });
+      const notification = makeNotification();
+      const svc = new DigestService(prisma as never, notification as never, makeSettings() as never);
+
+      await svc.processBatch(new Date());
+
+      const pushedIds = notification.create.mock.calls.map((c) => c[0].userId);
+      expect(pushedIds).toEqual(['truly-dormant']);
+    });
+
+    it('still selects legacy accounts whose lastSeenAt predates the column', async () => {
+      // Rows created before the migration have lastSeenAt = NULL; dormancy must
+      // then fall back to the login test rather than excluding them forever.
+      const users = [dormant({ id: 'legacy', lastSeenAt: null, lastLoginAt: null })];
+      const prisma = makeStatefulPrisma(users, { events: 1, annonces: 0, newMembers: 0 });
+      const notification = makeNotification();
+      const svc = new DigestService(prisma as never, notification as never, makeSettings() as never);
+
+      await svc.processBatch(new Date());
+
+      expect(notification.create.mock.calls.map((c) => c[0].userId)).toEqual(['legacy']);
     });
   });
 });

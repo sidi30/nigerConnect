@@ -131,6 +131,10 @@ model User {
   lockedUntil      DateTime? @map("locked_until") @db.Timestamptz
   lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz
   lastLoginIp      String?   @map("last_login_ip") @db.Inet
+  // Last authenticated request, stamped at most hourly by LastSeenInterceptor.
+  // Distinct from lastLoginAt (a new session) — this is what makes active-member
+  // counts and retention computable at all. Written raw so @updatedAt stays put.
+  lastSeenAt       DateTime? @map("last_seen_at") @db.Timestamptz
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz

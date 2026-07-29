@@ -150,6 +150,14 @@ export interface AdminMetrics {
     suspended: number;
     banned: number;
   };
+  /** Real usage, from `lastSeenAt`. `users.active7d` counts logins, not visits. */
+  activity: {
+    dau: number;
+    wau: number;
+    mau: number;
+    /** DAU/MAU as a whole percent. */
+    stickiness: number;
+  };
   identity: {
     pending: number;
     approved: number;

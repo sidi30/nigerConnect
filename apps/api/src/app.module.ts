@@ -4,6 +4,7 @@ import { AppConfigModule } from './common/config/config.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { LastSeenInterceptor } from './common/interceptors/last-seen.interceptor';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
@@ -65,6 +66,7 @@ import { DigestModule } from './digest/digest.module';
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: LastSeenInterceptor },
   ],
 })
 export class AppModule {}
