@@ -301,6 +301,14 @@ function AuthGate() {
     // link / universal link) — don't bounce it to the welcome screen.
     const onResetPassword = first === 'reset-password';
     const onCompleteProfile = first === 'complete-profile';
+    // Android OAuth return: the deep link lands on /oauthredirect while the
+    // token exchange is still in flight — keep the user on its loading screen
+    // (it has its own 3 s fallback to login) instead of bouncing to welcome,
+    // then route to (tabs) once the session lands. Same (tabs) routing for the
+    // built-in unmatched screen, so a stray deep link never strands a
+    // logged-in user on a 404.
+    const onOAuthRedirect = first === 'oauthredirect';
+    const onNotFound = first === '+not-found';
     // OAuth (Google/Apple) signups are email-verified but arrive with no
     // city/country (the provider doesn't give it) → no map presence. Password
     // signups always set countryCode at registration, so a missing countryCode
@@ -315,7 +323,7 @@ function AuthGate() {
     const needsProfile = Boolean(
       isAuthenticated && (user?.emailVerified || isOAuth) && !user?.countryCode,
     );
-    if (!isAuthenticated && !inAuth && !onResetPassword) {
+    if (!isAuthenticated && !inAuth && !onResetPassword && !onOAuthRedirect) {
       router.replace('/(auth)/welcome');
     } else if (isAuthenticated && user && !user.emailVerified && !isOAuth && !onVerifyEmail) {
       // Authenticated but email not confirmed → corral them onto the
@@ -324,7 +332,12 @@ function AuthGate() {
     } else if (needsProfile && !onCompleteProfile) {
       // Verified but no location yet (OAuth) → collect city before entering.
       router.replace('/complete-profile');
-    } else if (isAuthenticated && user?.emailVerified && !needsProfile && inAuth) {
+    } else if (
+      isAuthenticated &&
+      (user?.emailVerified || isOAuth) &&
+      !needsProfile &&
+      (inAuth || onOAuthRedirect || onNotFound)
+    ) {
       router.replace('/(tabs)');
     }
   }, [navState?.key, isHydrated, isAuthenticated, user, segments, router]);
