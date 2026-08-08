@@ -636,6 +636,8 @@ export class AuthService {
           // address with a password. Drop that password on link — the account
           // becomes OAuth-only for the proven mailbox owner. A verified local
           // email already proved ownership → keep the password (both coexist).
+          // The password alone is not enough: register() also minted refresh
+          // tokens, so all outstanding sessions are revoked below too.
           data: {
             oauthProvider: provider,
             oauthProviderId: providerId,
@@ -643,6 +645,9 @@ export class AuthService {
             ...(byEmail.emailVerified === false ? { passwordHash: null } : {}),
           },
         });
+        if (byEmail.emailVerified === false) {
+          await this.tokens.revokeAllUserTokens(byEmail.id);
+        }
       }
     }
 

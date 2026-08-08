@@ -537,6 +537,8 @@ describe('AuthService', () => {
           data: { oauthProvider: 'google', oauthProviderId: 'google-sub-123', emailVerified: true },
         }),
       );
+      // Verified local account → its existing sessions are legitimate, keep them.
+      expect(tokens.revokeAllUserTokens).not.toHaveBeenCalled();
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(result.accessToken).toBe('access.jwt.token');
     });
@@ -572,7 +574,8 @@ describe('AuthService', () => {
         },
       });
       const google = { verifyIdToken: jest.fn(async () => GOOGLE_PROFILE_BASE) };
-      const svc = makeSvc({ prisma, google });
+      const tokens = makeTokens();
+      const svc = makeSvc({ prisma, google, tokens });
 
       await svc.signInWithGoogle('token');
 
@@ -587,6 +590,9 @@ describe('AuthService', () => {
           },
         }),
       );
+      // The pre-registering attacker also holds refresh tokens from register()
+      // — every outstanding session must die with the password.
+      expect(tokens.revokeAllUserTokens).toHaveBeenCalledWith('u-prehijack');
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
@@ -893,7 +899,8 @@ describe('AuthService', () => {
         verify: jest.fn(async () => APPLE_VERIFIED_BASE),
         isConfigured: true,
       };
-      const svc = makeSvc({ prisma, apple });
+      const tokens = makeTokens();
+      const svc = makeSvc({ prisma, apple, tokens });
 
       await svc.signInWithApple({ identityToken: 'token' });
 
@@ -904,6 +911,8 @@ describe('AuthService', () => {
           data: { oauthProvider: 'apple', oauthProviderId: 'apple.user.001', emailVerified: true },
         }),
       );
+      // Verified local account → its existing sessions are legitimate, keep them.
+      expect(tokens.revokeAllUserTokens).not.toHaveBeenCalled();
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
@@ -940,7 +949,8 @@ describe('AuthService', () => {
         verify: jest.fn(async () => APPLE_VERIFIED_BASE),
         isConfigured: true,
       };
-      const svc = makeSvc({ prisma, apple });
+      const tokens = makeTokens();
+      const svc = makeSvc({ prisma, apple, tokens });
 
       await svc.signInWithApple({ identityToken: 'token' });
 
@@ -955,6 +965,7 @@ describe('AuthService', () => {
           },
         }),
       );
+      expect(tokens.revokeAllUserTokens).toHaveBeenCalledWith('u-prehijack-apple');
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
