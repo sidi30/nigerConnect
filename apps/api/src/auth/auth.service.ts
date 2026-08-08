@@ -631,7 +631,17 @@ export class AuthService {
           // safeToLink already required profile.emailVerified === true, so the
           // provider has verified this address → mark the linked account verified
           // (otherwise it'd stay gated/off-map despite a verified OAuth identity).
-          data: { oauthProvider: provider, oauthProviderId: providerId, emailVerified: true },
+          // Pre-hijacking guard (CWE-287): if the local account NEVER verified its
+          // email, its creator may be an attacker who pre-registered the victim's
+          // address with a password. Drop that password on link — the account
+          // becomes OAuth-only for the proven mailbox owner. A verified local
+          // email already proved ownership → keep the password (both coexist).
+          data: {
+            oauthProvider: provider,
+            oauthProviderId: providerId,
+            emailVerified: true,
+            ...(byEmail.emailVerified === false ? { passwordHash: null } : {}),
+          },
         });
       }
     }

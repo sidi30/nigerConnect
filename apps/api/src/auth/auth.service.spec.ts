@@ -458,6 +458,7 @@ describe('AuthService', () => {
         oauthProvider: null,
         oauthProviderId: null,
         mfaEnabled: false,
+        emailVerified: true,
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -509,6 +510,7 @@ describe('AuthService', () => {
         oauthProvider: null,
         oauthProviderId: null,
         mfaEnabled: false,
+        emailVerified: true, // mailbox ownership already proven via the verify link
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -537,6 +539,55 @@ describe('AuthService', () => {
       );
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(result.accessToken).toBe('access.jwt.token');
+    });
+
+    it('drops the password when linking to an UNVERIFIED local account (pre-hijacking guard)', async () => {
+      // Attack: the attacker pre-registers the victim's email with a password and
+      // never clicks the verify link. When the victim signs in with Google, the
+      // link must neutralize that password or the attacker keeps a backdoor.
+      const preHijackedUser = {
+        id: 'u-prehijack',
+        email: 'alice@gmail.com',
+        passwordHash: '$argon2id$attacker',
+        oauthProvider: null,
+        oauthProviderId: null,
+        mfaEnabled: false,
+        emailVerified: false, // mailbox ownership never proven by the local creator
+        role: 'user',
+        identityStatus: 'not_submitted',
+      };
+      const updatedUser = {
+        ...preHijackedUser,
+        passwordHash: null,
+        oauthProvider: 'google',
+        oauthProviderId: 'google-sub-123',
+        emailVerified: true,
+      };
+      const prisma = makePrisma({
+        user: {
+          findFirst: jest.fn(async () => null),
+          findUnique: jest.fn(async () => preHijackedUser),
+          create: jest.fn(),
+          update: jest.fn(async () => updatedUser),
+        },
+      });
+      const google = { verifyIdToken: jest.fn(async () => GOOGLE_PROFILE_BASE) };
+      const svc = makeSvc({ prisma, google });
+
+      await svc.signInWithGoogle('token');
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-prehijack' },
+          data: {
+            oauthProvider: 'google',
+            oauthProviderId: 'google-sub-123',
+            emailVerified: true,
+            passwordHash: null,
+          },
+        }),
+      );
+      expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when the email account has MFA enabled (no second-factor bypass)', async () => {
@@ -786,6 +837,7 @@ describe('AuthService', () => {
         oauthProvider: null,
         oauthProviderId: null,
         mfaEnabled: false,
+        emailVerified: true,
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -824,6 +876,7 @@ describe('AuthService', () => {
         oauthProvider: null,
         oauthProviderId: null,
         mfaEnabled: false,
+        emailVerified: true, // mailbox ownership already proven via the verify link
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -849,6 +902,57 @@ describe('AuthService', () => {
         expect.objectContaining({
           where: { id: 'u-pwd-apple' },
           data: { oauthProvider: 'apple', oauthProviderId: 'apple.user.001', emailVerified: true },
+        }),
+      );
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('drops the password when linking Apple to an UNVERIFIED local account (pre-hijacking guard)', async () => {
+      // Same shared loginWithOAuth path as Google — the attacker's never-verified
+      // password must not survive the link.
+      const preHijackedUser = {
+        id: 'u-prehijack-apple',
+        email: 'alice@privaterelay.appleid.com',
+        passwordHash: '$argon2id$attacker',
+        oauthProvider: null,
+        oauthProviderId: null,
+        mfaEnabled: false,
+        emailVerified: false,
+        role: 'user',
+        identityStatus: 'not_submitted',
+      };
+      const updatedUser = {
+        ...preHijackedUser,
+        passwordHash: null,
+        oauthProvider: 'apple',
+        oauthProviderId: 'apple.user.001',
+        emailVerified: true,
+      };
+      const prisma = makePrisma({
+        user: {
+          findFirst: jest.fn(async () => null),
+          findUnique: jest.fn(async () => preHijackedUser),
+          create: jest.fn(),
+          update: jest.fn(async () => updatedUser),
+        },
+      });
+      const apple = {
+        verify: jest.fn(async () => APPLE_VERIFIED_BASE),
+        isConfigured: true,
+      };
+      const svc = makeSvc({ prisma, apple });
+
+      await svc.signInWithApple({ identityToken: 'token' });
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-prehijack-apple' },
+          data: {
+            oauthProvider: 'apple',
+            oauthProviderId: 'apple.user.001',
+            emailVerified: true,
+            passwordHash: null,
+          },
         }),
       );
       expect(prisma.user.create).not.toHaveBeenCalled();
