@@ -88,7 +88,9 @@ export class GoogleOAuthService {
 
     return {
       providerId: payload.sub,
-      email: payload.email ?? null,
+      // Lowercase to match register/login normalization — a mixed-case token
+      // email would otherwise create a duplicate account for the same address.
+      email: payload.email?.toLowerCase() ?? null,
       emailVerified: payload.email_verified === true,
       firstName: payload.given_name ?? null,
       lastName: payload.family_name ?? null,

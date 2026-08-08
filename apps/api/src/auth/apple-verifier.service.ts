@@ -107,7 +107,9 @@ export class AppleVerifierService {
     const sub = typeof payload.sub === 'string' ? payload.sub : '';
     if (!sub) throw new UnauthorizedException('Apple token missing sub');
 
-    const email = typeof payload.email === 'string' ? payload.email : null;
+    // Lowercase to match register/login normalization — a mixed-case token
+    // email would otherwise create a duplicate account for the same address.
+    const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : null;
     const rawVerified = (payload as { email_verified?: boolean | string }).email_verified;
     // Require an explicit truthy claim. A MISSING `email_verified` is NOT trusted
     // as verified — this verdict feeds the OAuth auto-link security decision, and

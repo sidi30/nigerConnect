@@ -2,9 +2,9 @@
   "expo": {
     "name": "NigerConnect",
     "slug": "nigerconnect",
-    "version": "1.10.0",
+    "version": "1.11.0",
     "orientation": "portrait",
-    "scheme": "nigerconnect",
+    "scheme": ["nigerconnect", "com.nigerconnect.app"],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "icon": "./assets/icon.png",

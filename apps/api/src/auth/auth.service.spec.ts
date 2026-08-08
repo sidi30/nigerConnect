@@ -457,6 +457,7 @@ describe('AuthService', () => {
         passwordHash: null,
         oauthProvider: null,
         oauthProviderId: null,
+        mfaEnabled: false,
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -500,20 +501,59 @@ describe('AuthService', () => {
       await expect(svc.signInWithGoogle('token')).rejects.toThrow('not verified');
     });
 
-    it('throws ConflictException when email belongs to a password account (anti-takeover)', async () => {
+    it('links a Google-verified email to an existing password account without MFA (both methods coexist)', async () => {
       const passwordUser = {
         id: 'u-pwd',
         email: 'alice@gmail.com',
         passwordHash: '$argon2id$hashed',
         oauthProvider: null,
         oauthProviderId: null,
+        mfaEnabled: false,
+        role: 'user',
+        identityStatus: 'not_submitted',
+      };
+      const updatedUser = { ...passwordUser, oauthProvider: 'google', oauthProviderId: 'google-sub-123' };
+      const prisma = makePrisma({
+        user: {
+          findFirst: jest.fn(async () => null), // no existing OAuth link
+          findUnique: jest.fn(async () => passwordUser), // email exists with password
+          create: jest.fn(),
+          update: jest.fn(async () => updatedUser),
+        },
+      });
+      const google = { verifyIdToken: jest.fn(async () => GOOGLE_PROFILE_BASE) };
+      const tokens = makeTokens();
+      const svc = makeSvc({ prisma, google, tokens });
+
+      const result = await svc.signInWithGoogle('token');
+
+      // Google verified the email → same trust anchor as a password reset, so
+      // linking is safe. passwordHash is NOT touched: password login keeps working.
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-pwd' },
+          data: { oauthProvider: 'google', oauthProviderId: 'google-sub-123', emailVerified: true },
+        }),
+      );
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(result.accessToken).toBe('access.jwt.token');
+    });
+
+    it('throws ConflictException when the email account has MFA enabled (no second-factor bypass)', async () => {
+      const mfaUser = {
+        id: 'u-mfa',
+        email: 'alice@gmail.com',
+        passwordHash: '$argon2id$hashed',
+        oauthProvider: null,
+        oauthProviderId: null,
+        mfaEnabled: true,
         role: 'user',
         identityStatus: 'not_submitted',
       };
       const prisma = makePrisma({
         user: {
-          findFirst: jest.fn(async () => null), // no existing OAuth link
-          findUnique: jest.fn(async () => passwordUser), // but email exists with password
+          findFirst: jest.fn(async () => null),
+          findUnique: jest.fn(async () => mfaUser),
           create: jest.fn(),
           update: jest.fn(),
         },
@@ -521,6 +561,8 @@ describe('AuthService', () => {
       const google = { verifyIdToken: jest.fn(async () => GOOGLE_PROFILE_BASE) };
       const svc = makeSvc({ prisma, google });
 
+      // The password login answers with a TOTP challenge; loginWithOAuth mints
+      // tokens directly — linking here would skip the second factor entirely.
       await expect(svc.signInWithGoogle('token')).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(prisma.user.update).not.toHaveBeenCalled();
@@ -533,6 +575,7 @@ describe('AuthService', () => {
         passwordHash: null,
         oauthProvider: 'apple',
         oauthProviderId: 'apple-sub-456',
+        mfaEnabled: false,
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -742,6 +785,7 @@ describe('AuthService', () => {
         passwordHash: null,
         oauthProvider: null,
         oauthProviderId: null,
+        mfaEnabled: false,
         role: 'user',
         identityStatus: 'not_submitted',
       };
@@ -772,22 +816,24 @@ describe('AuthService', () => {
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictException when Apple email matches a password account (anti-takeover)', async () => {
+    it('links an Apple-verified email to an existing password account without MFA (both methods coexist)', async () => {
       const passwordUser = {
         id: 'u-pwd-apple',
         email: 'alice@privaterelay.appleid.com',
         passwordHash: '$argon2id$hashed',
         oauthProvider: null,
         oauthProviderId: null,
+        mfaEnabled: false,
         role: 'user',
         identityStatus: 'not_submitted',
       };
+      const updatedUser = { ...passwordUser, oauthProvider: 'apple', oauthProviderId: 'apple.user.001' };
       const prisma = makePrisma({
         user: {
           findFirst: jest.fn(async () => null),
           findUnique: jest.fn(async () => passwordUser),
           create: jest.fn(),
-          update: jest.fn(),
+          update: jest.fn(async () => updatedUser),
         },
       });
       const apple = {
@@ -796,11 +842,16 @@ describe('AuthService', () => {
       };
       const svc = makeSvc({ prisma, apple });
 
-      await expect(svc.signInWithApple({ identityToken: 'token' })).rejects.toBeInstanceOf(
-        ConflictException,
+      await svc.signInWithApple({ identityToken: 'token' });
+
+      // passwordHash is NOT touched: password login keeps working alongside Apple.
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-pwd-apple' },
+          data: { oauthProvider: 'apple', oauthProviderId: 'apple.user.001', emailVerified: true },
+        }),
       );
       expect(prisma.user.create).not.toHaveBeenCalled();
-      expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException when Apple email already linked to Google (anti-takeover)', async () => {
@@ -810,6 +861,7 @@ describe('AuthService', () => {
         passwordHash: null,
         oauthProvider: 'google',
         oauthProviderId: 'google-sub-999',
+        mfaEnabled: false,
         role: 'user',
         identityStatus: 'not_submitted',
       };

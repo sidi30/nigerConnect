@@ -122,7 +122,7 @@ export class AuthService {
       input.rawNonce !== undefined ? sha256Hex(input.rawNonce) : undefined;
     const verified = await this.apple.verify(input.identityToken, expectedNonce);
     // Prefer the token email (Apple-verified) over the client-sent one.
-    const email = verified.email ?? input.email ?? undefined;
+    const email = verified.email ?? input.email?.toLowerCase() ?? undefined;
     return this.loginWithOAuth(
       'apple',
       verified.sub,
@@ -597,32 +597,33 @@ export class AuthService {
     });
 
     // Account takeover guard: if we found no link by (provider, providerId), but
-    // the email is already owned by a user, we MUST NOT silently attach the
-    // OAuth identity. Two attack paths we close here:
-    //   1. The existing account uses a password → linking would let an OAuth
-    //      holder log in without ever proving password ownership.
-    //   2. The existing account is already linked to a DIFFERENT provider →
-    //      linking would grant dual-provider access and sidestep the first
-    //      provider's security controls.
-    // Only link automatically when (a) the email is OAuth-verified AND (b) the
-    // account has no password AND no other provider yet — i.e. a stub account
-    // created by another path, never hardened.
+    // the email is already owned by a user, we only attach the OAuth identity
+    // when it cannot weaken the existing account's security:
+    //   1. The email must be provider-verified — the OAuth holder proved they
+    //      own the address (same trust anchor as a password reset), so linking
+    //      a password account is fine and both login methods coexist.
+    //   2. The account must not be linked to a DIFFERENT provider — that would
+    //      grant dual-provider access and sidestep the first provider's
+    //      security controls.
+    //   3. MFA must be OFF — the password login returns a TOTP challenge, while
+    //      this path mints tokens directly, so linking an MFA account would be
+    //      a second-factor bypass.
     if (!user && profile.email) {
       const byEmail = await this.prisma.user.findUnique({ where: { email: profile.email } });
       if (byEmail) {
         const safeToLink =
           profile.emailVerified === true &&
-          byEmail.passwordHash === null &&
+          byEmail.mfaEnabled === false &&
           (byEmail.oauthProvider === null || byEmail.oauthProvider === provider);
         if (!safeToLink) {
           // Don't log the raw email (PII). A short SHA-256 prefix keeps the line
           // correlatable across attempts without exposing the address.
           const emailHash = createHash('sha256').update(profile.email).digest('hex').slice(0, 12);
           this.logger.warn(
-            `Refused OAuth auto-link for provider=${provider} emailHash=${emailHash} existingProvider=${byEmail.oauthProvider ?? 'none'} hasPassword=${byEmail.passwordHash !== null}`,
+            `Refused OAuth auto-link for provider=${provider} emailHash=${emailHash} existingProvider=${byEmail.oauthProvider ?? 'none'} mfaEnabled=${byEmail.mfaEnabled}`,
           );
           throw new ConflictException(
-            'An account already exists for this email. Sign in with your password, then link your provider from settings.',
+            'An account already exists for this email. Sign in with the password or provider you originally used.',
           );
         }
         user = await this.prisma.user.update({
