@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -26,10 +27,11 @@ import { useAuthStore } from '@/stores/authStore';
 import { MapCanvas, type MapCanvasHandle } from '@/components/map/MapCanvas';
 
 // Feature flag (ADR-001): native react-native-maps renderer vs the Leaflet
-// WebView. ON for the 1.8.0 validation build so testers evaluate the native map
-// on-device. OTA-revertible: publishing this file with `false` at runtime 1.8.0
-// instantly falls back to Leaflet — no rebuild needed.
-const USE_NATIVE_MAP = true;
+// WebView. iOS only: Apple Maps needs no key. Android builds have no Google
+// Maps API key in the manifest (jamais injectée — cf. ADR-001 §clé), so the
+// native map crashes the app at interaction; Leaflet est le rendu Android tant
+// qu'une clé n'est pas ajoutée (rebuild requis le jour où on la met).
+const USE_NATIVE_MAP = Platform.OS === 'ios';
 
 type Filter = 'all' | 'people' | 'associations';
 
@@ -526,8 +528,7 @@ export default function MapTab() {
                 renderItem={({ item }) => {
                   const name =
                     item.displayName ??
-                    `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() ??
-                    'Anonyme';
+                    (`${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() || 'Anonyme');
                   return (
                     <Pressable
                       onPress={() => {
@@ -923,8 +924,7 @@ function ClusterListSheet({
           renderItem={({ item }) => {
             const name =
               item.displayName ??
-              `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() ??
-              'Anonyme';
+              (`${item.firstName ?? ''} ${item.lastName ?? ''}`.trim() || 'Anonyme');
             return (
               <Pressable
                 onPress={() => onOpenProfile(item.id)}
