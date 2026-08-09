@@ -43,6 +43,8 @@ const makeDiaspora = () => ({
   mayReply: jest.fn(async () => true),
   assertMayReply: jest.fn(async () => undefined),
   invalidate: jest.fn(async () => undefined),
+  authorScope: jest.fn(async () => null),
+  sharesContentScope: jest.fn(async () => true),
 });
 
 describe('GeoService — global full visibility (map)', () => {

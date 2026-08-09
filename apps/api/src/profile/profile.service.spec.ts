@@ -42,6 +42,8 @@ const makeDiaspora = () => ({
   mayReply: jest.fn(async () => true),
   assertMayReply: jest.fn(async () => undefined),
   invalidate: jest.fn(async () => undefined),
+  authorScope: jest.fn(async () => null),
+  sharesContentScope: jest.fn(async () => true),
 });
 
 describe('ProfileService', () => {
@@ -390,5 +392,33 @@ describe('ProfileService', () => {
     };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
     await expect(svc.deletePhoto('me', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+  // Diaspora split: the wall of a member on the other side comes back empty, so
+  // the counter beside it must read 0. Announcing "12 publications" above an
+  // empty wall would leak exactly what the split withholds.
+  it('reports 0 posts for a member on the other side of the diaspora split', async () => {
+    const postCount = jest.fn(async () => 12);
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'niamey',
+          privacyLevel: 'public',
+          status: 'active',
+        })),
+      },
+      userPhoto: { count: jest.fn(async () => 3) },
+      friendship: { count: jest.fn(async () => 7) },
+      associationMember: { findMany: jest.fn(async () => []) },
+      post: { count: postCount },
+    };
+    const diaspora = { ...makeDiaspora(), sharesContentScope: jest.fn(async () => false) };
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, diaspora as never);
+    const result = await svc.getById('paris', 'niamey');
+    expect(result.postsCount).toBe(0);
+    expect(postCount).not.toHaveBeenCalled();
+    // The member stays visible — only their content is withheld.
+    expect(result.id).toBe('niamey');
+    expect(result.friendsCount).toBe(7);
+    expect(result.photosCount).toBe(3);
   });
 });

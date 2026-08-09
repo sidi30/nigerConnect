@@ -185,6 +185,11 @@ export class ProfileService {
    * `association` ones they cannot list.
    */
   private async countVisiblePosts(authorId: string, viewer: CountsViewer): Promise<number> {
+    // Diaspora split: the wall of a member on the other side comes back empty
+    // (PostsService.getUserPosts), so the counter beside it must read 0. A
+    // profile advertising "12 publications" above an empty wall would announce
+    // exactly what the split is meant to withhold.
+    if (!(await this.diaspora.sharesContentScope(viewer.viewerId, authorId))) return 0;
     const visibilityFilter = await this.postVisibilityFilter(viewer);
     return this.prisma.post.count({
       where: { authorId, isStory: false, deletedAt: null, ...visibilityFilter },

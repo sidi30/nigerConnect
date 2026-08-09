@@ -21,6 +21,7 @@ import { geohashEncode } from '../common/geo/geohash';
 import { isAdult } from '../common/age';
 import { WorldCitiesService } from './world-cities';
 import type { BoundsDto, CitiesQueryDto, NearbyDto, ProximityPingDto } from './dto/geo.dto';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 
 const CLUSTER_TTL = 300;
 // Max users notified by a single ping — caps the notification fan-out in dense
@@ -155,6 +156,14 @@ export class GeoService implements OnModuleInit {
     @Optional()
     @Inject(WorldCitiesService)
     private readonly worldCities: WorldCitiesService | null = null,
+    // Same @Optional() + explicit @Inject pattern as worldCities above, and for
+    // the same reason: geo.service.spec.ts builds GeoService positionally. DI
+    // always provides it in production. A null here only skips the story RING
+    // on the map — a cosmetic hint; the stories themselves are gated in
+    // PostsService.getStoriesFeed, which has no such fallback.
+    @Optional()
+    @Inject(DiasporaPolicyService)
+    private readonly diaspora: DiasporaPolicyService | null = null,
   ) {}
 
   /**
@@ -1108,7 +1117,7 @@ export class GeoService implements OnModuleInit {
     const friendIds = ids.filter((id) => friends.has(id));
     const [online, withStory] = await Promise.all([
       this.onlinePresence(friendIds),
-      this.activeStoryAuthors(friendIds),
+      this.activeStoryAuthors(friendIds, viewerId),
     ]);
 
     return placed.map<IndividualMarker>((u) => ({
@@ -1141,15 +1150,20 @@ export class GeoService implements OnModuleInit {
   }
 
   /** Subset of userIds who currently have an unexpired story. Fail-open: {} on error. */
-  private async activeStoryAuthors(userIds: string[]): Promise<Set<string>> {
+  private async activeStoryAuthors(userIds: string[], viewerId: string): Promise<Set<string>> {
     if (userIds.length === 0) return new Set();
     try {
+      // Diaspora split: the ring on the map is a promise that a story can be
+      // opened. Marking one the viewer's story feed will not serve turns the map
+      // into a list of dead links onto the other side.
+      const authorScope = (await this.diaspora?.authorScope(viewerId)) ?? null;
       const rows = await this.prisma.post.findMany({
         where: {
           authorId: { in: userIds },
           isStory: true,
           deletedAt: null,
           storyExpiresAt: { gt: new Date() },
+          ...(authorScope ? { author: authorScope } : {}),
         },
         select: { authorId: true },
         distinct: ['authorId'],
