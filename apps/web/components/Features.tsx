@@ -7,6 +7,7 @@ import {
   IconBell,
 } from "./Icons";
 import type { ComponentType, SVGProps } from "react";
+import { ScrollReveal } from "./ScrollReveal";
 
 type Feature = {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -65,7 +66,7 @@ export function Features() {
   return (
     <section id="features" className="bg-gradient-warm py-20 md:py-28">
       <div className="container-x">
-        <div className="mx-auto max-w-2xl text-center">
+        <ScrollReveal variant="up" className="mx-auto max-w-2xl text-center">
           <span className="chip">Fonctionnalités</span>
           <h2 className="section-title mt-4">
             Tout ce dont la diaspora a besoin,
@@ -78,9 +79,9 @@ export function Features() {
             Pensé pour les Nigériens, par des Nigériens. Chaque fonctionnalité répond à un
             besoin réel exprimé par la communauté.
           </p>
-        </div>
+        </ScrollReveal>
 
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <ScrollReveal variant="stagger" className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => {
             const Icon = f.icon;
             return (
@@ -101,7 +102,7 @@ export function Features() {
               </div>
             );
           })}
-        </div>
+        </ScrollReveal>
       </div>
     </section>
   );
