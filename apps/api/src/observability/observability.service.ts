@@ -21,7 +21,24 @@ const QUERY_TIMEOUT_MS = 8_000;
 /** Rate window used by every rate()/histogram_quantile() expression below. */
 const RATE_WINDOW = '5m';
 
-const CONTAINER_MATCHER = `name=~"nigerconnect-.+"`;
+/**
+ * Per-container rows are keyed on the IMAGE, not the container name, because
+ * cAdvisor cannot name containers on this host: Docker 29 keeps its images in
+ * containerd, so cAdvisor's docker factory fails ("failed to identify the
+ * read-write layer ID") and the containerd factory falls back to labelling
+ * every series with the raw container ID.
+ *
+ * Only images unique to NigerConnect on the shared VPS are listed. redis:7-alpine
+ * (4 containers) and minio/minio (2) are served to several projects, so they are
+ * left out rather than shown as someone else's numbers.
+ */
+const CONTAINERS_BY_IMAGE: ReadonlyArray<{ pattern: string; label: string }> = [
+  { pattern: '(docker\\.io/)?(library/)?nigerconnect-api:.*', label: 'nigerconnect-api' },
+  { pattern: '(docker\\.io/)?(library/)?nigerconnect-web:.*', label: 'nigerconnect-web' },
+  { pattern: '(docker\\.io/)?postgis/postgis:.*', label: 'nigerconnect-postgres' },
+];
+
+const CONTAINER_MATCHER = `image=~"${CONTAINERS_BY_IMAGE.map((c) => c.pattern).join('|')}"`;
 
 export interface OverviewMetrics {
   available: boolean;
@@ -148,8 +165,11 @@ export class ObservabilityService {
             '100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)',
           memoryUsedBytes: 'node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes',
           memoryTotalBytes: 'node_memory_MemTotal_bytes',
+          // min(), not max(): we want the FULLEST filesystem, the one that will
+          // page someone at 3am. max() reported the emptiest — 0.06 % on a host
+          // whose root partition was 68 % full.
           diskPercent:
-            '100 * (1 - max(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}))',
+            '100 * (1 - min(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}))',
           containersTotal: 'count(container_last_seen{name!=""})',
           containers: `count(container_last_seen{${CONTAINER_MATCHER}})`,
           requestsPerSecond: `sum(rate(http_requests_total[${RATE_WINDOW}]))`,
@@ -158,13 +178,13 @@ export class ObservabilityService {
           errorRate4xxPercent: this.errorRateExpr('4xx'),
         }),
         this.instant(
-          `sum by (name) (rate(container_cpu_usage_seconds_total{${CONTAINER_MATCHER}}[${RATE_WINDOW}])) * 100`,
+          `sum by (image) (rate(container_cpu_usage_seconds_total{${CONTAINER_MATCHER}}[${RATE_WINDOW}])) * 100`,
         ),
-        this.instant(`sum by (name) (container_memory_working_set_bytes{${CONTAINER_MATCHER}})`),
+        this.instant(`sum by (image) (container_memory_working_set_bytes{${CONTAINER_MATCHER}})`),
       ]);
 
-      const cpu = seriesByName(cpuByContainer);
-      const memory = seriesByName(memByContainer);
+      const cpu = seriesByContainer(cpuByContainer);
+      const memory = seriesByContainer(memByContainer);
       const names = new Set([...cpu.keys(), ...memory.keys()]);
 
       return {
@@ -364,12 +384,17 @@ export class ObservabilityService {
   }
 }
 
-/** Indexes a `sum by (name)` result, dropping series cAdvisor left unnamed. */
-function seriesByName(series: PromVector[]): Map<string, number | null> {
+/**
+ * Indexes a `sum by (image)` result under the friendly container name, dropping
+ * images that aren't ours (see CONTAINERS_BY_IMAGE for why the image is the key).
+ */
+function seriesByContainer(series: PromVector[]): Map<string, number | null> {
   const out = new Map<string, number | null>();
   for (const s of series) {
-    const name = s.metric.name;
-    if (name) out.set(name, toNumber(s.value[1]));
+    const image = s.metric.image;
+    if (!image) continue;
+    const known = CONTAINERS_BY_IMAGE.find((c) => new RegExp(`^${c.pattern}$`).test(image));
+    if (known) out.set(known.label, toNumber(s.value[1]));
   }
   return out;
 }

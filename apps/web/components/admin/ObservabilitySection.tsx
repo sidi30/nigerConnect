@@ -213,7 +213,7 @@ function MetricsPanel() {
         />
         <Metric
           icon={ServerCog}
-          label="Conteneurs"
+          label="Conteneurs supervisés"
           value={
             app?.containers === null || app?.containers === undefined
               ? "—"
@@ -389,7 +389,9 @@ function ContainerTable({ rows }: { rows: ContainerUsage[] }) {
   if (rows.length === 0) {
     return (
       <p className="text-sm text-[#8A6B4D]">
-        Aucun conteneur remonté par cAdvisor pour le moment.
+        Aucun conteneur remonté par cAdvisor pour le moment. Seuls api, web et
+        postgres sont identifiables sur cet hôte : redis et minio partagent leur
+        image avec d&apos;autres projets du VPS.
       </p>
     );
   }

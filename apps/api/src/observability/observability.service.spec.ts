@@ -150,6 +150,43 @@ describe('ObservabilityService', () => {
       });
     });
 
+    // cAdvisor can't name containers on Docker 29 (containerd image store), so
+    // per-container rows are keyed on the image and mapped back to a readable
+    // name. A neighbouring project's container must never land in the table.
+    it('names container rows from their image, ignoring foreign images', async () => {
+      const vector = (image: string, value: string) => ({
+        metric: { image },
+        value: [0, value],
+      });
+      global.fetch = jest.fn((url: string) =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              data: {
+                result: String(url).includes('container_cpu_usage')
+                  ? [
+                      vector('nigerconnect-api:latest', '12.5'),
+                      vector('docker.io/postgis/postgis:16-3.4-alpine', '3'),
+                      vector('docker.io/library/redis:7-alpine', '99'),
+                    ]
+                  : [],
+              },
+            }),
+        }),
+      ) as never;
+
+      const metrics = new ObservabilityService(
+        makeConfig({ PROMETHEUS_URL: 'http://prometheus:9090' }),
+      );
+      const { containers } = await metrics.overview();
+      expect(containers.map((c) => c.name)).toEqual([
+        'nigerconnect-api',
+        'nigerconnect-postgres',
+      ]);
+      expect(containers.find((c) => c.name === 'nigerconnect-api')?.cpuPercent).toBe(12.5);
+    });
+
     it('keeps only nigerconnect containers in the dropdown', async () => {
       global.fetch = jest.fn(() =>
         Promise.resolve({

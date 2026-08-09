@@ -146,8 +146,15 @@ services:
     <<: *monitoring-defaults
     command:
       - --housekeeping_interval=30s
-      - --docker_only=true
       - --store_container_labels=false
+      # Docker 29 keeps images in containerd (Storage Driver: overlayfs), so
+      # cAdvisor's docker factory dies on every container with "failed to
+      # identify the read-write layer ID" — /var/lib/docker/image/ no longer
+      # exists. Reading containerd's own socket is what makes per-container
+      # CPU/memory appear at all. `--docker_only` is deliberately NOT set: it
+      # would discard exactly the containers the containerd factory recovers.
+      - --containerd=/run/containerd/containerd.sock
+      - --containerd-namespace=moby
       - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl,memory_numa
     volumes:
       - /:/rootfs:ro
@@ -155,6 +162,8 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
+      # Read-only: cAdvisor lists containers and reads their cgroup stats.
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     devices:
       - /dev/kmsg:/dev/kmsg
     networks:

@@ -52,9 +52,15 @@ scrape_configs:
       # containers, and cAdvisor's own machine/process series. Everything else —
       # i.e. the neighbouring projects' CPU/memory/network series — is dropped
       # before it is ever written to disk.
-      - source_labels: [__name__, name]
+      #
+      # Matched on IMAGE, not on name: Docker 29 stores images in containerd, so
+      # cAdvisor can't resolve container names and labels every series with the
+      # raw container ID instead. The image is the only stable identifier left.
+      # redis:7-alpine and minio/minio are excluded on purpose — several projects
+      # on this host run them, and we are not entitled to their numbers.
+      - source_labels: [__name__, image]
         separator: ";"
-        regex: "container_last_seen;.*|container_[a-z_]+;nigerconnect-.+|(?:machine|cadvisor|go|process)_.*;.*"
+        regex: "container_last_seen;.*|container_[a-z_]+;(?:docker\\.io/)?(?:library/)?nigerconnect-(?:api|web):.*|container_[a-z_]+;(?:docker\\.io/)?postgis/postgis:.*|(?:machine|cadvisor|go|process)_.*;.*"
         action: keep
 
   - job_name: node-exporter
