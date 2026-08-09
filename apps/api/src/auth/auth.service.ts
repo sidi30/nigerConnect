@@ -647,6 +647,11 @@ export class AuthService {
         });
         if (byEmail.emailVerified === false) {
           await this.tokens.revokeAllUserTokens(byEmail.id);
+          // The account just transitioned false → true without ever passing
+          // through verifyEmail/verifyEmailCode — it never received the welcome
+          // email. Send it now (fire & forget), same once-semantics as the
+          // verify paths: a verified local account never re-enters this branch.
+          this.sendWelcomeEmail(byEmail.id);
         }
       }
     }

@@ -91,6 +91,12 @@ model User {
   digestOptIn      Boolean   @default(true) @map("digest_opt_in")
   lastDigestSentAt DateTime? @map("last_digest_sent_at") @db.Timestamptz
 
+  // One-shot "complète ton profil" email nudge for verified accounts still
+  // missing a countryCode (OAuth signups skip the registration form). Stamped
+  // BEFORE the send (at-most-once, mirrors lastDigestSentAt) — null means
+  // "never reminded". Written exactly once per account, never reset.
+  profileReminderSentAt DateTime? @map("profile_reminder_sent_at") @db.Timestamptz
+
   // Ephemeral, PRIVATE proximity-matching position. Written by the foreground
   // proximity ping and used ONLY by the Haversine matcher (filtered by
   // proximityUpdatedAt freshness). NEVER selected by the public map surfaces

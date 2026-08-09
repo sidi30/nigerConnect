@@ -397,6 +397,40 @@ export class MailerService implements OnModuleInit {
   }
 
   /**
+   * Profile-completion reminder — sent AT MOST ONCE, a few days after signup,
+   * to verified accounts still missing their city/country (OAuth signups skip
+   * the registration form). Explains what completing the profile unlocks
+   * (map presence, being found by the community) with a CTA back into the app.
+   */
+  async sendProfileReminder(to: string, firstName?: string | null): Promise<void> {
+    const b = MailerService.BRAND;
+    const safeName = this.esc(firstName);
+    const greeting = safeName ? `Bonjour ${safeName},` : 'Bonjour,';
+    const bodyHtml = `
+      <h1 style="margin:0 0 16px;font-size:24px;font-weight:800;color:${b.brown};">Complète ton profil 📍</h1>
+      <p style="margin:0 0 12px;">${greeting}</p>
+      <p style="margin:0 0 22px;">Ton compte NigerConnect est actif, mais ton profil n'a pas encore de <strong>ville ni de pays</strong>. En 30 secondes, complète-le pour profiter pleinement de la communauté :</p>
+      ${this.featureRow('🗺️', 'Apparais sur la carte', 'Ajoute ta ville pour être visible des membres de la diaspora proches de toi.')}
+      ${this.featureRow('🔎', 'Sois trouvé par la communauté', 'Les membres et associations de ta région pourront te découvrir.')}
+      ${this.featureRow('🤝', "Reçois l'entraide locale", 'Demandes et bons plans pertinents pour TA ville, pas celle des autres.')}
+      <div style="margin:24px 0 4px;">${this.button(this.webUrl, 'Compléter mon profil')}</div>
+      <p style="margin:24px 0 0;font-size:13px;color:${b.tan500};">Astuce : ajoute aussi une photo de profil — les profils avec photo reçoivent bien plus de réponses.</p>`;
+    const text =
+      `NigerConnect — Complète ton profil\n\n${greeting}\n` +
+      `Ton compte est actif, mais ton profil n'a pas encore de ville ni de pays.\n\n` +
+      `En le complétant, tu peux :\n` +
+      `- Apparaître sur la carte de la diaspora\n` +
+      `- Être trouvé par les membres et associations de ta région\n` +
+      `- Recevoir l'entraide locale pertinente pour ta ville\n\n` +
+      `Complète ton profil : ${this.webUrl}`;
+    const html = this.layout({
+      preheader: 'Ajoute ta ville pour apparaître sur la carte de la diaspora.',
+      bodyHtml,
+    });
+    await this.send({ to, subject: 'NigerConnect — Complète ton profil 📍', html, text });
+  }
+
+  /**
    * Identity-verification CONFIRMED email — sent once, right after a moderator
    * approves a user's identity document. Celebrates the new "verified" status
    * and points at the two capabilities it unlocks (creating a page / an
