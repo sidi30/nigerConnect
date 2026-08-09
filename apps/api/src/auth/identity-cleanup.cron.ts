@@ -41,9 +41,12 @@ export class IdentityCleanupCron implements OnModuleInit, OnModuleDestroy {
       if (expired.length === 0) return;
 
       for (const doc of expired) {
-        // Best-effort S3 delete — extract key from URL
+        // Best-effort S3 delete — extract key from URL. Identity documents live
+        // in the PRIVATE bucket, so the delete must target it explicitly:
+        // `deleteObject` defaults to the public bucket, which silently left
+        // every expired document on disk while its DB row was hard-deleted.
         const key = this.extractKey(doc.fileUrl);
-        if (key) await this.s3.deleteObject(key);
+        if (key) await this.s3.deletePrivateObject(key);
       }
       const deleted = await this.prisma.identityDocument.deleteMany({
         where: { id: { in: expired.map((d) => d.id) } },

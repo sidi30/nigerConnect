@@ -78,7 +78,20 @@ function pickerOptionsFor(kind: UploadKind): ImagePicker.ImagePickerOptions {
 }
 
 /**
- * Resize + recompress the picked image so the network payload is bounded.
+ * Content types the API's presign endpoint accepts — and, just as importantly,
+ * the only ones a browser can render (a moderator reviews identity documents
+ * from the web console). The iOS picker hands back the ORIGINAL container, so
+ * `mimeType` is routinely `image/heic` (iPhone default), and Android reports
+ * `image/heif` on phones in storage-saver mode; the picker also passes through
+ * gif/bmp/tiff/avif untouched. Any of those forwarded as-is is rejected by the
+ * presign schema — a raw 400 the user sees as "Request failed with status
+ * code 400". We re-encode them to JPEG instead.
+ */
+const WEB_SAFE_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+/**
+ * Resize + recompress the picked image so the network payload is bounded, and
+ * normalise exotic containers (HEIC/HEIF/…) to JPEG.
  * Returns a new file URI on disk (the original is left untouched).
  */
 async function resizeForUpload(
@@ -88,26 +101,36 @@ async function resizeForUpload(
   const maxDim = MAX_DIMENSION_BY_KIND[kind];
   const quality = QUALITY_BY_KIND[kind];
 
-  // Skip the round-trip for tiny pictures — saves a few hundred ms on avatars
-  // already pre-cropped via `allowsEditing`.
+  const sourceType = asset.mimeType ?? (asset.uri.endsWith('.png') ? 'image/png' : 'image/jpeg');
+  // Unknown dimensions (iCloud asset not downloaded, limited-library access)
+  // must NOT be read as "small enough" — that path used to skip the manipulator
+  // entirely and ship the original container as-is.
   const w = asset.width ?? 0;
   const h = asset.height ?? 0;
-  const needsResize = Math.max(w, h) > maxDim;
+  const knownSize = w > 0 && h > 0;
+  const needsResize = !knownSize || Math.max(w, h) > maxDim;
+  const needsTranscode = !WEB_SAFE_CONTENT_TYPES.has(sourceType);
 
-  if (!needsResize) {
-    const ct = asset.mimeType ?? (asset.uri.endsWith('.png') ? 'image/png' : 'image/jpeg');
-    return { uri: asset.uri, contentType: ct };
+  // Skip the round-trip for tiny pictures already in a web-safe container —
+  // saves a few hundred ms on avatars already pre-cropped via `allowsEditing`.
+  if (!needsResize && !needsTranscode) {
+    return { uri: asset.uri, contentType: sourceType };
   }
 
-  const ratio = maxDim / Math.max(w, h);
-  const targetWidth = Math.round(w * ratio);
-  const targetHeight = Math.round(h * ratio);
+  // Only scale when we know the source dimensions AND it is over the cap;
+  // otherwise the manipulator runs purely to transcode the container.
+  const actions: ImageManipulator.Action[] = [];
+  if (knownSize && Math.max(w, h) > maxDim) {
+    const ratio = maxDim / Math.max(w, h);
+    actions.push({
+      resize: { width: Math.round(w * ratio), height: Math.round(h * ratio) },
+    });
+  }
 
-  const result = await ImageManipulator.manipulateAsync(
-    asset.uri,
-    [{ resize: { width: targetWidth, height: targetHeight } }],
-    { compress: quality, format: ImageManipulator.SaveFormat.JPEG },
-  );
+  const result = await ImageManipulator.manipulateAsync(asset.uri, actions, {
+    compress: quality,
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
 
   return { uri: result.uri, contentType: 'image/jpeg' };
 }
@@ -264,8 +287,13 @@ export async function uploadLocalImage(
     });
     presigned = data;
   } catch (err) {
+    // Prefer the API's own message: axios' default ("Request failed with
+    // status code 400") tells the member nothing about what to fix.
+    const apiMsg = (err as { response?: { data?: { message?: string | string[] } } }).response?.data
+      ?.message;
     throw new UploadError(
-      (err as Error).message || 'Impossible de préparer l’envoi.',
+      (Array.isArray(apiMsg) ? apiMsg.join(' · ') : apiMsg) ||
+        'Impossible de préparer l’envoi.',
       'presign_failed',
     );
   }
