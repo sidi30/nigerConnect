@@ -369,7 +369,13 @@ export class PostsService {
       // Mirror the feed rule: a private profile's public posts are NOT visible
       // to strangers via the single-post / comments / share side channels —
       // only the owner (handled above) and accepted friends may read them.
-      if (post.author?.privacyLevel === 'private' && !(await isFriend())) {
+      // The community-wide visibility override lifts this profile-level gate
+      // (the per-post `visibility` choice above stays untouched).
+      if (
+        post.author?.privacyLevel === 'private' &&
+        !(await this.settings.isGlobalFullVisibility()) &&
+        !(await isFriend())
+      ) {
         throw new NotFoundException('Post not found');
       }
       return post;
@@ -603,8 +609,11 @@ export class PostsService {
               // Public posts surface in the global feed ONLY from non-private
               // profiles. A private profile's content stays restricted to the
               // owner + their friends (handled by the friends branch below) —
-              // it never leaks to strangers via the public feed.
-              { visibility: 'public', author: { privacyLevel: { not: 'private' } } },
+              // it never leaks to strangers via the public feed. The
+              // community-wide visibility override lifts that profile gate.
+              (await this.settings.isGlobalFullVisibility())
+                ? { visibility: 'public' as const }
+                : { visibility: 'public' as const, author: { privacyLevel: { not: 'private' } } },
               // Friends see a friend's public AND friends-only posts (incl. when
               // that friend keeps a private profile).
               { authorId: { in: friendIds }, visibility: { in: ['public', 'friends'] } },
@@ -722,8 +731,10 @@ export class PostsService {
         ) > 0;
 
     // Private profile: only the owner and accepted friends may read the wall.
-    // Strangers get nothing (the profile chose not to be public).
-    if (!isOwn && !isFriend) {
+    // Strangers get nothing (the profile chose not to be public) — unless the
+    // community-wide visibility override is on (they then get the stranger
+    // view: public posts only, per the visibilityFilter below).
+    if (!isOwn && !isFriend && !(await this.settings.isGlobalFullVisibility())) {
       const author = await this.prisma.user.findUnique({
         where: { id: authorId },
         select: { privacyLevel: true },

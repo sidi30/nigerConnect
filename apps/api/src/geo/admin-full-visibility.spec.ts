@@ -9,6 +9,7 @@ import { ProfileService } from '../profile/profile.service';
  */
 const settings = (full: boolean) => ({
   isAdminFullVisibility: jest.fn(async (role?: string) => full && role === 'admin'),
+  isGlobalFullVisibility: jest.fn(async () => false),
 });
 
 function makeGeo(full: boolean, findMany: jest.Mock) {

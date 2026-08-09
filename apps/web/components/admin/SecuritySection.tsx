@@ -26,6 +26,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
   const [required, setRequired] = useState(false);
   const [fullVis, setFullVis] = useState(false);
   const [fullVisUntil, setFullVisUntil] = useState<string | null>(null);
+  const [globalVis, setGlobalVis] = useState(false);
   const [accessLog, setAccessLog] = useState<AdminAccessLogRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +52,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
         setRequired(settings.adminMfaRequired);
         setFullVis(settings.adminFullVisibility);
         setFullVisUntil(settings.adminFullVisibilityUntil);
+        setGlobalVis(settings.globalFullVisibility);
         if (isAdmin) {
           fetchFullVisibilityLog(20)
             .then(setAccessLog)
@@ -136,6 +138,19 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
       const s = await patchAdminSettings({ adminFullVisibility: next });
       setFullVis(s.adminFullVisibility);
       setFullVisUntil(s.adminFullVisibilityUntil);
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleGlobalVis(next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await patchAdminSettings({ globalFullVisibility: next });
+      setGlobalVis(s.globalFullVisibility);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
     } finally {
@@ -375,6 +390,47 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
                   </ul>
                 </div>
               ) : null}
+            </Card>
+          ) : null}
+
+          {/* ── Community-wide visibility: everyone sees everyone (admin only) ── */}
+          {isAdmin ? (
+            <Card className="p-5 border border-sky-300/60 bg-sky-50/40">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-[#1A0F0A] flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-sky-600" />
+                    Visibilité communautaire (tout le monde voit tout le monde)
+                  </h3>
+                  <p className="text-sm text-[#8A6B4D] mt-1 max-w-xl">
+                    Quand c&apos;est activé, <strong>tous les membres</strong> voient{" "}
+                    <strong>tous les profils</strong> — y compris les profils privés — dans la
+                    recherche, sur la carte, le feed et les listes d&apos;amis. Le choix{" "}
+                    <strong>« me montrer sur la carte »</strong> et la visibilité choisie{" "}
+                    <strong>par publication</strong> restent respectés.
+                  </p>
+                  <p className="text-xs text-sky-700 mt-2 max-w-xl">
+                    Sur OFF (défaut), chaque membre garde le contrôle de la visibilité de son
+                    profil, comme aujourd&apos;hui. Effet immédiat, sans redéploiement.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={globalVis}
+                  disabled={busy}
+                  onClick={() => toggleGlobalVis(!globalVis)}
+                  className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-40 ${
+                    globalVis ? "bg-sky-500" : "bg-[#D9CBB8]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                      globalVis ? "translate-x-5" : ""
+                    }`}
+                  />
+                </button>
+              </div>
             </Card>
           ) : null}
         </div>

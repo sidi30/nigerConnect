@@ -384,6 +384,7 @@ export class AdminService {
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
     adminFullVisibilityUntil: string | null;
+    globalFullVisibility: boolean;
     videoEnabled: boolean;
     digestEnabled: boolean;
     profileReminderEnabled: boolean;
@@ -395,6 +396,7 @@ export class AdminService {
       adminMfaRequired,
       adminFullVisibility,
       adminFullVisibilityUntil,
+      globalFullVisibility,
       videoEnabled,
       digestEnabled,
       profileReminderEnabled,
@@ -405,6 +407,7 @@ export class AdminService {
       this.settings.getSetting('admin_mfa_required', 'false'),
       this.settings.isFullVisibilityActive(),
       this.settings.fullVisibilityUntil(),
+      this.settings.isGlobalFullVisibility(),
       this.settings.isVideoEnabled(),
       this.settings.isDigestEnabled(),
       this.settings.isProfileReminderEnabled(),
@@ -416,6 +419,7 @@ export class AdminService {
       adminMfaRequired: adminMfaRequired === 'true',
       adminFullVisibility,
       adminFullVisibilityUntil,
+      globalFullVisibility,
       videoEnabled,
       digestEnabled,
       profileReminderEnabled,
@@ -433,6 +437,7 @@ export class AdminService {
       inviteExpiryDays?: number;
       adminMfaRequired?: boolean;
       adminFullVisibility?: boolean;
+      globalFullVisibility?: boolean;
       videoEnabled?: boolean;
       digestEnabled?: boolean;
       profileReminderEnabled?: boolean;
@@ -445,6 +450,7 @@ export class AdminService {
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
     adminFullVisibilityUntil: string | null;
+    globalFullVisibility: boolean;
     videoEnabled: boolean;
     digestEnabled: boolean;
     profileReminderEnabled: boolean;
@@ -492,6 +498,18 @@ export class AdminService {
         ? new Date(Date.now() + FULL_VIS_TTL_HOURS * 3_600_000).toISOString()
         : '';
       writes.push(this.settings.setSetting('admin_full_visibility_until', until, adminId));
+    }
+    if (dto.globalFullVisibility !== undefined) {
+      // Community-wide visibility policy (no auto-expiry — deliberate, this is
+      // a durable community setting, not a support intervention). Audited via
+      // the setting's updatedById.
+      writes.push(
+        this.settings.setSetting(
+          'global_full_visibility',
+          dto.globalFullVisibility ? 'true' : 'false',
+          adminId,
+        ),
+      );
     }
     if (dto.videoEnabled !== undefined) {
       // Re-arming (or manually cutting) the stories-video kill-switch. Write-through

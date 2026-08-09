@@ -116,3 +116,24 @@ describe('SettingsService — stories-video kill-switch', () => {
     expect(await makeService({ video_enabled: '1' }).isVideoEnabled()).toBe(false);
   });
 });
+
+describe('SettingsService — global full visibility (community-wide)', () => {
+  it('OFF by default (no setting stored)', async () => {
+    expect(await makeService({}).isGlobalFullVisibility()).toBe(false);
+  });
+
+  it('ON when the setting is true — no expiry required (persistent policy)', async () => {
+    expect(
+      await makeService({ global_full_visibility: 'true' }).isGlobalFullVisibility(),
+    ).toBe(true);
+  });
+
+  it('OFF for any non-"true" value', async () => {
+    expect(
+      await makeService({ global_full_visibility: 'false' }).isGlobalFullVisibility(),
+    ).toBe(false);
+    expect(
+      await makeService({ global_full_visibility: '1' }).isGlobalFullVisibility(),
+    ).toBe(false);
+  });
+});

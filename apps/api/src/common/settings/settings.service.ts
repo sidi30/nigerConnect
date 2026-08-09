@@ -113,6 +113,19 @@ export class SettingsService {
   }
 
   /**
+   * Global visibility override (community-wide): when ON, every profile is
+   * treated as `public` for EVERY member — the `privacyLevel` gates (private
+   * profile 404, search/map/feed exclusion, friends-only lists) are dropped.
+   * Deliberately does NOT touch `showOnMap` (explicit location opt-in) nor the
+   * per-post `visibility` choice. OFF by default: each member keeps control,
+   * as today. Persistent (no auto-expiry) — this is a community policy switch,
+   * not a support intervention like isAdminFullVisibility above.
+   */
+  async isGlobalFullVisibility(): Promise<boolean> {
+    return (await this.getSetting('global_full_visibility', 'false')) === 'true';
+  }
+
+  /**
    * Master kill-switch for the proximity-encounter feature. OFF by default so the
    * feature ships DARK and a misconfig / DB failure fails CLOSED (off). Flip to
    * 'true' via the admin settings to enable, then roll out per city below.

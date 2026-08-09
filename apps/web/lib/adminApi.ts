@@ -702,6 +702,8 @@ export interface AdminSettings {
   adminFullVisibility: boolean;
   /** ISO time the override auto-expires (null when off). */
   adminFullVisibilityUntil: string | null;
+  /** Community-wide override: when true, every member sees every profile (privacyLevel ignored). */
+  globalFullVisibility: boolean;
 }
 
 export interface AdminAccessLogRow {
@@ -752,6 +754,7 @@ export function patchAdminSettings(
     inviteExpiryDays: number;
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
+    globalFullVisibility: boolean;
   }>,
 ): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });

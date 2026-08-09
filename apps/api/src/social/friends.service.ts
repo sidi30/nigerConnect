@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { SettingsService } from '../common/settings/settings.service';
 import { NotificationService } from '../notification/notification.service';
 import { BlockService } from './block.service';
 
@@ -28,6 +29,7 @@ export class FriendsService {
     private readonly prisma: PrismaService,
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
+    private readonly settings: SettingsService,
   ) {}
 
   private async userDisplayName(userId: string): Promise<string> {
@@ -277,6 +279,8 @@ export class FriendsService {
     targetId: string,
     friendshipStatus?: string,
   ): Promise<boolean> {
+    // Community-wide visibility override: nothing is hidden by privacyLevel.
+    if (await this.settings.isGlobalFullVisibility()) return false;
     const target = await this.prisma.user.findUnique({
       where: { id: targetId },
       select: { privacyLevel: true },

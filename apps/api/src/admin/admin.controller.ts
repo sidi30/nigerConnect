@@ -44,6 +44,11 @@ const patchSettingsSchema = z
     // Support override: when on, an admin sees every member on the map + can open
     // any (even private) profile. Privacy-sensitive — off by default.
     adminFullVisibility: z.boolean().optional(),
+    // Community-wide override: when on, EVERY member sees every profile (the
+    // per-user privacyLevel gates are lifted; showOnMap and the per-post
+    // visibility choice stay honoured). Off by default: the choice belongs to
+    // each member, as today.
+    globalFullVisibility: z.boolean().optional(),
     // Master kill-switch for the stories-video beta. Off by default (ships DARK);
     // the disk guard also forces it off — this is how an admin RE-ARMS it after
     // reclaiming disk.

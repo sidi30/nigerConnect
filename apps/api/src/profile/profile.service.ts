@@ -143,7 +143,7 @@ export class ProfileService {
     });
     const inv = row?.invitedBy;
     const invitedBy =
-      inv && inv.privacyLevel !== 'private'
+      inv && (inv.privacyLevel !== 'private' || (await this.settings.isGlobalFullVisibility()))
         ? { id: inv.id, displayName: inv.displayName, avatarUrl: inv.avatarUrl }
         : null;
     return { invitedBy, inviteesCount: row?._count?.invitees ?? 0 };
@@ -347,6 +347,9 @@ export class ProfileService {
     // Admin support override: an admin (with the setting on) may open any profile
     // — including a blocked or 'private' one — to resolve issues.
     const fullVis = await this.settings.isAdminFullVisibility(viewerRole);
+    // Community-wide override: every profile is treated as `public` for every
+    // member (privacy gates dropped; blocks still apply, unlike the admin one).
+    const globalVis = await this.settings.isGlobalFullVisibility();
 
     if (!fullVis && (await this.blocks.isBlocked(viewerId, targetId))) {
       throw new NotFoundException('User not found');
@@ -369,7 +372,7 @@ export class ProfileService {
       );
     }
 
-    if (!fullVis && target.privacyLevel === 'private') {
+    if (!fullVis && !globalVis && target.privacyLevel === 'private') {
       throw new NotFoundException('User not found');
     }
 
@@ -403,7 +406,7 @@ export class ProfileService {
           ],
         },
       })) > 0;
-    const canSeeLists = fullVis || target.privacyLevel !== 'friends' || isFriend;
+    const canSeeLists = fullVis || globalVis || target.privacyLevel !== 'friends' || isFriend;
     const [network, counts] = await Promise.all([
       this.loadNetwork(targetId),
       this.loadCounts(targetId, {
@@ -446,7 +449,8 @@ export class ProfileService {
     //   - public   → visible to anyone
     //   - blocked  → 404 (getById throws first)
     const target = await this.getById(viewerId, targetId);
-    if (target.privacyLevel === 'friends' && viewerId !== targetId) {
+    const globalVis = await this.settings.isGlobalFullVisibility();
+    if (!globalVis && target.privacyLevel === 'friends' && viewerId !== targetId) {
       const friendCount = await this.prisma.friendship.count({
         where: {
           status: 'accepted',
@@ -520,7 +524,9 @@ export class ProfileService {
       }))
       .filter(
         ({ user }) =>
-          user.id !== viewerId && !blockedIds.has(user.id) && user.privacyLevel !== 'private',
+          user.id !== viewerId &&
+          !blockedIds.has(user.id) &&
+          (globalVis || user.privacyLevel !== 'private'),
       );
 
     const hasMore = friendships.length > limit;
@@ -597,7 +603,10 @@ export class ProfileService {
         // Registration is only complete once the email is verified — hide users
         // whose inscription is still pending from all discovery surfaces.
         { emailVerified: true },
-        { privacyLevel: { in: ['public', 'friends'] } },
+        // Community-wide visibility override lifts the `private` exclusion.
+        ...((await this.settings.isGlobalFullVisibility())
+          ? []
+          : [{ privacyLevel: { in: ['public', 'friends'] as const } } as Prisma.UserWhereInput]),
       ],
     };
     if (dto.q) {

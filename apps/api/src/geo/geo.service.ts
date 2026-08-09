@@ -384,7 +384,11 @@ export class GeoService implements OnModuleInit {
       showOnMap: true,
       status: 'active' as const,
       emailVerified: true,
-      privacyLevel: { not: 'private' as const },
+      // Community-wide visibility override lifts the privacy gate (showOnMap,
+      // the explicit location opt-in, is always honoured).
+      ...((await this.settings.isGlobalFullVisibility())
+        ? {}
+        : { privacyLevel: { not: 'private' as const } }),
       id: { notIn: excludedIds },
     };
 
@@ -425,6 +429,11 @@ export class GeoService implements OnModuleInit {
     const blockedClause = blockedIds.length
       ? Prisma.sql`AND id::text NOT IN (${Prisma.join(blockedIds)})`
       : Prisma.empty;
+    // Community-wide visibility override lifts the privacy gate (show_on_map,
+    // the explicit location opt-in, is always honoured).
+    const privacyClause = (await this.settings.isGlobalFullVisibility())
+      ? Prisma.empty
+      : Prisma.sql`AND privacy_level <> 'private'`;
 
     // Distance is great-circle km (Haversine). The `radius` (km) caps results
     // to the user's local zone — without it a sparse map returned people on the
@@ -456,7 +465,7 @@ export class GeoService implements OnModuleInit {
       WHERE show_on_map = TRUE
         AND status = 'active'
         AND email_verified = TRUE
-        AND privacy_level <> 'private'
+        ${privacyClause}
         AND latitude IS NOT NULL
         AND longitude IS NOT NULL
         AND id::text <> ${viewerId}
@@ -1062,8 +1071,14 @@ export class GeoService implements OnModuleInit {
     const users = await this.prisma.user.findMany({
       where: {
         // Admin full-visibility override drops the opt-in + private gates so a
-        // support admin sees everyone; the default path keeps both (privacy).
-        ...(fullVis ? {} : { showOnMap: true, privacyLevel: { not: 'private' } }),
+        // support admin sees everyone; the community-wide override only drops
+        // the privacy gate (showOnMap, the explicit location opt-in, stays);
+        // the default path keeps both (privacy).
+        ...(fullVis
+          ? {}
+          : (await this.settings.isGlobalFullVisibility())
+            ? { showOnMap: true }
+            : { showOnMap: true, privacyLevel: { not: 'private' } }),
         status: 'active',
         emailVerified: true,
         latitude: { gte: dto.south, lte: dto.north },
@@ -1179,7 +1194,9 @@ export class GeoService implements OnModuleInit {
         showOnMap: true,
         status: 'active',
         emailVerified: true,
-        privacyLevel: { not: 'private' },
+        ...((await this.settings.isGlobalFullVisibility())
+          ? {}
+          : { privacyLevel: { not: 'private' } }),
         countryCode: null,
         latitude: { gte: dto.south, lte: dto.north },
         longitude: { gte: dto.west, lte: dto.east },

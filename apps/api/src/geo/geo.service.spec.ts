@@ -59,7 +59,7 @@ function makeMocks() {
 describe('GeoService', () => {
   it('scopes the marker cache key to the viewer (no cross-viewer bleed)', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     await svc.getMarkers('viewer-A', BOUNDS);
     await svc.getMarkers('viewer-B', BOUNDS);
@@ -87,7 +87,7 @@ describe('GeoService', () => {
     redis.client.get.mockImplementation(async (key) =>
       key.includes('viewer-A') ? cachedForA : null,
     );
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     const resultForB = await svc.getMarkers('viewer-B', BOUNDS);
 
@@ -98,7 +98,7 @@ describe('GeoService', () => {
 
   it('counts map-hidden users in country clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     // zoom 3 (< 4) -> country clusters branch.
     await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 3 });
@@ -114,7 +114,7 @@ describe('GeoService', () => {
 
   it('counts map-hidden users in city clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     // zoom 5 (>= 4, < 9) -> city clusters branch.
     await svc.getMarkers('viewer-A', { ...BOUNDS, type: 'people', zoom: 5 });
@@ -127,7 +127,7 @@ describe('GeoService', () => {
 
   it('getNearby caps results to the requested radius (km)', async () => {
     const { redis, prisma, notifications } = makeMocks();
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     await svc.getNearby('viewer-A', { lat: 13.5, lon: 2.1, radius: 25, limit: 30 });
 
@@ -156,7 +156,7 @@ describe('GeoService', () => {
     ]);
     // activeStoryAuthors is only ever called with the friend ids → returns friend-1.
     prisma.post.findMany.mockResolvedValueOnce([{ authorId: 'friend-1' }]);
-    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
 
     // zoom 9 → individual markers branch.
     const markers = await svc.getMarkers('viewer', { ...BOUNDS, type: 'people', zoom: 9 });
@@ -181,7 +181,7 @@ describe('GeoService', () => {
         redis as never,
         notifications as never,
         {
-          isAdminFullVisibility: jest.fn(async () => false),
+          isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false),
           isProximityEnabled: jest.fn(async () => false),
           isProximityRegionAllowed: jest.fn(async () => true),
         } as never,
@@ -212,7 +212,7 @@ describe('GeoService', () => {
         redis as never,
         notifications as never,
         {
-          isAdminFullVisibility: jest.fn(async () => false),
+          isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false),
           isProximityEnabled: jest.fn(async () => true),
           isProximityRegionAllowed: jest.fn(async () => false),
         } as never,
@@ -242,7 +242,7 @@ describe('GeoService', () => {
         redis as never,
         notifications as never,
         {
-          isAdminFullVisibility: jest.fn(async () => false),
+          isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false),
           isProximityEnabled: jest.fn(async () => true),
           isProximityRegionAllowed: jest.fn(async () => true),
         } as never,

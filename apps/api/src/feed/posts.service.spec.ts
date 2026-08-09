@@ -66,7 +66,7 @@ function makeS3(overrides: Record<string, unknown> = {}) {
 
 /** Kill-switch OFF by default (fail-closed), verified by default when overridden. */
 function makeSettings(videoEnabled = false) {
-  return { isVideoEnabled: jest.fn(async () => videoEnabled) };
+  return { isVideoEnabled: jest.fn(async () => videoEnabled), isGlobalFullVisibility: jest.fn(async () => false) };
 }
 
 describe('PostsService', () => {
