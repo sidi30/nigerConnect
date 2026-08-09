@@ -304,12 +304,21 @@ services:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
       # Public vitrine — apex domain. Single-level subdomains only (Cloudflare
-      # Universal SSL covers one level). No `www.` here.
+      # Universal SSL covers one level — which includes `www.`).
       - traefik.http.routers.nigerconnect-web.rule=Host(`${WEB_HOST}`)
       - traefik.http.routers.nigerconnect-web.entrypoints=https
       - traefik.http.routers.nigerconnect-web.tls.certresolver=letsencrypt-dns
       - traefik.http.routers.nigerconnect-web.middlewares=cloudflare-only@file
       - traefik.http.services.nigerconnect-web.loadbalancer.server.port=3000
+      # www.<apex> → 301 vers l'apex (les visiteurs tapent souvent www.)
+      - traefik.http.routers.nigerconnect-www.rule=Host(`www.${WEB_HOST}`)
+      - traefik.http.routers.nigerconnect-www.entrypoints=https
+      - traefik.http.routers.nigerconnect-www.tls.certresolver=letsencrypt-dns
+      - traefik.http.routers.nigerconnect-www.middlewares=cloudflare-only@file,nigerconnect-www-redirect
+      - traefik.http.routers.nigerconnect-www.service=nigerconnect-web
+      - traefik.http.middlewares.nigerconnect-www-redirect.redirectregex.regex=^https?://www\.(.+)
+      - traefik.http.middlewares.nigerconnect-www-redirect.redirectregex.replacement=https://$${1}
+      - traefik.http.middlewares.nigerconnect-www-redirect.redirectregex.permanent=true
       # Admin console — same Next.js container, served on its own host
       # (${ADMIN_HOST}, e.g. tenant.nigerconnect.app). The web app's middleware
       # rewrites this host onto the /admin route group and 404s /admin on the
