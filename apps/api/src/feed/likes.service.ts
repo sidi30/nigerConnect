@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { BlockService } from '../social/block.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { NotificationService } from '../notification/notification.service';
 import { PostsService } from './posts.service';
 
@@ -11,6 +12,7 @@ export class LikesService {
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
     private readonly posts: PostsService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
 
   /**
@@ -107,8 +109,11 @@ export class LikesService {
     // see the post. Without this gate, a stranger could enumerate which
     // diaspora members liked a friends-only or association-only post.
     await this.posts.assertCanViewPost(viewerId, postId);
+    // Diaspora split: a reaction names its author, so the same rule applies —
+    // otherwise the list of likers is a back door onto the other side's members.
+    const authorScope = await this.diaspora.authorScope(viewerId);
     const likes = await this.prisma.like.findMany({
-      where: { postId },
+      where: { postId, ...(authorScope ? { user: authorScope } : {}) },
       take: limit + 1,
       ...(cursor
         ? { cursor: { userId_postId: { userId: cursor, postId } }, skip: 1 }

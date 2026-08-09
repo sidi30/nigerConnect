@@ -2,10 +2,13 @@ import { ForbiddenException } from '@nestjs/common';
 import { DiasporaPolicyService } from './diaspora-policy.service';
 
 /**
- * The rule: NigerConnect is for the diaspora. A member living in Niger reads
- * everything and talks to other members in Niger, but cannot reach OUT to a
- * diaspora member. One-directional on purpose — the diaspora keeps the right to
- * contact family back home, and the answer to that message is allowed.
+ * Two rules with two different shapes, which is exactly what makes them easy to
+ * get wrong — hence a test for each direction of each.
+ *
+ * CONTACT is one-directional: Niger may not reach out to the diaspora, but the
+ * diaspora may reach home, and the reply to that message is allowed.
+ * CONTENT is symmetric: each side sees only its own posts.
+ * MEMBERS are never filtered — that is what keeps the contact right usable.
  */
 const COUNTRIES: Record<string, string | null> = {
   niamey: 'NE', // lives in Niger
@@ -153,6 +156,95 @@ describe('DiasporaPolicyService', () => {
       await svc.invalidate('paris');
       await svc.isHomeBased('paris');
       expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('content scope (authorScope)', () => {
+    // Content is split symmetrically, unlike contact. A viewer only ever sees
+    // authors from their own side.
+    it('shows a diaspora viewer only diaspora authors', async () => {
+      const { svc } = build();
+      await expect(svc.authorScope('paris')).resolves.toEqual({
+        countryCode: { not: null, notIn: ['NE'] },
+      });
+    });
+
+    it('shows a viewer in Niger only home-based authors, including those with no country', async () => {
+      const { svc } = build();
+      await expect(svc.authorScope('niamey')).resolves.toEqual({
+        OR: [{ countryCode: null }, { countryCode: 'NE' }],
+      });
+    });
+
+    it('treats a viewer with no country as home-based', async () => {
+      const { svc } = build();
+      await expect(svc.authorScope('unknown')).resolves.toEqual({
+        OR: [{ countryCode: null }, { countryCode: 'NE' }],
+      });
+    });
+
+    // Null, not an empty object: callers must be able to skip the clause
+    // entirely rather than add a no-op that silently matches everything.
+    it('returns null when the admin switch lifts the rule', async () => {
+      const { svc } = build(makePrisma(), makeSettings(false));
+      await expect(svc.authorScope('paris')).resolves.toBeNull();
+    });
+
+    // The two scopes must PARTITION the members: no author visible to both
+    // sides, and none visible to neither.
+    it('partitions authors — the two scopes never overlap and never leave a gap', async () => {
+      const { svc } = build();
+      const diaspora = (await svc.authorScope('paris'))!;
+      const home = (await svc.authorScope('niamey'))!;
+      const matches = (scope: Record<string, unknown>, country: string | null): boolean =>
+        'OR' in scope
+          ? country === null || country === 'NE'
+          : country !== null && country !== 'NE';
+      for (const country of ['FR', 'CA', 'NE', null]) {
+        const seen = [matches(diaspora, country), matches(home, country)].filter(Boolean).length;
+        expect(seen).toBe(1);
+      }
+    });
+  });
+  describe('single-item scope (sharesContentScope)', () => {
+    it.each([
+      ['diaspora viewer, diaspora author', 'paris', 'montreal', true],
+      ['diaspora viewer, author in Niger', 'paris', 'niamey', false],
+      ['viewer in Niger, author in Niger', 'niamey', 'zinder', true],
+      ['viewer in Niger, diaspora author', 'niamey', 'paris', false],
+      ['author with no country counts as home', 'niamey', 'unknown', true],
+    ])('%s → %s', async (_l, viewer, author, expected) => {
+      const { svc } = build();
+      await expect(svc.sharesContentScope(viewer, author)).resolves.toBe(expected);
+    });
+
+    // Own content is never hidden from its author, whatever the rule says.
+    it('always lets a member see their own content', async () => {
+      const { svc } = build();
+      await expect(svc.sharesContentScope('niamey', 'niamey')).resolves.toBe(true);
+    });
+
+    it('is lifted by the admin switch, like everything else', async () => {
+      const { svc } = build(makePrisma(), makeSettings(false));
+      await expect(svc.sharesContentScope('paris', 'niamey')).resolves.toBe(true);
+    });
+
+    // sharesContentScope and authorScope decide the same question by two routes
+    // (one item vs a SQL clause). If they ever disagree, a post would be listed
+    // in the feed and 404 when opened, or the reverse.
+    it('agrees with authorScope on every combination', async () => {
+      const { svc } = build();
+      const inScope = (scope: Record<string, unknown>, country: string | null): boolean =>
+        'OR' in scope ? country === null || country === 'NE' : country !== null && country !== 'NE';
+      for (const viewer of ['paris', 'niamey', 'unknown']) {
+        const scope = (await svc.authorScope(viewer))!;
+        for (const author of ['paris', 'montreal', 'niamey', 'zinder', 'unknown']) {
+          if (viewer === author) continue;
+          expect(inScope(scope, COUNTRIES[author]!)).toBe(
+            await svc.sharesContentScope(viewer, author),
+          );
+        }
+      }
     });
   });
 });

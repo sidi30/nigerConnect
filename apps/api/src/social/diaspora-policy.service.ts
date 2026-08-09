@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { SettingsService } from '../common/settings/settings.service';
@@ -9,14 +10,24 @@ const CACHE_TTL = 300;
 const HOME_COUNTRY = 'NE';
 
 /**
- * NigerConnect connects the Nigerien DIASPORA. Members living in Niger are
- * welcome to read the whole network and to talk among themselves, but they may
- * not reach OUT to diaspora members — no friend request, no first message.
+ * NigerConnect connects the Nigerien DIASPORA. Two rules, with two different
+ * shapes — read them together, they are easy to confuse:
  *
- * The restriction is one-directional on purpose: a diaspora member keeps the
- * right to contact family back home, and once they have opened the exchange the
- * home-based member may answer. Existing friendships and conversations are
- * grandfathered — see `mayReply`.
+ * CONTACT is one-directional (`mayInitiateContact`). A member living in Niger
+ * may not reach OUT to a diaspora member — no friend request, no first message.
+ * The diaspora keeps the right to contact family back home, and once they have
+ * opened the exchange the home-based member may answer (`mayReply`). Existing
+ * friendships and conversations are grandfathered.
+ *
+ * CONTENT is symmetric (`authorScope`). Each side sees only its own posts,
+ * stories, comments, reactions, polls and reviews. Two feeds, side by side.
+ *
+ * MEMBERS are never split. Profiles, search and the map stay whole — hiding
+ * home-based members would silently cancel the contact right above: you cannot
+ * write to family you can no longer find.
+ *
+ * EXEMPT entirely: services (marketplace) and associations, which are community
+ * resources meant to reach everyone.
  *
  * A member who has not filled in their country is treated as home-based. That
  * closes the obvious bypass (leave the field empty), at the cost of holding back
@@ -48,6 +59,45 @@ export class DiasporaPolicyService {
     const value = !user || !user.countryCode || user.countryCode === HOME_COUNTRY ? '1' : '0';
     await this.redis.client.set(key, value, 'EX', CACHE_TTL);
     return value === '1';
+  }
+
+  /**
+   * Prisma condition selecting the AUTHORS a viewer is allowed to see content
+   * from. Null when the rule is off — callers then add nothing to their query.
+   *
+   * Content is split symmetrically: each side sees its own. Members, however,
+   * are NOT split — profiles, search and the map stay whole, otherwise the
+   * diaspora could no longer find the family it is still allowed to write to.
+   * So this is for CONTENT queries only (posts, stories, comments, reactions,
+   * polls, reviews). Services and associations are deliberately exempt.
+   *
+   * Returned as a `UserWhereInput` rather than a ready-made clause because the
+   * author relation is named differently everywhere (author, user, createdBy);
+   * each call site drops it onto its own relation.
+   *
+   * Applied inside the SQL `where`, never as a post-query filter: every one of
+   * these lists is cursor-paginated, and dropping rows after the fact would
+   * return short pages and a cursor pointing at a row the caller never saw.
+   */
+  async authorScope(viewerId: string): Promise<Prisma.UserWhereInput | null> {
+    if (!(await this.settings.isDiasporaContactRestricted())) return null;
+    return (await this.isHomeBased(viewerId))
+      ? { OR: [{ countryCode: null }, { countryCode: HOME_COUNTRY }] }
+      : // Diaspora: a real country, and not Niger. `not: null` is required —
+        // in SQL a NULL never satisfies `<> 'NE'`, but being explicit keeps the
+        // "no country means home" rule readable in one place.
+        { countryCode: { not: null, notIn: [HOME_COUNTRY] } };
+  }
+
+  /**
+   * Same split as `authorScope`, for a SINGLE known author — used where there is
+   * one item to admit or refuse rather than a list to filter (a post opened by
+   * its id, a profile wall). Both sides are cached, so this costs nothing.
+   */
+  async sharesContentScope(viewerId: string, authorId: string): Promise<boolean> {
+    if (viewerId === authorId) return true;
+    if (!(await this.settings.isDiasporaContactRestricted())) return true;
+    return (await this.isHomeBased(viewerId)) === (await this.isHomeBased(authorId));
   }
 
   /** Call after any write that changes a member's country. */

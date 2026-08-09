@@ -9,6 +9,11 @@ function makeBlocks(blocked = false) {
   return { isBlocked: jest.fn(async () => blocked) };
 }
 
+/** Diaspora content split: off by default here — it has its own spec. */
+const makeDiaspora = (scope: unknown = null) => ({
+  authorScope: jest.fn(async () => scope),
+});
+
 describe('ReviewService.upsert — target resolution', () => {
   it('refuses a review from someone on either side of a block', async () => {
     // Rating carries a public score plus a notification to the target. Left
@@ -23,6 +28,7 @@ describe('ReviewService.upsert — target resolution', () => {
       prisma as never,
       makeNotifications() as never,
       makeBlocks(true) as never,
+      makeDiaspora() as never,
     );
 
     await expect(
@@ -38,7 +44,7 @@ describe('ReviewService.upsert — target resolution', () => {
       $transaction: jest.fn(async () => ({ id: 'rev-1' })),
     };
     const blocks = makeBlocks(false);
-    const svc = new ReviewService(prisma as never, makeNotifications() as never, blocks as never);
+    const svc = new ReviewService(prisma as never, makeNotifications() as never, blocks as never, makeDiaspora() as never);
 
     await svc.upsert('author', { targetType: 'user', targetId: 'target', rating: 5 } as never);
 
@@ -49,7 +55,7 @@ describe('ReviewService.upsert — target resolution', () => {
   it('refuses a self-review before doing anything else', async () => {
     const prisma = { user: { findUnique: jest.fn() } };
     const blocks = makeBlocks(false);
-    const svc = new ReviewService(prisma as never, makeNotifications() as never, blocks as never);
+    const svc = new ReviewService(prisma as never, makeNotifications() as never, blocks as never, makeDiaspora() as never);
 
     await expect(
       svc.upsert('me', { targetType: 'user', targetId: 'me', rating: 5 } as never),
@@ -63,6 +69,7 @@ describe('ReviewService.upsert — target resolution', () => {
       prisma as never,
       makeNotifications() as never,
       makeBlocks(false) as never,
+      makeDiaspora() as never,
     );
 
     await expect(

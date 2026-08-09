@@ -8,6 +8,7 @@ import type { Prisma, ReviewTargetType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { BlockService } from '../social/block.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { USER_PUBLIC_SELECT } from '../common/prisma/user-select';
 import type { ListReviewsDto, UpsertReviewDto } from './dto/review.dto';
 
@@ -21,7 +22,14 @@ export class ReviewService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
     private readonly blocks: BlockService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
+
+  /** Diaspora split: reviews follow the content rule, list and summary alike. */
+  private async authorFilter(viewerId: string): Promise<Prisma.ReviewWhereInput> {
+    const authorScope = await this.diaspora.authorScope(viewerId);
+    return authorScope ? { author: authorScope } : {};
+  }
 
   async upsert(authorId: string, dto: UpsertReviewDto) {
     const { targetUserId, targetPageId } = await this.resolveTarget(
@@ -63,9 +71,16 @@ export class ReviewService {
     return review;
   }
 
-  async list(targetType: ReviewTargetType, targetId: string, dto: ListReviewsDto) {
-    const where: Prisma.ReviewWhereInput =
-      targetType === 'user' ? { targetUserId: targetId } : { targetPageId: targetId };
+  async list(
+    targetType: ReviewTargetType,
+    targetId: string,
+    dto: ListReviewsDto,
+    viewerId: string,
+  ) {
+    const where: Prisma.ReviewWhereInput = {
+      ...(targetType === 'user' ? { targetUserId: targetId } : { targetPageId: targetId }),
+      ...(await this.authorFilter(viewerId)),
+    };
 
     const items = await this.prisma.review.findMany({
       where,
@@ -80,8 +95,12 @@ export class ReviewService {
   }
 
   async summary(targetType: ReviewTargetType, targetId: string, viewerId: string) {
-    const where: Prisma.ReviewWhereInput =
-      targetType === 'user' ? { targetUserId: targetId } : { targetPageId: targetId };
+    // The same filter as `list`, deliberately: an average computed over reviews
+    // the viewer cannot read would contradict the list right next to it.
+    const where: Prisma.ReviewWhereInput = {
+      ...(targetType === 'user' ? { targetUserId: targetId } : { targetPageId: targetId }),
+      ...(await this.authorFilter(viewerId)),
+    };
 
     const grouped = await this.prisma.review.groupBy({
       by: ['rating'],

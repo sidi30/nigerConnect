@@ -12,6 +12,7 @@ import { RedisService } from '../common/redis/redis.service';
 import { S3Service, type PresignedUpload } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { BlockService } from '../social/block.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { MentionsService } from './mentions.service';
 import type { CreatePostDto, CreateStoryDto, PresignVideoDto, UpdatePostDto } from './dto/post.dto';
 
@@ -64,6 +65,7 @@ export class PostsService {
     private readonly s3: S3Service,
     private readonly mentions: MentionsService,
     private readonly settings: SettingsService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
 
   async create(authorId: string, dto: CreatePostDto) {
@@ -355,6 +357,14 @@ export class PostsService {
     if (await this.blocks.isBlocked(viewerId, post.authorId)) {
       throw new NotFoundException('Post not found');
     }
+    // Diaspora split. This is the choke point for the single-post view, the
+    // comment list and the liker list — without it, three side channels would
+    // serve content the feed deliberately hides. Association posts stay exempt,
+    // as in the feed. 404 rather than 403: the other side's content should read
+    // as absent, not as forbidden.
+    if (post.associationId === null && !(await this.diaspora.sharesContentScope(viewerId, post.authorId))) {
+      throw new NotFoundException('Post not found');
+    }
     const isFriend = async (): Promise<boolean> =>
       (await this.prisma.friendship.count({
         where: {
@@ -593,6 +603,12 @@ export class PostsService {
 
     const cursorDate = this.parseCursorDate(cursor);
 
+    // Diaspora split: the feed carries only content from the viewer's own side.
+    // Association posts are exempt — an association is a shared resource open to
+    // both sides, and filtering its wall would leave half its members looking at
+    // a group that is visible but permanently empty.
+    const authorScope = await this.diaspora.authorScope(userId);
+
     const posts = await this.prisma.post.findMany({
       where: {
         deletedAt: null,
@@ -600,6 +616,9 @@ export class PostsService {
         AND: [
           blockedIds.length
             ? { authorId: { notIn: blockedIds } }
+            : {},
+          authorScope
+            ? { OR: [{ associationId: { not: null } }, { author: authorScope }] }
             : {},
           cursorDate ? { createdAt: { lt: cursorDate } } : {},
           {
@@ -714,6 +733,11 @@ export class PostsService {
     if (viewerId !== authorId && (await this.blocks.isBlocked(viewerId, authorId))) {
       return { items: [], nextCursor: null };
     }
+    // Diaspora split: the member stays findable — profiles, search and the map
+    // are never filtered — but their wall belongs to the other side's feed.
+    if (!(await this.diaspora.sharesContentScope(viewerId, authorId))) {
+      return { items: [], nextCursor: null };
+    }
 
     const isOwn = viewerId === authorId;
     const isFriend = isOwn
@@ -803,12 +827,17 @@ export class PostsService {
       f.requesterId === userId ? f.addresseeId : f.requesterId,
     );
 
+    // Same split as the feed. No association exemption here: a story is personal,
+    // it never belongs to an association wall.
+    const authorScope = await this.diaspora.authorScope(userId);
+
     const stories = await this.prisma.post.findMany({
       where: {
         isStory: true,
         deletedAt: null,
         storyExpiresAt: { gt: new Date() },
         authorId: { in: [...friendIds, userId] },
+        ...(authorScope ? { author: authorScope } : {}),
       },
       include: {
         media: true,

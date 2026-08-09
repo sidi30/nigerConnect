@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { USER_PUBLIC_SELECT } from '../common/prisma/user-select';
 import type { CreatePollDto, ListPollsDto, VotePollDto } from './dto/poll.dto';
 
@@ -16,7 +17,10 @@ const POLL_INCLUDE = {
 
 @Injectable()
 export class PollService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly diaspora: DiasporaPolicyService,
+  ) {}
 
   async create(userId: string, dto: CreatePollDto) {
     if (dto.pageId) {
@@ -61,6 +65,12 @@ export class PollService {
   async list(dto: ListPollsDto, viewerId?: string) {
     const where: Prisma.PollWhereInput = {};
     where.pageId = dto.pageId ?? null;
+    // Diaspora split: a poll is a publication like any other. Applied in the
+    // `where` so the cursor keeps pointing at a row the caller actually saw.
+    if (viewerId) {
+      const authorScope = await this.diaspora.authorScope(viewerId);
+      if (authorScope) where.author = authorScope;
+    }
 
     const items = await this.prisma.poll.findMany({
       where,

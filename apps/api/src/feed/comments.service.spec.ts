@@ -25,6 +25,12 @@ function makePostsStub(opts?: {
   };
 }
 
+/** Diaspora content split: off by default here — it has its own spec. */
+const makeDiaspora = (scope: unknown = null) => ({
+  authorScope: jest.fn(async () => scope),
+  sharesContentScope: jest.fn(async () => true),
+});
+
 describe('CommentsService', () => {
   it('throws NotFound when the visibility gate refuses the viewer', async () => {
     const prisma = { post: {}, comment: {}, $transaction: jest.fn() };
@@ -39,6 +45,7 @@ describe('CommentsService', () => {
       makeNotifs() as never,
       posts as never,
       { notify: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     await expect(svc.create('u1', 'p1', 'hello')).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -65,6 +72,7 @@ describe('CommentsService', () => {
       makeNotifs() as never,
       makePostsStub() as never,
       { notify: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     await expect(svc.create('u1', 'p1', 'hi', 'c-parent')).rejects.toBeInstanceOf(
       BadRequestException,
@@ -91,6 +99,7 @@ describe('CommentsService', () => {
       makeNotifs() as never,
       makePostsStub() as never,
       { notify: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     const result = await svc.create('u1', 'p1', 'hello');
     expect(result.id).toBe('c1');
@@ -110,6 +119,7 @@ describe('CommentsService', () => {
       makeNotifs() as never,
       posts as never,
       { notify: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     await expect(svc.list('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
     // Must not reach the DB if the gate refused.
@@ -142,6 +152,7 @@ describe('CommentsService', () => {
       makeNotifs() as never,
       posts as never,
       { notify: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     await expect(svc.toggleLike('viewer', 'c1')).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.commentLike.findUnique).not.toHaveBeenCalled();
@@ -174,6 +185,7 @@ describe('CommentsService', () => {
       notifs as never,
       makePostsStub() as never,
       { notify: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     const res = await svc.toggleLike('u1', 'c1');
     expect(res).toEqual({ liked: true, count: 1, myReaction: '❤️' });

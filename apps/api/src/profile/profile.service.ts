@@ -307,7 +307,13 @@ export class ProfileService {
     // a member who has just filled in their country stays locked out of friend
     // requests and new conversations for up to five minutes with no way to tell
     // why — the refusal message asks them to do the very thing they just did.
-    if (dto.countryCode !== undefined) await this.diaspora.invalidate(userId);
+    if (dto.countryCode !== undefined) {
+      await this.diaspora.invalidate(userId);
+      // The feed is cached per member and its contents now depend on which side
+      // of the split they are on. Without this they would keep seeing the other
+      // side's posts for the life of the cache entry.
+      await this.redis.client.del(`feed:${userId}:start`);
+    }
     return user;
   }
 

@@ -38,11 +38,12 @@ export class ReviewController {
 
   @Get(':targetType/:targetId')
   list(
+    @CurrentUser() me: JwtUserPayload,
     @Param('targetType', targetParamPipe) targetType: z.infer<typeof reviewTargetEnum>,
     @Param('targetId', new ParseUUIDPipe()) targetId: string,
     @Query(new ZodValidationPipe(listReviewsSchema)) dto: ListReviewsDto,
   ) {
-    return this.reviews.list(targetType, targetId, dto);
+    return this.reviews.list(targetType, targetId, dto, me.sub);
   }
 
   @Get(':targetType/:targetId/summary')

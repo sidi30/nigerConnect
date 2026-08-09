@@ -69,10 +69,17 @@ function makeSettings(videoEnabled = false) {
   return { isVideoEnabled: jest.fn(async () => videoEnabled), isGlobalFullVisibility: jest.fn(async () => false) };
 }
 
+/** Diaspora content split: off by default here — it has its own spec. */
+const makeDiaspora = (scope: unknown = null) => ({
+  authorScope: jest.fn(async () => scope),
+  sharesContentScope: jest.fn(async () => true),
+  isHomeBased: jest.fn(async () => false),
+});
+
 describe('PostsService', () => {
   it('rejects association post without associationId', async () => {
     const prisma = { post: {}, friendship: {} } as never;
-    const svc = new PostsService(prisma, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(
       svc.create('u1', { content: 'x', visibility: 'association' } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -88,7 +95,7 @@ describe('PostsService', () => {
       associationMember: { findMany: jest.fn(async () => []) },
       post: { findMany: jest.fn() },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
 
     await expect(svc.getFeed('u1', 'not-a-date')).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.post.findMany).not.toHaveBeenCalled();
@@ -100,7 +107,7 @@ describe('PostsService', () => {
       friendship: { findMany: jest.fn(async () => []) },
     };
     const s3 = makeS3();
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.create('u1', {
       content: 'hello',
       visibility: 'friends',
@@ -116,7 +123,7 @@ describe('PostsService', () => {
       associationMember: { count: jest.fn(async () => 0) },
       post: { create: jest.fn() },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(
       svc.create('u1', { visibility: 'association', associationId: 'a1' } as never),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -130,7 +137,7 @@ describe('PostsService', () => {
         throw new BadRequestException('bad');
       }),
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, s3 as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(
       svc.create('u1', {
         visibility: 'friends',
@@ -154,7 +161,7 @@ describe('PostsService', () => {
     };
     // Sharer is the author so assertCanViewPost passes, isolating the
     // public-only restriction under test.
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.share('u1', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.post.create).not.toHaveBeenCalled();
   });
@@ -171,7 +178,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.update('u1', 'p1', { content: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -187,7 +194,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.softDelete('u1', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -206,7 +213,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks(true) as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks(true) as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.getById('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -222,7 +229,7 @@ describe('PostsService', () => {
       },
       friendship: { count: jest.fn() },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.assertCanViewPost('me', 'p1');
     expect(result.id).toBe('p1');
     // Must short-circuit — counting friendships against yourself would be
@@ -242,7 +249,7 @@ describe('PostsService', () => {
       },
       friendship: { count: jest.fn(async () => 0) },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.assertCanViewPost('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -258,7 +265,7 @@ describe('PostsService', () => {
       },
       associationMember: { count: jest.fn(async () => 0) },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.assertCanViewPost('viewer', 'p1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -273,7 +280,7 @@ describe('PostsService', () => {
         })),
       },
     };
-    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never);
+    const svc = new PostsService(prisma as never, makeRedis() as never, makeBlocks() as never, makeS3() as never, { notify: jest.fn(async () => undefined) } as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.assertCanViewPost('viewer', 'p1');
     expect(result.id).toBe('p1');
   });
@@ -315,6 +322,7 @@ describe('PostsService — stories video', () => {
       s3 as never,
       { notify: jest.fn(async () => undefined) } as never,
       makeSettings(opts.videoEnabled ?? false) as never,
+      makeDiaspora() as never,
     );
     return { svc, prisma, redis, s3, postCreate };
   }
@@ -509,6 +517,7 @@ describe('PostsService — story S3 purge (disk dette corrigée)', () => {
       s3 as never,
       { notify: jest.fn(async () => undefined) } as never,
       makeSettings() as never,
+      makeDiaspora() as never,
     );
     await svc.deleteStory('u1', 's1');
     // Both the video and its thumbnail get deleteObject'd.
@@ -539,6 +548,7 @@ describe('PostsService — story S3 purge (disk dette corrigée)', () => {
       s3 as never,
       { notify: jest.fn(async () => undefined) } as never,
       makeSettings() as never,
+      makeDiaspora() as never,
     );
     await expect(svc.deleteStory('u1', 's1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(s3.deleteObject).not.toHaveBeenCalled();
@@ -563,6 +573,7 @@ describe('PostsService — story S3 purge (disk dette corrigée)', () => {
       s3 as never,
       { notify: jest.fn(async () => undefined) } as never,
       makeSettings() as never,
+      makeDiaspora() as never,
     );
     const count = await svc.deleteExpiredStories();
     expect(count).toBe(2);
@@ -570,5 +581,77 @@ describe('PostsService — story S3 purge (disk dette corrigée)', () => {
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ['s1', 's2'] } } }),
     );
+  });
+});
+
+// Wiring tests for the diaspora content split. The rule itself is proved in
+// diaspora-policy.service.spec — what matters here is that the read paths that
+// bypass the feed (a post opened by its id, a member's wall) consult it too.
+describe('PostsService — diaspora content split', () => {
+  const splitDiaspora = () => ({
+    authorScope: jest.fn(async () => ({ countryCode: { not: null, notIn: ['NE'] } })),
+    sharesContentScope: jest.fn(async () => false),
+  });
+
+  const buildSvc = (prisma: unknown, diaspora: unknown) =>
+    new PostsService(
+      prisma as never,
+      makeRedis() as never,
+      makeBlocks() as never,
+      makeS3() as never,
+      { notify: jest.fn(async () => undefined) } as never,
+      makeSettings() as never,
+      diaspora as never,
+    );
+
+  it('hides a post from the other side even when opened directly by id', async () => {
+    const prisma = {
+      post: {
+        findFirst: jest.fn(async () => ({
+          id: 'p1',
+          authorId: 'niamey',
+          visibility: 'public',
+          associationId: null,
+          author: { privacyLevel: 'public' },
+        })),
+      },
+    };
+    const diaspora = splitDiaspora();
+    const svc = buildSvc(prisma, diaspora);
+    // 404, not 403: the other side's content reads as absent, not as forbidden.
+    await expect(svc.assertCanViewPost('paris', 'p1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(diaspora.sharesContentScope).toHaveBeenCalledWith('paris', 'niamey');
+  });
+
+  // Associations are a shared resource open to both sides — filtering their
+  // posts would leave half the members looking at an empty wall.
+  it('lets an association post through the same gate', async () => {
+    const prisma = {
+      post: {
+        findFirst: jest.fn(async () => ({
+          id: 'p2',
+          authorId: 'niamey',
+          visibility: 'association',
+          associationId: 'a1',
+          author: { privacyLevel: 'public' },
+        })),
+      },
+      associationMember: { count: jest.fn(async () => 1) },
+    };
+    const diaspora = splitDiaspora();
+    const svc = buildSvc(prisma, diaspora);
+    await expect(svc.assertCanViewPost('paris', 'p2')).resolves.toMatchObject({ id: 'p2' });
+    expect(diaspora.sharesContentScope).not.toHaveBeenCalled();
+  });
+
+  // The member stays findable — only their wall is empty.
+  it('returns an empty wall for a member of the other side', async () => {
+    const prisma = { friendship: { count: jest.fn(async () => 0) } };
+    const diaspora = splitDiaspora();
+    const svc = buildSvc(prisma, diaspora);
+    await expect(svc.getUserPosts('paris', 'niamey')).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
   });
 });

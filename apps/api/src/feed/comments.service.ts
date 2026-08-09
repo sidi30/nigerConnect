@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { BlockService } from '../social/block.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { NotificationService } from '../notification/notification.service';
 import { PostsService } from './posts.service';
 import { MentionsService } from './mentions.service';
@@ -26,6 +27,7 @@ export class CommentsService {
     private readonly notifications: NotificationService,
     private readonly posts: PostsService,
     private readonly mentions: MentionsService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
 
   async create(userId: string, postId: string, content: string, parentId?: string) {
@@ -133,8 +135,13 @@ export class CommentsService {
     // to see the post to read its comments, otherwise comments leak content
     // through the side channel.
     await this.posts.assertCanViewPost(viewerId, postId);
+    // Diaspora split: comments follow the same rule as posts, at every nesting
+    // level — a reply is as much a written contribution as a root comment, and
+    // filtering only the roots would still surface the other side's replies.
+    const authorScope = await this.diaspora.authorScope(viewerId);
+    const authorFilter = authorScope ? { author: authorScope } : {};
     const roots = await this.prisma.comment.findMany({
-      where: { postId, parentId: null, deletedAt: null },
+      where: { postId, parentId: null, deletedAt: null, ...authorFilter },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'asc' },
@@ -142,12 +149,12 @@ export class CommentsService {
         author: { select: AUTHOR_SELECT },
         // Level 2 replies, each with their level 3 replies nested (3 levels total).
         replies: {
-          where: { deletedAt: null },
+          where: { deletedAt: null, ...authorFilter },
           orderBy: { createdAt: 'asc' },
           include: {
             author: { select: AUTHOR_SELECT },
             replies: {
-              where: { deletedAt: null },
+              where: { deletedAt: null, ...authorFilter },
               orderBy: { createdAt: 'asc' },
               include: { author: { select: AUTHOR_SELECT } },
             },
