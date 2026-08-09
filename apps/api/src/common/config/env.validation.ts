@@ -95,6 +95,20 @@ const envSchema = z
     SENTRY_DSN: z.string().optional(),
     AXIOM_TOKEN: z.string().optional(),
 
+    // ── Self-hosted observability (docs/OBSERVABILITE.md) ───────────────────
+    // Log shape. Defaults to `json` in production (Promtail → Loki) and `text`
+    // in dev. Read at import time by the logger, before Nest config exists.
+    LOG_FORMAT: z.enum(['json', 'text']).optional(),
+    // When set, GET /metrics additionally requires `Authorization: Bearer <token>`.
+    // Unset (default) leaves the Traefik edge deny + private Docker network as
+    // the only controls — see MetricsController.
+    METRICS_TOKEN: z.string().min(16).optional(),
+    // Internal URLs of the monitoring stack, queried by the admin observability
+    // console. Unset = the console reports the stack as unavailable instead of
+    // failing (the API must run fine without monitoring deployed).
+    PROMETHEUS_URL: z.string().url().optional(),
+    LOKI_URL: z.string().url().optional(),
+
     // Global disk ceiling for the stories-video beta. When MinIO's reported
     // usage for the public bucket crosses this, VideoDiskGuardCron trips the
     // `video_enabled` kill-switch (fail-closed) — new uploads stop, existing

@@ -1,0 +1,67 @@
+# =============================================================================
+# Loki — single binary, filesystem storage, 30-day retention.
+# =============================================================================
+# No object store, no ring, no microservices: one process, one volume. That is
+# the right shape for a few hundred MB of logs a month on a shared VPS, and it
+# costs ~150 MB of RAM.
+#
+# Retention is enforced by the COMPACTOR (`retention_enabled: true`); the old
+# table_manager path is explicitly left off — enabling both double-deletes.
+# =============================================================================
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  # `info` logs every push; on a small install that is more log than log.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: "2024-01-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # 720h = 30 days. Must match the compactor being enabled below.
+  retention_period: 720h
+  # A runaway container must not be able to fill the VPS disk.
+  ingestion_rate_mb: 4
+  ingestion_burst_size_mb: 8
+  max_streams_per_user: 500
+  max_query_series: 500
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  allow_structured_metadata: true
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 50
+  delete_request_store: filesystem
+
+querier:
+  max_concurrent: 4
+
+# Phone-home off: self-hosted means self-hosted.
+analytics:
+  reporting_enabled: false

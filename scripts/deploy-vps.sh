@@ -4,9 +4,11 @@
 # =============================================================================
 # Run on the VPS, in the project root:
 #   cd /opt/apps/nigerConnect
-#   ./scripts/deploy-vps.sh           # full deploy
-#   ./scripts/deploy-vps.sh --pull    # rebuild from latest git
-#   ./scripts/deploy-vps.sh --logs    # follow logs after deploy
+#   ./scripts/deploy-vps.sh                    # full deploy
+#   ./scripts/deploy-vps.sh --pull             # rebuild from latest git
+#   ./scripts/deploy-vps.sh --logs             # follow logs after deploy
+#   ./scripts/deploy-vps.sh --with-monitoring  # + observability stack
+#                                              #   (delegates to deploy-monitoring.sh)
 # =============================================================================
 
 set -euo pipefail
@@ -29,12 +31,18 @@ ENV_FILE=".env.prod"
 COMPOSE_FILE="docker-compose.prod.yml"
 SECRETS_DIR="$PROJECT_ROOT/secrets"
 
-PULL=0; FOLLOW=0; SKIP_BUILD=0
+# The monitoring stack has its own script and its own compose project so it can
+# be started/stopped without ever touching api/web/postgres. This flag is just a
+# convenience hand-off.
+MONITORING_SCRIPT="$PROJECT_ROOT/scripts/deploy-monitoring.sh"
+
+PULL=0; FOLLOW=0; SKIP_BUILD=0; MONITORING=0
 for arg in "$@"; do
   case "$arg" in
     --pull) PULL=1 ;;
     --logs) FOLLOW=1 ;;
     --no-build) SKIP_BUILD=1 ;;
+    --with-monitoring) MONITORING=1 ;;
     -h|--help)
       sed -n '2,12p' "$0"; exit 0 ;;
     *) die "Unknown flag: $arg" ;;
@@ -148,6 +156,17 @@ log "Starting api + web…"
 $COMPOSE up -d api web
 
 # -----------------------------------------------------------------------------
+# 8b. Observability stack (opt-in — see docs/OBSERVABILITE.md)
+#     Deliberately after the app: Prometheus and Loki attach to the
+#     `nigerconnect-internal` network the app stack creates.
+# -----------------------------------------------------------------------------
+if [[ "$MONITORING" == "1" ]]; then
+  [[ -x "$MONITORING_SCRIPT" ]] || die "$MONITORING_SCRIPT not found or not executable"
+  log "Handing over to $MONITORING_SCRIPT…"
+  "$MONITORING_SCRIPT"
+fi
+
+# -----------------------------------------------------------------------------
 # 9. Status summary
 # -----------------------------------------------------------------------------
 echo
@@ -160,6 +179,9 @@ log "Public endpoints:"
 echo "   ${C_DIM}web →${C_RST} https://${WEB_HOST}"
 echo "   ${C_DIM}api →${C_RST} https://${API_HOST}"
 echo "   ${C_DIM}health →${C_RST} https://${API_HOST}/health"
+if [[ "$MONITORING" == "1" ]]; then
+  echo "   ${C_DIM}observabilité →${C_RST} console admin → onglet Observabilité"
+fi
 echo
 log "Tail logs with: ${C_DIM}$COMPOSE logs -f --tail=100${C_RST}"
 

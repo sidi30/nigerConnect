@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
   Award,
   LayoutDashboard,
   LifeBuoy,
@@ -29,6 +30,7 @@ import ReferralsSection from "@/components/admin/ReferralsSection";
 import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
 import UsersSection from "@/components/admin/UsersSection";
 import SecuritySection from "@/components/admin/SecuritySection";
+import ObservabilitySection from "@/components/admin/ObservabilitySection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
 type Tab =
@@ -40,7 +42,8 @@ type Tab =
   | "invitations"
   | "referrals"
   | "ambassadors"
-  | "security";
+  | "security"
+  | "observability";
 
 // Newsletter is admin-only on the API. A moderator hitting it would 403 →
 // adminFetch bounces to login, so the tab is gated to admins below.
@@ -57,9 +60,12 @@ const NAV: NavEntry[] = [
   { id: "security", label: "Sécurité", icon: Lock },
 ];
 
+// Observabilité est admin-only côté API (les logs portent des userId, des IP et
+// des stack traces) — la garder hors du NAV partagé évite un 403 → déconnexion.
 const ADMIN_ONLY_NAV: NavEntry[] = [
   { id: "ambassadors", label: "Ambassadeurs", icon: Award },
   { id: "newsletter", label: "Newsletter", icon: Mail },
+  { id: "observability", label: "Observabilité", icon: Activity },
 ];
 
 export default function AdminDashboardPage() {
@@ -133,6 +139,7 @@ export default function AdminDashboardPage() {
         {tab === "referrals" ? <ReferralsSection /> : null}
         {tab === "ambassadors" ? <AmbassadorsSection /> : null}
         {tab === "security" ? <SecuritySection role={role} /> : null}
+        {tab === "observability" ? <ObservabilitySection /> : null}
       </main>
     </div>
   );

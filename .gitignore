@@ -63,6 +63,10 @@ redis-data/
 keys/
 *.pem
 
+# Optional bearer token Prometheus sends when scraping the API's /metrics
+# (see docs/OBSERVABILITE.md). Same value as METRICS_TOKEN in .env.prod.
+monitoring/prometheus/metrics_token
+
 # Playwright artifacts
 e2e/playwright-report/
 e2e/test-results/

@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import type { Env } from './common/config/env.validation';
+import { JSON_LOGS, JsonLogger } from './common/logger/json-logger';
 import { ConfigService } from '@nestjs/config';
 
 async function bootstrap(): Promise<void> {
@@ -25,10 +26,15 @@ async function bootstrap(): Promise<void> {
   }
 
   const isProd = process.env.NODE_ENV === 'production';
+  // One JSON object per line in production: Promtail ships stdout/stderr to Loki
+  // as-is, so the admin log explorer can only filter on level/status/userId if
+  // the framework's own logs carry those as real JSON fields too.
   const app = await NestFactory.create(AppModule, {
-    logger: isProd
-      ? ['log', 'error', 'warn']
-      : ['log', 'error', 'warn', 'debug', 'verbose'],
+    logger: JSON_LOGS
+      ? new JsonLogger()
+      : isProd
+        ? ['log', 'error', 'warn']
+        : ['log', 'error', 'warn', 'debug', 'verbose'],
   });
 
   const config = app.get(ConfigService<Env, true>);
@@ -93,7 +99,11 @@ async function bootstrap(): Promise<void> {
   app.use(urlencoded({ extended: false, limit: '256kb' }));
   // Health endpoints stay unprefixed: Docker/Traefik healthchecks, the prod
   // smoke script and the Playwright e2e runbook all probe /health[/live|/ready].
-  app.setGlobalPrefix('api', { exclude: ['health', 'health/live', 'health/ready'] });
+  // /metrics likewise keeps the conventional Prometheus path (Traefik denies it
+  // at the edge — see docker-compose.prod.yml).
+  app.setGlobalPrefix('api', {
+    exclude: ['health', 'health/live', 'health/ready', 'metrics'],
+  });
 
   // Graceful shutdown — flush Sentry events
   if (sentryDsn) {

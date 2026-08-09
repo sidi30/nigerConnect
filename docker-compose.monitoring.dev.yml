@@ -1,0 +1,41 @@
+# =============================================================================
+# Dev overlay for the observability stack.
+# =============================================================================
+# Two differences from prod, and only two:
+#   1. The API runs on the HOST under `pnpm dev`, not in a container, so the
+#      `nigerconnect-api` hostname Prometheus scrapes is mapped to the host
+#      gateway. The prometheus.yml stays byte-identical between dev and prod.
+#   2. Ports are published on LOOPBACK ONLY (no Traefik locally): Grafana to
+#      browse, Prometheus + Loki so the host-run API's admin proxy can query
+#      them. `127.0.0.1:` matters — never bind 0.0.0.0 on these.
+#      The Traefik labels inherited from the base file are inert without a
+#      Traefik to read them.
+#
+# One-time setup — the two external networks must exist locally:
+#   docker network create nigerconnect-internal
+#   docker network create traefik-public
+#
+# Run:
+#   docker compose -f docker-compose.monitoring.yml \
+#                  -f docker-compose.monitoring.dev.yml up -d
+#   → Prometheus http://localhost:9090 · Loki http://localhost:3100
+#
+# Grafana is behind the `grafana` profile (off by default, as in prod). To get
+# it locally, add --profile grafana → http://localhost:3002 (admin /
+# GRAFANA_ADMIN_PASSWORD).
+# =============================================================================
+
+services:
+  prometheus:
+    extra_hosts:
+      - "nigerconnect-api:host-gateway"
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  loki:
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  grafana:
+    ports:
+      - "127.0.0.1:3002:3000"

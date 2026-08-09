@@ -1,0 +1,22 @@
+# Datasources are provisioned, not clicked: a rebuilt Grafana volume comes back
+# fully wired. Both backends are reached by container name over the private
+# monitoring network — neither is published on the host.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: nigerconnect-prometheus
+    url: http://nigerconnect-prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 30s
+
+  - name: Loki
+    type: loki
+    access: proxy
+    uid: nigerconnect-loki
+    url: http://nigerconnect-loki:3100
+    jsonData:
+      maxLines: 1000

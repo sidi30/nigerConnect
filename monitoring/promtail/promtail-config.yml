@@ -1,0 +1,52 @@
+# =============================================================================
+# Promtail — ships Docker container logs to Loki.
+# =============================================================================
+# Discovery goes through the Docker API (docker_sd_configs), NOT a glob over
+# /var/lib/docker/containers: the API is the only way to know a container's
+# NAME, and the name is what lets us collect ONLY the NigerConnect containers.
+# The VPS is shared with ~12 unrelated projects whose logs are none of our
+# business — the server-side filter plus the relabel drop below make that a
+# two-layer guarantee.
+#
+# Labels are kept deliberately few (container, service, stream). Everything
+# else — level, HTTP status, userId — is parsed at QUERY time from the JSON
+# line (`| json`), which keeps Loki's index small.
+# =============================================================================
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://nigerconnect-loki:3100/loki/api/v1/push
+    # Small batches: latency matters more than throughput here.
+    batchwait: 1s
+    batchsize: 262144
+
+scrape_configs:
+  - job_name: nigerconnect-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 30s
+        filters:
+          - name: name
+            values: ["nigerconnect-"]
+    relabel_configs:
+      # /nigerconnect-api → container="nigerconnect-api"
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(nigerconnect-.+)"
+        target_label: container
+        action: replace
+      # Second layer: anything the Docker filter let through that isn't ours
+      # never got a `container` label — drop it rather than ship it.
+      - source_labels: [container]
+        regex: "^$"
+        action: drop
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service

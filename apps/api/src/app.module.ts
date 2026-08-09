@@ -3,8 +3,8 @@ import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppConfigModule } from './common/config/config.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { LastSeenInterceptor } from './common/interceptors/last-seen.interceptor';
+import { MetricsModule } from './common/metrics/metrics.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
@@ -31,10 +31,15 @@ import { AdminModule } from './admin/admin.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { DigestModule } from './digest/digest.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
     AppConfigModule,
+    // Registers the /metrics endpoint AND the middleware that records every
+    // request (access log + Prometheus counters). Kept high in the list so its
+    // middleware wraps the whole app.
+    MetricsModule,
     CryptoModule,
     PrismaModule,
     RedisModule,
@@ -62,10 +67,10 @@ import { DigestModule } from './digest/digest.module';
     NewsletterModule,
     InvitationsModule,
     DigestModule,
+    ObservabilityModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
-    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
     { provide: APP_INTERCEPTOR, useClass: LastSeenInterceptor },
   ],
 })

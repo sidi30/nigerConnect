@@ -1180,3 +1180,143 @@ export function resetUserMfa(userId: string): Promise<{ id: string; mfaEnabled: 
     method: "POST",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Observability — infra + site metrics and centralised logs (admin-only).
+//
+// The browser never talks to Prometheus/Loki: both run on a private Docker
+// network and the API proxies them. Filters are sent as plain query params and
+// the LogQL/PromQL is built server-side — see apps/api/src/observability/.
+// ---------------------------------------------------------------------------
+
+export interface ObservabilityStatus {
+  prometheus: { configured: boolean; reachable: boolean };
+  loki: { configured: boolean; reachable: boolean };
+}
+
+export interface ContainerUsage {
+  name: string;
+  cpuPercent: number | null;
+  memoryBytes: number | null;
+}
+
+export interface ObservabilityOverview {
+  available: boolean;
+  /** Why the stack is unavailable — shown verbatim in the banner. */
+  reason?: string;
+  host: {
+    cpuPercent: number | null;
+    memoryPercent: number | null;
+    memoryUsedBytes: number | null;
+    memoryTotalBytes: number | null;
+    diskPercent: number | null;
+    /** All containers on the shared VPS, not just ours. */
+    containersTotal: number | null;
+  };
+  app: {
+    containers: number | null;
+    requestsPerSecond: number | null;
+    latencyP95Seconds: number | null;
+    errorRatePercent: number | null;
+    errorRate4xxPercent: number | null;
+  };
+  containers: ContainerUsage[];
+}
+
+export interface ErrorRatePoint {
+  /** Milliseconds since epoch. */
+  t: number;
+  errorRate: number;
+  requestsPerSecond: number;
+}
+
+export interface ErrorRateSeries {
+  available: boolean;
+  reason?: string;
+  series: ErrorRatePoint[];
+}
+
+export type LogLevel = "error" | "warn" | "info" | "debug";
+export type LogStatusClass = "2xx" | "3xx" | "4xx" | "5xx";
+
+export interface LogEntry {
+  ts: number;
+  container: string;
+  stream: string;
+  level: string | null;
+  status: number | null;
+  userId: string | null;
+  requestId: string | null;
+  message: string;
+  raw: string;
+}
+
+export interface LogSearchResult {
+  available: boolean;
+  reason?: string;
+  /** The LogQL the server built — surfaced so a filter can be debugged. */
+  query: string;
+  entries: LogEntry[];
+}
+
+export interface LogFilters {
+  minutes?: number;
+  container?: string;
+  level?: LogLevel;
+  statusClass?: LogStatusClass;
+  status?: number;
+  userId?: string;
+  search?: string;
+  limit?: number;
+}
+
+/** GET /admin/observability/status — are Prometheus/Loki configured + reachable. */
+export function fetchObservabilityStatus(
+  signal?: AbortSignal,
+): Promise<ObservabilityStatus> {
+  return adminFetch<ObservabilityStatus>("/admin/observability/status", { signal });
+}
+
+/** GET /admin/observability/overview — host + app KPIs and per-container usage. */
+export function fetchObservabilityOverview(
+  signal?: AbortSignal,
+): Promise<ObservabilityOverview> {
+  return adminFetch<ObservabilityOverview>("/admin/observability/overview", { signal });
+}
+
+/** GET /admin/observability/error-rate — 5xx share + throughput over time. */
+export function fetchErrorRateSeries(
+  minutes: number,
+  signal?: AbortSignal,
+): Promise<ErrorRateSeries> {
+  return adminFetch<ErrorRateSeries>(
+    `/admin/observability/error-rate?minutes=${minutes}`,
+    { signal },
+  );
+}
+
+/** GET /admin/observability/containers — container names Loki has logs for. */
+export function fetchLogContainers(signal?: AbortSignal): Promise<string[]> {
+  return adminFetch<string[]>("/admin/observability/containers", { signal });
+}
+
+/** GET /admin/observability/logs — filtered log search. */
+export function fetchLogs(
+  filters: LogFilters = {},
+  signal?: AbortSignal,
+): Promise<LogSearchResult> {
+  const qs = new URLSearchParams();
+  if (filters.minutes !== undefined) qs.set("minutes", String(filters.minutes));
+  if (filters.container) qs.set("container", filters.container);
+  if (filters.level) qs.set("level", filters.level);
+  if (filters.statusClass) qs.set("statusClass", filters.statusClass);
+  if (filters.status !== undefined) qs.set("status", String(filters.status));
+  if (filters.userId) qs.set("userId", filters.userId);
+  if (filters.search) qs.set("search", filters.search);
+  if (filters.limit !== undefined) qs.set("limit", String(filters.limit));
+  const s = qs.toString();
+  return adminFetch<LogSearchResult>(
+    `/admin/observability/logs${s ? `?${s}` : ""}`,
+    { signal },
+  );
+}

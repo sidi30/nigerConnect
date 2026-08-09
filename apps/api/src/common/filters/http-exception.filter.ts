@@ -4,10 +4,10 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import { Request, Response } from 'express';
+import { writeLog } from '../logger/json-logger';
 
 /**
  * Query parameters that must never land in logs or Sentry — we redact them
@@ -48,8 +48,6 @@ function scrubUrl(rawUrl: string): string {
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(GlobalExceptionFilter.name);
-
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -81,10 +79,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     };
 
     if (status >= 500) {
-      this.logger.error(
-        `${request.method} ${scrubbedUrl} → ${status}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+      // Structured on purpose: the admin log explorer filters on these keys, and
+      // `stack` is the only place a 5xx root cause survives (the client payload
+      // is deliberately generic).
+      const requestId = (request as Request & { requestId?: string }).requestId;
+      writeLog('error', 'GlobalExceptionFilter', `${request.method} ${scrubbedUrl} → ${status}`, {
+        ...(requestId ? { requestId } : {}),
+        method: request.method,
+        url: scrubbedUrl,
+        status,
+        error: exception instanceof Error ? exception.message : String(exception),
+        stack: exception instanceof Error ? exception.stack : undefined,
+      });
       // Forward to Sentry when configured. Use the scrubbed URL here too —
       // Sentry stores every captured event indefinitely.
       Sentry.withScope((scope) => {

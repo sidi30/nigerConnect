@@ -1,0 +1,270 @@
+# =============================================================================
+# NigerConnect — Observability stack (Prometheus + Loki + Promtail + Grafana)
+# =============================================================================
+#
+# 100 % open-source, self-hosted, no paid tier.
+#
+# MEMORY IS THE BINDING CONSTRAINT. The VPS shows 15.6 GB total / 6.4 GB used
+# but 7.2 GB of 8 GB SWAP already consumed — the host is over-committed, so a
+# monitoring stack that "only" takes a gigabyte would push real workloads
+# further into swap. Hence the ceilings below (limits, not reservations):
+#
+#   prometheus     30 d of metrics, TSDB capped at 4 GB        ≤ 256 MB
+#   loki           30 d of logs, filesystem, compactor purge   ≤ 256 MB
+#   cadvisor       per-container CPU / RAM                     ≤ 128 MB
+#   promtail       ships ONLY nigerconnect-* container logs    ≤  64 MB
+#   node-exporter  host CPU / RAM / disk                       ≤  32 MB
+#   ────────────────────────────────────────────────────────────────────
+#   default stack ceiling                                        736 MB
+#   expected steady state                                    350–450 MB
+#
+#   grafana        OPT-IN (profile), Traefik-exposed          ≤ 128 MB
+#
+# Grafana sits behind a compose PROFILE and does NOT start by default: the
+# admin console proxies Prometheus/Loki itself, so Grafana is a deep-dive
+# luxury, not a dependency. Enable it only when there is headroom.
+#
+# PROD (from /opt/apps/nigerConnect, after the app stack is up):
+#   ./scripts/deploy-monitoring.sh              # stack seule, app intouchée
+#   ./scripts/deploy-monitoring.sh --grafana    # + Grafana
+#
+# DEV (see docs/OBSERVABILITE.md for the one-time network creation):
+#   docker compose -f docker-compose.monitoring.yml \
+#                  -f docker-compose.monitoring.dev.yml up -d
+#
+# NEVER expose prometheus/loki publicly: they answer any query, unauthenticated,
+# to whoever can reach them. The admin console queries them through the API's
+# role-gated /api/admin/observability/* proxy, over the private network.
+# =============================================================================
+
+# Own compose project: sharing `nigerconnect` with the app stack would make
+# each `up`/`down` treat the other stack's containers as orphans.
+name: nigerconnect-monitoring
+
+x-monitoring-defaults: &monitoring-defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Prometheus — 30-day retention, also capped at 4 GB of disk so a metric
+  # explosion can never fill the shared host (103 GB free at time of writing).
+  # Joined to `app` so it can scrape the API by container name.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: nigerconnect-prometheus
+    <<: *monitoring-defaults
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=4GB
+      - --web.enable-lifecycle
+      # No admin API, no remote write receiver: read-only by construction.
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - nigerconnect-prometheus-data:/prometheus
+    networks:
+      - monitoring
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.50"
+
+  # ---------------------------------------------------------------------------
+  # Loki — single binary, filesystem storage, compactor-driven 30-day purge.
+  # Joined to `app` so the API's admin proxy can query it.
+  # ---------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: nigerconnect-loki
+    <<: *monitoring-defaults
+    user: "10001:10001"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - nigerconnect-loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready | grep -q ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - monitoring
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.50"
+
+  # ---------------------------------------------------------------------------
+  # Promtail — reads container logs through the Docker API (read-only socket)
+  # and keeps ONLY the nigerconnect-* containers. The neighbouring projects'
+  # logs are filtered out server-side AND by a relabel drop.
+  # ---------------------------------------------------------------------------
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: nigerconnect-promtail
+    <<: *monitoring-defaults
+    depends_on:
+      - loki
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Read-only: Promtail lists containers and streams their logs, nothing else.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - nigerconnect-promtail-positions:/tmp
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
+
+  # ---------------------------------------------------------------------------
+  # cAdvisor — per-container CPU / memory.
+  # Housekeeping is slowed down and the expensive collectors are disabled: on a
+  # 58-container host the defaults burn a full core for data we never read.
+  # ---------------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: nigerconnect-cadvisor
+    <<: *monitoring-defaults
+    command:
+      - --housekeeping_interval=30s
+      - --docker_only=true
+      - --store_container_labels=false
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl,memory_numa
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.50"
+
+  # ---------------------------------------------------------------------------
+  # node-exporter — host CPU / RAM / disk. Read-only host mounts, no writes.
+  # ---------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: nigerconnect-node-exporter
+    <<: *monitoring-defaults
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: "0.15"
+
+  # ---------------------------------------------------------------------------
+  # Grafana — OPT-IN (profile `grafana`), deep-dive dashboards on top of what
+  # the admin console already shows. NOT started by default: on a host already
+  # 7 GB into swap, 128 MB matters more than a second UI.
+  #   ./scripts/deploy-monitoring.sh --grafana
+  #   docker compose -f docker-compose.monitoring.yml --profile grafana up -d
+  #
+  # Behind Traefik on ${GRAFANA_HOST}, same cloudflare-only middleware as the
+  # rest of the stack. Sign-up disabled, anonymous access off, admin password
+  # from .env.prod (never committed).
+  #
+  # The password has no `:?` guard on purpose: compose interpolates the WHOLE
+  # file before applying profiles, so a required-variable error would break
+  # `up -d` even when Grafana isn't being started. deploy-monitoring.sh checks
+  # it instead, only when --grafana is passed.
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: nigerconnect-grafana
+    <<: *monitoring-defaults
+    profiles:
+      - grafana
+    depends_on:
+      - prometheus
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # Grafana builds absolute URLs (share links, OAuth redirects) from this.
+      GF_SERVER_ROOT_URL: https://${GRAFANA_HOST:-grafana.nigerconnect.app}
+      # Plugin installs would need egress + a writable dir; we ship none.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: ""
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - nigerconnect-grafana-data:/var/lib/grafana
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.http.routers.nigerconnect-grafana.rule=Host(`${GRAFANA_HOST:-grafana.nigerconnect.app}`)
+      - traefik.http.routers.nigerconnect-grafana.entrypoints=https
+      - traefik.http.routers.nigerconnect-grafana.tls.certresolver=letsencrypt-dns
+      - traefik.http.routers.nigerconnect-grafana.middlewares=cloudflare-only@file
+      - traefik.http.services.nigerconnect-grafana.loadbalancer.server.port=3000
+    networks:
+      - monitoring
+      - traefik-public
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.50"
+
+networks:
+  # Private to the monitoring stack.
+  monitoring:
+    name: nigerconnect-monitoring
+    driver: bridge
+
+  # The app's own private network, created by docker-compose.prod.yml. Prometheus
+  # scrapes the API through it and the API queries Loki back through it.
+  app:
+    name: nigerconnect-internal
+    external: true
+
+  traefik-public:
+    external: true
+
+volumes:
+  nigerconnect-prometheus-data:
+  nigerconnect-loki-data:
+  nigerconnect-grafana-data:
+  nigerconnect-promtail-positions:

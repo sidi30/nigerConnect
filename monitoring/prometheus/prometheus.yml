@@ -1,0 +1,62 @@
+# =============================================================================
+# Prometheus — NigerConnect metrics
+# =============================================================================
+# Scrapes three sources:
+#   - the NestJS API (/metrics, prom-client)  → req/s, latency, error rate
+#   - cAdvisor                                → per-container CPU / RAM
+#   - node-exporter                           → host CPU / RAM / disk
+#
+# The VPS is SHARED (~12 projects, ~58 containers). cAdvisor reports all of
+# them, so `metric_relabel_configs` below keeps only what we're entitled to
+# store: NigerConnect containers in full, plus one cheap liveness series per
+# foreign container so the console can still show how loaded the host is.
+#
+# Retention (30 days) is set on the command line — see docker-compose.monitoring.yml.
+# =============================================================================
+
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  external_labels:
+    project: nigerconnect
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ---------------------------------------------------------------------------
+  # NestJS API. Reached by CONTAINER NAME over the app's private network
+  # (`nigerconnect-internal`) — service-name DNS doesn't cross compose projects.
+  # In dev, docker-compose.monitoring.dev.yml maps that name to the host gateway
+  # so the same config scrapes an API running under `pnpm dev`.
+  # ---------------------------------------------------------------------------
+  - job_name: nigerconnect-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["nigerconnect-api:3000"]
+        labels:
+          service: api
+    # Only needed if METRICS_TOKEN is set on the API. Put the bare token in
+    # monitoring/prometheus/metrics_token (gitignored) and uncomment:
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/metrics_token
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["nigerconnect-cadvisor:8080"]
+    metric_relabel_configs:
+      # Keep, in order: every container_last_seen (1 series per container, gives
+      # the host-wide container count), all container_* series for our own
+      # containers, and cAdvisor's own machine/process series. Everything else —
+      # i.e. the neighbouring projects' CPU/memory/network series — is dropped
+      # before it is ever written to disk.
+      - source_labels: [__name__, name]
+        separator: ";"
+        regex: "container_last_seen;.*|container_[a-z_]+;nigerconnect-.+|(?:machine|cadvisor|go|process)_.*;.*"
+        action: keep
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["nigerconnect-node-exporter:9100"]
