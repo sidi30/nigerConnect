@@ -110,11 +110,23 @@ if grep -E '^(POSTGRES_PASSWORD|REDIS_PASSWORD|MINIO_ROOT_PASSWORD)=__CHANGE_ME_
 fi
 
 # -----------------------------------------------------------------------------
-# 5. Optional git pull
+# 5. Optional git sync
 # -----------------------------------------------------------------------------
+# Le serveur est un MIROIR de la branche, pas un poste de travail. Un
+# `git pull --ff-only` y echouait systematiquement : les deploiements manuels
+# historiques (`git archive | tar x`) reecrivent les fichiers suivis — fins de
+# ligne CRLF comprises, d'ou ~600 fichiers "modifies" en permanence — et git
+# refuse alors d'avancer. On aligne donc de force sur la branche distante.
+#
+# `reset --hard` ne touche QUE les fichiers suivis : .env.prod, les clefs, les
+# certificats acme et les volumes sont non suivis, donc intacts. Corollaire
+# assume : une retouche faite a la main sur le serveur est ecrasee au prochain
+# deploiement. C'est voulu — ce qui tourne en prod doit venir de git.
 if [[ "$PULL" == "1" ]]; then
-  log "Pulling latest commits…"
-  git pull --ff-only
+  BRANCH="${DEPLOY_BRANCH:-main}"
+  log "Aligning the working tree on origin/$BRANCH…"
+  git fetch --quiet origin "$BRANCH"
+  git reset --hard "origin/$BRANCH"
 fi
 
 # -----------------------------------------------------------------------------
