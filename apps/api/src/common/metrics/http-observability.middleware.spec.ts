@@ -86,3 +86,29 @@ describe('HttpObservabilityMiddleware', () => {
     expect(res.headers['x-request-id']).toBe('trace-abc.1');
   });
 });
+
+describe('IP coarsening', () => {
+  // These lines live 30 days and every admin can filter them by userId. A full
+  // address next to a user id is a movement log, not an access log.
+  const logged = async (ip: string): Promise<string | undefined> => {
+    const { coarsenIpForTest } = await import('./http-observability.middleware');
+    return coarsenIpForTest(ip);
+  };
+
+  it('keeps IPv4 down to the /24 network', async () => {
+    await expect(logged('41.79.217.123')).resolves.toBe('41.79.217.0/24');
+  });
+
+  it('unwraps the IPv4-mapped IPv6 form Express reports behind a proxy', async () => {
+    await expect(logged('::ffff:41.79.217.123')).resolves.toBe('41.79.217.0/24');
+  });
+
+  it('keeps IPv6 down to the /48 site prefix', async () => {
+    await expect(logged('2001:db8:1234:5678::1')).resolves.toBe('2001:db8:1234::/48');
+  });
+
+  it('drops an address it cannot coarsen rather than logging it whole', async () => {
+    await expect(logged('not-an-ip')).resolves.toBeUndefined();
+    await expect(logged('')).resolves.toBeUndefined();
+  });
+});

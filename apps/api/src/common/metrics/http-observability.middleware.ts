@@ -15,6 +15,35 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
 const SILENT_PATHS = new Set(['/health', '/health/live', '/health/ready']);
 
 /**
+ * Coarsens the client IP before it is written to a log kept 30 days and readable
+ * by every admin. Paired with `userId`, a full address reconstructs a member's
+ * timestamped, geolocatable movements — and this app serves a diaspora whose
+ * members may have good reasons not to be traceable. The network prefix keeps
+ * what operations actually needs (which network, which operator, is this one
+ * source flooding us) and drops the part that identifies a household.
+ *
+ * IPv4 → /24 (192.0.2.55 → 192.0.2.0/24), IPv6 → /48, its routable-site prefix.
+ */
+export function coarsenIpForTest(ip: string | undefined): string | undefined {
+  return coarsenIp(ip);
+}
+
+function coarsenIp(ip: string | undefined): string | undefined {
+  if (!ip) return undefined;
+  // Express reports IPv4 clients as ::ffff:a.b.c.d behind a proxy.
+  const v4 = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v4)) {
+    return `${v4.split('.').slice(0, 3).join('.')}.0/24`;
+  }
+  if (ip.includes(':')) {
+    const blocks = ip.split(':').slice(0, 3).filter(Boolean);
+    if (blocks.length === 3) return `${blocks.join(':')}::/48`;
+  }
+  // Unrecognised shape: drop it rather than log an address we failed to coarsen.
+  return undefined;
+}
+
+/**
  * Per-request metrics + access log.
  *
  * Deliberately a MIDDLEWARE and not an interceptor: interceptors run *after*
@@ -81,7 +110,7 @@ export class HttpObservabilityMiddleware implements NestMiddleware {
             status,
             durationMs: Math.round(seconds * 1000),
             ...(userId ? { userId } : {}),
-            ip: req.ip,
+            ...(coarsenIp(req.ip) ? { ip: coarsenIp(req.ip) } : {}),
           },
         );
       } catch {

@@ -67,7 +67,11 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
       - --storage.tsdb.retention.size=4GB
-      - --web.enable-lifecycle
+      # No --web.enable-lifecycle: it exposes POST /-/quit, and every container
+      # on nigerconnect-internal can reach Prometheus. Whoever we are
+      # investigating must not be able to stop the thing watching them. Cost of
+      # removing it: a config change now needs `restart prometheus` instead of
+      # POST /-/reload. That is a fair trade.
       # No admin API, no remote write receiver: read-only by construction.
       - --web.listen-address=0.0.0.0:9090
     volumes:
@@ -165,7 +169,9 @@ services:
       # Read-only: cAdvisor lists containers and reads their cgroup stats.
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     devices:
-      - /dev/kmsg:/dev/kmsg
+      # `:r` — read only. Write access to the kernel ring buffer would let a
+      # compromised cAdvisor forge kernel messages, and it reads it anyway.
+      - /dev/kmsg:/dev/kmsg:r
     networks:
       - monitoring
     deploy:

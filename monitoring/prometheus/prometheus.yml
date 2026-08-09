@@ -37,11 +37,15 @@ scrape_configs:
       - targets: ["nigerconnect-api:3000"]
         labels:
           service: api
-    # Only needed if METRICS_TOKEN is set on the API. Put the bare token in
-    # monitoring/prometheus/metrics_token (gitignored) and uncomment:
-    # authorization:
-    #   type: Bearer
-    #   credentials_file: /etc/prometheus/metrics_token
+    # /metrics is NOT protected by the Traefik edge deny alone: nigerconnect-api
+    # shares the `traefik-public` network with unrelated projects, and any of
+    # their containers can reach http://nigerconnect-api:3000/metrics directly,
+    # never crossing Traefik. The bearer token is what actually closes that.
+    # The token lives in monitoring/prometheus/metrics_token (gitignored, created
+    # by deploy-monitoring.sh) and must equal METRICS_TOKEN in .env.prod.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
 
   - job_name: cadvisor
     static_configs:

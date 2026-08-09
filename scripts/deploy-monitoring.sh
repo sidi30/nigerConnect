@@ -104,6 +104,38 @@ if [[ "$GRAFANA" == "1" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
+# 1b. Metrics bearer token.
+#
+# The Traefik edge deny on /metrics is NOT sufficient on its own: the API shares
+# the `traefik-public` network with unrelated projects, and any of their
+# containers can reach http://nigerconnect-api:3000/metrics directly, never
+# crossing Traefik. prometheus.yml scrapes with a bearer token; this keeps the
+# token file in sync with METRICS_TOKEN in .env.prod, generating one on first run.
+#
+# The API only ENFORCES the token once METRICS_TOKEN reaches its environment,
+# i.e. at the next API deploy. Prometheus sending it early is harmless.
+# -----------------------------------------------------------------------------
+TOKEN_FILE="$PROJECT_ROOT/monitoring/prometheus/metrics_token"
+METRICS_TOKEN=$(grep -E '^METRICS_TOKEN=' "$ENV_FILE" | cut -d= -f2- || true)
+
+if [[ -z "$METRICS_TOKEN" ]]; then
+  METRICS_TOKEN=$(openssl rand -hex 24)
+  # Replace the placeholder line if present, otherwise append.
+  if grep -qE '^METRICS_TOKEN=' "$ENV_FILE"; then
+    sed -i.bak "s|^METRICS_TOKEN=.*|METRICS_TOKEN=${METRICS_TOKEN}|" "$ENV_FILE"
+    rm -f "$ENV_FILE.bak"
+  else
+    printf '\nMETRICS_TOKEN=%s\n' "$METRICS_TOKEN" >> "$ENV_FILE"
+  fi
+  log "Generated METRICS_TOKEN in $ENV_FILE (takes effect at the next API deploy)."
+fi
+
+printf '%s' "$METRICS_TOKEN" > "$TOKEN_FILE"
+# Prometheus runs as 65534 and reads this file.
+chown 65534:65534 "$TOKEN_FILE" 2>/dev/null || true
+chmod 640 "$TOKEN_FILE"
+
+# -----------------------------------------------------------------------------
 # 2. Memory pre-flight — this host runs ~59 containers and is already swapping.
 #    A warning, not a hard stop: the operator decides.
 # -----------------------------------------------------------------------------
