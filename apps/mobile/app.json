@@ -4,6 +4,8 @@
     "slug": "nigerconnect",
     "version": "1.11.2",
     "orientation": "portrait",
+    "//platforms": "Cibles natives uniquement. `eas update` exporte --platform=all : sans ceci il tente le web, où react-native-maps (importé par MapCanvas) casse le bundle et fait échouer tout l'OTA. Le site vit dans apps/web (Next.js).",
+    "platforms": ["ios", "android"],
     "scheme": ["nigerconnect", "com.nigerconnect.app"],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
