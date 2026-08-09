@@ -51,6 +51,9 @@ const patchSettingsSchema = z
     // Master kill-switch for the weekly regional digest (E-DIGEST). Off by
     // default (ships DARK); this is how an admin RE-ARMS it without SQL.
     digestEnabled: z.boolean().optional(),
+    // Master kill-switch for the one-shot "complète ton profil" email nudge.
+    // Off by default (ships DARK); enable here without SQL.
+    profileReminderEnabled: z.boolean().optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field is required' });

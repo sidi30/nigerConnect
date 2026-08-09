@@ -141,6 +141,7 @@ describe('AuthService', () => {
     settings = makeSettings(),
     invitations = makeInvitationsService(),
     mfa = { verifyForUser: jest.fn(async () => true) },
+    mailer = { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn(), sendWelcome: jest.fn() },
   }: {
     prisma?: ReturnType<typeof makePrisma>;
     tokens?: ReturnType<typeof makeTokens>;
@@ -151,13 +152,14 @@ describe('AuthService', () => {
     settings?: ReturnType<typeof makeSettings>;
     invitations?: ReturnType<typeof makeInvitationsService>;
     mfa?: { verifyForUser: jest.Mock };
+    mailer?: { sendPasswordReset: jest.Mock; sendEmailVerification: jest.Mock; sendWelcome: jest.Mock };
   } = {}) {
     return new AuthService(
       prisma as never,
       password,
       tokens as never,
       redis as never,
-      { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn() } as never,
+      mailer as never,
       { create: jest.fn(), consume: jest.fn() } as never,
       google as never,
       apple as never,
@@ -525,7 +527,8 @@ describe('AuthService', () => {
       });
       const google = { verifyIdToken: jest.fn(async () => GOOGLE_PROFILE_BASE) };
       const tokens = makeTokens();
-      const svc = makeSvc({ prisma, google, tokens });
+      const mailer = { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn(), sendWelcome: jest.fn() };
+      const svc = makeSvc({ prisma, google, tokens, mailer });
 
       const result = await svc.signInWithGoogle('token');
 
@@ -541,6 +544,9 @@ describe('AuthService', () => {
       expect(tokens.revokeAllUserTokens).not.toHaveBeenCalled();
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(result.accessToken).toBe('access.jwt.token');
+      // Already verified → welcome email was owed by the verify flow, not here.
+      await new Promise(process.nextTick);
+      expect(mailer.sendWelcome).not.toHaveBeenCalled();
     });
 
     it('drops the password when linking to an UNVERIFIED local account (pre-hijacking guard)', async () => {
@@ -575,7 +581,8 @@ describe('AuthService', () => {
       });
       const google = { verifyIdToken: jest.fn(async () => GOOGLE_PROFILE_BASE) };
       const tokens = makeTokens();
-      const svc = makeSvc({ prisma, google, tokens });
+      const mailer = { sendPasswordReset: jest.fn(), sendEmailVerification: jest.fn(), sendWelcome: jest.fn() };
+      const svc = makeSvc({ prisma, google, tokens, mailer });
 
       await svc.signInWithGoogle('token');
 
@@ -594,6 +601,10 @@ describe('AuthService', () => {
       // — every outstanding session must die with the password.
       expect(tokens.revokeAllUserTokens).toHaveBeenCalledWith('u-prehijack');
       expect(prisma.user.create).not.toHaveBeenCalled();
+      // emailVerified just transitioned false → true outside the verify flow —
+      // the welcome email is owed here (fire & forget → flush microtasks).
+      await new Promise(process.nextTick);
+      expect(mailer.sendWelcome).toHaveBeenCalledWith('alice@gmail.com', undefined);
     });
 
     it('throws ConflictException when the email account has MFA enabled (no second-factor bypass)', async () => {

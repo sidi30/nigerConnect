@@ -386,6 +386,7 @@ export class AdminService {
     adminFullVisibilityUntil: string | null;
     videoEnabled: boolean;
     digestEnabled: boolean;
+    profileReminderEnabled: boolean;
   }> {
     const [
       registrationMode,
@@ -396,6 +397,7 @@ export class AdminService {
       adminFullVisibilityUntil,
       videoEnabled,
       digestEnabled,
+      profileReminderEnabled,
     ] = await Promise.all([
       this.settings.getRegistrationMode(),
       this.settings.getDefaultInviteQuota(),
@@ -405,6 +407,7 @@ export class AdminService {
       this.settings.fullVisibilityUntil(),
       this.settings.isVideoEnabled(),
       this.settings.isDigestEnabled(),
+      this.settings.isProfileReminderEnabled(),
     ]);
     return {
       registrationMode,
@@ -415,6 +418,7 @@ export class AdminService {
       adminFullVisibilityUntil,
       videoEnabled,
       digestEnabled,
+      profileReminderEnabled,
     };
   }
 
@@ -431,6 +435,7 @@ export class AdminService {
       adminFullVisibility?: boolean;
       videoEnabled?: boolean;
       digestEnabled?: boolean;
+      profileReminderEnabled?: boolean;
     },
     adminId: string,
   ): Promise<{
@@ -442,6 +447,7 @@ export class AdminService {
     adminFullVisibilityUntil: string | null;
     videoEnabled: boolean;
     digestEnabled: boolean;
+    profileReminderEnabled: boolean;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -499,6 +505,17 @@ export class AdminService {
       // Redis makes it effective on the very next cron tick (isDigestEnabled).
       writes.push(
         this.settings.setSetting('digest_enabled', dto.digestEnabled ? 'true' : 'false', adminId),
+      );
+    }
+    if (dto.profileReminderEnabled !== undefined) {
+      // Kill-switch for the one-shot "complète ton profil" email nudge — effective
+      // on the very next cron tick (isProfileReminderEnabled).
+      writes.push(
+        this.settings.setSetting(
+          'profile_reminder_enabled',
+          dto.profileReminderEnabled ? 'true' : 'false',
+          adminId,
+        ),
       );
     }
     await Promise.all(writes);

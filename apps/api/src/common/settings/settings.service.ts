@@ -169,6 +169,18 @@ export class SettingsService {
     return (await this.getSetting('digest_enabled', 'false')) === 'true';
   }
 
+  /**
+   * Master kill-switch for the one-shot "complète ton profil" email nudge
+   * (P-REMINDER). OFF by default so the feature ships DARK and a misconfig /
+   * DB+Redis outage fails CLOSED (getSetting returns the 'false' default → no
+   * email, no profileReminderSentAt stamp). Mirror of isDigestEnabled. Read at
+   * the head of every cron tick before any member is selected. Re-arming is
+   * manual only (admin PATCH /admin/settings, key `profile_reminder_enabled`).
+   */
+  async isProfileReminderEnabled(): Promise<boolean> {
+    return (await this.getSetting('profile_reminder_enabled', 'false')) === 'true';
+  }
+
   private parseCsv(raw: string): string[] {
     return raw
       .split(',')
