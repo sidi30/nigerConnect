@@ -36,6 +36,8 @@ import { getChatSocket, useChatSocketInstance } from '@/hooks/useSocket';
 import type { MessageReadPayload } from '@/hooks/useSocket';
 import { pickImage, uploadLocalImage, UploadError, type PickedImage } from '@/services/uploadService';
 import { saveImageToGallery } from '@/services/mediaService';
+import { SwipeToClose } from '@/components/ui/SwipeToClose';
+import { useMediaOverlayLayout } from '@/hooks/useMediaOverlayLayout';
 
 type MessagesPage = CursorPage<Message>;
 type PendingMessage = Message & { __pending?: boolean; __failed?: boolean };
@@ -210,6 +212,9 @@ export default function ChatScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
+  // Les <Modal> RN ne propagent pas toujours les insets sur Android : on les lit
+  // ici et on rembourre à la main les barres du plein écran photo.
+  const { topInset: modalTopInset, bottomInset: modalBottomInset } = useMediaOverlayLayout();
   // Reactive singleton socket: re-renders (and re-runs the listener effect)
   // whenever the underlying socket instance is swapped after a reconnect, so we
   // never keep listeners bound to a dead socket.
@@ -1167,6 +1172,7 @@ export default function ChatScreen() {
       <Modal
         visible={!!preview}
         transparent
+        statusBarTranslucent
         animationType="slide"
         onRequestClose={() => setPreview(null)}
       >
@@ -1175,7 +1181,9 @@ export default function ChatScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={{ flex: 1 }}
           >
-            <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+            <View
+              style={{ flex: 1, paddingTop: modalTopInset, paddingBottom: modalBottomInset }}
+            >
               <View style={styles.previewHeader}>
                 <Pressable
                   onPress={() => setPreview(null)}
@@ -1213,7 +1221,7 @@ export default function ChatScreen() {
                   <Feather name="send" size={20} color={Colors.white} />
                 </Pressable>
               </View>
-            </SafeAreaView>
+            </View>
           </KeyboardAvoidingView>
         </View>
       </Modal>
@@ -1222,21 +1230,29 @@ export default function ChatScreen() {
       <Modal
         visible={!!lightbox}
         transparent
+        statusBarTranslucent
         animationType="fade"
         onRequestClose={() => setLightbox(null)}
       >
         <View style={styles.lightboxBackdrop}>
-          <SafeAreaView style={styles.lightboxTopBar} edges={['top']}>
+          <View style={[styles.lightboxTopBar, { paddingTop: modalTopInset }]}>
             <Pressable onPress={() => setLightbox(null)} hitSlop={12} style={styles.lightboxIconBtn}>
               <Feather name="x" size={24} color={Colors.white} />
             </Pressable>
-          </SafeAreaView>
-          <Pressable style={styles.lightboxImageWrap} onPress={() => setLightbox(null)}>
-            {lightbox && (
-              <Image source={{ uri: lightbox }} style={styles.lightboxImage} contentFit="contain" />
-            )}
-          </Pressable>
-          <SafeAreaView style={styles.lightboxBottomBar} edges={['bottom']}>
+          </View>
+          {/* Balayage vertical = fermeture, tap = fermeture aussi. */}
+          <SwipeToClose onClose={() => setLightbox(null)}>
+            <Pressable style={styles.lightboxImageWrap} onPress={() => setLightbox(null)}>
+              {lightbox && (
+                <Image
+                  source={{ uri: lightbox }}
+                  style={styles.lightboxImage}
+                  contentFit="contain"
+                />
+              )}
+            </Pressable>
+          </SwipeToClose>
+          <View style={[styles.lightboxBottomBar, { paddingBottom: modalBottomInset }]}>
             <Pressable
               onPress={() => lightbox && handleDownload(lightbox)}
               disabled={downloading}
@@ -1251,7 +1267,7 @@ export default function ChatScreen() {
                 {downloading ? 'Enregistrement…' : 'Enregistrer'}
               </Text>
             </Pressable>
-          </SafeAreaView>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>

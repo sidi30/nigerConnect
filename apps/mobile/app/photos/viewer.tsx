@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Pressable,
   StyleSheet,
@@ -10,14 +9,17 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+import { SwipeToClose } from '@/components/ui/SwipeToClose';
+import { useMediaOverlayLayout } from '@/hooks/useMediaOverlayLayout';
 
 export default function PhotoViewer() {
   const router = useRouter();
   const params = useLocalSearchParams<{ photos?: string; index?: string }>();
+  // Mesuré au rendu (et pas au chargement du module) : rotation, écran pliable,
+  // multi-fenêtre Android — sinon la pagination se décale. `contentH` est la
+  // place qui reste sous l'entête : la photo n'y passe jamais dessous.
+  const { screenW, topInset, headerH, contentH: pageH } = useMediaOverlayLayout();
 
   const photos = (() => {
     if (!params.photos) return [] as string[];
@@ -34,47 +36,55 @@ export default function PhotoViewer() {
 
   function onMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const x = e.nativeEvent.contentOffset.x;
-    const idx = Math.round(x / SCREEN_W);
+    const idx = Math.round(x / screenW);
     if (idx !== current) setCurrent(idx);
   }
 
+  const closeBtn = (
+    <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
+      <Text style={styles.closeIcon}>✕</Text>
+    </Pressable>
+  );
+
   if (photos.length === 0) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.container}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Aucune photo à afficher</Text>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
-            <Text style={styles.closeIcon}>✕</Text>
-          </Pressable>
+          {closeBtn}
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <FlatList
-        ref={listRef}
-        data={photos}
-        keyExtractor={(uri, i) => `${i}-${uri}`}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        initialScrollIndex={initialIndex}
-        getItemLayout={(_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })}
-        onMomentumScrollEnd={onMomentumScrollEnd}
-        renderItem={({ item }) => (
-          <View style={styles.page}>
-            <Image source={{ uri: item }} style={styles.photo} contentFit="contain" />
-          </View>
-        )}
-      />
+      <SwipeToClose onClose={() => router.back()} style={{ marginTop: headerH }}>
+        <FlatList
+          ref={listRef}
+          data={photos}
+          keyExtractor={(uri, i) => `${i}-${uri}`}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          initialScrollIndex={initialIndex}
+          getItemLayout={(_, i) => ({ length: screenW, offset: screenW * i, index: i })}
+          onMomentumScrollEnd={onMomentumScrollEnd}
+          renderItem={({ item }) => (
+            <View style={[styles.page, { width: screenW, height: pageH }]}>
+              <Image
+                source={{ uri: item }}
+                style={{ width: screenW, height: pageH }}
+                contentFit="contain"
+              />
+            </View>
+          )}
+        />
+      </SwipeToClose>
 
-      <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
+      <View style={[styles.topOverlay, { paddingTop: topInset, height: headerH }]}>
         <View style={styles.topRow}>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.closeBtn}>
-            <Text style={styles.closeIcon}>✕</Text>
-          </Pressable>
+          {closeBtn}
           {photos.length > 1 && (
             <View style={styles.counter}>
               <Text style={styles.counterText}>
@@ -84,27 +94,20 @@ export default function PhotoViewer() {
           )}
           <View style={{ width: 40 }} />
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  page: {
-    width: SCREEN_W,
-    height: SCREEN_H,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photo: { width: SCREEN_W, height: SCREEN_H },
-  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0 },
+  page: { alignItems: 'center', justifyContent: 'center' },
+  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, justifyContent: 'center' },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
   },
   closeBtn: {
     width: 40,

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Dimensions,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SwipeToClose } from '@/components/ui/SwipeToClose';
+import { useMediaOverlayLayout } from '@/hooks/useMediaOverlayLayout';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
@@ -21,12 +23,21 @@ import { colorForId, relativeTime } from '@/constants/lookups';
 import { describeError } from '@/services/apiError';
 import { toast } from '@/stores/toastStore';
 
-const { width: SW, height: SH } = Dimensions.get('window');
 const STORY_DURATION = 5000; // 5s per story
+/** Repli si l'entête n'a pas encore été mesurée (1re frame). */
+const HEADER_FALLBACK = 120;
 
 export default function StoryViewerScreen() {
   const { authorId } = useLocalSearchParams<{ authorId: string }>();
   const router = useRouter();
+  // Mesurées au rendu : figées au chargement du module, elles étaient fausses
+  // après rotation / en multi-fenêtre.
+  const { width: SW, height: SH } = useWindowDimensions();
+  const { topInset } = useMediaOverlayLayout();
+  // Hauteur réelle de l'entête (barres de progression + auteur + corbeille/✕).
+  // Les zones de tap démarrent en dessous, sinon elles avalent ces boutons sur
+  // les téléphones à encoche.
+  const [headerH, setHeaderH] = useState(topInset + HEADER_FALLBACK);
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
   const { data, isLoading } = useQuery({
@@ -109,12 +120,12 @@ export default function StoryViewerScreen() {
   }
 
   if (isLoading || !group) {
-    return <SafeAreaView style={styles.blackContainer} />;
+    return <View style={styles.blackContainer} />;
   }
 
   const current = stories[index];
   if (!current) {
-    return <SafeAreaView style={styles.blackContainer} />;
+    return <View style={styles.blackContainer} />;
   }
   const media = current.media[0];
 
@@ -128,23 +139,66 @@ export default function StoryViewerScreen() {
 
   return (
     <View style={styles.container}>
-      {media && media.mediaType === 'video' ? (
-        <StoryVideoPlayer
-          uri={media.mediaUrl}
-          posterUri={media.thumbnailUrl}
-          isActive
-          paused={paused || confirmDelete}
-          onComplete={advance}
-          onProgress={setVideoProgress}
-          onNeedsTapChange={setVideoNeedsTap}
-        />
-      ) : media ? (
-        <Image source={{ uri: media.mediaUrl }} style={styles.image} contentFit="cover" />
-      ) : (
-        <View style={[styles.image, { backgroundColor: Colors.brown }]} />
-      )}
+      {/* Balayer vers le haut ou le bas ferme la story. */}
+      <SwipeToClose
+        onClose={() => router.back()}
+        enabled={!confirmDelete}
+        style={StyleSheet.absoluteFillObject}
+      >
+        {media && media.mediaType === 'video' ? (
+          <StoryVideoPlayer
+            uri={media.mediaUrl}
+            posterUri={media.thumbnailUrl}
+            isActive
+            paused={paused || confirmDelete}
+            onComplete={advance}
+            onProgress={setVideoProgress}
+            onNeedsTapChange={setVideoNeedsTap}
+          />
+        ) : media ? (
+          <Image
+            source={{ uri: media.mediaUrl }}
+            style={[styles.image, { width: SW, height: SH }]}
+            contentFit="cover"
+          />
+        ) : (
+          <View style={[styles.image, { width: SW, height: SH, backgroundColor: Colors.brown }]} />
+        )}
 
-      <SafeAreaView style={styles.overlay} edges={['top']} pointerEvents="box-none">
+        {/* Zones de tap — gauche = précédent, droite = suivant. Elles vivent
+            DANS le détecteur de geste (sinon elles capteraient le balayage) et
+            démarrent sous l'entête mesurée, sinon elles avalent la corbeille et
+            la ✕ sur les téléphones à encoche. Masquées pendant la confirmation,
+            ou tant qu'une vidéo attend son premier tap (le bouton play gagne). */}
+        {!confirmDelete && !(isVideoStory && videoNeedsTap) ? (
+          <>
+            <Pressable
+              testID="story-tap-prev"
+              style={[styles.tapLeft, { top: headerH, width: SW / 3 }]}
+              onPress={prev}
+            />
+            <Pressable
+              testID="story-tap-next"
+              style={[styles.tapRight, { top: headerH, width: (SW * 2) / 3 }]}
+              onPress={next}
+            />
+          </>
+        ) : null}
+      </SwipeToClose>
+
+      {/* Voile sombre : garde l'entête lisible sur une photo claire. */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.55)', 'transparent']}
+        style={[styles.headerScrim, { height: headerH + 16 }]}
+        pointerEvents="none"
+      />
+
+      <View
+        testID="story-header"
+        style={[styles.overlay, { paddingTop: topInset }]}
+        pointerEvents="box-none"
+        onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
+      >
         {/* Progress bars */}
         <View style={styles.progressRow}>
           {stories.map((_, i) => (
@@ -209,16 +263,7 @@ export default function StoryViewerScreen() {
             <Feather name="x" size={22} color={Colors.white} />
           </Pressable>
         </View>
-      </SafeAreaView>
-
-      {/* Tap zones — left = prev, right = next. Hidden while the confirm modal is
-          open, or while a video awaits its first tap (so the play button wins). */}
-      {!confirmDelete && !(isVideoStory && videoNeedsTap) ? (
-        <>
-          <Pressable style={styles.tapLeft} onPress={prev} />
-          <Pressable style={styles.tapRight} onPress={next} />
-        </>
-      ) : null}
+      </View>
 
       {confirmDelete ? (
         <View style={styles.confirmOverlay} pointerEvents="box-none">
@@ -266,8 +311,16 @@ export default function StoryViewerScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   blackContainer: { flex: 1, backgroundColor: '#000' },
-  image: { width: SW, height: SH, position: 'absolute' },
-  overlay: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
+  image: { position: 'absolute' },
+  headerScrim: { position: 'absolute', top: 0, left: 0, right: 0 },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
   progressRow: { flexDirection: 'row', gap: 4, height: 3 },
   progressTrack: {
     flex: 1,
@@ -286,20 +339,9 @@ const styles = StyleSheet.create({
   authorName: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.white },
   time: { fontSize: Typography.sizes.xs, color: 'rgba(255,255,255,0.7)' },
   close: { padding: Spacing.xs },
-  tapLeft: {
-    position: 'absolute',
-    top: 80,
-    bottom: 0,
-    left: 0,
-    width: SW / 3,
-  },
-  tapRight: {
-    position: 'absolute',
-    top: 80,
-    bottom: 0,
-    right: 0,
-    width: (SW * 2) / 3,
-  },
+  // `top` et `width` sont injectés au rendu (hauteur d'entête mesurée).
+  tapLeft: { position: 'absolute', bottom: 0, left: 0 },
+  tapRight: { position: 'absolute', bottom: 0, right: 0 },
   trashBtn: {
     width: 36,
     height: 36,
