@@ -97,10 +97,13 @@ describe('Profile verification / identity (e2e)', () => {
       .expect(200);
     const adminToken = login.body.tokens.accessToken;
 
+    // Une approbation exige la date de naissance : elle alimente la garde 18+
+    // de la proximite (reviewIdentitySchema la rend obligatoire ici, et
+    // seulement ici — un refus n'en a pas besoin).
     await request(app.getHttpServer())
       .patch('/api/auth/identity/review')
       .set(auth(adminToken))
-      .send({ userId: target.id, decision: 'approved' })
+      .send({ userId: target.id, decision: 'approved', dateOfBirth: '1990-01-01' })
       .expect(200);
 
     const status = await request(app.getHttpServer())

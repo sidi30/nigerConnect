@@ -191,12 +191,14 @@ test.describe('Email CODE survives a LINK prefetch (fix #6)', () => {
     expect((await codeRes.json())['ok']).toBe(true);
   });
 
-  test('15-minute TTL: the code row expires_at is ~15 min after created_at', async ({ request }) => {
+  test('30-minute TTL: the code row expires_at is ~30 min after created_at', async ({ request }) => {
     const { user } = await register(request, randomEmail());
     const ttl = codeRowTtlSeconds(user.id);
-    // 15 min = 900 s. Allow a small skew window (840–960 s) — asserts the TTL
-    // policy without waiting 15 minutes for real expiry.
-    expect(ttl, `code TTL should be ~900s (15 min), got ${ttl}s`).toBeGreaterThanOrEqual(840);
-    expect(ttl, `code TTL should be ~900s (15 min), got ${ttl}s`).toBeLessThanOrEqual(960);
+    // 30 min = 1800 s. La fenêtre est passée de 15 à 30 min (f04e96f) pour
+    // encaisser un email lent ou filtré en spam ; email-token.service.ts et la
+    // copie de l'email font foi. Marge de skew (1740–1860 s) pour ne pas
+    // attendre l'expiration réelle.
+    expect(ttl, `code TTL should be ~1800s (30 min), got ${ttl}s`).toBeGreaterThanOrEqual(1740);
+    expect(ttl, `code TTL should be ~1800s (30 min), got ${ttl}s`).toBeLessThanOrEqual(1860);
   });
 });

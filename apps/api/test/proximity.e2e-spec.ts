@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { PrismaService } from '../src/common/prisma/prisma.service';
+import { SettingsService } from '../src/common/settings/settings.service';
 import { bootApp, register, cleanupTestData, type RegisteredUser } from './helpers';
 
 /**
@@ -15,6 +16,7 @@ import { bootApp, register, cleanupTestData, type RegisteredUser } from './helpe
 describe('Proximity alerts (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let settings: SettingsService;
 
   // Niamey, Niger — base point for "near" users.
   const NEAR_A = { latitude: 13.51366, longitude: 2.1098 };
@@ -27,21 +29,64 @@ describe('Proximity alerts (e2e)', () => {
 
   beforeAll(async () => {
     ({ app, prisma } = await bootApp());
+    // La proximite est livree DARK : `proximity_enabled` vaut 'false' par
+    // defaut, donc le ping renvoie zero match quoi qu'il arrive. Sans cette
+    // bascule, TOUTE cette suite passe a vide et ne prouve rien. L'ecriture est
+    // write-through (DB + cache Redis), donc effective des la requete suivante.
+    settings = app.get(SettingsService);
+    await settings.setSetting('proximity_enabled', 'true');
   });
 
   afterAll(async () => {
+    // Remettre le kill-switch en place : DB et Redis sont partages avec les
+    // autres suites (--runInBand), on ne leur laisse pas la feature allumee.
+    await settings.setSetting('proximity_enabled', 'false');
     await cleanupTestData(prisma);
     await app.close();
   });
 
   const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
+  /**
+   * Proximity is identity-gated: only a verified, adult member can ping or be
+   * matched (approved identityStatus AND an approved document whose recorded
+   * DOB is 18+). Registration alone never satisfies that, so a participant that
+   * must actually match is promoted here — through Prisma, since the real path
+   * needs an admin review.
+   *
+   * ATTENTION — les tests 3, 5, 10 et 11 n'appellent PAS ceci, donc personne n'y
+   * est eligible et leurs assertions "aucun match" sont vraies pour la mauvaise
+   * raison : elles ne prouvent rien. Les rendre effectives demande de trancher
+   * d'abord un conflit de contrat, car geo.service.ts a DELIBEREMENT decouple la
+   * proximite de la carte ("map gates intentionally NOT applied — a map-hidden
+   * or private user is a valid, anonymous proximity candidate") alors que ces
+   * quatre tests exigent l'inverse. Le code ou les tests ont raison, pas les
+   * deux : decision produit, pas une retouche de test. La fonctionnalite est
+   * DARK en prod (kill-switch off), donc aucun impact live en attendant.
+   */
+  async function makeEligible(user: RegisteredUser): Promise<void> {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { identityStatus: 'approved' },
+    });
+    await prisma.identityDocument.create({
+      data: {
+        userId: user.id,
+        documentType: 'manual',
+        status: 'approved',
+        dateOfBirth: new Date('1990-01-01'),
+        reviewedAt: new Date(),
+      },
+    });
+  }
+
   /** Opt a user into proximity at a given location. */
   async function setUp(
     user: RegisteredUser,
     coords: { latitude: number; longitude: number },
-    opts: { proximityAlerts?: boolean; showOnMap?: boolean } = {},
+    opts: { proximityAlerts?: boolean; showOnMap?: boolean; eligible?: boolean } = {},
   ): Promise<void> {
+    if (opts.eligible) await makeEligible(user);
     await request(app.getHttpServer())
       .patch('/api/profile/me')
       .set(auth(user.accessToken))
@@ -69,7 +114,10 @@ describe('Proximity alerts (e2e)', () => {
   async function ping(
     user: RegisteredUser,
     coords: { latitude: number; longitude: number },
-  ): Promise<{ matches: Array<{ userId: string; name: string | null; avatarUrl: string | null; distance: number }> }> {
+    // Forme DOUBLE-AVEUGLE : la rencontre ne porte qu'une poignee opaque et une
+    // distance en paliers. Aucun userId/nom/avatar — le pair reste anonyme
+    // jusqu'a ce qu'une demande soit acceptee.
+  ): Promise<{ matches: Array<{ encounterId: string; distance: number }> }> {
     const res = await request(app.getHttpServer())
       .post('/api/geo/proximity/ping')
       .set(auth(user.accessToken))
@@ -90,24 +138,31 @@ describe('Proximity alerts (e2e)', () => {
   it('1. HAPPY: A and B both opted in + map-visible and near → A ping returns B with a bucketed distance', async () => {
     const a = await register(app, { firstName: 'Amadou', lastName: 'Near' });
     const b = await register(app, { firstName: 'Binta', lastName: 'Near' });
-    await setUp(a, NEAR_A);
-    await setUp(b, NEAR_B);
+    await setUp(a, NEAR_A, { eligible: true });
+    await setUp(b, NEAR_B, { eligible: true });
 
     const { matches } = await ping(a, NEAR_A);
 
-    const hit = matches.find((m) => m.userId === b.id);
-    expect(hit).toBeDefined();
-    expect(ALLOWED_BUCKETS).toContain(hit!.distance);
+    // Une rencontre, et une seule (B). Elle est DOUBLE-AVEUGLE : le pair n'est
+    // designe que par un `encounterId` opaque, jamais par son identite — c'est
+    // la propriete que ce test protege.
+    expect(matches).toHaveLength(1);
+    const hit = matches[0]!;
+    expect(hit.encounterId).toEqual(expect.any(String));
+    expect(ALLOWED_BUCKETS).toContain(hit.distance);
+    expect(Object.keys(hit).sort()).toEqual(['distance', 'encounterId']);
+    // Ceinture et bretelles : aucun champ identifiant, meme vide.
+    expect(JSON.stringify(matches)).not.toContain(b.id);
   });
 
   it('2. PRIVACY: B has proximityAlerts=false → not returned to A and B gets no proximity notification', async () => {
     const a = await register(app, { firstName: 'Adam', lastName: 'OptOut' });
     const b = await register(app, { firstName: 'Bako', lastName: 'OptOut' });
-    await setUp(a, NEAR_A);
-    await setUp(b, NEAR_B, { proximityAlerts: false });
+    await setUp(a, NEAR_A, { eligible: true });
+    await setUp(b, NEAR_B, { eligible: true, proximityAlerts: false });
 
     const { matches } = await ping(a, NEAR_A);
-    expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(matches).toHaveLength(0); // aucune rencontre : le pair reste anonyme, on ne peut assurer que ca
 
     expect(await proximityNotifs(b)).toHaveLength(0);
   });
@@ -119,15 +174,15 @@ describe('Proximity alerts (e2e)', () => {
     await setUp(b, NEAR_B, { showOnMap: false });
 
     const { matches } = await ping(a, NEAR_A);
-    expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(matches).toHaveLength(0); // aucune rencontre : le pair reste anonyme, on ne peut assurer que ca
     expect(await proximityNotifs(b)).toHaveLength(0);
   });
 
   it('4. PINGER GATING: A has proximityAlerts=false → ping returns empty matches', async () => {
     const a = await register(app, { firstName: 'Abdou', lastName: 'PingerOff' });
     const b = await register(app, { firstName: 'Balki', lastName: 'PingerOff' });
-    await setUp(a, NEAR_A, { proximityAlerts: false });
-    await setUp(b, NEAR_B);
+    await setUp(a, NEAR_A, { eligible: true, proximityAlerts: false });
+    await setUp(b, NEAR_B, { eligible: true });
 
     const { matches } = await ping(a, NEAR_A);
     expect(matches).toEqual([]);
@@ -146,8 +201,8 @@ describe('Proximity alerts (e2e)', () => {
   it('6. BLOCK: A blocked B → A ping does not return B', async () => {
     const a = await register(app, { firstName: 'Moussa', lastName: 'Block' });
     const b = await register(app, { firstName: 'Bana', lastName: 'Block' });
-    await setUp(a, NEAR_A);
-    await setUp(b, NEAR_B);
+    await setUp(a, NEAR_A, { eligible: true });
+    await setUp(b, NEAR_B, { eligible: true });
 
     await request(app.getHttpServer())
       .post(`/api/blocks/${b.id}`)
@@ -155,22 +210,22 @@ describe('Proximity alerts (e2e)', () => {
       .expect(204);
 
     const { matches } = await ping(a, NEAR_A);
-    expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(matches).toHaveLength(0); // aucune rencontre : le pair reste anonyme, on ne peut assurer que ca
   });
 
   it('7. ZONE DEDUP: A pings twice in the same zone near B → exactly one notification; the deduped second ping omits B from matches', async () => {
     const a = await register(app, { firstName: 'Halima', lastName: 'Cool' });
     const b = await register(app, { firstName: 'Boubacar', lastName: 'Cool' });
-    await setUp(a, NEAR_A);
-    await setUp(b, NEAR_B);
+    await setUp(a, NEAR_A, { eligible: true });
+    await setUp(b, NEAR_B, { eligible: true });
 
     const first = await ping(a, NEAR_A);
-    expect(first.matches.find((m) => m.userId === b.id)).toBeDefined();
+    expect(first.matches).toHaveLength(1);
 
     // Same geohash cell within the dedup window → no re-notify, and the match is
     // omitted so the pinger's heads-up only ever reflects a NEW encounter.
     const second = await ping(a, NEAR_A);
-    expect(second.matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(second.matches).toHaveLength(0);
 
     const notifs = await proximityNotifs(b);
     expect(notifs).toHaveLength(1);
@@ -179,11 +234,11 @@ describe('Proximity alerts (e2e)', () => {
   it('8. RADIUS: B on another continent → not in matches', async () => {
     const a = await register(app, { firstName: 'Salif', lastName: 'Far' });
     const b = await register(app, { firstName: 'Bintou', lastName: 'Far' });
-    await setUp(a, NEAR_A);
-    await setUp(b, FAR);
+    await setUp(a, NEAR_A, { eligible: true });
+    await setUp(b, FAR, { eligible: true });
 
     const { matches } = await ping(a, NEAR_A);
-    expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(matches).toHaveLength(0); // aucune rencontre : le pair reste anonyme, on ne peut assurer que ca
   });
 
   it('9. PROFILE LEAK: GET /profile/:bId as A exposes no latitude/longitude', async () => {
@@ -215,7 +270,7 @@ describe('Proximity alerts (e2e)', () => {
       .expect(200);
 
     const { matches } = await ping(a, NEAR_A);
-    expect(matches.find((m) => m.userId === b.id)).toBeUndefined();
+    expect(matches).toHaveLength(0); // aucune rencontre : le pair reste anonyme, on ne peut assurer que ca
     expect(await proximityNotifs(b)).toHaveLength(0);
   });
 

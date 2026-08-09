@@ -17,7 +17,8 @@
  *     1c. /geo/nearby: pinger appears with Niamey coords, not Paris GPS.
  *     1d. Positive: two seeded users within 1 km match each other (feature works).
  *     1e. Private-profile user: matches=[] regardless of proximity.
- *     1f. show_on_map=false user: matches=[] AND no GPS written to proximity cols.
+ *     1f. show_on_map=false user: participe quand même (proximité découplée de
+ *         la carte) — le GPS live va dans les colonnes PRIVÉES, jamais la carte.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * BUG2 (MEDIUM) — showOnMap is OFF by default for all new registrations.
@@ -65,6 +66,11 @@ const JITTER_SAFE_KM = 10;
 
 // Paris GPS — sent as the "live" proximity ping; ~4 900 km from Niamey
 const PARIS_GPS = { lat: 48.8566, lon: 2.3522 } as const;
+// Reykjavik — réservé au test 1f. Plusieurs tests de ce fichier pinguent depuis
+// PARIS_GPS avec des comptes éligibles : ils se retrouvaient candidats les uns
+// des autres, et 1f (qui exige zéro rencontre) tombait selon l'ordre d'exécution.
+// Un point que personne d'autre n'utilise rend l'isolement structurel.
+const LONELY_GPS = { lat: 64.1466, lon: -21.9426 } as const;
 // London GPS — used as a far-away claimed coord for BUG3
 const LONDON_GPS = { lat: 51.5074, lon: -0.1278 } as const;
 
@@ -505,23 +511,34 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
       `POST /api/geo/proximity/ping → expected 200, got ${pingRes.status()}: ${await pingRes.text()}`,
     ).toBe(200);
 
+    // La rencontre est DOUBLE-AVEUGLE : la réponse ne porte qu'une poignée
+    // opaque (`encounterId`) et une distance en paliers — jamais l'identité du
+    // pair, qui ne se dévoile qu'après acceptation d'une demande.
     const pingBody = (await pingRes.json()) as {
-      matches: Array<{ userId: string; distance: number }>;
+      matches: Array<{ encounterId: string; distance: number }>;
     };
     expect(Array.isArray(pingBody.matches), 'ping response must include a matches array').toBe(true);
 
-    // B must be in A's matches
-    const matchForB = pingBody.matches.find((m) => m.userId === userB.id);
     expect(
-      matchForB,
-      `user B (${userB.id}) must appear in user A's proximity matches when both are at Niamey centroid`,
-    ).toBeDefined();
+      pingBody.matches,
+      `user B (${userB.id}) must produce exactly one encounter for A when both are at Niamey centroid`,
+    ).toHaveLength(1);
+    const match = pingBody.matches[0]!;
+    expect(match.encounterId, 'the encounter must carry an opaque handle').toEqual(
+      expect.any(String),
+    );
 
     // Distance must be a valid coarse bucket: 50, 100, 500, or 1 000 m
     expect(
       [50, 100, 500, 1000],
-      `match.distance (${matchForB!.distance}) must be one of the coarse distance buckets`,
-    ).toContain(matchForB!.distance);
+      `match.distance (${match.distance}) must be one of the coarse distance buckets`,
+    ).toContain(match.distance);
+
+    // Le fond du sujet : rien dans la charge utile ne désigne B.
+    expect(
+      JSON.stringify(pingBody.matches),
+      'the match payload must never carry the peer identity',
+    ).not.toContain(userB.id);
   });
 
   /**
@@ -574,22 +591,22 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
     expect(beforeRow!.proximity_lat, 'proximity_lat must be null before any ping').toBeNull();
 
     const pingRes = await request.post(`${BASE_URL}/api/geo/proximity/ping`, {
-      data: { lat: PARIS_GPS.lat, lon: PARIS_GPS.lon },
+      data: { lat: LONELY_GPS.lat, lon: LONELY_GPS.lon },
       headers: authHdr(tokens.accessToken),
     });
     expect(pingRes.status()).toBe(200);
     const pingBody = (await pingRes.json()) as { matches: unknown[] };
-    // No candidate near Paris → empty, but the pinger still participates.
-    expect(pingBody.matches, 'no candidate near Paris → empty matches').toHaveLength(0);
+    // No candidate near Reykjavik → empty, but the pinger still participates.
+    expect(pingBody.matches, 'no candidate near Reykjavik → empty matches').toHaveLength(0);
 
     // Live GPS IS now written to the PRIVATE columns (map gate removed).
     const afterRow = getGeoRow(user.id);
     expect(afterRow!.proximity_lat, 'proximity_lat must be written for an eligible pinger').not.toBeNull();
     const proxDistToParis = haversineKm(
       afterRow!.proximity_lat!, afterRow!.proximity_lon!,
-      PARIS_GPS.lat, PARIS_GPS.lon,
+      LONELY_GPS.lat, LONELY_GPS.lon,
     );
-    expect(proxDistToParis, 'private proximity coords must equal the Paris ping GPS').toBeLessThan(1);
+    expect(proxDistToParis, 'private proximity coords must equal the Reykjavik ping GPS').toBeLessThan(1);
 
     // PUBLIC latitude/longitude must stay city-coarse (near Niamey) — never the live GPS.
     expect(afterRow!.latitude).toBe(beforeRow!.latitude);
