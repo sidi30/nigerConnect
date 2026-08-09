@@ -189,7 +189,14 @@ const envSchema = z
 export type Env = z.infer<typeof envSchema>;
 
 export function validateEnv(raw: Record<string, unknown>): Env {
-  const parsed = envSchema.safeParse(raw);
+  // Compose injects `FOO: ${FOO:-}` as an EMPTY STRING, not as an absent key, so
+  // an unset optional variable still reaches Zod — and '' fails every constraint
+  // an optional variable may carry (.min(), .url()). Treat empty as absent so
+  // `.optional()` and `.default()` behave the way the compose file assumes.
+  const cleaned = Object.fromEntries(
+    Object.entries(raw).filter(([, v]) => v !== ''),
+  );
+  const parsed = envSchema.safeParse(cleaned);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)

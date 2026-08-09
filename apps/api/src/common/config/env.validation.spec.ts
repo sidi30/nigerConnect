@@ -13,6 +13,25 @@ describe('validateEnv', () => {
     expect(env.CORS_ORIGINS).toContain('http://localhost:8081');
   });
 
+  // Regression: docker-compose passes `FOO: ${FOO:-}` as '', not as an absent
+  // key. Before this was handled, an unset METRICS_TOKEN reached Zod as '' and
+  // failed .min(16) — the API crash-looped on boot in production.
+  it('treats an empty-string variable as unset', () => {
+    const env = validateEnv({ ...baseEnv, METRICS_TOKEN: '', PROMETHEUS_URL: '' });
+    expect(env.METRICS_TOKEN).toBeUndefined();
+    expect(env.PROMETHEUS_URL).toBeUndefined();
+  });
+
+  it('still rejects a METRICS_TOKEN that is set but too short', () => {
+    expect(() => validateEnv({ ...baseEnv, METRICS_TOKEN: 'tooshort' })).toThrow(
+      /METRICS_TOKEN/,
+    );
+  });
+
+  it('falls back to the default when a defaulted variable is empty', () => {
+    expect(validateEnv({ ...baseEnv, PORT: '' }).PORT).toBe(3000);
+  });
+
   it('splits CORS_ORIGINS into array', () => {
     const env = validateEnv({ ...baseEnv, CORS_ORIGINS: 'https://a.com, https://b.com' });
     expect(env.CORS_ORIGINS).toEqual(['https://a.com', 'https://b.com']);
