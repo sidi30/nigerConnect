@@ -52,6 +52,10 @@ const patchSettingsSchema = z
     // Master kill-switch for the stories-video beta. Off by default (ships DARK);
     // the disk guard also forces it off — this is how an admin RE-ARMS it after
     // reclaiming disk.
+    // Community policy: members living in Niger (or who never set a country)
+    // cannot open contact with diaspora members — no friend request, no first
+    // message. ON by default; this is how it is lifted without a deploy.
+    diasporaContactRestriction: z.boolean().optional(),
     videoEnabled: z.boolean().optional(),
     // Master kill-switch for the weekly regional digest (E-DIGEST). Off by
     // default (ships DARK); this is how an admin RE-ARMS it without SQL.

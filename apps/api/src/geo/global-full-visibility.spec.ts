@@ -35,6 +35,16 @@ function whereOf(findMany: jest.Mock): Record<string, unknown> {
   return (findMany.mock.calls[0] as unknown[])[0]!['where' as never];
 }
 
+/** Diaspora rule: permissive by default here — the rule has its own spec. */
+const makeDiaspora = () => ({
+  isHomeBased: jest.fn(async () => false),
+  mayInitiateContact: jest.fn(async () => true),
+  assertMayInitiateContact: jest.fn(async () => undefined),
+  mayReply: jest.fn(async () => true),
+  assertMayReply: jest.fn(async () => undefined),
+  invalidate: jest.fn(async () => undefined),
+});
+
 describe('GeoService — global full visibility (map)', () => {
   it('override ON: keeps the showOnMap opt-in but drops the privacy gate', async () => {
     const findMany = jest.fn(async () => []);
@@ -68,7 +78,8 @@ function makeProfile(globalVis: boolean, target: { privacyLevel: string } | null
     {} as never,
     settings(globalVis) as never,
     { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
-  );
+      makeDiaspora() as never,
+    );
   jest.spyOn(svc as never, 'loadNetwork').mockResolvedValue({} as never);
   jest
     .spyOn(svc as never, 'loadCounts')
@@ -104,6 +115,7 @@ describe('ProfileService — global full visibility (profile detail)', () => {
       {} as never,
       settings(true) as never,
       { log: jest.fn(async () => undefined) } as never,
+      makeDiaspora() as never,
     );
     await svc.search('viewer', { limit: 10 } as never);
     const where = whereOf(findMany) as { AND: Array<Record<string, unknown>> };

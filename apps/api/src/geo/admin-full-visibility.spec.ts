@@ -32,6 +32,16 @@ const BOUNDS = { north: 20, south: 0, east: 20, west: 0, zoom: 10, type: 'people
 const whereOf = (m: jest.Mock): Record<string, unknown> =>
   ((m.mock.calls as unknown[][])[0]![0] as { where: Record<string, unknown> }).where;
 
+/** Diaspora rule: permissive by default here — the rule has its own spec. */
+const makeDiaspora = () => ({
+  isHomeBased: jest.fn(async () => false),
+  mayInitiateContact: jest.fn(async () => true),
+  assertMayInitiateContact: jest.fn(async () => undefined),
+  mayReply: jest.fn(async () => true),
+  assertMayReply: jest.fn(async () => undefined),
+  invalidate: jest.fn(async () => undefined),
+});
+
 describe('GeoService — admin full visibility (map)', () => {
   it('admin + override ON: individuals query DROPS showOnMap + private gates', async () => {
     const findMany = jest.fn(async () => []);
@@ -76,7 +86,8 @@ function makeProfile(full: boolean, target: { privacyLevel: string } | null) {
     {} as never,
     settings(full) as never,
     { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
-  );
+      makeDiaspora() as never,
+    );
   // loadNetwork/loadCounts hit prisma; stub them so getById resolves.
   jest.spyOn(svc as never, 'loadNetwork').mockResolvedValue({} as never);
   jest

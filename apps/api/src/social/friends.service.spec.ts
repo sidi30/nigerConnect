@@ -18,17 +18,43 @@ function makeSettings(globalVis = false) {
   return { isGlobalFullVisibility: jest.fn(async () => globalVis) };
 }
 
+/** Diaspora rule: permissive by default here — the rule has its own spec. */
+const makeDiaspora = () => ({
+  isHomeBased: jest.fn(async () => false),
+  mayInitiateContact: jest.fn(async () => true),
+  assertMayInitiateContact: jest.fn(async () => undefined),
+  mayReply: jest.fn(async () => true),
+  assertMayReply: jest.fn(async () => undefined),
+  invalidate: jest.fn(async () => undefined),
+});
+
 describe('FriendsService', () => {
   it('cannot send request to self', async () => {
     const prisma = { friendship: {}, user: {} } as never;
-    const svc = new FriendsService(prisma, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.sendRequest('me', 'me')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('blocks friend request when users are blocked', async () => {
     const prisma = { friendship: {}, user: {} } as never;
-    const svc = new FriendsService(prisma, makeBlocks(true) as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma, makeBlocks(true) as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.sendRequest('me', 'other')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // Wiring test: the rule itself is proved in diaspora-policy.service.spec.
+  // What matters here is that sendRequest actually consults it, and does so
+  // BEFORE writing anything.
+  it('refuses a friend request the diaspora rule rejects, without touching the DB', async () => {
+    const prisma = { friendship: { create: jest.fn(), findFirst: jest.fn() }, user: {} };
+    const diaspora = makeDiaspora();
+    diaspora.assertMayInitiateContact = jest.fn(async () => {
+      throw new ForbiddenException('depuis le Niger');
+    });
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, diaspora as never);
+    await expect(svc.sendRequest('niamey', 'paris')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(diaspora.assertMayInitiateContact).toHaveBeenCalledWith('niamey', 'paris');
+    expect(prisma.friendship.create).not.toHaveBeenCalled();
+    expect(prisma.friendship.findFirst).not.toHaveBeenCalled();
   });
 
   it('throws NotFound when addressee does not exist', async () => {
@@ -36,7 +62,7 @@ describe('FriendsService', () => {
       user: { findUnique: jest.fn(async () => null) },
       friendship: { findFirst: jest.fn() },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.sendRequest('me', 'ghost')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -45,7 +71,7 @@ describe('FriendsService', () => {
       user: { findUnique: jest.fn(async () => ({ id: 'other' })) },
       friendship: { findFirst: jest.fn(async () => ({ id: 'f1', status: 'accepted' })) },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.sendRequest('me', 'other')).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -62,7 +88,7 @@ describe('FriendsService', () => {
         create: jest.fn(async () => ({ id: 'f1' })),
       },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.sendRequest('me', 'other');
     expect(result.id).toBe('f1');
     expect(prisma.friendship.create).toHaveBeenCalledWith({
@@ -77,7 +103,7 @@ describe('FriendsService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     await expect(svc.accept('me', 'f1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -88,7 +114,7 @@ describe('FriendsService', () => {
       },
       user: { findUnique: jest.fn(async () => ({ privacyLevel: 'private' })) },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.relationship('me', 'other');
     expect(result).toEqual({ status: 'none', friendshipId: null });
   });
@@ -100,7 +126,7 @@ describe('FriendsService', () => {
       },
       user: { findUnique: jest.fn(async () => ({ privacyLevel: 'private' })) },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.relationship('me', 'other');
     expect(result).toEqual({ status: 'friends', friendshipId: 'f1' });
   });
@@ -112,7 +138,7 @@ describe('FriendsService', () => {
       user: { findUnique: jest.fn(async () => ({ privacyLevel: 'private' })) },
       $queryRaw: queryRaw,
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.mutualFriends('me', 'other');
     expect(result).toEqual([]);
     expect(queryRaw).not.toHaveBeenCalled();
@@ -137,7 +163,7 @@ describe('FriendsService', () => {
         })),
       },
     };
-    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never);
+    const svc = new FriendsService(prisma as never, makeBlocks() as never, makeNotifs() as never, makeSettings() as never, makeDiaspora() as never);
     const result = await svc.accept('me', 'f1');
     expect(result.status).toBe('accepted');
   });

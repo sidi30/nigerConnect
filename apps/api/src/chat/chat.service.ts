@@ -9,6 +9,7 @@ import type { Prisma, MessageType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { BlockService } from '../social/block.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { NotificationService } from '../notification/notification.service';
 import { PresenceService } from './presence.service';
 
@@ -94,6 +95,7 @@ export class ChatService {
     private readonly notifications: NotificationService,
     private readonly s3: S3Service,
     private readonly presence: PresenceService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
 
   async listConversations(userId: string, cursor?: string, limit = 30) {
@@ -182,6 +184,24 @@ export class ChatService {
     if (isDirect) {
       // Check for existing direct conversation
       const otherId = uniqueParticipants[0]!;
+      // A member living in Niger cannot OPEN a DM with a diaspora member. Only
+      // direct conversations are gated: a group is a shared room, and muting
+      // one member there would change what the room is, not who may solicit
+      // whom. Runs before the lookup below so an existing conversation — one
+      // the diaspora member opened — is still returned and stays usable.
+      const existingDirect = await this.prisma.conversation.findFirst({
+        where: {
+          type: 'direct',
+          AND: [
+            { members: { some: { userId: creatorId } } },
+            { members: { some: { userId: otherId } } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!existingDirect) {
+        await this.diaspora.assertMayInitiateContact(creatorId, otherId);
+      }
       const existing = await this.prisma.conversation.findFirst({
         where: {
           type: 'direct',
@@ -240,6 +260,13 @@ export class ChatService {
       const other = conv.members.find((m) => m.userId !== userId)?.userId;
       if (other && (await this.blocks.isBlocked(userId, other))) {
         throw new ForbiddenException('Cannot send message: user has blocked you');
+      }
+      // Diaspora rule. Unlike createConversation this cannot be a plain
+      // "may initiate" check: the conversation already exists, so what matters
+      // is whether the diaspora member opened it — or whether the two were
+      // already friends before the rule existed.
+      if (other) {
+        await this.diaspora.assertMayReply(userId, other, conversationId);
       }
     }
 

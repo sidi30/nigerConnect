@@ -10,6 +10,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { NotificationService } from '../notification/notification.service';
 import { BlockService } from './block.service';
+import { DiasporaPolicyService } from './diaspora-policy.service';
 
 const PUBLIC_USER_FIELDS = {
   id: true,
@@ -30,6 +31,7 @@ export class FriendsService {
     private readonly blocks: BlockService,
     private readonly notifications: NotificationService,
     private readonly settings: SettingsService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
 
   private async userDisplayName(userId: string): Promise<string> {
@@ -51,6 +53,10 @@ export class FriendsService {
     if (await this.blocks.isBlocked(requesterId, addresseeId)) {
       throw new ForbiddenException('Cannot send friend request');
     }
+    // NigerConnect is for the diaspora: a member living in Niger cannot reach
+    // out to one living abroad. The reverse direction stays open, and either
+    // side may still accept a request the other sent.
+    await this.diaspora.assertMayInitiateContact(requesterId, addresseeId);
 
     const addressee = await this.prisma.user.findUnique({
       where: { id: addresseeId },

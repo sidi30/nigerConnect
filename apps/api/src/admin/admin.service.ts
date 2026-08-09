@@ -388,6 +388,7 @@ export class AdminService {
     videoEnabled: boolean;
     digestEnabled: boolean;
     profileReminderEnabled: boolean;
+    diasporaContactRestriction: boolean;
   }> {
     const [
       registrationMode,
@@ -400,6 +401,7 @@ export class AdminService {
       videoEnabled,
       digestEnabled,
       profileReminderEnabled,
+      diasporaContactRestriction,
     ] = await Promise.all([
       this.settings.getRegistrationMode(),
       this.settings.getDefaultInviteQuota(),
@@ -411,6 +413,7 @@ export class AdminService {
       this.settings.isVideoEnabled(),
       this.settings.isDigestEnabled(),
       this.settings.isProfileReminderEnabled(),
+      this.settings.isDiasporaContactRestricted(),
     ]);
     return {
       registrationMode,
@@ -423,6 +426,7 @@ export class AdminService {
       videoEnabled,
       digestEnabled,
       profileReminderEnabled,
+      diasporaContactRestriction,
     };
   }
 
@@ -441,6 +445,7 @@ export class AdminService {
       videoEnabled?: boolean;
       digestEnabled?: boolean;
       profileReminderEnabled?: boolean;
+      diasporaContactRestriction?: boolean;
     },
     adminId: string,
   ): Promise<{
@@ -454,6 +459,7 @@ export class AdminService {
     videoEnabled: boolean;
     digestEnabled: boolean;
     profileReminderEnabled: boolean;
+    diasporaContactRestriction: boolean;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -507,6 +513,18 @@ export class AdminService {
         this.settings.setSetting(
           'global_full_visibility',
           dto.globalFullVisibility ? 'true' : 'false',
+          adminId,
+        ),
+      );
+    }
+    if (dto.diasporaContactRestriction !== undefined) {
+      // Community policy: members living in Niger may not open contact with
+      // diaspora members. ON by default — turning it OFF here lifts the rule
+      // network-wide on the next request, without a deploy.
+      writes.push(
+        this.settings.setSetting(
+          'diaspora_contact_restriction',
+          dto.diasporaContactRestriction ? 'true' : 'false',
           adminId,
         ),
       );

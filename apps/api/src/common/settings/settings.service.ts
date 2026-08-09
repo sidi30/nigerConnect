@@ -126,6 +126,20 @@ export class SettingsService {
   }
 
   /**
+   * Members living in Niger may read the whole network and talk among
+   * themselves, but may not open contact with diaspora members (no friend
+   * request, no first message). See DiasporaPolicyService for the exact rule.
+   *
+   * ON by default, unlike the feature flags around it: this is not an
+   * experiment shipping dark, it is what the product is for. The switch exists
+   * so the policy can be lifted from the admin console without a deploy — set
+   * `diaspora_contact_restriction` to 'false'.
+   */
+  async isDiasporaContactRestricted(): Promise<boolean> {
+    return (await this.getSetting('diaspora_contact_restriction', 'true')) !== 'false';
+  }
+
+  /**
    * Master kill-switch for the proximity-encounter feature. OFF by default so the
    * feature ships DARK and a misconfig / DB failure fails CLOSED (off). Flip to
    * 'true' via the admin settings to enable, then roll out per city below.

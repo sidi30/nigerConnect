@@ -35,10 +35,20 @@ function makePresence() {
   };
 }
 
+/** Diaspora rule: permissive by default here — the rule has its own spec. */
+const makeDiaspora = () => ({
+  isHomeBased: jest.fn(async () => false),
+  mayInitiateContact: jest.fn(async () => true),
+  assertMayInitiateContact: jest.fn(async () => undefined),
+  mayReply: jest.fn(async () => true),
+  assertMayReply: jest.fn(async () => undefined),
+  invalidate: jest.fn(async () => undefined),
+});
+
 describe('ChatService', () => {
   it('refuses to create conversation with only self', async () => {
     const prisma = { conversation: {}, conversationMember: {}, user: {} } as never;
-    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.createConversation('me', ['me'])).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -46,7 +56,7 @@ describe('ChatService', () => {
     const prisma = {
       conversationMember: { findUnique: jest.fn(async () => null) },
     } as never;
-    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.sendMessage('me', 'c1', { content: 'x' })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -60,7 +70,7 @@ describe('ChatService', () => {
         create: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     const result = await svc.createConversation('me', ['other']);
     expect((result as { id: string }).id).toBe('existing-convo');
     expect(prisma.conversation.create).not.toHaveBeenCalled();
@@ -73,7 +83,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -91,7 +101,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.softDeleteMessage('me', 'm1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
@@ -117,7 +127,7 @@ describe('ChatService', () => {
       conversationMember: { findMany: jest.fn(async () => [{ userId: 'me' }, { userId: 'u2' }]) },
     };
     const s3 = makeS3();
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never, makePresence() as never, makeDiaspora() as never);
 
     await svc.softDeleteMessage('me', 'm1');
 
@@ -142,7 +152,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.editMessage('me', 'm1', 'hi')).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
@@ -162,7 +172,7 @@ describe('ChatService', () => {
         update: jest.fn(),
       },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.editMessage('me', 'm1', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.message.update).not.toHaveBeenCalled();
   });
@@ -172,7 +182,7 @@ describe('ChatService', () => {
       user: { findMany: jest.fn(async () => []) },
       conversation: { findFirst: jest.fn(), create: jest.fn() },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(svc.createConversation('me', ['ghost'])).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -201,6 +211,7 @@ describe('ChatService', () => {
       makeNotifications() as never,
       makeS3() as never,
       makePresence() as never,
+      makeDiaspora() as never,
     );
     await expect(
       svc.sendMessage('me', 'c1', { content: 'hi' }),
@@ -229,7 +240,7 @@ describe('ChatService', () => {
       user: { findUnique: jest.fn(async () => ({ displayName: 'Me' })) },
       $transaction: jest.fn(async () => [created, {}, {}]),
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, s3 as never, makePresence() as never, makeDiaspora() as never);
     await svc.sendMessage('me', 'c1', {
       messageType: 'image',
       mediaUrl: 'https://attacker.example/track.gif',
@@ -253,6 +264,7 @@ describe('ChatService', () => {
       makeNotifications() as never,
       makeS3(true) as never,
       makePresence() as never,
+      makeDiaspora() as never,
     );
     await expect(
       svc.sendMessage('me', 'c1', { messageType: 'image', mediaUrl: 'https://evil.test/x.jpg' }),
@@ -266,10 +278,91 @@ describe('ChatService', () => {
       conversation: { findUnique: jest.fn(async () => ({ type: 'group', members: [{ userId: 'me' }] })) },
       message: { create: jest.fn() },
     };
-    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never);
+    const svc = new ChatService(prisma as never, makeBlocks() as never, makeNotifications() as never, makeS3() as never, makePresence() as never, makeDiaspora() as never);
     await expect(
       svc.sendMessage('me', 'c1', { messageType: 'image', content: 'caption' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
+  // Wiring tests. The rule itself is proved in diaspora-policy.service.spec;
+  // here we only check chat consults it, on the right call, with the right pair.
+  it('refuses a NEW direct conversation the diaspora rule rejects', async () => {
+    const prisma = {
+      conversation: { findFirst: jest.fn(async () => null), create: jest.fn() },
+      conversationMember: {},
+      user: { findMany: jest.fn(async () => [{ id: 'paris' }]) },
+    };
+    const diaspora = makeDiaspora();
+    diaspora.assertMayInitiateContact = jest.fn(async () => {
+      throw new ForbiddenException('depuis le Niger');
+    });
+    const svc = new ChatService(
+      prisma as never,
+      makeBlocks() as never,
+      makeNotifications() as never,
+      makeS3() as never,
+      makePresence() as never,
+      diaspora as never,
+    );
+    await expect(svc.createConversation('niamey', ['paris'])).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(diaspora.assertMayInitiateContact).toHaveBeenCalledWith('niamey', 'paris');
+    expect(prisma.conversation.create).not.toHaveBeenCalled();
+  });
+
+  // The diaspora member may have opened this thread before the rule existed —
+  // returning it keeps the exchange alive instead of 403-ing an old chat.
+  it('still returns an EXISTING direct conversation without applying the rule', async () => {
+    const prisma = {
+      conversation: { findFirst: jest.fn(async () => ({ id: 'c1' })), create: jest.fn() },
+      conversationMember: {},
+      user: { findMany: jest.fn(async () => [{ id: 'paris' }]) },
+    };
+    const diaspora = makeDiaspora();
+    diaspora.assertMayInitiateContact = jest.fn(async () => {
+      throw new ForbiddenException('depuis le Niger');
+    });
+    const svc = new ChatService(
+      prisma as never,
+      makeBlocks() as never,
+      makeNotifications() as never,
+      makeS3() as never,
+      makePresence() as never,
+      diaspora as never,
+    );
+    await expect(svc.createConversation('niamey', ['paris'])).resolves.toEqual({ id: 'c1' });
+    expect(diaspora.assertMayInitiateContact).not.toHaveBeenCalled();
+  });
+
+  it('refuses a message the diaspora rule rejects, and never writes it', async () => {
+    const prisma = {
+      conversationMember: { findUnique: jest.fn(async () => ({ userId: 'niamey' })) },
+      conversation: {
+        findUnique: jest.fn(async () => ({
+          type: 'direct',
+          members: [{ userId: 'niamey' }, { userId: 'paris' }],
+        })),
+      },
+      message: { create: jest.fn() },
+      $transaction: jest.fn(),
+    };
+    const diaspora = makeDiaspora();
+    diaspora.assertMayReply = jest.fn(async () => {
+      throw new ForbiddenException('vous pourrez repondre');
+    });
+    const svc = new ChatService(
+      prisma as never,
+      makeBlocks() as never,
+      makeNotifications() as never,
+      makeS3() as never,
+      makePresence() as never,
+      diaspora as never,
+    );
+    await expect(
+      svc.sendMessage('niamey', 'c1', { content: 'bonjour' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(diaspora.assertMayReply).toHaveBeenCalledWith('niamey', 'paris', 'c1');
     expect(prisma.message.create).not.toHaveBeenCalled();
   });
 });

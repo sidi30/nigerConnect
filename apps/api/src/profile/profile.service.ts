@@ -12,6 +12,7 @@ import {
   type SelfUser,
 } from '../common/prisma/user-select';
 import { BlockService } from '../social/block.service';
+import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { MailerService } from '../common/mail/mailer.service';
 import {
   geocode,
@@ -90,6 +91,7 @@ export class ProfileService {
     private readonly mailer: MailerService,
     private readonly settings: SettingsService,
     private readonly audit: AdminAuditService,
+    private readonly diaspora: DiasporaPolicyService,
   ) {}
 
   /**
@@ -301,6 +303,11 @@ export class ProfileService {
       select: USER_SELF_SELECT,
     });
     await this.invalidateProfileCache(userId);
+    // The diaspora rule is keyed on countryCode and cached 5 min. Without this,
+    // a member who has just filled in their country stays locked out of friend
+    // requests and new conversations for up to five minutes with no way to tell
+    // why — the refusal message asks them to do the very thing they just did.
+    if (dto.countryCode !== undefined) await this.diaspora.invalidate(userId);
     return user;
   }
 
