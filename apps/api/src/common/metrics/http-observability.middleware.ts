@@ -50,34 +50,44 @@ export class HttpObservabilityMiddleware implements NestMiddleware {
     res.setHeader('X-Request-Id', requestId);
 
     res.on('finish', () => {
-      const seconds = Number(process.hrtime.bigint() - started) / 1e9;
-      const status = res.statusCode;
-      // `req.route` only exists once Express matched a handler; everything else
-      // (404s, malformed paths) collapses into one label to bound cardinality.
-      const routePath = (req as Request & { route?: { path?: string } }).route?.path;
-      const route = routePath ? `${req.baseUrl}${routePath}` : 'unmatched';
+      // Nothing sits above a `finish` listener to catch a throw: it surfaces as
+      // an uncaughtException and takes the process down. Observability must not
+      // be able to kill the API, so the whole body is guarded — losing one
+      // access-log line is always the better outcome.
+      try {
+        const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+        const status = res.statusCode;
+        // `req.route` only exists once Express matched a handler; everything else
+        // (404s, malformed paths) collapses into one label to bound cardinality.
+        const routePath = (req as Request & { route?: { path?: string } }).route?.path;
+        const route = routePath ? `${req.baseUrl}${routePath}` : 'unmatched';
 
-      this.metrics.observeHttp(req.method, route, status, seconds);
+        this.metrics.observeHttp(req.method, route, status, seconds);
 
-      if (SILENT_PATHS.has(pathname)) return;
+        if (SILENT_PATHS.has(pathname)) return;
 
-      const userId = (req as Request & { user?: JwtUserPayload }).user?.sub;
-      writeLog(
-        status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info',
-        'HTTP',
-        `${req.method} ${scrubUrl(req.originalUrl)} ${status}`,
-        {
-          requestId,
-          method: req.method,
-          // Scrubbed: password-reset tokens and OAuth codes must never reach Loki.
-          url: scrubUrl(req.originalUrl),
-          route,
-          status,
-          durationMs: Math.round(seconds * 1000),
-          ...(userId ? { userId } : {}),
-          ip: req.ip,
-        },
-      );
+        const userId = (req as Request & { user?: JwtUserPayload }).user?.sub;
+        const url = scrubUrl(req.originalUrl);
+        writeLog(
+          status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info',
+          'HTTP',
+          `${req.method} ${url} ${status}`,
+          {
+            requestId,
+            method: req.method,
+            // Scrubbed: password-reset tokens and OAuth codes must never reach Loki.
+            url,
+            route,
+            status,
+            durationMs: Math.round(seconds * 1000),
+            ...(userId ? { userId } : {}),
+            ip: req.ip,
+          },
+        );
+      } catch {
+        // Deliberately silent: the only reporting channel available here is the
+        // one that just failed.
+      }
     });
 
     next();

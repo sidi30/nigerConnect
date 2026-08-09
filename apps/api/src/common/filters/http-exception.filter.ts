@@ -13,22 +13,40 @@ import { writeLog } from '../logger/json-logger';
  * Query parameters that must never land in logs or Sentry — we redact them
  * before anything else sees the URL.
  *
- * This list is defensive: the app doesn't pass these in query strings, but a
- * misconfigured client or a future endpoint might. Redacting here is cheap
- * insurance against a leak landing in a log aggregator.
+ * Two lists on purpose. A FRAGMENT matches anywhere in the key, so a future
+ * `reset_token` or `apiKey` is covered without anyone remembering to come back
+ * here. EXACT holds the short names that would swallow innocent params as a
+ * fragment — `code` would otherwise redact `country_code`.
  */
-const SENSITIVE_QUERY_PARAMS = new Set([
+const SENSITIVE_FRAGMENTS = [
   'token',
-  'access_token',
-  'refresh_token',
-  'id_token',
-  'code',
-  'state',
   'password',
-  'otp',
-  'email',
-  'phone',
-]);
+  'passwd',
+  'secret',
+  'signature',
+  'credential',
+  'apikey',
+  'api_key',
+  'api-key',
+  'auth',
+  'session',
+];
+
+const SENSITIVE_EXACT = new Set(['code', 'state', 'otp', 'email', 'phone', 'key', 'sig', 'pwd', 'jwt']);
+
+function isSensitiveParam(rawKey: string): boolean {
+  // A malformed percent-escape (`?%zz=1`) makes decodeURIComponent throw, and
+  // this runs on EVERY request from the access-log middleware — where a throw
+  // is an uncaught exception that kills the process. Fall back to the raw key.
+  let key: string;
+  try {
+    key = decodeURIComponent(rawKey);
+  } catch {
+    key = rawKey;
+  }
+  key = key.toLowerCase();
+  return SENSITIVE_EXACT.has(key) || SENSITIVE_FRAGMENTS.some((f) => key.includes(f));
+}
 
 function scrubUrl(rawUrl: string): string {
   const [pathname, search] = rawUrl.split('?', 2);
@@ -36,11 +54,12 @@ function scrubUrl(rawUrl: string): string {
   const scrubbed = search
     .split('&')
     .map((pair) => {
-      const [k, v] = pair.split('=', 2);
-      if (k && SENSITIVE_QUERY_PARAMS.has(decodeURIComponent(k).toLowerCase())) {
-        return `${k}=REDACTED`;
-      }
-      return v === undefined ? pair : `${k}=${v}`;
+      // Split on the FIRST '=' only, and keep the rest of the pair verbatim:
+      // base64 values carry '=' padding and would otherwise be truncated.
+      const eq = pair.indexOf('=');
+      if (eq === -1) return pair;
+      const key = pair.slice(0, eq);
+      return isSensitiveParam(key) ? `${key}=REDACTED` : pair;
     })
     .join('&');
   return `${pathname}?${scrubbed}`;

@@ -189,6 +189,17 @@ const envSchema = z
 export type Env = z.infer<typeof envSchema>;
 
 export function validateEnv(raw: Record<string, unknown>): Env {
+  // NODE_ENV is exempt from the empty-is-absent rule below: it gates every
+  // production-only check in the schema, so silently defaulting an empty value
+  // to `development` would boot a production container with the JWT key,
+  // encryption key and CORS requirements all switched off.
+  if (raw.NODE_ENV === '') {
+    throw new Error(
+      'Invalid environment configuration:\n' +
+        '  - NODE_ENV: must not be empty (expected development | test | production)',
+    );
+  }
+
   // Compose injects `FOO: ${FOO:-}` as an EMPTY STRING, not as an absent key, so
   // an unset optional variable still reaches Zod — and '' fails every constraint
   // an optional variable may carry (.min(), .url()). Treat empty as absent so

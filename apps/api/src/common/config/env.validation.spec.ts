@@ -32,6 +32,12 @@ describe('validateEnv', () => {
     expect(validateEnv({ ...baseEnv, PORT: '' }).PORT).toBe(3000);
   });
 
+  // NODE_ENV is exempt from empty-is-absent: defaulting it to `development`
+  // would boot a production container with every prod-only check skipped.
+  it('refuses an empty NODE_ENV instead of defaulting it to development', () => {
+    expect(() => validateEnv({ ...baseEnv, NODE_ENV: '' })).toThrow(/NODE_ENV: must not be empty/);
+  });
+
   it('splits CORS_ORIGINS into array', () => {
     const env = validateEnv({ ...baseEnv, CORS_ORIGINS: 'https://a.com, https://b.com' });
     expect(env.CORS_ORIGINS).toEqual(['https://a.com', 'https://b.com']);
