@@ -41,6 +41,78 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------- Scroll reveal (piloté par ScrollReveal.tsx) ---------- */
+.sr {
+  opacity: 0;
+  transition:
+    opacity 0.7s ease,
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.sr-up    { transform: translateY(28px); }
+.sr-left  { transform: translateX(-36px); }
+.sr-right { transform: translateX(36px); }
+.sr-zoom  { transform: scale(0.94); }
+.sr.in-view { opacity: 1; transform: none; }
+
+/* Cascade : le conteneur est neutre, les enfants directs se révèlent un à un */
+.sr-stagger { opacity: 1; transform: none; }
+.sr-stagger > * {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sr-stagger.in-view > * { opacity: 1; transform: none; }
+.sr-stagger.in-view > *:nth-child(1)  { transition-delay: 0.05s; }
+.sr-stagger.in-view > *:nth-child(2)  { transition-delay: 0.13s; }
+.sr-stagger.in-view > *:nth-child(3)  { transition-delay: 0.21s; }
+.sr-stagger.in-view > *:nth-child(4)  { transition-delay: 0.29s; }
+.sr-stagger.in-view > *:nth-child(5)  { transition-delay: 0.37s; }
+.sr-stagger.in-view > *:nth-child(6)  { transition-delay: 0.45s; }
+.sr-stagger.in-view > *:nth-child(7)  { transition-delay: 0.53s; }
+.sr-stagger.in-view > *:nth-child(8)  { transition-delay: 0.61s; }
+.sr-stagger.in-view > *:nth-child(9)  { transition-delay: 0.69s; }
+.sr-stagger.in-view > *:nth-child(10) { transition-delay: 0.77s; }
+
+/* ---------- Marquee photos (Community) ---------- */
+@keyframes marqueeX {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.marquee { overflow: hidden; }
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marqueeX 45s linear infinite;
+}
+.marquee:hover .marquee-track { animation-play-state: paused; }
+
+/* ---------- Ken Burns lent (fond carte du monde) ---------- */
+@keyframes kenburns {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  50%      { transform: scale(1.12) translate(-1.5%, 1%); }
+}
+.kenburns { animation: kenburns 36s ease-in-out infinite; will-change: transform; }
+
+/* ---------- Accessibilité : motion réduite ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .sr,
+  .sr-stagger > * {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .marquee-track,
+  .kenburns,
+  .reveal,
+  .animate-float-slow,
+  .animate-pulse-ring {
+    animation: none !important;
+  }
+}
+
 /* Subtle grain texture on hero */
 .grain::before {
   content: "";

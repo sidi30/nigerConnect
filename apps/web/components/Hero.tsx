@@ -1,6 +1,14 @@
 import { PhoneMockup } from "./PhoneMockup";
 import { IconApple, IconGooglePlay, IconArrowRight } from "./Icons";
 
+const avatars = [
+  "/images/avatar-1.jpg",
+  "/images/avatar-2.jpg",
+  "/images/avatar-3.jpg",
+  "/images/avatar-4.jpg",
+  "/images/avatar-5.jpg",
+];
+
 export function Hero() {
   return (
     <section className="grain relative overflow-hidden bg-gradient-warm pt-12 pb-20 md:pt-20 md:pb-28">
@@ -44,6 +52,28 @@ export function Hero() {
             </a>
           </div>
 
+          {/* Preuve sociale : la communauté a déjà un visage */}
+          <div className="mt-8 flex items-center gap-3">
+            <div className="flex -space-x-3">
+              {avatars.map((src, i) => (
+                <img
+                  key={src}
+                  src={src}
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 rounded-full border-2 border-white object-cover shadow-soft"
+                  style={{ zIndex: avatars.length - i }}
+                />
+              ))}
+            </div>
+            <p className="text-sm leading-snug text-tan-600">
+              <span className="font-semibold text-brand-brown">La communauté t'attend</span>
+              <br />
+              de Niamey à Montréal 🇳🇪
+            </p>
+          </div>
+
           <div className="mt-10 grid grid-cols-3 gap-4 border-t border-tan-200 pt-6">
             <Stat value="100%" label="Gratuit, pour toujours" />
             <Stat value="0" label="Pub & tracking tiers" />
@@ -51,7 +81,36 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="reveal" style={{ animationDelay: "0.15s" }}>
+        <div className="reveal relative" style={{ animationDelay: "0.15s" }}>
+          {/* Cartes photo flottantes : le pays d'un côté, la diaspora de l'autre */}
+          <div className="pointer-events-none absolute -left-10 top-6 hidden w-44 rotate-[-5deg] animate-float-slow overflow-hidden rounded-2xl shadow-card lg:block">
+            <img
+              src="/images/niamey-market.jpg"
+              alt="Au marché à Niamey"
+              width={176}
+              height={176}
+              className="h-44 w-44 object-cover"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-brand-brown/70 to-transparent p-2.5">
+              <p className="text-[11px] font-semibold text-white">🇳🇪 Niamey, 18h04</p>
+            </div>
+          </div>
+          <div
+            className="pointer-events-none absolute -right-8 bottom-10 hidden w-52 rotate-[4deg] animate-float-slow overflow-hidden rounded-2xl shadow-card lg:block"
+            style={{ animationDelay: "2s" }}
+          >
+            <img
+              src="/images/community-sahel.jpg"
+              alt="La communauté réunie"
+              width={208}
+              height={117}
+              className="h-32 w-52 object-cover"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-brand-brown/70 to-transparent p-2.5">
+              <p className="text-[11px] font-semibold text-white">Ensemble, où qu'on soit</p>
+            </div>
+          </div>
+
           <PhoneMockup />
         </div>
       </div>

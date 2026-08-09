@@ -21,20 +21,22 @@ const steps = [
   },
 ];
 
+import { ScrollReveal } from "./ScrollReveal";
+
 export function HowItWorks() {
   return (
     <section id="how" className="bg-brand-cream py-20 md:py-28">
       <div className="container-x">
-        <div className="mx-auto max-w-2xl text-center">
+        <ScrollReveal variant="up" className="mx-auto max-w-2xl text-center">
           <span className="chip">Comment ça marche</span>
           <h2 className="section-title mt-4">Quatre étapes, c'est tout.</h2>
           <p className="mt-5 text-lg text-tan-600">
             Aucune courbe d'apprentissage. Si tu sais utiliser WhatsApp, tu sauras utiliser
             NigerConnect.
           </p>
-        </div>
+        </ScrollReveal>
 
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <ScrollReveal variant="stagger" className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {steps.map((s, i) => (
             <div
               key={i}
@@ -45,7 +47,7 @@ export function HowItWorks() {
               <p className="mt-2 text-sm leading-relaxed text-tan-600">{s.body}</p>
             </div>
           ))}
-        </div>
+        </ScrollReveal>
       </div>
     </section>
   );
