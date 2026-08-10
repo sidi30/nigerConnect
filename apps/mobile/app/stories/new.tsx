@@ -11,7 +11,6 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
@@ -19,6 +18,7 @@ import { pickAndUploadImage, type UploadSource } from '@/services/uploadService'
 import { describeStoryVideoError } from '@/services/storyVideoService';
 import { useStoryVideoUpload } from '@/hooks/useStoryVideoUpload';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
+import { useMediaOverlayLayout } from '@/hooks/useMediaOverlayLayout';
 
 type Mode = 'none' | 'image' | 'video';
 
@@ -29,6 +29,7 @@ const SILENT = 'story-video-silent';
 export default function NewStoryScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+  const { topInset, bottomInset } = useMediaOverlayLayout();
 
   const [caption, setCaption] = useState('');
   const [mode, setMode] = useState<Mode>('none');
@@ -120,7 +121,12 @@ export default function NewStoryScreen() {
   const hasMedia = mode !== 'none';
 
   return (
-    <SafeAreaView style={styles.container}>
+    // Ecran en `fullScreenModal` : il couvre l'encoche, et l'inset haut y remonte
+    // parfois a 0 sur iOS. On passe donc par le meme calcul que les autres
+    // plein-ecrans media, qui retombe sur une valeur sure quand l'inset ment —
+    // sinon l'entete se dessine sous la Dynamic Island et « Publier » comme
+    // « Annuler » deviennent intouchables.
+    <View style={[styles.container, { paddingTop: topInset, paddingBottom: bottomInset }]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.cancelBtn}>
           <Feather name="chevron-left" size={20} color="rgba(255,255,255,0.9)" />
@@ -130,6 +136,9 @@ export default function NewStoryScreen() {
         <Pressable
           onPress={() => mut.mutate()}
           disabled={!canPublish || busy}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Publier la story"
           style={[styles.publish, (!canPublish || busy) && { opacity: 0.4 }]}
         >
           <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
@@ -165,7 +174,7 @@ export default function NewStoryScreen() {
           </Pressable>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

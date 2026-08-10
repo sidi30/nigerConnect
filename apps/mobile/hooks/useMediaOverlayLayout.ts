@@ -5,8 +5,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export const OVERLAY_BAR_H = 56;
 /** Marge basse minimale, même sur un téléphone sans barre de navigation. */
 export const MIN_BOTTOM_GUTTER = 16;
-/** Marge haute minimale : Android peut renvoyer un inset à 0 en edge-to-edge. */
-export const MIN_TOP_GUTTER = 8;
+/**
+ * Replis quand l'inset haut vaut 0 alors qu'il ne devrait pas.
+ *
+ * Ça arrive : les écrans en `presentation: 'fullScreenModal'` couvrent
+ * l'encoche, et react-native-safe-area-context y renvoie parfois 0 sur iOS.
+ * Résultat, l'entête se dessine SOUS la Dynamic Island et ses boutons
+ * deviennent intouchables — on ne peut littéralement plus publier ni fermer.
+ *
+ * 59 px couvre la Dynamic Island des iPhone récents ; sur Android on connaît la
+ * hauteur réelle de la barre de statut, sinon 24 dp (valeur historique).
+ * Ce repli ne s'applique QUE si l'inset est nul : un inset correct est respecté
+ * au pixel près, y compris les 20 px d'un iPhone sans encoche.
+ */
+export const IOS_NOTCH_FALLBACK = 59;
+export const ANDROID_STATUS_FALLBACK = 24;
 /** En dessous, la photo n'est plus regardable — on préfère déborder. */
 export const MIN_CONTENT_H = 160;
 
@@ -28,6 +41,8 @@ type Input = {
   /** `StatusBar.currentHeight` sur Android, 0/undefined ailleurs. */
   statusBarH?: number | null;
   barH?: number;
+  /** 'ios' | 'android' — choisit le repli quand l'inset haut est nul. */
+  platform?: string;
 };
 
 /**
@@ -41,8 +56,15 @@ export function computeMediaOverlayLayout({
   insetBottom,
   statusBarH,
   barH = OVERLAY_BAR_H,
+  platform,
 }: Input): MediaOverlayLayout {
-  const topInset = Math.max(insetTop, statusBarH ?? 0, MIN_TOP_GUTTER);
+  // Un inset connu fait toujours foi. Le repli ne sert qu'au cas dégradé où il
+  // vaut 0 : sans lui l'entête passe sous l'encoche et devient intouchable.
+  const fallbackTop =
+    platform === 'ios'
+      ? IOS_NOTCH_FALLBACK
+      : Math.max(statusBarH ?? 0, ANDROID_STATUS_FALLBACK);
+  const topInset = Math.max(insetTop, statusBarH ?? 0) || fallbackTop;
   const bottomInset = Math.max(insetBottom, MIN_BOTTOM_GUTTER);
   const headerH = topInset + barH;
   const contentH = Math.max(MIN_CONTENT_H, screenH - headerH - bottomInset);
@@ -59,6 +81,7 @@ export function useMediaOverlayLayout(barH?: number): MediaOverlayLayout & { scr
     insetBottom: insets.bottom,
     statusBarH: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
     barH,
+    platform: Platform.OS,
   });
   return { ...layout, screenW: width };
 }

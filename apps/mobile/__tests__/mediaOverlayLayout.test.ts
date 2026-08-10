@@ -1,5 +1,6 @@
 import {
   computeMediaOverlayLayout,
+  IOS_NOTCH_FALLBACK,
   MIN_CONTENT_H,
   OVERLAY_BAR_H,
 } from '@/hooks/useMediaOverlayLayout';
@@ -29,8 +30,33 @@ describe('computeMediaOverlayLayout', () => {
     expect(headerH + contentH + bottomInset).toBeLessThanOrEqual(device.screenH);
     // Le bouton ✕ reste sous l'encoche / la barre de statut.
     expect(topInset).toBeGreaterThanOrEqual(device.insetTop);
-    expect(topInset).toBeGreaterThanOrEqual(8);
+    // Jamais nul : un inset a 0 fait passer l'entete sous l'encoche.
+    expect(topInset).toBeGreaterThan(0);
     expect(contentH).toBeGreaterThanOrEqual(MIN_CONTENT_H);
+  });
+
+  it("retombe sous l'encoche quand iOS ne donne aucun inset", () => {
+    // Cas vecu : un ecran en `fullScreenModal` couvre l'encoche et l'inset haut
+    // remonte a 0 sur iOS. Sans repli, l'entete se dessinait SOUS la Dynamic
+    // Island — « Publier » et « Annuler » devenaient intouchables.
+    const { topInset } = computeMediaOverlayLayout({
+      screenH: 852,
+      insetTop: 0,
+      insetBottom: 0,
+      platform: 'ios',
+    });
+    expect(topInset).toBe(IOS_NOTCH_FALLBACK);
+  });
+
+  it('respecte un inset iOS reel au pixel pres, sans gonfler un ecran sans encoche', () => {
+    // L'iPhone SE annonce 20 : le repli ne doit PAS s'appliquer.
+    const { topInset } = computeMediaOverlayLayout({
+      screenH: 667,
+      insetTop: 20,
+      insetBottom: 0,
+      platform: 'ios',
+    });
+    expect(topInset).toBe(20);
   });
 
   it('respecte la hauteur réelle de la status bar quand l\'inset Android tombe à 0', () => {
