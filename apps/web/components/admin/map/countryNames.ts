@@ -32,6 +32,21 @@ export function countryName(code: string | null | undefined): string {
   }
 }
 
+/**
+ * « NE » → 🇳🇪. Les drapeaux Unicode sont deux « indicateurs régionaux », soit
+ * la lettre décalée de 'A' vers U+1F1E6 — aucune image ni dépendance à charger.
+ * Renvoie une chaîne vide sur un code inexploitable, pour que l'appelant puisse
+ * simplement ne rien afficher.
+ */
+export function countryFlag(code: string | null | undefined): string {
+  if (!code) return "";
+  const cc = code.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return "";
+  return String.fromCodePoint(
+    ...[...cc].map((c) => 0x1f1e6 + (c.charCodeAt(0) - 65)),
+  );
+}
+
 /** « Niamey, NE » → « Niamey, Niger ». */
 export function placeLabel(
   city: string | null,

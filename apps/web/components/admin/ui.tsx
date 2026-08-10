@@ -3,7 +3,8 @@
 // Small, dependency-free UI primitives shared across the admin sections.
 // Kept intentionally plain — this is an internal tool, clarity over flourish.
 
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { LucideProps } from "lucide-react";
 import { TrendingDown, TrendingUp, Minus } from "lucide-react";
 
@@ -477,6 +478,67 @@ export function SidebarItem({
 }
 
 // Panel state helpers: a consistent empty + loading look for chart cards.
+/**
+ * Boîte de dialogue modale, rendue en PORTAIL sur `document.body`.
+ *
+ * Deux raisons, apprises à la dure sur la carte des membres : une modale posée
+ * en `fixed z-50` à côté d'une carte Leaflet passe DERRIÈRE elle — les panes de
+ * Leaflet montent à 400-700 et ses contrôles à 1000, donc la fenêtre s'ouvrait
+ * sans qu'on puisse cliquer dedans. Le portail la sort de tout contexte
+ * d'empilement local, et le z-index la met au-dessus de Leaflet.
+ *
+ * Ferme sur Échap et sur clic dans le fond, et rend le fond inerte au clavier.
+ */
+export function Modal({
+  onClose,
+  labelledBy,
+  children,
+  className = "w-full max-w-md",
+}: {
+  onClose: () => void;
+  /** id du titre, pour aria-labelledby. */
+  labelledBy?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    // Le fond ne doit pas défiler sous la modale.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[2000] grid place-items-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        className={className}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function PanelEmpty({
   message = "Aucune donnée",
 }: {

@@ -850,6 +850,8 @@ export interface AdminUserSummary {
   countryCode: string | null;
   identityStatus: IdentityDistStatus;
   isAmbassador: boolean;
+  /** Date de nomination du badge. `null` pour les badges posés avant son suivi. */
+  ambassadorSince: string | null;
   createdAt: string;
 }
 
@@ -898,6 +900,8 @@ export interface AdminUser {
   emailVerified: boolean;
   identityStatus: IdentityDistStatus;
   isAmbassador: boolean;
+  /** Date de nomination du badge. `null` pour les badges posés avant son suivi. */
+  ambassadorSince: string | null;
   createdAt: string;
   lastLoginAt: string | null;
 }

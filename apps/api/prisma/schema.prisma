@@ -117,6 +117,11 @@ model User {
   // independent (a user can be identity-verified, an ambassador, both, or neither).
   // Toggled only from the tenant admin console; never self-assigned.
   isAmbassador   Boolean        @default(false) @map("is_ambassador")
+  // Instant de nomination, pose par la console admin en meme temps que le badge
+  // et efface quand on le retire. Sans lui, la console peut lister QUI est
+  // ambassadeur mais jamais depuis quand — l'info que reclame la relecture d'un
+  // reseau de referents.
+  ambassadorSince DateTime?     @map("ambassador_since") @db.Timestamptz
   role           UserRole       @default(user)
   status         UserStatus     @default(active)
   // Sanction metadata (set alongside status by the admin console). statusReason

@@ -15,7 +15,7 @@ import {
   openPreciseLocationWindow,
   type PreciseLocationWindow,
 } from "@/lib/adminApi";
-import { Card, ErrorBanner, GhostButton, PrimaryButton } from "../ui";
+import { Card, ErrorBanner, GhostButton, Modal, PrimaryButton } from "../ui";
 
 const FIELD =
   "w-full px-3 py-2 rounded-lg border border-[#E5D5C3] bg-white text-[#1A0F0A] text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50";
@@ -204,17 +204,11 @@ export function PreciseLocationDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
-      onClick={onClose}
-    >
+    // <Modal> rend en portail au-dessus de Leaflet : posee ici en `fixed z-50`,
+    // la fenetre passait DERRIERE la carte et devenait incliquable.
+    <Modal onClose={onClose} labelledBy="precise-location-title">
       <Card className="w-full max-w-md p-5">
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="precise-location-title"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div>
           <div className="flex items-start gap-2.5 mb-4">
             <span className="mt-0.5 grid place-items-center w-8 h-8 rounded-lg bg-[#FCE8E8] text-[#B91C1C] shrink-0">
               <AlertTriangle size={18} strokeWidth={2} aria-hidden="true" />
@@ -293,6 +287,6 @@ export function PreciseLocationDialog({
           </div>
         </div>
       </Card>
-    </div>
+    </Modal>
   );
 }

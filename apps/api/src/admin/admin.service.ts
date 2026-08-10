@@ -786,6 +786,7 @@ export class AdminService {
         countryCode: true,
         identityStatus: true,
         isAmbassador: true,
+        ambassadorSince: true,
         createdAt: true,
       },
     });
@@ -804,7 +805,10 @@ export class AdminService {
   async setAmbassador(userId: string, value: boolean): Promise<{ id: string; isAmbassador: boolean }> {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { isAmbassador: value },
+      // La date de nomination suit le badge : posée en même temps, effacée avec
+      // lui. Sans elle la console listait les ambassadeurs sans jamais pouvoir
+      // dire depuis quand — et un badge retiré puis remis doit repartir de zéro.
+      data: { isAmbassador: value, ambassadorSince: value ? new Date() : null },
       select: { id: true, isAmbassador: true },
     });
   }
@@ -827,6 +831,7 @@ export class AdminService {
     emailVerified: true,
     identityStatus: true,
     isAmbassador: true,
+    ambassadorSince: true,
     createdAt: true,
     lastLoginAt: true,
   } as const satisfies Prisma.UserSelect;
@@ -1002,6 +1007,7 @@ export class AdminService {
     phoneVerified: true,
     identityStatus: true,
     isAmbassador: true,
+    ambassadorSince: true,
     mfaEnabled: true,
     canBulkInvite: true,
     privacyLevel: true,
