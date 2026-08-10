@@ -31,14 +31,7 @@ import { MapCanvas, type MapCanvasHandle } from '@/components/map/MapCanvas';
 // Maps API key in the manifest (jamais injectée — cf. ADR-001 §clé), so the
 // native map crashes the app at interaction; Leaflet est le rendu Android tant
 // qu'une clé n'est pas ajoutée (rebuild requis le jour où on la met).
-//
-// iOS repasse sur Leaflet (1.14.0) : le rendu natif n'avait jamais tourné sur un
-// iPhone réel — les builds iOS s'étaient arrêtés au 30/06, avant que la carte
-// native n'arrive (a90413c). Premier build depuis, l'app se ferme à l'ouverture
-// de la Carte. Sans log de crash on ne corrige rien à l'aveugle : on revient au
-// rendu qui marchait, identique à Android. Remettre `Platform.OS === 'ios'` une
-// fois le crash natif diagnostiqué sur un build de dev.
-const USE_NATIVE_MAP = false;
+const USE_NATIVE_MAP = Platform.OS === 'ios';
 
 type Filter = 'all' | 'people' | 'associations';
 
