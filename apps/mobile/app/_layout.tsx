@@ -172,6 +172,7 @@ export default function RootLayout() {
                 <Stack.Screen name="verify-email" options={{ presentation: 'card' }} />
                 <Stack.Screen name="reset-password" options={{ presentation: 'card' }} />
                 <Stack.Screen name="complete-profile" options={{ presentation: 'card', gestureEnabled: false }} />
+                <Stack.Screen name="contact" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/terms" options={{ presentation: 'card' }} />
                 <Stack.Screen name="legal/privacy" options={{ presentation: 'card' }} />

@@ -1588,3 +1588,52 @@ export async function openPreciseLocationWindow(
 export function closePreciseLocationWindow(): Promise<void> {
   return adminFetch<void>("/admin/map/precise-location", { method: "DELETE" });
 }
+
+// ── Contact / partenariat ────────────────────────────────────────────────────
+// Messages envoyés depuis l'app (« Nous contacter »). La boîte de réception vit
+// dans la console ; un mail de notification part en parallèle vers contact@.
+
+export type ContactTopic = "partnership" | "info" | "problem" | "other";
+export type ContactStatus = "new" | "read" | "handled";
+
+export interface ContactMessage {
+  id: string;
+  topic: ContactTopic;
+  email: string;
+  phone: string | null;
+  subject: string;
+  message: string;
+  status: ContactStatus;
+  createdAt: string;
+  handledAt: string | null;
+  user: {
+    id: string;
+    displayName: string | null;
+    firstName: string | null;
+    avatarUrl: string | null;
+  } | null;
+}
+
+export interface ContactListResponse {
+  items: ContactMessage[];
+  nextCursor: string | null;
+  /** Messages jamais ouverts — alimente la pastille de la sidebar. */
+  newCount: number;
+}
+
+export function fetchContactMessages(
+  status: ContactStatus | "all",
+  signal?: AbortSignal,
+): Promise<ContactListResponse> {
+  return adminFetch<ContactListResponse>(`/admin/contact?status=${status}`, { signal });
+}
+
+export function setContactStatus(
+  id: string,
+  status: ContactStatus,
+): Promise<ContactMessage> {
+  return adminFetch<ContactMessage>(`/admin/contact/${id}`, {
+    method: "PATCH",
+    body: { status },
+  });
+}

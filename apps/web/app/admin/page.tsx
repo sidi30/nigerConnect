@@ -6,6 +6,7 @@ import {
   Activity,
   Award,
   LayoutDashboard,
+  Inbox,
   LifeBuoy,
   Lock,
   Mail,
@@ -25,6 +26,7 @@ import OverviewSection from "@/components/admin/OverviewSection";
 import IdentitySection from "@/components/admin/IdentitySection";
 import DobBackfillSection from "@/components/admin/DobBackfillSection";
 import ReportsSection from "@/components/admin/ReportsSection";
+import ContactSection from "@/components/admin/ContactSection";
 import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
 import ReferralsSection from "@/components/admin/ReferralsSection";
@@ -40,6 +42,7 @@ type Tab =
   | "identity"
   | "users"
   | "reports"
+  | "contact"
   | "newsletter"
   | "invitations"
   | "referrals"
@@ -58,6 +61,7 @@ const NAV: NavEntry[] = [
   { id: "identity", label: "Identité", icon: ShieldCheck },
   { id: "users", label: "Utilisateurs", icon: UserCog },
   { id: "reports", label: "Support & Modération", icon: LifeBuoy },
+  { id: "contact", label: "Contact & partenariats", icon: Inbox },
   { id: "invitations", label: "Invitations", icon: Users },
   { id: "referrals", label: "Réseau", icon: Network },
   { id: "security", label: "Sécurité", icon: Lock },
@@ -144,6 +148,7 @@ export default function AdminDashboardPage() {
           <MapSection role={role} onOpenUsersSection={() => setTab("users")} />
         ) : null}
         {tab === "reports" ? <ReportsSection /> : null}
+        {tab === "contact" ? <ContactSection /> : null}
         {tab === "newsletter" ? <NewsletterSection /> : null}
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
         {tab === "referrals" ? <ReferralsSection /> : null}

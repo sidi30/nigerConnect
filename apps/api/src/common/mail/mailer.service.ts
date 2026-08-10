@@ -17,6 +17,13 @@ export interface SendMailInput {
    * "Unsubscribe" link — required for bulk-mail reputation.
    */
   unsubscribeUrl?: string;
+  /**
+   * Adresse de réponse, quand elle diffère de l'expéditeur de la plateforme.
+   * Sert au mail de notification de contact : le staff répond directement au
+   * membre depuis son client mail. L'expéditeur (From) reste le domaine signé
+   * DKIM — surcharger le From casserait l'alignement DMARC.
+   */
+  replyTo?: string;
 }
 
 /**
@@ -109,7 +116,7 @@ export class MailerService implements OnModuleInit {
         subject: input.subject,
         html: input.html,
         text: input.text,
-        replyTo: this.fromAddress,
+        replyTo: input.replyTo ?? this.fromAddress,
         // Pin the Message-ID to the sending domain. By default nodemailer derives
         // it from the container's os.hostname() (a random hex id), which weakens
         // domain alignment and looks suspicious. Always emit <uuid@nigerconnect.app>.
@@ -575,5 +582,51 @@ export class MailerService implements OnModuleInit {
     const text = `${bodyText}\n\n—\nSe désinscrire : ${unsubscribeUrl}`;
     const html = this.layout({ preheader: subject, bodyHtml: fullBody });
     await this.send({ to, subject, html, text, unsubscribeUrl, attachments });
+  }
+
+  /**
+   * Notification interne : un membre vient d'écrire depuis « Nous contacter ».
+   * Part vers l'adresse de contact de la plateforme (MAIL_FROM), pas vers un
+   * utilisateur — le message reste consultable dans la console admin, ce mail
+   * évite juste d'avoir à l'ouvrir pour savoir qu'il y a du nouveau.
+   *
+   * `replyTo` pointe l'adresse de l'expéditeur : répondre dans le client mail
+   * suffit, sans repasser par la console.
+   *
+   * Tout est échappé — le contenu vient d'un formulaire public.
+   */
+  async sendContactNotification(input: {
+    topic: string;
+    subject: string;
+    message: string;
+    fromEmail: string;
+    fromPhone?: string | null;
+    fromName?: string | null;
+  }): Promise<void> {
+    const b = MailerService.BRAND;
+    const name = this.esc(input.fromName) || 'Un membre';
+    const bodyHtml = `
+      <h1 style="margin:8px 0 16px;font-size:22px;font-weight:800;color:${b.brown};">Nouveau message de contact 📬</h1>
+      <p style="margin:0 0 12px;"><strong>${name}</strong> a écrit depuis l'app.</p>
+      <p style="margin:0 0 4px;font-size:13px;color:${b.tan500};">Sujet (${this.esc(input.topic)})</p>
+      <p style="margin:0 0 16px;font-weight:700;color:${b.brown};">${this.esc(input.subject)}</p>
+      <div style="margin:0 0 20px;padding:14px;background:${b.tan100};border-radius:10px;white-space:pre-wrap;">${this.esc(
+        input.message,
+      )}</div>
+      <p style="margin:0 0 4px;font-size:13px;color:${b.tan500};">Répondre à</p>
+      <p style="margin:0 0 4px;">${this.esc(input.fromEmail)}</p>
+      ${input.fromPhone ? `<p style="margin:0 0 4px;">${this.esc(input.fromPhone)}</p>` : ''}`;
+    const text =
+      `NigerConnect — Nouveau message de contact\n\n` +
+      `De : ${name} <${input.fromEmail}>${input.fromPhone ? ` — ${input.fromPhone}` : ''}\n` +
+      `Sujet (${input.topic}) : ${input.subject}\n\n${input.message}`;
+    const html = this.layout({ preheader: `Contact — ${input.subject}`, bodyHtml });
+    await this.send({
+      to: this.fromAddress,
+      subject: `[Contact] ${input.subject}`,
+      html,
+      text,
+      replyTo: input.fromEmail,
+    });
   }
 }

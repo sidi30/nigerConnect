@@ -2,7 +2,7 @@
   "expo": {
     "name": "NigerConnect",
     "slug": "nigerconnect",
-    "version": "1.13.0",
+    "version": "1.14.0",
     "orientation": "portrait",
     "//platforms": "Cibles natives uniquement. `eas update` exporte --platform=all : sans ceci il tente le web, où react-native-maps (importé par MapCanvas) casse le bundle et fait échouer tout l'OTA. Le site vit dans apps/web (Next.js).",
     "platforms": ["ios", "android"],

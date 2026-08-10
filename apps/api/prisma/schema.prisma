@@ -214,6 +214,8 @@ model User {
   invitesSent      Invitation[] @relation("UserInvitesSent")
   invitesAccepted  Invitation[] @relation("UserInviteAccepted")
 
+  contactMessages  ContactMessage[] @relation("UserContactMessages")
+
   // Unique per OAuth identity so concurrent link-or-create requests can't mint
   // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
   // Both columns are nullable; Postgres treats NULLs as distinct, so the many
@@ -383,6 +385,22 @@ enum InvitationKind {
   // Lien partageable réutilisable : N inscriptions, jamais consommé
   // (status reste pending = actif). Réservé aux users canBulkInvite.
   reusable
+}
+
+enum ContactTopic {
+  partnership
+  info
+  problem
+  other
+}
+
+enum ContactStatus {
+  // Jamais ouvert dans la console.
+  new
+  // Lu, en attente de réponse.
+  read
+  // Traité : sort de la liste par défaut.
+  handled
 }
 
 enum ReportTargetType {
@@ -1266,6 +1284,36 @@ model Invitation {
   @@index([status, expiresAt])
   @@index([status, targetEmail])
   @@map("invitations")
+}
+
+// ── Contact / partenariat ────────────────────────────────────────
+// Messages envoyés depuis l'app (« Nous contacter »). Ils atterrissent dans la
+// console admin ; un mail de notification part en parallèle vers l'adresse de
+// contact pour ne pas dépendre d'une consultation régulière de la console.
+model ContactMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  // null = message envoyé sans compte (formulaire public web plus tard).
+  // SetNull plutôt que Cascade : la suppression d'un compte ne doit pas effacer
+  // une discussion de partenariat en cours.
+  userId    String?       @map("user_id") @db.Uuid
+  user      User?         @relation("UserContactMessages", fields: [userId], references: [id], onDelete: SetNull)
+  topic     ContactTopic  @default(info)
+  // Email de réponse : celui du compte par défaut, modifiable dans le formulaire.
+  email     String        @db.VarChar(254)
+  // Optionnel — l'expéditeur peut préférer être rappelé.
+  phone     String?       @db.VarChar(32)
+  subject   String        @db.VarChar(140)
+  message   String        @db.VarChar(4000)
+  status    ContactStatus @default(new)
+  // Trace de traitement : qui a changé le statut, et quand.
+  handledById String?     @map("handled_by_id") @db.Uuid
+  handledAt DateTime?     @map("handled_at") @db.Timestamptz
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  // Liste admin : filtre par statut, tri antéchronologique.
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("contact_messages")
 }
 
 // ── Réglages runtime ─────────────────────────────────────────────

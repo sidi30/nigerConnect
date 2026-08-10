@@ -30,6 +30,7 @@ import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { InvitationsModule } from './invitations/invitations.module';
+import { ContactModule } from './contact/contact.module';
 import { DigestModule } from './digest/digest.module';
 import { ObservabilityModule } from './observability/observability.module';
 
@@ -66,6 +67,7 @@ import { ObservabilityModule } from './observability/observability.module';
     AdminModule,
     NewsletterModule,
     InvitationsModule,
+    ContactModule,
     DigestModule,
     ObservabilityModule,
   ],
