@@ -66,18 +66,17 @@ export interface UploadedStoryVideo {
 export async function pickStoryVideo(
   source: UploadSource = 'library',
 ): Promise<PickedStoryVideo | null> {
-  const permissionFn =
-    source === 'camera'
-      ? ImagePicker.requestCameraPermissionsAsync
-      : ImagePicker.requestMediaLibraryPermissionsAsync;
-  const perm = await permissionFn();
-  if (!perm.granted) {
-    throw new UploadError(
-      source === 'camera'
-        ? "Autorise l'accès à la caméra dans les réglages de ton appareil."
-        : "Autorise l'accès à tes vidéos dans les réglages de ton appareil.",
-      'permission_denied',
-    );
+  // Comme pour les photos : seule la capture caméra exige une permission. Le
+  // choix dans la galerie passe par le sélecteur système, qui ne rend que le
+  // clip choisi (voir uploadService.pickImage).
+  if (source === 'camera') {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      throw new UploadError(
+        "Autorise l'accès à la caméra dans les réglages de ton appareil.",
+        'permission_denied',
+      );
+    }
   }
 
   const launchFn =

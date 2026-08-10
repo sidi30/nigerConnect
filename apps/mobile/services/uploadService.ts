@@ -211,18 +211,20 @@ export async function pickImage(
   kind: UploadKind,
   source: UploadSource = 'library',
 ): Promise<PickedImage | null> {
-  const permissionFn =
-    source === 'camera'
-      ? ImagePicker.requestCameraPermissionsAsync
-      : ImagePicker.requestMediaLibraryPermissionsAsync;
-  const perm = await permissionFn();
-  if (!perm.granted) {
-    throw new UploadError(
-      source === 'camera'
-        ? "Autorise l'accès à la caméra dans les réglages de ton appareil."
-        : "Autorise l'accès à tes photos dans les réglages de ton appareil.",
-      'permission_denied',
-    );
+  // Seule la caméra exige une permission. Ouvrir la galerie n'en demande
+  // AUCUNE : expo-image-picker délègue au sélecteur système (PickVisualMedia
+  // sur Android, PHPickerViewController sur iOS), qui affiche les photos et ne
+  // rend que celle choisie — l'app ne voit jamais le reste. Demander l'accès à
+  // toute la photothèque ne servait donc à rien, et c'est ce qui déclenchait la
+  // déclaration Play « Photo and video permissions ».
+  if (source === 'camera') {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      throw new UploadError(
+        "Autorise l'accès à la caméra dans les réglages de ton appareil.",
+        'permission_denied',
+      );
+    }
   }
 
   const launchFn =
@@ -247,14 +249,7 @@ export async function pickImages(
   kind: UploadKind,
   max = 6,
 ): Promise<PickedImage[]> {
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) {
-    throw new UploadError(
-      "Autorise l'accès à tes photos dans les réglages de ton appareil.",
-      'permission_denied',
-    );
-  }
-
+  // Pas de demande de permission : le sélecteur système suffit (voir pickImage).
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     allowsMultipleSelection: true,

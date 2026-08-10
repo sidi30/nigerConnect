@@ -31,7 +31,14 @@ export async function saveImageToGallery(url: string): Promise<void> {
 
   if (!/^https:\/\//i.test(url)) throw new DownloadError('URL non sécurisée.', 'not_supported');
 
-  const perm = await MediaLibrary.requestPermissionsAsync();
+  // ÉCRITURE SEULE. On ajoute une image à la pellicule, on n'a jamais besoin de
+  // la lire — et le mode complet réclame READ_MEDIA_IMAGES/VIDEO, c'est-à-dire
+  // l'accès à toute la photothèque. Ces permissions ne sont plus déclarées
+  // (déclaration Play « Photo and video permissions ») et les demander lèverait
+  // une exception : `assertGranularPermissionIntegrity` refuse une permission
+  // absente du manifeste. En écriture seule, expo-media-library ne demande rien
+  // sur Android 13+, où l'ajout ne requiert plus aucune permission.
+  const perm = await MediaLibrary.requestPermissionsAsync(true);
   if (!perm.granted) {
     throw new DownloadError(
       "Autorise l'accès à tes photos pour enregistrer l'image.",
