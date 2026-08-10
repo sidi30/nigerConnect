@@ -46,8 +46,15 @@ groups:
       # PC pose déjà une bannière sur le Bureau, mais un PC éteint ne pose rien
       # du tout — d'où cette vérification côté serveur, qui est la seule à
       # fonctionner dans le cas qui compte.
+      #
+      # Le `or absent(...)` n'est pas un détail : sans lui, une métrique qui
+      # DISPARAÎT — collecteur cassé, dossier effacé, node-exporter reconfiguré —
+      # rend l'expression vide, et une expression vide ne déclenche rien. La
+      # panne la plus grave serait alors la plus silencieuse.
       - alert: SauvegardeEnRetard
-        expr: time() - nigerconnect_backup_last_success_timestamp_seconds > 172800
+        expr: |
+          (time() - nigerconnect_backup_last_success_timestamp_seconds > 172800)
+            or absent(nigerconnect_backup_last_success_timestamp_seconds)
         for: 1h
         labels:
           severity: critical

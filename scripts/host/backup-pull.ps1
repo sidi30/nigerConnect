@@ -129,15 +129,30 @@ try {
 
     # --- 1. fabrication cote serveur -------------------------------------
     Write-Log 'Preparation des archives chiffrees sur le VPS...'
+    # ssh et scp ecrivent leur progression sur stderr. Si l'appelant a redirige
+    # les flux (`... 2>&1`), PowerShell emballe chaque ligne dans un ErrorRecord
+    # et, avec ErrorActionPreference a 'Stop', la PREMIERE ligne de trace fait
+    # echouer la sauvegarde. On desarme donc cette conversion autour des appels
+    # natifs ; le vrai verdict reste $LASTEXITCODE.
+    $eaPrecedent = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $sortie = & ssh -o BatchMode=yes -o ConnectTimeout=20 $VpsHost "/opt/ops/backup-prepare.sh $Recipient"
     $codePrepare = $LASTEXITCODE
+    $ErrorActionPreference = $eaPrecedent
     if ($null -eq $sortie -or $sortie.Count -eq 0) {
         throw "Le VPS n'a rien renvoye (ssh injoignable ou script absent)"
     }
-    # Le script n'ecrit que le chemin sur stdout, ses traces vont sur stderr.
-    $remoteDir = ($sortie | Select-Object -Last 1).Trim()
-    if ($remoteDir -notmatch '^/opt/backups/outbox/\d{8}-\d{6}$') {
-        throw "Chemin distant inattendu : '$remoteDir'"
+    # Le script distant n'ecrit que le chemin sur stdout, ses traces vont sur
+    # stderr — mais selon la maniere dont ce script est appele (une redirection
+    # 2>&1 en amont, par exemple), les deux flux peuvent se retrouver melanges.
+    # On ne prend donc PAS « la derniere ligne » : on cherche celle qui a la
+    # forme d'un chemin d'outbox, ce qui reste vrai dans les deux cas.
+    $remoteDir = $sortie |
+        ForEach-Object { "$_".Trim() } |
+        Where-Object { $_ -match '^/opt/backups/outbox/\d{8}-\d{6}$' } |
+        Select-Object -Last 1
+    if (-not $remoteDir) {
+        throw "Aucun chemin d'outbox dans la reponse du VPS"
     }
     if ($codePrepare -ne 0) {
         # On rapatrie quand meme : une sauvegarde partielle vaut mieux que rien,
@@ -152,8 +167,12 @@ try {
     $snapshotDir = Join-Path $Destination $stamp
     if (Test-Path $snapshotDir) { Remove-Item $snapshotDir -Recurse -Force }
     Write-Log "Transfert vers $snapshotDir ..."
+    $eaPrecedent = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & scp -r -q -o BatchMode=yes -o ConnectTimeout=20 "${VpsHost}:$remoteDir" $Destination
-    if ($LASTEXITCODE -ne 0) { throw "Echec du transfert scp (code $LASTEXITCODE)" }
+    $codeScp = $LASTEXITCODE
+    $ErrorActionPreference = $eaPrecedent
+    if ($codeScp -ne 0) { throw "Echec du transfert scp (code $codeScp)" }
     if (-not (Test-Path $snapshotDir)) { throw "Dossier absent apres transfert : $snapshotDir" }
 
     # --- 3. verification d'integrite --------------------------------------
@@ -189,11 +208,15 @@ try {
     # les archives, un transfert qui echoue en boucle laisserait une metrique
     # parfaitement fraiche et personne ne serait prevenu.
     #
-    # Chaine en guillemets SIMPLES : PowerShell ne doit pas toucher aux $ ni au
-    # $(date), qui sont destines au shell distant.
-    $signal = 'd=/var/lib/node-exporter/textfile; mkdir -p $d && { echo "# HELP nigerconnect_backup_last_success_timestamp_seconds Horodatage de la derniere sauvegarde hors site verifiee."; echo "# TYPE nigerconnect_backup_last_success_timestamp_seconds gauge"; echo "nigerconnect_backup_last_success_timestamp_seconds $(date +%s)"; } > $d/.b.tmp && mv -f $d/.b.tmp $d/backup.prom && chmod 644 $d/backup.prom'
-    & ssh -o BatchMode=yes $VpsHost $signal
-    if ($LASTEXITCODE -eq 0) { Write-Log 'Fraicheur signalee au serveur (metrique node-exporter)' }
+    # La logique vit dans un script SUR le serveur : la meme chose ecrite en une
+    # ligne ici traversait les guillemets de PowerShell puis ceux du shell
+    # distant, et finissait en « syntax error: unexpected end of file ».
+    $eaPrecedent = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & ssh -o BatchMode=yes $VpsHost '/opt/ops/backup-mark-success.sh'
+    $codeSignal = $LASTEXITCODE
+    $ErrorActionPreference = $eaPrecedent
+    if ($codeSignal -eq 0) { Write-Log 'Fraicheur signalee au serveur (metrique node-exporter)' }
     else { Write-Log 'Signal de fraicheur non ecrit - une alerte email suivra sous 48 h' 'WARN' }
 
     # --- 6. retention -----------------------------------------------------

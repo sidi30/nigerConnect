@@ -95,16 +95,28 @@ AM_PASS="$AM_DIR/smtp_password"
 ALERTING=0
 
 if [[ -f "$AM_TMPL" ]]; then
-  # shellcheck disable=SC1090
-  SMTP_HOST=$(grep -m1 '^SMTP_HOST=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
-  SMTP_PORT=$(grep -m1 '^SMTP_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
-  SMTP_USER=$(grep -m1 '^SMTP_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
-  SMTP_PASS=$(grep -m1 '^SMTP_PASS=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
-  MAIL_FROM=$(grep -m1 '^MAIL_FROM=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
-  ALERT_TO=$(grep -m1 '^ALERT_EMAIL_TO=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  # `|| true` OBLIGATOIRE : grep sort en 1 quand la clé est absente, et avec
+  # `set -e` cela tuait le script sans le moindre message. Une clé facultative
+  # ne doit pas faire échouer un déploiement.
+  #
+  # Ne JAMAIS tracer cette fonction (`bash -x`) : elle manipule le mot de passe
+  # SMTP, qui se retrouverait en clair dans la sortie.
+  read_env() { grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"'"'"'' || true; }
+
+  SMTP_HOST=$(read_env SMTP_HOST)
+  SMTP_PORT=$(read_env SMTP_PORT)
+  SMTP_USER=$(read_env SMTP_USER)
+  SMTP_PASS=$(read_env SMTP_PASS)
+  MAIL_FROM=$(read_env MAIL_FROM)
+  ALERT_TO=$(read_env ALERT_EMAIL_TO)
   # À défaut de destinataire dédié, on écrit à l'expéditeur : mieux vaut une
-  # alerte dans une boîte imparfaite qu'une alerte nulle part.
-  ALERT_TO="${ALERT_TO:-$MAIL_FROM}"
+  # alerte dans une boîte imparfaite qu'une alerte nulle part. MAIL_FROM a la
+  # forme « Nom <adresse> » ; on n'en garde que l'adresse, un destinataire
+  # n'acceptant pas le nom d'affichage.
+  if [[ -z "$ALERT_TO" ]]; then
+    ALERT_TO=$(printf '%s' "$MAIL_FROM" | sed -n 's/.*<\(.*\)>.*/\1/p')
+    ALERT_TO="${ALERT_TO:-$MAIL_FROM}"
+  fi
   # Port 465 = TLS implicite, Alertmanager ne doit pas tenter de STARTTLS.
   REQUIRE_TLS="true"; [[ "$SMTP_PORT" == "465" ]] && REQUIRE_TLS="false"
 
