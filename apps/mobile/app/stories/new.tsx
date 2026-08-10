@@ -2,6 +2,8 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -118,7 +120,6 @@ export default function NewStoryScreen() {
   const busy = mut.isPending || vState.phase === 'uploading';
   const canPublish =
     (mode === 'image' && !!mediaUrl) || (mode === 'video' && vState.phase === 'ready');
-  const hasMedia = mode !== 'none';
 
   return (
     // Ecran en `fullScreenModal` : il couvre l'encoche, et l'inset haut y remonte
@@ -133,58 +134,81 @@ export default function NewStoryScreen() {
           <Text style={styles.cancel}>Annuler</Text>
         </Pressable>
         <Text style={styles.title}>Nouvelle story</Text>
-        <Pressable
-          onPress={() => mut.mutate()}
-          disabled={!canPublish || busy}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Publier la story"
-          style={[styles.publish, (!canPublish || busy) && { opacity: 0.4 }]}
-        >
-          <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
-          <Text style={styles.publishLabel}>{busy ? '…' : 'Publier'}</Text>
-        </Pressable>
+        {/* Contrepoids du bouton Annuler : garde le titre centre maintenant que
+            « Publier » a quitte le bandeau pour rejoindre la legende. */}
+        <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.canvas}>
-        {mode === 'image' && mediaUrl ? (
-          <>
-            <Image source={{ uri: mediaUrl }} style={styles.image} contentFit="cover" />
-            <CaptionInput value={caption} onChangeText={setCaption} />
-            <Pressable onPress={resetMedia} style={styles.removeBtn}>
-              <Feather name="x" size={18} color={Colors.white} />
+      {/* « Publier » vit desormais a cote du champ de legende, donc juste
+          au-dessus du clavier : sans ca, taper une legende masquerait l'action
+          principale. */}
+      <KeyboardAvoidingView
+        style={styles.canvasWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.canvas}>
+          {mode === 'image' && mediaUrl ? (
+            <>
+              <Image source={{ uri: mediaUrl }} style={styles.image} contentFit="cover" />
+              <CaptionInput
+                value={caption}
+                onChangeText={setCaption}
+                onPublish={() => mut.mutate()}
+                canPublish={canPublish}
+                busy={busy}
+              />
+              <Pressable onPress={resetMedia} hitSlop={10} style={styles.removeBtn}>
+                <Feather name="x" size={18} color={Colors.white} />
+              </Pressable>
+            </>
+          ) : mode === 'video' ? (
+            <VideoStage
+              state={vState}
+              caption={caption}
+              onCaption={setCaption}
+              onCancel={video.cancel}
+              onRetry={() => void video.retry('library')}
+              onRemove={resetMedia}
+              onPublish={() => mut.mutate()}
+              canPublish={canPublish}
+              busy={busy}
+            />
+          ) : (
+            <Pressable onPress={openPicker} disabled={uploading} style={styles.placeholder}>
+              <Feather name="camera" size={48} color="rgba(255,255,255,0.9)" />
+              <Text style={styles.placeholderText}>Touche pour choisir une photo ou une vidéo</Text>
+              <Text style={styles.placeholderHint}>
+                Ta story sera visible par tes amis pendant 24h. Les vidéos sont sans son (30s max).
+              </Text>
             </Pressable>
-          </>
-        ) : mode === 'video' ? (
-          <VideoStage
-            state={vState}
-            caption={caption}
-            onCaption={setCaption}
-            onCancel={video.cancel}
-            onRetry={() => void video.retry('library')}
-            onRemove={resetMedia}
-          />
-        ) : (
-          <Pressable onPress={openPicker} disabled={uploading} style={styles.placeholder}>
-            <Feather name="camera" size={48} color="rgba(255,255,255,0.9)" />
-            <Text style={styles.placeholderText}>Touche pour choisir une photo ou une vidéo</Text>
-            <Text style={styles.placeholderHint}>
-              Ta story sera visible par tes amis pendant 24h. Les vidéos sont sans son (30s max).
-            </Text>
-          </Pressable>
-        )}
-      </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
+/**
+ * Légende + action de publication, sur une même ligne au bas du média.
+ *
+ * « Publier » était dans le bandeau du haut, où il se dessinait dans l'encoche
+ * sur les iPhone récents — donc intouchable. Ici il est à portée de pouce et
+ * hors de toute zone système, quoi que raconte l'inset de sécurité.
+ */
 function CaptionInput({
   value,
   onChangeText,
+  onPublish,
+  canPublish,
+  busy,
 }: {
   value: string;
   onChangeText: (v: string) => void;
+  onPublish: () => void;
+  canPublish: boolean;
+  busy: boolean;
 }) {
+  const disabled = !canPublish || busy;
   return (
     <View style={styles.captionWrap}>
       <TextInput
@@ -194,7 +218,24 @@ function CaptionInput({
         placeholderTextColor="rgba(255,255,255,0.7)"
         style={styles.caption}
         maxLength={500}
+        multiline
       />
+      <Pressable
+        onPress={onPublish}
+        disabled={disabled}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Publier la story"
+        accessibilityState={{ disabled }}
+        style={[styles.publish, disabled && { opacity: 0.4 }]}
+      >
+        <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+        {busy ? (
+          <ActivityIndicator size="small" color={Colors.white} />
+        ) : (
+          <Text style={styles.publishLabel}>Publier</Text>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -206,6 +247,9 @@ function VideoStage({
   onCancel,
   onRetry,
   onRemove,
+  onPublish,
+  canPublish,
+  busy,
 }: {
   state: ReturnType<typeof useStoryVideoUpload>['state'];
   caption: string;
@@ -213,6 +257,9 @@ function VideoStage({
   onCancel: () => void;
   onRetry: () => void;
   onRemove: () => void;
+  onPublish: () => void;
+  canPublish: boolean;
+  busy: boolean;
 }) {
   const { phase, progress, prepared, error } = state;
   const pct = Math.round(progress * 100);
@@ -235,7 +282,13 @@ function VideoStage({
       ) : null}
 
       {(phase === 'ready' || phase === 'uploading') && (
-        <CaptionInput value={caption} onChangeText={onCaption} />
+        <CaptionInput
+          value={caption}
+          onChangeText={onCaption}
+          onPublish={onPublish}
+          canPublish={canPublish}
+          busy={busy}
+        />
       )}
 
       {phase === 'compressing' || phase === 'uploading' ? (
@@ -290,9 +343,16 @@ const styles = StyleSheet.create({
   cancelBtn: { flexDirection: 'row', alignItems: 'center' },
   cancel: { color: 'rgba(255,255,255,0.9)', fontSize: Typography.sizes.md, fontWeight: '600' },
   title: { fontSize: Typography.sizes.md, fontWeight: '700', color: Colors.white },
+  headerSpacer: { width: 76 },
+  canvasWrap: { flex: 1 },
   publish: {
     paddingHorizontal: Spacing.md + 2,
-    paddingVertical: 8,
+    // 44 px : la cible tactile minimale recommandee, hauteur alignee sur le
+    // champ de legende a cote.
+    minHeight: 44,
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: Radii.md,
     overflow: 'hidden',
   },
@@ -325,11 +385,22 @@ const styles = StyleSheet.create({
     bottom: Spacing.xl,
     left: Spacing.lg,
     right: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: Spacing.sm,
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: Radii.md,
     padding: Spacing.md,
   },
-  caption: { color: Colors.white, fontSize: Typography.sizes.md, fontWeight: '600' },
+  caption: {
+    flex: 1,
+    color: Colors.white,
+    fontSize: Typography.sizes.md,
+    fontWeight: '600',
+    // Une legende de plusieurs lignes ne doit pas repousser le bouton hors du
+    // cadre : au-dela, le champ defile.
+    maxHeight: 96,
+  },
   removeBtn: {
     position: 'absolute',
     top: Spacing.md,
