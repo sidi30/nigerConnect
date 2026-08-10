@@ -17,7 +17,9 @@ import {
   FileText,
   Flag,
   Globe2,
+  IdCard,
   KeyRound,
+  MoonStar,
   ShieldCheck,
   TrendingUp,
   Users,
@@ -117,7 +119,74 @@ function useAsync<T>(
   };
 }
 
-export default function OverviewSection() {
+/**
+ * Ce qui attend une décision humaine, en haut de page.
+ *
+ * Le tableau de bord empilait des compteurs : vrais, mais aucun ne dit ce
+ * qu'il y a À FAIRE maintenant. Les signalements et les identités en attente
+ * dorment jusqu'à ce qu'un admin pense à ouvrir l'onglet — cette bande les
+ * ramène en tête, cliquables, et disparaît quand il n'y a rien à traiter.
+ *
+ * Volontairement pas un graphe : c'est un ÉTAT, pas une évolution. Chaque
+ * pastille porte une icône et un libellé, jamais la couleur seule.
+ */
+function ActionStrip({
+  metrics,
+  onNavigate,
+}: {
+  metrics: AdminMetrics | null;
+  onNavigate?: (tab: "reports" | "identity") => void;
+}) {
+  if (!metrics) return null;
+  const actions = [
+    {
+      key: "reports" as const,
+      count: metrics.moderation.reportsPending,
+      icon: Flag,
+      label: "signalement en attente",
+      plural: "signalements en attente",
+      // Rouge « serious » : un signalement non traité laisse un contenu
+      // potentiellement nuisible en ligne.
+      tone: "border-[#F4C7C7] bg-[#FDF1F1] text-[#B91C1C] hover:bg-[#FCE8E8]",
+    },
+    {
+      key: "identity" as const,
+      count: metrics.identity.pending,
+      icon: IdCard,
+      label: "identité à vérifier",
+      plural: "identités à vérifier",
+      tone: "border-[#F5DEB8] bg-[#FEF8EC] text-[#B45309] hover:bg-[#FEF3E2]",
+    },
+  ].filter((a) => a.count > 0);
+
+  if (actions.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-3">
+      {actions.map((a) => {
+        const Icon = a.icon;
+        return (
+          <button
+            key={a.key}
+            type="button"
+            onClick={() => onNavigate?.(a.key)}
+            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${a.tone}`}
+          >
+            <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span className="tabular-nums">{fmt(a.count)}</span>
+            <span>{a.count > 1 ? a.plural : a.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function OverviewSection({
+  onNavigate,
+}: {
+  onNavigate?: (tab: "reports" | "identity") => void;
+} = {}) {
   const [range, setRange] = useState<Range>(30);
 
   const metrics = useAsync<AdminMetrics>((s) => fetchMetrics(s), []);
@@ -135,6 +204,8 @@ export default function OverviewSection() {
 
   return (
     <div className="space-y-6">
+      <ActionStrip metrics={metrics.data} onNavigate={onNavigate} />
+
       {/* ---- KPI ROW ------------------------------------------------------ */}
       <KpiRow
         metrics={metrics.data}
@@ -382,8 +453,23 @@ function KpiRow({
         label="Utilisateurs"
         value={metrics.users.total}
         sublabel={
+          // Le total flatte ; ce qu'il cache, c'est combien de comptes n'ont
+          // PAS ouvert l'app du mois. Compté ici (total - MAU) parce que c'est
+          // la seule lecture qui distingue une communauté d'un fichier de
+          // comptes — et le premier chiffre à faire baisser.
           <span className="tabular-nums">
-            {fmt(metrics.activity.wau)} actifs sur 7j
+            {fmt(metrics.activity.wau)} actifs sur 7j ·{" "}
+            <span className="inline-flex items-center gap-1 text-[#8A6B4D]">
+              <MoonStar className="w-3 h-3" aria-hidden="true" />
+              {fmt(Math.max(0, metrics.users.total - metrics.activity.mau))} dormants
+              {metrics.users.total > 0
+                ? ` (${Math.round(
+                    (Math.max(0, metrics.users.total - metrics.activity.mau) /
+                      metrics.users.total) *
+                      100,
+                  )}%)`
+                : ""}
+            </span>
           </span>
         }
         spark={
