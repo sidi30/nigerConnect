@@ -262,15 +262,10 @@ export default function TabsLayout() {
             ),
           }}
         />
-        <Tabs.Screen
-          name="invite"
-          options={{
-            title: 'Inviter',
-            tabBarIcon: ({ focused, color }) => (
-              <TabIcon name="gift" color={color} focused={focused} />
-            ),
-          }}
-        />
+        {/* Inviter reste une route (/invite) mais quitte la barre : c'est une
+            action ponctuelle, pas une destination quotidienne. Point d'entrée
+            depuis Profil (menu + compteur « Filleuls »). */}
+        <Tabs.Screen name="invite" options={{ href: null, title: 'Inviter' }} />
         <Tabs.Screen
           name="profile"
           options={{

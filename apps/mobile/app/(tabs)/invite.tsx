@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Colors, Radii, Spacing, Typography, palette } from '@/constants/theme';
@@ -192,6 +193,17 @@ export default function InviteScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
+        {/* L'écran n'est plus un onglet : sans ce retour l'utilisateur n'a
+            aucune sortie sur iOS (pas de geste retour dans un Tabs). */}
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+          hitSlop={10}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Retour"
+        >
+          <Feather name="chevron-left" size={24} color={Colors.brown} />
+        </Pressable>
         <Text style={styles.headerTitle}>Inviter des amis</Text>
       </View>
 
@@ -491,12 +503,16 @@ function InviteRow({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.cream },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md + 4,
     borderBottomWidth: 1,
     borderBottomColor: Colors.tan200,
     backgroundColor: Colors.cream,
   },
+  backBtn: { marginLeft: -Spacing.sm },
   headerTitle: {
     fontSize: Typography.sizes.xl,
     fontFamily: Typography.fontFamily.serifBold,

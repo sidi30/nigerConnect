@@ -172,6 +172,17 @@ export default function FeedTab() {
           </Text>
         </View>
         <View style={styles.headerRight}>
+          {/* Inviter n'est plus un onglet : on garde un accès direct ici, le Fil
+              étant l'écran d'arrivée. */}
+          <Pressable
+            style={styles.iconBtn}
+            hitSlop={8}
+            onPress={() => router.push('/(tabs)/invite')}
+            accessibilityRole="button"
+            accessibilityLabel="Inviter des amis"
+          >
+            <Feather name="gift" size={18} color={Colors.brown} />
+          </Pressable>
           <Pressable
             style={styles.iconBtn}
             hitSlop={8}

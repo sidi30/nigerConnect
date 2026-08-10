@@ -41,6 +41,7 @@ const MENU_ITEMS: Array<{
   { icon: 'camera', label: 'Mes photos', href: '/settings/photos' as Href },
   { icon: 'check-circle', label: 'Vérification identité', href: '/settings/identity' as Href },
   { icon: 'users', label: 'Amis & Communauté', href: '/friends' as Href },
+  { icon: 'gift', label: 'Inviter des amis', href: '/invite' as Href },
   { icon: 'home', label: 'Mes associations', href: '/settings/associations' as Href },
   { icon: 'file-text', label: 'Pages', href: '/pages' as Href },
   { icon: 'briefcase', label: 'Mes demandes', href: '/settings/requests' as Href },
@@ -196,13 +197,29 @@ export default function ProfileTab() {
               { n: friendsCount, l: 'Amis' },
               { n: photosCount, l: 'Photos' },
               { n: assocsCount, l: 'Assos' },
-              { n: inviteesCount, l: 'Filleuls' },
-            ].map((s) => (
-              <View key={s.l} style={styles.statCol}>
-                <Text style={styles.statNumber}>{s.n}</Text>
-                <Text style={styles.statLabel}>{s.l}</Text>
-              </View>
-            ))}
+              // Seul raccourci restant vers l'invitation depuis l'entête, l'onglet
+              // « Inviter » ayant quitté la barre.
+              { n: inviteesCount, l: 'Filleuls', href: '/invite' as Href },
+            ].map((s) =>
+              s.href ? (
+                <Pressable
+                  key={s.l}
+                  style={styles.statCol}
+                  onPress={() => router.push(s.href)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${s.n} filleuls — inviter des amis`}
+                >
+                  <Text style={styles.statNumber}>{s.n}</Text>
+                  <Text style={styles.statLabel}>{s.l}</Text>
+                </Pressable>
+              ) : (
+                <View key={s.l} style={styles.statCol}>
+                  <Text style={styles.statNumber}>{s.n}</Text>
+                  <Text style={styles.statLabel}>{s.l}</Text>
+                </View>
+              ),
+            )}
           </View>
         </View>
 
