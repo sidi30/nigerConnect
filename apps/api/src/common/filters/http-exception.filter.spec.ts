@@ -11,10 +11,22 @@ describe('scrubUrl', () => {
     expect(scrubUrl('/api/feed')).toBe('/api/feed');
   });
 
-  it('keeps innocent params readable', () => {
-    expect(scrubUrl('/api/associations?limit=50&cursor=abc')).toBe(
-      '/api/associations?limit=50&cursor=abc',
+  it('keeps the shape params readable — paging, tri, format', () => {
+    // Liste BLANCHE : seules ces valeurs-la survivent dans le journal.
+    expect(scrubUrl('/api/associations?limit=50&offset=100')).toBe(
+      '/api/associations?limit=50&offset=100',
     );
+  });
+
+  it('caviarde tout ce qui decrit le SUJET de la requete, pas sa forme', () => {
+    // Le coeur de F-01 : ces valeurs partaient en clair dans Loki, conservees
+    // 30 jours a cote du userId — donc les deplacements et les recherches
+    // horodates d'un membre nomme. La cle reste lisible, la valeur non.
+    expect(scrubUrl('/api/geo/nearby?lat=13.51366&lon=2.1098')).toBe(
+      '/api/geo/nearby?lat=REDACTED&lon=REDACTED',
+    );
+    expect(scrubUrl('/api/search?q=Ramzi')).toBe('/api/search?q=REDACTED');
+    expect(scrubUrl('/api/feed?cursor=YWJjZA==')).toBe('/api/feed?cursor=REDACTED');
   });
 
   it('redacts the known credential-bearing params', () => {
@@ -33,15 +45,18 @@ describe('scrubUrl', () => {
     expect(scrubUrl('/x?oauth_verifier=v')).toBe('/x?oauth_verifier=REDACTED');
   });
 
-  it('does not redact a param that merely CONTAINS a short sensitive word', () => {
-    // `code` is exact-match only — `country_code=NE` stays diagnosable.
-    expect(scrubUrl('/api/geo/cities?country_code=NE')).toBe('/api/geo/cities?country_code=NE');
+  it('caviarde une cle inconnue plutot que de la laisser passer', () => {
+    // Fail-closed : un parametre ajoute demain est protege par defaut, il faut
+    // un geste explicite pour exposer sa valeur.
+    expect(scrubUrl('/api/geo/cities?country_code=NE')).toBe(
+      '/api/geo/cities?country_code=REDACTED',
+    );
   });
 
-  it('keeps the whole value when it contains "=" (base64 padding)', () => {
-    // The old split('=', 2) reassembly silently truncated everything after the
-    // second '=', mangling cursors and base64 values in the log.
-    expect(scrubUrl('/api/feed?cursor=YWJjZA==')).toBe('/api/feed?cursor=YWJjZA==');
+  it('ne tronque pas la cle quand la valeur contient "=" (padding base64)', () => {
+    // L'ancien split('=', 2) mangeait tout apres le second '=' ; la cle doit
+    // rester intacte et lisible meme quand sa valeur est caviardee.
+    expect(scrubUrl('/api/feed?cursor=YWJjZA==')).toBe('/api/feed?cursor=REDACTED');
   });
 
   it('does NOT throw on a malformed percent-escape', () => {

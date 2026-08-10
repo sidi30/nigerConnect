@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../common/config/env.validation';
 import { writeLog } from '../common/logger/json-logger';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { CONTAINER_SELECTOR, buildLogQuery, type LogFilters } from './logql';
 
 /**
@@ -84,6 +85,13 @@ export interface LogEntry {
   level: string | null;
   status: number | null;
   userId: string | null;
+  /**
+   * Résolu À L'AFFICHAGE depuis la base, jamais écrit dans Loki : un admin doit
+   * pouvoir mettre un nom sur une ligne de log, sans qu'une donnée personnelle
+   * directe traîne 30 jours dans le stockage de logs. `null` si le compte a
+   * depuis été supprimé — la ligne, elle, reste.
+   */
+  userEmail: string | null;
   requestId: string | null;
   message: string;
   /** Raw line, kept so a non-JSON log (Postgres, Redis) stays readable. */
@@ -107,7 +115,10 @@ interface LokiStream {
 
 @Injectable()
 export class ObservabilityService {
-  constructor(private readonly config: ConfigService<Env, true>) {}
+  constructor(
+    private readonly config: ConfigService<Env, true>,
+    private readonly prisma: PrismaService,
+  ) {}
 
   private get prometheusUrl(): string | undefined {
     return this.config.get('PROMETHEUS_URL', { infer: true });
@@ -282,9 +293,52 @@ export class ObservabilityService {
         // Loki returns one sorted list per stream; the merged view needs its own order.
         .sort((a, b) => b.ts - a.ts)
         .slice(0, filters.limit);
+      await this.attachEmails(entries);
       return { available: true, query, entries };
     } catch (err) {
       return { available: false, reason: describeError(err), query, entries: [] };
+    }
+  }
+
+  /**
+   * UUID du compte portant cet email, `null` s'il n'existe pas. Permet de
+   * filtrer les logs par email : c'est ce que l'admin a sous la main quand un
+   * membre signale un problème, alors que Loki ne connaît que l'UUID.
+   */
+  async userIdForEmail(email: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    return user?.id ?? null;
+  }
+
+  /**
+   * Met un email sur chaque ligne portant un `userId`, en UNE requête pour tout
+   * le lot (une page fait jusqu'à 1000 lignes, souvent le même utilisateur).
+   *
+   * L'email est joint ICI, à la lecture, et non écrit dans la ligne de log :
+   * Loki garde 30 jours, et une donnée personnelle directe n'a rien à y faire à
+   * côté d'URLs et d'horodatages. L'admin voit ce qu'il lui faut pour enquêter,
+   * le stockage de logs ne conserve qu'un pseudonyme.
+   *
+   * Best-effort : si la base ne répond pas, on rend les logs sans email plutôt
+   * que de faire échouer la console de supervision.
+   */
+  private async attachEmails(entries: LogEntry[]): Promise<void> {
+    const ids = [...new Set(entries.map((e) => e.userId).filter((id): id is string => !!id))];
+    if (ids.length === 0) return;
+    try {
+      const users = await this.prisma.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, email: true },
+      });
+      const byId = new Map(users.map((u) => [u.id, u.email]));
+      for (const entry of entries) {
+        if (entry.userId) entry.userEmail = byId.get(entry.userId) ?? null;
+      }
+    } catch {
+      /* best-effort : les logs restent lisibles sans email */
     }
   }
 
@@ -422,6 +476,7 @@ function parseEntry(labels: Record<string, string>, ns: string, line: string): L
     level: null,
     status: null,
     userId: null,
+    userEmail: null,
     requestId: null,
     message: line,
     raw: line,

@@ -8,6 +8,11 @@ import { ObservabilityService } from './observability.service';
 const makeConfig = (values: Record<string, string | undefined>) =>
   ({ get: (key: string) => values[key] }) as never;
 
+// La résolution des emails passe par Prisma ; ces tests portent sur la
+// disponibilité des backends, pas sur l'enrichissement — un stub suffit.
+const makePrisma = () =>
+  ({ user: { findMany: async () => [], findUnique: async () => null } }) as never;
+
 describe('ObservabilityService', () => {
   const originalFetch = global.fetch;
 
@@ -17,13 +22,13 @@ describe('ObservabilityService', () => {
   });
 
   describe('when no monitoring backend is configured', () => {
-    const service = new ObservabilityService(makeConfig({}));
+    const service = new ObservabilityService(makeConfig({}), makePrisma());
 
     it('performs no network call at construction time', () => {
       const spy = jest.fn();
       global.fetch = spy as never;
       // Constructing must be inert — the constructor runs during Nest bootstrap.
-      new ObservabilityService(makeConfig({ PROMETHEUS_URL: 'http://x:9090' }));
+      new ObservabilityService(makeConfig({ PROMETHEUS_URL: 'http://x:9090' }), makePrisma());
       expect(spy).not.toHaveBeenCalled();
     });
 
@@ -61,6 +66,7 @@ describe('ObservabilityService', () => {
         PROMETHEUS_URL: 'http://nigerconnect-prometheus:9090',
         LOKI_URL: 'http://nigerconnect-loki:3100',
       }),
+      makePrisma(),
     );
 
     beforeEach(() => {
@@ -90,6 +96,7 @@ describe('ObservabilityService', () => {
   describe('when Loki answers', () => {
     const service = new ObservabilityService(
       makeConfig({ LOKI_URL: 'http://nigerconnect-loki:3100' }),
+      makePrisma(),
     );
 
     it('lifts the fields of our JSON lines and leaves plain-text lines readable', async () => {
@@ -178,6 +185,7 @@ describe('ObservabilityService', () => {
 
       const metrics = new ObservabilityService(
         makeConfig({ PROMETHEUS_URL: 'http://prometheus:9090' }),
+      makePrisma(),
       );
       const { containers } = await metrics.overview();
       expect(containers.map((c) => c.name)).toEqual([

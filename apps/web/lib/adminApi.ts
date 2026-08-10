@@ -1246,6 +1246,8 @@ export interface LogEntry {
   level: string | null;
   status: number | null;
   userId: string | null;
+  /** Résolu par l'API à l'affichage — jamais stocké dans Loki. */
+  userEmail: string | null;
   requestId: string | null;
   message: string;
   raw: string;
@@ -1266,6 +1268,8 @@ export interface LogFilters {
   statusClass?: LogStatusClass;
   status?: number;
   userId?: string;
+  /** Alternative à `userId` : l'API résout l'email en UUID avant d'interroger Loki. */
+  userEmail?: string;
   search?: string;
   limit?: number;
 }

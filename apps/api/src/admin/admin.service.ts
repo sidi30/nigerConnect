@@ -516,6 +516,15 @@ export class AdminService {
           adminId,
         ),
       );
+      // …et dans le journal des accès privilégiés, où l'on va chercher « qui a
+      // levé une protection, et quand ». `updatedById` ne garde que l'état
+      // courant : qui a remis le réglage à zéro effaçait qui l'avait activé.
+      writes.push(
+        this.audit.log(
+          adminId,
+          dto.globalFullVisibility ? 'global_full_visibility_on' : 'global_full_visibility_off',
+        ),
+      );
     }
     if (dto.diasporaContactRestriction !== undefined) {
       // Community policy: members living in Niger may not open contact with

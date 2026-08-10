@@ -5,6 +5,7 @@ import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { AdminAuditService } from '../common/audit/audit.service';
+import { writeLog } from '../common/logger/json-logger';
 import {
   USER_PUBLIC_SELECT,
   USER_SELF_SELECT,
@@ -257,20 +258,23 @@ export class ProfileService {
       dto.longitude !== null;
     const cityChanged = dto.city !== undefined || dto.countryCode !== undefined;
 
+    // Une seule lecture de l'état actuel, partagée par deux besoins : résoudre
+    // la ville/pays effectifs pour le géocodage, et connaître le pays d'avant
+    // pour tracer un changement (voir plus bas).
+    const current =
+      cityChanged || hasClientCoords
+        ? await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { city: true, countryCode: true },
+          })
+        : null;
+
     if (clearsCoords) {
       data.latitude = null;
       data.longitude = null;
     } else if (hasClientCoords || cityChanged) {
       // Resolve the *effective* city/country after this update: a field the DTO
-      // doesn't touch keeps its stored value, so fetch the current row when one
-      // of the two isn't supplied.
-      const current =
-        dto.city !== undefined && dto.countryCode !== undefined
-          ? null
-          : await this.prisma.user.findUnique({
-              where: { id: userId },
-              select: { city: true, countryCode: true },
-            });
+      // doesn't touch keeps its stored value.
       const city = dto.city !== undefined ? dto.city : current?.city ?? null;
       const countryCode =
         dto.countryCode !== undefined ? dto.countryCode : current?.countryCode ?? null;
@@ -302,11 +306,27 @@ export class ProfileService {
       }
     }
 
+    const previousCountry = current?.countryCode ?? null;
+
     const user = await this.prisma.user.update({
       where: { id: userId },
       data,
       select: USER_SELF_SELECT,
     });
+    // Le pays est DÉCLARATIF et librement modifiable : c'est le contournement
+    // evident de la regle diaspora — un membre au Niger bascule son pays et
+    // gagne le droit de solliciter la diaspora. Fermer la porte est une
+    // decision produit (adosser le statut a la piece d'identite, ou imposer un
+    // delai). En attendant on rend l'abus DETECTABLE : aujourd'hui un
+    // aller-retour NE -> FR -> NE ne laisse aucune trace nulle part.
+    if (dto.countryCode !== undefined && dto.countryCode !== previousCountry) {
+      writeLog('info', 'PROFILE', 'country change', {
+        event: 'country_change',
+        userId,
+        from: previousCountry,
+        to: dto.countryCode ?? null,
+      });
+    }
     await this.invalidateProfileCache(userId);
     // The diaspora rule is keyed on countryCode and cached 5 min. Without this,
     // a member who has just filled in their country stays locked out of friend

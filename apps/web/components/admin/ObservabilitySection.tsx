@@ -87,6 +87,9 @@ const STATUS_CLASSES: Array<{ value: LogStatusClass; label: string }> = [
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Validation de confort : l'API revalide en Zod, et c'est elle qui fait foi.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const selectClass =
   "w-full px-3 py-2 rounded-lg border border-[#E5D5C3] bg-white text-[#1A0F0A] text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50";
 
@@ -513,10 +516,15 @@ function LogExplorer() {
       : "Code HTTP attendu entre 100 et 599.";
   }, [filters.status]);
 
-  const userIdError = useMemo(
-    () => (filters.userId && !UUID_RE.test(filters.userId) ? "UUID attendu." : null),
-    [filters.userId],
-  );
+  // Le champ accepte l'UUID (ce que Loki indexe) ou l'email (ce que l'admin a
+  // sous la main quand un membre ecrit). L'API resout l'email en UUID.
+  const userIsEmail = filters.userId.includes("@");
+  const userIdError = useMemo(() => {
+    const v = filters.userId;
+    if (!v) return null;
+    if (v.includes("@")) return EMAIL_RE.test(v) ? null : "Email invalide.";
+    return UUID_RE.test(v) ? null : "UUID ou email attendu.";
+  }, [filters.userId]);
 
   const run = useCallback(async () => {
     if (statusError || userIdError) return;
@@ -536,7 +544,11 @@ function LogExplorer() {
           ...(filters.level ? { level: filters.level } : {}),
           ...(filters.statusClass ? { statusClass: filters.statusClass } : {}),
           ...(filters.status ? { status: Number(filters.status) } : {}),
-          ...(filters.userId ? { userId: filters.userId } : {}),
+          ...(filters.userId
+            ? userIsEmail
+              ? { userEmail: filters.userId }
+              : { userId: filters.userId }
+            : {}),
           ...(filters.search ? { search: filters.search } : {}),
         },
         controller.signal,
@@ -550,7 +562,7 @@ function LogExplorer() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [filters, statusError, userIdError]);
+  }, [filters, statusError, userIdError, userIsEmail]);
 
   // Première recherche au montage seulement : ensuite c'est l'admin qui décide.
   useEffect(() => {
@@ -648,7 +660,7 @@ function LogExplorer() {
           />
         </Field>
 
-        <Field label="Utilisateur (UUID)" error={userIdError}>
+        <Field label="Utilisateur (email ou UUID)" error={userIdError}>
           <input
             className={selectClass}
             placeholder="8f2c…"
@@ -750,7 +762,16 @@ function LogExplorer() {
                     {entry.userId ? (
                       <div>
                         <span className="font-semibold">Utilisateur :</span>{" "}
-                        <code>{entry.userId}</code>
+                        {/* L'email vient de la base au moment de la lecture ;
+                            l'UUID reste affiché, c'est lui qui est dans Loki. */}
+                        {entry.userEmail ? (
+                          <>
+                            <span className="font-medium">{entry.userEmail}</span>{" "}
+                            <code className="opacity-60">{entry.userId}</code>
+                          </>
+                        ) : (
+                          <code>{entry.userId}</code>
+                        )}
                       </div>
                     ) : null}
                     {entry.requestId ? (

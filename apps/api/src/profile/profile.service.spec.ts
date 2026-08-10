@@ -74,9 +74,10 @@ describe('ProfileService', () => {
       id: 'u1',
       ...args.data,
     }));
-    const prisma = { user: { update } };
+    // Le pays d'avant est relu pour tracer un changement de pays (regle
+    // diaspora), meme quand ville + pays sont fournis tous les deux.
+    const prisma = { user: { update, findUnique: jest.fn(async () => null) } };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
-    // City + country both provided → no need to read the current row.
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR' });
     const data = update.mock.calls[0]![0].data;
     // Lyon is ~45.76 / 4.84; jitter is ±0.02 so a loose range is enough.
@@ -94,7 +95,9 @@ describe('ProfileService', () => {
       id: 'u1',
       ...args.data,
     }));
-    const prisma = { user: { update } };
+    // Le pays d'avant est relu pour tracer un changement de pays (regle
+    // diaspora), meme quand ville + pays sont fournis tous les deux.
+    const prisma = { user: { update, findUnique: jest.fn(async () => null) } };
     const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR', latitude: 1, longitude: 2 });
     const data = update.mock.calls[0]![0].data;

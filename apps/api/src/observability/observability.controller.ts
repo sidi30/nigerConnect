@@ -1,6 +1,8 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { AdminAuditService } from '../common/audit/audit.service';
+import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ObservabilityService } from './observability.service';
@@ -27,6 +29,9 @@ const logsSchema = z.object({
   statusClass: z.enum(['2xx', '3xx', '4xx', '5xx']).optional(),
   status: z.coerce.number().int().min(100).max(599).optional(),
   userId: z.string().uuid().optional(),
+  // Confort d'enquête : l'admin a l'email du membre qui signale, pas son UUID.
+  // Résolu en UUID côté serveur — Loki n'indexe que l'UUID.
+  userEmail: z.string().trim().toLowerCase().email().max(200).optional(),
   search: z.string().trim().min(1).max(200).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(200),
 });
@@ -44,7 +49,10 @@ type LogsDto = z.infer<typeof logsSchema>;
 @Roles('admin')
 @Controller('admin/observability')
 export class ObservabilityController {
-  constructor(private readonly observability: ObservabilityService) {}
+  constructor(
+    private readonly observability: ObservabilityService,
+    private readonly audit: AdminAuditService,
+  ) {}
 
   /** Whether Prometheus/Loki are configured and answering. */
   @Get('status')
@@ -72,7 +80,27 @@ export class ObservabilityController {
 
   /** Filtered log search (level, HTTP status, userId, container, text). */
   @Get('logs')
-  logs(@Query(new ZodValidationPipe(logsSchema)) dto: LogsDto) {
-    return this.observability.logs(dto);
+  async logs(
+    @CurrentUser() admin: JwtUserPayload,
+    @Query(new ZodValidationPipe(logsSchema)) dto: LogsDto,
+  ) {
+    const { userEmail, ...filters } = dto;
+    let userId = filters.userId;
+    if (!userId && userEmail) {
+      const resolved = await this.observability.userIdForEmail(userEmail);
+      // Email inconnu : renvoyer un résultat vide, surtout pas la totalité des
+      // logs — un filtre qui s'évapore silencieusement est un piège.
+      if (!resolved) {
+        return { available: true, query: '', entries: [], reason: 'Aucun compte pour cet email.' };
+      }
+      userId = resolved;
+    }
+
+    // Retracer 30 jours d'activité d'un membre nommé est un accès privilégié :
+    // il laisse une trace, comme la carte god-mode ou l'ouverture d'un profil
+    // privé. Une recherche non ciblée (par niveau, statut, texte) n'en laisse
+    // pas — c'est de l'exploitation, pas de la surveillance individuelle.
+    if (userId) await this.audit.log(admin.sub, 'log_search_by_user', userId);
+    return this.observability.logs({ ...filters, userId });
   }
 }

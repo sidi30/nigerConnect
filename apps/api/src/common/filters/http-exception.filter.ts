@@ -48,18 +48,72 @@ function isSensitiveParam(rawKey: string): boolean {
   return SENSITIVE_EXACT.has(key) || SENSITIVE_FRAGMENTS.some((f) => key.includes(f));
 }
 
+/**
+ * Query parameters whose VALUE may survive into the access log. Everything not
+ * listed here is redacted.
+ *
+ * Deliberately an allow-list. The previous deny-list only caught keys that
+ * looked sensitive by name, so `?lat=13.51&lon=2.10` and `?q=<recherche>` went
+ * to Loki in clear — kept 30 days next to the `userId`, i.e. the timestamped
+ * whereabouts and searches of a named member. That is precisely what the IP
+ * coarsening a few lines below exists to prevent.
+ *
+ * The rule of thumb for adding a key here: its value must describe the SHAPE of
+ * the request (paging, sorting, format), never its subject.
+ */
+const SAFE_VALUE_PARAMS = new Set([
+  'limit',
+  'offset',
+  'page',
+  'perpage',
+  'per_page',
+  'take',
+  'skip',
+  'sort',
+  'order',
+  'dir',
+  'direction',
+  'zoom',
+  'level',
+  'platform',
+  'lang',
+  'locale',
+  'format',
+  'minutes',
+  'points',
+  'status',
+  'statusclass',
+  'tab',
+  'view',
+]);
+
+function isSafeValueParam(rawKey: string): boolean {
+  let key: string;
+  try {
+    key = decodeURIComponent(rawKey);
+  } catch {
+    key = rawKey;
+  }
+  key = key.toLowerCase();
+  // A key that merely LOOKS sensitive is redacted even if allow-listed, so a
+  // future addition here can never re-open the deny-list holes by accident.
+  if (isSensitiveParam(key)) return false;
+  return SAFE_VALUE_PARAMS.has(key);
+}
+
 function scrubUrl(rawUrl: string): string {
   const [pathname, search] = rawUrl.split('?', 2);
   if (!search) return rawUrl;
   const scrubbed = search
     .split('&')
     .map((pair) => {
-      // Split on the FIRST '=' only, and keep the rest of the pair verbatim:
-      // base64 values carry '=' padding and would otherwise be truncated.
+      // Split on the FIRST '=' only: base64 values carry '=' padding and would
+      // otherwise be truncated. The key is always kept — knowing WHICH filter
+      // was used is useful, its value is what leaks.
       const eq = pair.indexOf('=');
       if (eq === -1) return pair;
       const key = pair.slice(0, eq);
-      return isSensitiveParam(key) ? `${key}=REDACTED` : pair;
+      return isSafeValueParam(key) ? pair : `${key}=REDACTED`;
     })
     .join('&');
   return `${pathname}?${scrubbed}`;

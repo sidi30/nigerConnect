@@ -8,7 +8,17 @@ export type AdminAuditAction =
   // Reading a reported item in the moderation console. That read deliberately
   // bypasses privacy (a moderator must see private posts and DM content to
   // decide) — so it must leave a trace, exactly like the map/profile overrides.
-  | 'report_target_view';
+  | 'report_target_view'
+  // Filtrer 30 jours de logs sur un userId : reconstitue le parcours horodaté
+  // d'un membre nommé. Plus intrusif que les accès déjà tracés ci-dessus.
+  | 'log_search_by_user'
+  // Bascule de la visibilité communautaire globale : annule le « privé » de
+  // chaque membre d'un coup. `updatedById` sur le réglage en gardait déjà la
+  // trace, mais pas dans le journal où l'on cherche les accès privilégiés.
+  // Deux actions distinctes plutôt qu'un targetId 'on'/'off' : la colonne
+  // target_id est un uuid, elle aurait rejeté la valeur.
+  | 'global_full_visibility_on'
+  | 'global_full_visibility_off';
 
 // The map refetches on every pan, so we collapse god-mode map browsing to one
 // audit row per admin per this window instead of one per request.
