@@ -1324,3 +1324,227 @@ export function fetchLogs(
     { signal },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Carte des membres (admin) — /admin/map/*
+//
+// Les coordonnées renvoyées par défaut sont APPROXIMATIVES : centroïde de la
+// ville déclarée + décalage aléatoire (precision 'city'). La position GPS réelle
+// n'est exposée que pendant une fenêtre de « bris de glace » ouverte à la main
+// (code TOTP + motif, 30 minutes, tracée) — les points passent alors en
+// precision 'gps'. Un membre sans coordonnées connues sort de la carte : c'est
+// `withoutPosition` qui le compte, il ne doit jamais disparaître en silence.
+// ---------------------------------------------------------------------------
+
+/** De quel côté de la diaspora vit le membre (déduit de son pays). */
+export type MapSide = "diaspora" | "niger";
+
+/** D'où vient la position affichée. `null` = aucune position connue. */
+export type MapPrecision = "city" | "gps";
+
+/**
+ * Combien vaut le point, indépendamment de `precision` :
+ *   'stored'  — coordonnée portée par le compte (pin de ville à l'inscription,
+ *               ou ping GPS pendant le bris de glace) ;
+ *   'city'    — centroïde de la ville déclarée ;
+ *   'country' — centroïde du PAYS : large comme une nation, à ne jamais lire
+ *               comme « ce membre est à Niamey ».
+ * Axe DISTINCT de `precision` : `precision` dit à quel point le point est
+ * précis (ville vs GPS du bris de glace), `positionSource` dit d'où il sort.
+ */
+export type MapPositionSource = "stored" | "city" | "country";
+
+export interface MapUser {
+  id: string;
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  city: string | null;
+  countryCode: string | null;
+  lat: number | null;
+  lng: number | null;
+  precision: MapPrecision | null;
+  positionSource: MapPositionSource | null;
+  positionUpdatedAt: string | null;
+  status: string;
+  identityStatus: string;
+  isAmbassador: boolean;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  privacyLevel: string;
+  side: MapSide;
+  lastSeenAt: string | null;
+  createdAt: string;
+  counts: { posts: number; friends: number };
+}
+
+/** GET /admin/map/users/:id — la fiche marqueur, enrichie des champs sensibles. */
+export interface MapUserDetail extends MapUser {
+  email: string | null;
+  phone: string | null;
+  bio: string | null;
+  languages: string[] | null;
+  invitedBy: { id: string; displayName: string | null } | null;
+  inviteesCount: number;
+  lastLoginAt: string | null;
+}
+
+export interface MapUserList {
+  items: MapUser[];
+  nextCursor: string | null;
+  /** Nombre total de membres correspondant aux filtres, page comprise. */
+  total: number;
+  /** Parmi ce total, ceux sans coordonnées — absents de la carte. */
+  withoutPosition: number;
+}
+
+/** Filtres de GET /admin/map/users. Tous optionnels, combinés en ET. */
+export interface MapUserFilters {
+  q?: string;
+  countryCode?: string;
+  city?: string;
+  status?: UserStatus;
+  identityStatus?: IdentityDistStatus;
+  ambassador?: boolean;
+  privacyLevel?: string;
+  side?: MapSide;
+  /** Vus au moins une fois dans les N derniers jours (1 à 365). */
+  activeWithinDays?: number;
+  hasPosition?: boolean;
+  /** 1 à 500, 200 par défaut côté API. */
+  limit?: number;
+  cursor?: string;
+}
+
+/** GET /admin/map/users — membres géolocalisables, paginés par curseur. */
+export function fetchMapUsers(
+  filters: MapUserFilters = {},
+  signal?: AbortSignal,
+): Promise<MapUserList> {
+  const qs = new URLSearchParams();
+  if (filters.q) qs.set("q", filters.q);
+  if (filters.countryCode) qs.set("countryCode", filters.countryCode);
+  if (filters.city) qs.set("city", filters.city);
+  if (filters.status) qs.set("status", filters.status);
+  if (filters.identityStatus) qs.set("identityStatus", filters.identityStatus);
+  if (filters.ambassador !== undefined)
+    qs.set("ambassador", String(filters.ambassador));
+  if (filters.privacyLevel) qs.set("privacyLevel", filters.privacyLevel);
+  if (filters.side) qs.set("side", filters.side);
+  if (filters.activeWithinDays !== undefined)
+    qs.set("activeWithinDays", String(filters.activeWithinDays));
+  if (filters.hasPosition !== undefined)
+    qs.set("hasPosition", String(filters.hasPosition));
+  if (filters.limit !== undefined) qs.set("limit", String(filters.limit));
+  if (filters.cursor) qs.set("cursor", filters.cursor);
+  const s = qs.toString();
+  return adminFetch<MapUserList>(`/admin/map/users${s ? `?${s}` : ""}`, {
+    signal,
+  });
+}
+
+/** GET /admin/map/users/:id — fiche détaillée du marqueur sélectionné. */
+export function fetchMapUser(
+  userId: string,
+  signal?: AbortSignal,
+): Promise<MapUserDetail> {
+  return adminFetch<MapUserDetail>(`/admin/map/users/${userId}`, { signal });
+}
+
+/**
+ * GET /admin/map/facets — ce que les listes déroulantes doivent réellement
+ * proposer, compté en base plutôt que figé dans le code.
+ *
+ * Chaque facette est calculée avec tous les filtres actifs SAUF celui qu'elle
+ * pilote : choisir « France » ne réduit donc pas la liste des pays à la France.
+ * Les noms de pays sont volontairement absents — le code ISO suffit, le
+ * navigateur le traduit avec Intl.DisplayNames (voir map/countryNames.ts).
+ */
+export interface MapFacets {
+  countries: Array<{ code: string; count: number }>;
+  cities: Array<{ city: string; countryCode: string | null; count: number }>;
+  statuses: Array<{ value: UserStatus; count: number }>;
+}
+
+/** GET /admin/map/facets — mêmes filtres que la liste, sans la pagination. */
+export function fetchMapFacets(
+  filters: MapUserFilters = {},
+  signal?: AbortSignal,
+): Promise<MapFacets> {
+  const qs = new URLSearchParams();
+  if (filters.q) qs.set("q", filters.q);
+  if (filters.countryCode) qs.set("countryCode", filters.countryCode);
+  if (filters.city) qs.set("city", filters.city);
+  if (filters.status) qs.set("status", filters.status);
+  if (filters.identityStatus) qs.set("identityStatus", filters.identityStatus);
+  if (filters.ambassador !== undefined)
+    qs.set("ambassador", String(filters.ambassador));
+  if (filters.privacyLevel) qs.set("privacyLevel", filters.privacyLevel);
+  if (filters.side) qs.set("side", filters.side);
+  if (filters.activeWithinDays !== undefined)
+    qs.set("activeWithinDays", String(filters.activeWithinDays));
+  if (filters.hasPosition !== undefined)
+    qs.set("hasPosition", String(filters.hasPosition));
+  const s = qs.toString();
+  return adminFetch<MapFacets>(`/admin/map/facets${s ? `?${s}` : ""}`, {
+    signal,
+  });
+}
+
+/** État de la fenêtre de bris de glace « position précise » de l'admin courant. */
+export interface PreciseLocationWindow {
+  active: boolean;
+  /** ISO d'expiration — null quand la fenêtre est fermée. */
+  until: string | null;
+}
+
+/** GET /admin/map/precise-location — la fenêtre est-elle ouverte, et jusqu'à quand. */
+export function fetchPreciseLocationWindow(
+  signal?: AbortSignal,
+): Promise<PreciseLocationWindow> {
+  return adminFetch<PreciseLocationWindow>("/admin/map/precise-location", {
+    signal,
+  });
+}
+
+/**
+ * POST /admin/map/precise-location — ouvre la fenêtre GPS (30 min, tracée).
+ *
+ * N'utilise PAS `adminFetch` volontairement : ici un 401 signifie « code
+ * authenticator faux », pas « session expirée ». Passer par le helper commun
+ * déconnecterait l'admin à la première faute de frappe. Même origine, même
+ * en-tête Bearer, seul le traitement du 401 change.
+ */
+export async function openPreciseLocationWindow(
+  code: string,
+  reason: string,
+): Promise<{ active: true; until: string }> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/admin/map/precise-location`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ code, reason }),
+      cache: "no-store",
+    });
+  } catch {
+    throw new AdminApiError(0, "Impossible de joindre le serveur. Réessaie.");
+  }
+  if (!res.ok) {
+    throw new AdminApiError(res.status, await extractError(res));
+  }
+  return (await res.json()) as { active: true; until: string };
+}
+
+/** DELETE /admin/map/precise-location — referme la fenêtre immédiatement. */
+export function closePreciseLocationWindow(): Promise<void> {
+  return adminFetch<void>("/admin/map/precise-location", { method: "DELETE" });
+}

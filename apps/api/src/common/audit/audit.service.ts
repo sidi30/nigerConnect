@@ -18,7 +18,18 @@ export type AdminAuditAction =
   // Deux actions distinctes plutôt qu'un targetId 'on'/'off' : la colonne
   // target_id est un uuid, elle aurait rejeté la valeur.
   | 'global_full_visibility_on'
-  | 'global_full_visibility_off';
+  | 'global_full_visibility_off'
+  // Carte admin des membres : la console voit TOUT le monde, comptes privés et
+  // suspendus compris. Ce n'est pas un abus — c'est une console d'admin — mais
+  // parcourir l'annuaire complet reste un accès privilégié, donc tracé (debouncé).
+  | 'admin_map_browse'
+  // Bris de glace : ouverture / fermeture de la fenêtre de 30 min qui expose la
+  // position GPS RÉELLE (précision métrique), et chaque lecture réellement servie
+  // en 'gps'. Le motif écrit exigé à l'ouverture ne tient pas ici (target_id est
+  // un uuid) : il part dans AdminAuditLog.meta, seule table à avoir un champ libre.
+  | 'precise_location_unlock'
+  | 'precise_location_revoke'
+  | 'precise_location_read';
 
 // The map refetches on every pan, so we collapse god-mode map browsing to one
 // audit row per admin per this window instead of one per request.

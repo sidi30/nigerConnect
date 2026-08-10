@@ -9,6 +9,7 @@ import {
   LifeBuoy,
   Lock,
   Mail,
+  MapIcon,
   Network,
   ShieldCheck,
   UserCog,
@@ -31,6 +32,7 @@ import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
 import UsersSection from "@/components/admin/UsersSection";
 import SecuritySection from "@/components/admin/SecuritySection";
 import ObservabilitySection from "@/components/admin/ObservabilitySection";
+import MapSection from "@/components/admin/MapSection";
 import { Sidebar, type NavEntry } from "@/components/admin/Sidebar";
 
 type Tab =
@@ -43,7 +45,8 @@ type Tab =
   | "referrals"
   | "ambassadors"
   | "security"
-  | "observability";
+  | "observability"
+  | "map";
 
 // Newsletter is admin-only on the API. A moderator hitting it would 403 →
 // adminFetch bounces to login, so the tab is gated to admins below.
@@ -62,7 +65,11 @@ const NAV: NavEntry[] = [
 
 // Observabilité est admin-only côté API (les logs portent des userId, des IP et
 // des stack traces) — la garder hors du NAV partagé évite un 403 → déconnexion.
+// La carte expose la position (même approchée) de chaque membre et le bris de
+// glace GPS : même raisonnement que l'observabilité, on la garde admin-only
+// plutôt que de risquer un 403 → déconnexion pour un modérateur.
 const ADMIN_ONLY_NAV: NavEntry[] = [
+  { id: "map", label: "Carte", icon: MapIcon },
   { id: "ambassadors", label: "Ambassadeurs", icon: Award },
   { id: "newsletter", label: "Newsletter", icon: Mail },
   { id: "observability", label: "Observabilité", icon: Activity },
@@ -133,6 +140,9 @@ export default function AdminDashboardPage() {
           </div>
         ) : null}
         {tab === "users" ? <UsersSection role={role} /> : null}
+        {tab === "map" ? (
+          <MapSection role={role} onOpenUsersSection={() => setTab("users")} />
+        ) : null}
         {tab === "reports" ? <ReportsSection /> : null}
         {tab === "newsletter" ? <NewsletterSection /> : null}
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
