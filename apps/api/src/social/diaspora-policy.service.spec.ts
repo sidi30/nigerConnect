@@ -44,8 +44,10 @@ const makePrisma = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const makeSettings = (restricted = true) => ({
+const makeSettings = (restricted = true, split = restricted, unknownIsHome = true) => ({
   isDiasporaContactRestricted: jest.fn(async () => restricted),
+  isDiasporaContentSplit: jest.fn(async () => split),
+  isDiasporaUnknownCountryRestricted: jest.fn(async () => unknownIsHome),
 });
 
 const build = (prisma = makePrisma(), settings = makeSettings(), redis = makeRedis()) => ({
@@ -245,6 +247,52 @@ describe('DiasporaPolicyService', () => {
           );
         }
       }
+    });
+  });
+  // Les trois règles sont des interrupteurs admin INDÉPENDANTS. Le piège serait
+  // qu'en couper un en coupe un autre par effet de bord.
+  describe('admin switches are independent', () => {
+    it('lifting CONTACT leaves the content split in place', async () => {
+      const { svc } = build(makePrisma(), makeSettings(false, true));
+      await expect(svc.mayInitiateContact('niamey', 'paris')).resolves.toBe(true);
+      await expect(svc.sharesContentScope('paris', 'niamey')).resolves.toBe(false);
+      await expect(svc.authorScope('paris')).resolves.not.toBeNull();
+    });
+
+    it('lifting the CONTENT split leaves the contact rule in place', async () => {
+      const { svc } = build(makePrisma(), makeSettings(true, false));
+      await expect(svc.authorScope('paris')).resolves.toBeNull();
+      await expect(svc.sharesContentScope('paris', 'niamey')).resolves.toBe(true);
+      await expect(svc.mayInitiateContact('niamey', 'paris')).resolves.toBe(false);
+    });
+
+    it('a member with no country becomes diaspora when the switch is off', async () => {
+      const { svc } = build(makePrisma(), makeSettings(true, true, false));
+      await expect(svc.isHomeBased('unknown')).resolves.toBe(false);
+      // …and may then contact the diaspora, which was the whole point.
+      await expect(svc.mayInitiateContact('unknown', 'paris')).resolves.toBe(true);
+      // A real Niger member is untouched by that switch.
+      await expect(svc.isHomeBased('niamey')).resolves.toBe(true);
+    });
+
+    it('the SQL clause follows the unknown-country switch too', async () => {
+      const { svc } = build(makePrisma(), makeSettings(true, true, false));
+      // Unknown-country members now belong to the diaspora side…
+      await expect(svc.authorScope('niamey')).resolves.toEqual({ countryCode: 'NE' });
+      // …so the diaspora clause must let them in, or they would vanish for both.
+      const diaspora = (await svc.authorScope('paris')) as { OR: unknown[] };
+      expect(diaspora.OR).toContainEqual({ countryCode: null });
+    });
+
+    // The verdict depends on a switch, so caching it would delay the switch.
+    it('caches the country, not the home/diaspora verdict', async () => {
+      const settings = makeSettings(true, true, true);
+      const { svc, prisma } = build(makePrisma(), settings);
+      await expect(svc.isHomeBased('unknown')).resolves.toBe(true);
+      settings.isDiasporaUnknownCountryRestricted.mockResolvedValue(false);
+      // Same member, same cache entry, new verdict — no 5-minute lag.
+      await expect(svc.isHomeBased('unknown')).resolves.toBe(false);
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
     });
   });
 });

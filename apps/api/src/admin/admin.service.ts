@@ -389,6 +389,8 @@ export class AdminService {
     digestEnabled: boolean;
     profileReminderEnabled: boolean;
     diasporaContactRestriction: boolean;
+    diasporaContentSplit: boolean;
+    diasporaUnknownCountryRestricted: boolean;
   }> {
     const [
       registrationMode,
@@ -402,6 +404,8 @@ export class AdminService {
       digestEnabled,
       profileReminderEnabled,
       diasporaContactRestriction,
+      diasporaContentSplit,
+      diasporaUnknownCountryRestricted,
     ] = await Promise.all([
       this.settings.getRegistrationMode(),
       this.settings.getDefaultInviteQuota(),
@@ -414,6 +418,8 @@ export class AdminService {
       this.settings.isDigestEnabled(),
       this.settings.isProfileReminderEnabled(),
       this.settings.isDiasporaContactRestricted(),
+      this.settings.isDiasporaContentSplit(),
+      this.settings.isDiasporaUnknownCountryRestricted(),
     ]);
     return {
       registrationMode,
@@ -427,6 +433,8 @@ export class AdminService {
       digestEnabled,
       profileReminderEnabled,
       diasporaContactRestriction,
+      diasporaContentSplit,
+      diasporaUnknownCountryRestricted,
     };
   }
 
@@ -446,6 +454,8 @@ export class AdminService {
       digestEnabled?: boolean;
       profileReminderEnabled?: boolean;
       diasporaContactRestriction?: boolean;
+      diasporaContentSplit?: boolean;
+      diasporaUnknownCountryRestricted?: boolean;
     },
     adminId: string,
   ): Promise<{
@@ -460,6 +470,8 @@ export class AdminService {
     digestEnabled: boolean;
     profileReminderEnabled: boolean;
     diasporaContactRestriction: boolean;
+    diasporaContentSplit: boolean;
+    diasporaUnknownCountryRestricted: boolean;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -534,6 +546,28 @@ export class AdminService {
         this.settings.setSetting(
           'diaspora_contact_restriction',
           dto.diasporaContactRestriction ? 'true' : 'false',
+          adminId,
+        ),
+      );
+    }
+    if (dto.diasporaContentSplit !== undefined) {
+      // Merges or splits the two feeds. Independent of the contact rule above:
+      // one governs who may write, the other who sees what.
+      writes.push(
+        this.settings.setSetting(
+          'diaspora_content_split',
+          dto.diasporaContentSplit ? 'true' : 'false',
+          adminId,
+        ),
+      );
+    }
+    if (dto.diasporaUnknownCountryRestricted !== undefined) {
+      // Only affects members with NO country on file. ON closes the bypass,
+      // OFF stops holding back OAuth signups that skipped the form.
+      writes.push(
+        this.settings.setSetting(
+          'diaspora_unknown_country_restricted',
+          dto.diasporaUnknownCountryRestricted ? 'true' : 'false',
           adminId,
         ),
       );

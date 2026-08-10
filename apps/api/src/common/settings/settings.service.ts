@@ -126,17 +126,36 @@ export class SettingsService {
   }
 
   /**
-   * Members living in Niger may read the whole network and talk among
-   * themselves, but may not open contact with diaspora members (no friend
-   * request, no first message). See DiasporaPolicyService for the exact rule.
+   * The diaspora policy is THREE independent switches, all ON by default and all
+   * steerable from the admin console without a deploy. They are separate because
+   * they answer separate questions and the owner needs to relax one without
+   * relaxing the others (see DiasporaPolicyService for the rules themselves).
    *
-   * ON by default, unlike the feature flags around it: this is not an
-   * experiment shipping dark, it is what the product is for. The switch exists
-   * so the policy can be lifted from the admin console without a deploy — set
-   * `diaspora_contact_restriction` to 'false'.
+   * CONTACT — a member living in Niger may not open contact with a diaspora
+   * member: no friend request, no first message. One-directional; the diaspora
+   * may still reach home, and the answer to that message is allowed.
    */
   async isDiasporaContactRestricted(): Promise<boolean> {
     return (await this.getSetting('diaspora_contact_restriction', 'true')) !== 'false';
+  }
+
+  /**
+   * CONTENT — each side only sees its own posts, stories, comments, reactions,
+   * polls and reviews. Symmetric, unlike the contact rule. Turning this OFF
+   * merges the two feeds back into one without touching who may write to whom.
+   */
+  async isDiasporaContentSplit(): Promise<boolean> {
+    return (await this.getSetting('diaspora_content_split', 'true')) !== 'false';
+  }
+
+  /**
+   * UNKNOWN COUNTRY — whether a member who never filled in their country counts
+   * as living in Niger. ON closes the obvious bypass (leave the field empty);
+   * OFF is the lenient reading and stops holding back OAuth signups that skipped
+   * the registration form. Only ever affects members with no country at all.
+   */
+  async isDiasporaUnknownCountryRestricted(): Promise<boolean> {
+    return (await this.getSetting('diaspora_unknown_country_restricted', 'true')) !== 'false';
   }
 
   /**

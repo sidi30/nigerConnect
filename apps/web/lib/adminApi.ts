@@ -704,6 +704,10 @@ export interface AdminSettings {
   adminFullVisibilityUntil: string | null;
   /** Community-wide override: when true, every member sees every profile (privacyLevel ignored). */
   globalFullVisibility: boolean;
+  /** Règle diaspora — trois interrupteurs indépendants, actifs par défaut. */
+  diasporaContactRestriction: boolean;
+  diasporaContentSplit: boolean;
+  diasporaUnknownCountryRestricted: boolean;
 }
 
 export interface AdminAccessLogRow {
@@ -755,6 +759,9 @@ export function patchAdminSettings(
     adminMfaRequired: boolean;
     adminFullVisibility: boolean;
     globalFullVisibility: boolean;
+    diasporaContactRestriction: boolean;
+    diasporaContentSplit: boolean;
+    diasporaUnknownCountryRestricted: boolean;
   }>,
 ): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { KeyRound, ShieldCheck, ShieldAlert, Copy, Check } from "lucide-react";
+import { KeyRound, ShieldCheck, ShieldAlert, Copy, Check, Globe2 } from "lucide-react";
 import {
   mfaStatus,
   mfaEnroll,
@@ -27,6 +27,10 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
   const [fullVis, setFullVis] = useState(false);
   const [fullVisUntil, setFullVisUntil] = useState<string | null>(null);
   const [globalVis, setGlobalVis] = useState(false);
+  // Règle diaspora — trois interrupteurs indépendants (voir DiasporaPolicyService).
+  const [diasporaContact, setDiasporaContact] = useState(true);
+  const [diasporaSplit, setDiasporaSplit] = useState(true);
+  const [diasporaUnknown, setDiasporaUnknown] = useState(true);
   const [accessLog, setAccessLog] = useState<AdminAccessLogRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +57,9 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
         setFullVis(settings.adminFullVisibility);
         setFullVisUntil(settings.adminFullVisibilityUntil);
         setGlobalVis(settings.globalFullVisibility);
+        setDiasporaContact(settings.diasporaContactRestriction);
+        setDiasporaSplit(settings.diasporaContentSplit);
+        setDiasporaUnknown(settings.diasporaUnknownCountryRestricted);
         if (isAdmin) {
           fetchFullVisibilityLog(20)
             .then(setAccessLog)
@@ -151,6 +158,32 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
     try {
       const s = await patchAdminSettings({ globalFullVisibility: next });
       setGlobalVis(s.globalFullVisibility);
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Les trois réglages diaspora partagent un seul chemin : le PATCH renvoie
+   * l'état complet, on réaligne donc les trois à chaque fois plutôt que de
+   * supposer que seul celui qu'on a touché a bougé.
+   */
+  async function toggleDiaspora(
+    key:
+      | "diasporaContactRestriction"
+      | "diasporaContentSplit"
+      | "diasporaUnknownCountryRestricted",
+    next: boolean,
+  ) {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await patchAdminSettings({ [key]: next });
+      setDiasporaContact(s.diasporaContactRestriction);
+      setDiasporaSplit(s.diasporaContentSplit);
+      setDiasporaUnknown(s.diasporaUnknownCountryRestricted);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
     } finally {
@@ -433,8 +466,108 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
               </div>
             </Card>
           ) : null}
+
+          {isAdmin ? (
+            <Card>
+              <div className="mb-4">
+                <h3 className="font-bold text-[#1A0F0A] flex items-center gap-1.5">
+                  <Globe2 className="w-4 h-4 text-emerald-600" />
+                  Règle diaspora
+                </h3>
+                <p className="text-sm text-[#8A6B4D] mt-1 max-w-2xl">
+                  NigerConnect met en relation les Nigériens de la diaspora. Ces trois
+                  réglages sont <strong>indépendants</strong> : en lever un ne lève pas les
+                  autres. Effet immédiat, sans redéploiement. Un membre est considéré comme
+                  résidant au Niger si son pays est <strong>NE</strong>.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <DiasporaToggle
+                  title="Limiter la prise de contact"
+                  checked={diasporaContact}
+                  busy={busy}
+                  onChange={(v) => toggleDiaspora("diasporaContactRestriction", v)}
+                >
+                  Un membre au Niger ne peut ni envoyer une demande d&apos;ami ni écrire le
+                  premier à un membre de la diaspora. <strong>Sens unique</strong> : la
+                  diaspora garde le droit d&apos;écrire au pays, et le membre au Niger peut
+                  alors répondre. Les amitiés et conversations déjà existantes sont
+                  conservées.
+                </DiasporaToggle>
+
+                <DiasporaToggle
+                  title="Séparer les contenus"
+                  checked={diasporaSplit}
+                  busy={busy}
+                  onChange={(v) => toggleDiaspora("diasporaContentSplit", v)}
+                >
+                  Chaque camp ne voit que ses propres publications, stories, commentaires,
+                  réactions, sondages et avis. <strong>Symétrique</strong>, contrairement au
+                  réglage ci-dessus. Les <strong>profils, la recherche et la carte</strong>{" "}
+                  ne sont jamais filtrés, ni les <strong>services</strong> et les{" "}
+                  <strong>associations</strong>. Sur OFF, les deux fils n&apos;en font
+                  qu&apos;un.
+                </DiasporaToggle>
+
+                <DiasporaToggle
+                  title="Traiter un pays non renseigné comme le Niger"
+                  checked={diasporaUnknown}
+                  busy={busy}
+                  onChange={(v) => toggleDiaspora("diasporaUnknownCountryRestricted", v)}
+                >
+                  Ne concerne que les membres qui n&apos;ont <strong>aucun pays</strong> sur
+                  leur profil. Sur ON, ils sont restreints, ce qui ferme le contournement
+                  évident (laisser le champ vide) mais retient aussi les inscriptions par
+                  Google/Apple qui sautent le formulaire. Sur OFF, ils sont traités comme la
+                  diaspora.
+                </DiasporaToggle>
+              </div>
+            </Card>
+          ) : null}
         </div>
       )}
     </section>
+  );
+}
+
+/** Un interrupteur de la carte « Règle diaspora ». */
+function DiasporaToggle({
+  title,
+  checked,
+  busy,
+  onChange,
+  children,
+}: {
+  title: string;
+  checked: boolean;
+  busy: boolean;
+  onChange: (next: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E5D5C3] last:border-0 last:pb-0">
+      <div>
+        <p className="font-semibold text-[#1A0F0A] text-sm">{title}</p>
+        <p className="text-sm text-[#8A6B4D] mt-1 max-w-xl">{children}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-label={title}
+        aria-checked={checked}
+        disabled={busy}
+        onClick={() => onChange(!checked)}
+        className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-40 ${
+          checked ? "bg-emerald-500" : "bg-[#D9CBB8]"
+        }`}
+      >
+        <span
+          className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-5" : ""
+          }`}
+        />
+      </button>
+    </div>
   );
 }

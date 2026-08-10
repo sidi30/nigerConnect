@@ -56,6 +56,11 @@ const patchSettingsSchema = z
     // cannot open contact with diaspora members — no friend request, no first
     // message. ON by default; this is how it is lifted without a deploy.
     diasporaContactRestriction: z.boolean().optional(),
+    // Séparation des contenus : chaque camp ne voit que ses publications.
+    // Indépendant du contact — l'un dit qui peut écrire, l'autre qui voit quoi.
+    diasporaContentSplit: z.boolean().optional(),
+    // Un membre sans pays renseigné compte-t-il comme résidant au Niger ?
+    diasporaUnknownCountryRestricted: z.boolean().optional(),
     videoEnabled: z.boolean().optional(),
     // Master kill-switch for the weekly regional digest (E-DIGEST). Off by
     // default (ships DARK); this is how an admin RE-ARMS it without SQL.
