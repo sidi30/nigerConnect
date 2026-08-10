@@ -195,14 +195,20 @@ jobs:
           script: |
             set -euo pipefail
             cd ${{ vars.VPS_APP_DIR || '/opt/apps/nigerConnect' }}
-            echo "── Syncing to origin/main (${{ github.sha }}) ──"
+            echo "── Syncing to ${{ github.sha }} ──"
             git fetch origin main
-            git checkout main
-            git pull --ff-only origin main
-            # Sécurité : on déploie exactement le commit qui a passé les gates.
-            if [ "$(git rev-parse HEAD)" != "${{ github.sha }}" ]; then
-              echo "::warning::HEAD ($(git rev-parse HEAD)) != commit CI (${{ github.sha }}) — un push plus récent existe, déploiement de HEAD."
-            fi
+            # Le serveur est un MIROIR du commit qui a passé les gates, pas un
+            # dépôt de travail. `git pull --ff-only` échouait de deux façons :
+            # les déploiements manuels historiques (`git archive | tar x`)
+            # réécrivent les fichiers suivis (fins de ligne CRLF comprises), et
+            # laissent des fichiers non suivis qu'un commit ultérieur se met à
+            # suivre — « untracked working tree files would be overwritten ».
+            #
+            # `reset --hard` règle les deux : il écrase les fichiers du commit
+            # cible, suivis ou non. Il ne touche PAS aux autres fichiers non
+            # suivis — .env.prod, clés JWT, certificats, volumes — et on ne fait
+            # surtout pas de `git clean`, qui les supprimerait.
+            git reset --hard "${{ github.sha }}"
             echo "── Running deploy script ──"
             ./scripts/deploy-vps.sh
 
