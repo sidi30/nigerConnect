@@ -1,0 +1,8 @@
+/var/log/docker-maintenance.log {
+    monthly
+    rotate 6
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

@@ -1,0 +1,7 @@
+# Ménage disque Docker de l'hôte (cache de build, images sans tag, journaux).
+# Passe quotidienne à 04h30, après les sauvegardes de 03h15.
+# Le script est volontairement conservateur : ni volumes, ni images taguées en
+# service. Détail et justifications dans /opt/ops/docker-maintenance.sh
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+30 4 * * * root ionice -c3 nice -n19 /opt/ops/docker-maintenance.sh >> /var/log/docker-maintenance.log 2>&1
