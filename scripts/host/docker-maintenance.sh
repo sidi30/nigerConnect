@@ -101,7 +101,12 @@ freed_tags=0
 while read -r ref; do
   [ -n "$ref" ] || continue
   case "$ref" in
+    # Tags de repli posés par les déploiements.
     *:rollback-*|*:backup-*|*:pre-*) ;;
+    # Images tirées du registre : une par déploiement, taguée au commit. La
+    # version en service est protégée par le test « en service » ci-dessous —
+    # elle partage son identifiant avec le tag local que le conteneur utilise.
+    ghcr.io/*) ;;
     *) continue ;;
   esac
   id="$(docker inspect -f '{{.Id}}' "$ref" 2>/dev/null)" || continue

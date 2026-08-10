@@ -130,9 +130,38 @@ if [[ "$PULL" == "1" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 6. Build images (skip if --no-build for fast restarts)
+# 6. Images: prefer the ones the CI already built, otherwise build here.
+#
+# Compiling on the production host costs CPU while people are using the site,
+# and the BuildKit cache it leaves behind grew to 93 GB. The CI already builds
+# these exact images to gate the deploy — it now pushes them too, so we just
+# pull the one matching this commit.
+#
+# The pulled image is retagged to the local name the compose file expects, so
+# `docker-compose.prod.yml` needs no registry awareness and a `compose build`
+# stays possible at any time.
+#
+# The fallback is deliberate and must stay: a manual deploy from a laptop has
+# no registry credentials, and a private package cannot be pulled anonymously.
+# In that case we build locally exactly as before.
 # -----------------------------------------------------------------------------
 COMPOSE="docker compose -f $COMPOSE_FILE --env-file $ENV_FILE"
+
+REGISTRY="${DEPLOY_REGISTRY:-ghcr.io/sidi30}"
+IMAGE_TAG="${DEPLOY_IMAGE_TAG:-}"
+
+if [[ "$SKIP_BUILD" == "0" && -n "$IMAGE_TAG" ]]; then
+  log "Looking for prebuilt images tagged $IMAGE_TAG…"
+  if docker pull -q "$REGISTRY/nigerconnect-api:$IMAGE_TAG" >/dev/null 2>&1 &&
+     docker pull -q "$REGISTRY/nigerconnect-web:$IMAGE_TAG" >/dev/null 2>&1; then
+    docker tag "$REGISTRY/nigerconnect-api:$IMAGE_TAG" nigerconnect-api:latest
+    docker tag "$REGISTRY/nigerconnect-web:$IMAGE_TAG" nigerconnect-web:latest
+    SKIP_BUILD=1
+    log "Prebuilt images pulled — no compilation on this host."
+  else
+    log "Registry unreachable or tag missing — falling back to a local build."
+  fi
+fi
 
 if [[ "$SKIP_BUILD" == "0" ]]; then
   log "Building images…"
