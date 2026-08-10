@@ -24,7 +24,9 @@ import {
   fetchUserDetail,
   fetchUserAudit,
   forceLogoutUser,
+  manualApproveIdentity,
   resetUserMfa,
+  revokeIdentityVerification,
   AdminApiError,
   type AdminUser,
   type AdminUserFilters,
@@ -42,6 +44,7 @@ import {
   ErrorBanner,
   formatDate,
   GhostButton,
+  Modal,
   PrimaryButton,
   Skeleton,
   StatusChip,
@@ -599,6 +602,128 @@ function DetailDrawer({
 
 // ── Row ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * Verifier (ou revoquer) une identite SANS piece justificative.
+ *
+ * Le parcours normal exige que le membre televerse un document. Pour quelqu'un
+ * qu'on connait deja, l'admin peut trancher lui-meme — c'est une prerogative
+ * admin, pas moderateur, et elle laisse une trace nominative avec motif.
+ *
+ * La date de naissance reste obligatoire a l'approbation : c'est elle qui
+ * alimente la garde 18+ de la proximite. Sans elle, un compte « verifie »
+ * n'ouvrirait aucun droit et la verification serait un demi-mensonge.
+ */
+function IdentityModal({
+  user,
+  onClose,
+  onSaved,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+  onSaved: (patch: Partial<AdminUser>) => void;
+}) {
+  const approved = user.identityStatus === "approved";
+  const [dob, setDob] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!approved && !dob) {
+      setError("Renseigne la date de naissance (elle alimente la garde 18+).");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("Indique un motif — il est conservé dans le journal d'audit.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (approved) {
+        await revokeIdentityVerification(user.id, reason.trim());
+        onSaved({ identityStatus: "not_submitted" });
+      } else {
+        await manualApproveIdentity(user.id, dob, reason.trim());
+        onSaved({ identityStatus: "approved" });
+      }
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : "Échec. Réessaie.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} labelledBy="identity-modal-title">
+      <Card className="w-full max-w-md p-5">
+        <h3 id="identity-modal-title" className="text-lg font-bold text-[#1A0F0A]">
+          {approved ? "Révoquer la vérification" : "Vérifier sans pièce d'identité"}
+        </h3>
+        <p className="text-sm text-[#8A6B4D] mt-1">
+          {approved ? (
+            <>
+              Le badge vérifié de <strong>{fullName(user)}</strong> sera retiré.
+            </>
+          ) : (
+            <>
+              <strong>{fullName(user)}</strong> sera marqué vérifié sans avoir
+              téléversé de document. Réservé aux membres que tu connais.
+            </>
+          )}
+        </p>
+
+        <div className="space-y-3 mt-4">
+          {!approved ? (
+            <label className="block">
+              <span className="block text-xs font-semibold text-[#8A6B4D] mb-1">
+                Date de naissance
+              </span>
+              <input
+                type="date"
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-[#E5D5C3] bg-white text-[#1A0F0A] text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+              />
+              <span className="block text-[11px] text-[#8A6B4D] mt-1">
+                Sert uniquement à la garde 18+ de la proximité. Jamais montrée
+                aux autres membres.
+              </span>
+            </label>
+          ) : null}
+
+          <label className="block">
+            <span className="block text-xs font-semibold text-[#8A6B4D] mb-1">
+              Motif (conservé dans le journal)
+            </span>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={500}
+              placeholder={
+                approved
+                  ? "Ex : doute sur l'identité après signalement n°412"
+                  : "Ex : membre fondateur, rencontré en personne à Niamey"
+              }
+              className="w-full px-3 py-2 rounded-lg border border-[#E5D5C3] bg-white text-[#1A0F0A] text-sm min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+            />
+          </label>
+
+          {error ? <ErrorBanner message={error} /> : null}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <GhostButton onClick={onClose} disabled={busy}>
+            Annuler
+          </GhostButton>
+          <PrimaryButton onClick={submit} disabled={busy}>
+            {busy ? "…" : approved ? "Révoquer" : "Vérifier"}
+          </PrimaryButton>
+        </div>
+      </Card>
+    </Modal>
+  );
+}
+
 function UserRow({
   user,
   isAdmin,
@@ -606,6 +731,7 @@ function UserRow({
   onDeleted,
   onEdit,
   onSanction,
+  onIdentity,
   onDetail,
 }: {
   user: AdminUser;
@@ -614,6 +740,7 @@ function UserRow({
   onDeleted: (id: string) => void;
   onEdit: (u: AdminUser) => void;
   onSanction: (u: AdminUser, status: Exclude<UserStatus, "active">) => void;
+  onIdentity: (u: AdminUser) => void;
   onDetail: (u: AdminUser) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -719,6 +846,27 @@ function UserRow({
           ) : null}
           {isAdmin ? (
             <>
+              {/* Verifier sans piece : pour les membres que l'admin connait
+                  deja. Le parcours normal (televersement + revue) reste la
+                  regle ; ceci est la derogation, tracee avec motif. */}
+              <button
+                type="button"
+                onClick={() => onIdentity(user)}
+                disabled={busy}
+                title={
+                  user.identityStatus === "approved"
+                    ? "Révoquer la vérification"
+                    : "Vérifier sans pièce d'identité"
+                }
+                className={`inline-flex items-center gap-1 text-xs font-semibold border px-2.5 py-1.5 rounded-lg disabled:opacity-50 ${
+                  user.identityStatus === "approved"
+                    ? "border-[#E8DFD3] text-[#8A6B4D] hover:bg-[#F1E9DD]"
+                    : "border-[#BFE3CD] text-[#15803D] hover:bg-[#E7F4EC]"
+                }`}
+              >
+                <BadgeCheck className="w-3.5 h-3.5" />
+                {user.identityStatus === "approved" ? "Révoquer" : "Vérifier"}
+              </button>
               <button
                 type="button"
                 onClick={() => onEdit(user)}
@@ -789,6 +937,7 @@ export default function UsersSection({ role }: { role: AdminRole | null }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [identityTarget, setIdentityTarget] = useState<AdminUser | null>(null);
   const [sanctioning, setSanctioning] = useState<{ user: AdminUser; status: Exclude<UserStatus, "active"> } | null>(
     null,
   );
@@ -1002,6 +1151,7 @@ export default function UsersSection({ role }: { role: AdminRole | null }) {
               onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))}
               onEdit={setEditing}
               onSanction={(user, status) => setSanctioning({ user, status })}
+              onIdentity={setIdentityTarget}
               onDetail={(user) => setDetailUserId(user.id)}
             />
           ))}
@@ -1022,6 +1172,19 @@ export default function UsersSection({ role }: { role: AdminRole | null }) {
           onSaved={(u) => {
             setItems((prev) => prev.map((x) => (x.id === u.id ? u : x)));
             setEditing(null);
+          }}
+        />
+      ) : null}
+
+      {identityTarget ? (
+        <IdentityModal
+          user={identityTarget}
+          onClose={() => setIdentityTarget(null)}
+          onSaved={(patch) => {
+            setItems((prev) =>
+              prev.map((x) => (x.id === identityTarget.id ? { ...x, ...patch } : x)),
+            );
+            setIdentityTarget(null);
           }}
         />
       ) : null}
