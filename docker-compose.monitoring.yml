@@ -192,11 +192,17 @@ services:
       - --path.sysfs=/host/sys
       - --path.rootfs=/host/root
       - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)
+      # Collecteur de fichiers : permet à des scripts hors conteneur de publier
+      # leurs propres métriques en déposant un .prom. Utilisé par
+      # /opt/ops/backup-prepare.sh pour dater la dernière sauvegarde réussie —
+      # c'est ce qui rend l'alerte « sauvegarde en retard » possible.
+      - --collector.textfile.directory=/host/textfile
     pid: host
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/host/root:ro,rslave
+      - /var/lib/node-exporter/textfile:/host/textfile:ro
     networks:
       - monitoring
     deploy:
@@ -204,6 +210,39 @@ services:
         limits:
           memory: 32M
           cpus: "0.15"
+
+  # ---------------------------------------------------------------------------
+  # Alertmanager — transforme les règles de monitoring/prometheus/rules en
+  # emails. Séparé de Prometheus par construction : le groupement, la
+  # répétition et l'extinction des alertes n'ont rien à faire dans un moteur de
+  # séries temporelles.
+  #
+  # Sa configuration est GÉNÉRÉE par scripts/deploy-monitoring.sh depuis
+  # .env.prod (Alertmanager ne lit pas les variables d'environnement), et le mot
+  # de passe SMTP vit dans un fichier séparé en 0400.
+  #
+  # Pas de port publié, pas d'entrée Traefik : rien à exposer, il ne fait
+  # qu'émettre.
+  # ---------------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: nigerconnect-alertmanager
+    <<: *monitoring-defaults
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.generated.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager:ro
+      - nigerconnect-alertmanager-data:/alertmanager
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
 
   # ---------------------------------------------------------------------------
   # Grafana — OPT-IN (profile `grafana`), deep-dive dashboards on top of what
@@ -280,6 +319,7 @@ networks:
 
 volumes:
   nigerconnect-prometheus-data:
+  nigerconnect-alertmanager-data:
   nigerconnect-loki-data:
   nigerconnect-grafana-data:
   nigerconnect-promtail-positions:

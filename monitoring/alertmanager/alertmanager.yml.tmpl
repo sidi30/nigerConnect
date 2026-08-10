@@ -1,0 +1,65 @@
+# =============================================================================
+# Alertmanager — gabarit. NE PAS modifier la version générée.
+# =============================================================================
+# Alertmanager ne sait pas lire de variables d'environnement dans sa
+# configuration. Ce fichier est donc un gabarit : scripts/deploy-monitoring.sh
+# le remplit depuis .env.prod et écrit `alertmanager.generated.yml`, qui est
+# ignoré par git — le mot de passe SMTP ne doit jamais entrer dans le dépôt.
+#
+# Le mot de passe lui-même n'est même pas écrit dans le fichier généré : il part
+# dans un fichier séparé, en 0600, lu par `smtp_auth_password_file`. Ainsi un
+# `docker inspect` ou un `cat` de la configuration ne le révèle pas.
+# =============================================================================
+
+global:
+  smtp_smarthost: '__SMTP_HOST__:__SMTP_PORT__'
+  smtp_from: '__MAIL_FROM__'
+  smtp_auth_username: '__SMTP_USER__'
+  smtp_auth_password_file: '/etc/alertmanager/smtp_password'
+  # STARTTLS sur 587, TLS direct sur 465. `require_tls` reste vrai : on n'envoie
+  # pas d'identifiants en clair, même vers un relais de confiance.
+  smtp_require_tls: __SMTP_REQUIRE_TLS__
+
+route:
+  receiver: email
+  # Regroupe par nom d'alerte : dix conteneurs qui redémarrent en même temps
+  # font un seul message, pas dix.
+  group_by: ['alertname']
+  # Laisse 2 minutes aux alertes liées pour arriver ensemble avant d'envoyer.
+  group_wait: 2m
+  group_interval: 10m
+  # Une alerte qui dure ne renvoie un rappel que toutes les 12 heures. Plus
+  # court, on apprend à ignorer les mails ; plus long, on oublie le problème.
+  repeat_interval: 12h
+
+  routes:
+    # Le critique ne patiente pas et rappelle plus souvent.
+    - matchers: [severity="critical"]
+      receiver: email
+      group_wait: 30s
+      repeat_interval: 4h
+
+receivers:
+  - name: email
+    email_configs:
+      - to: '__ALERT_EMAIL_TO__'
+        send_resolved: true
+        headers:
+          Subject: '[NigerConnect] {{ .CommonAnnotations.resume }}'
+        html: |
+          <h2>{{ .CommonAnnotations.resume }}</h2>
+          <p><b>{{ .Alerts | len }}</b> alerte(s) — statut : {{ .Status }}</p>
+          {{ range .Alerts }}
+          <hr>
+          <p><b>{{ .Labels.alertname }}</b> ({{ .Labels.severity }})</p>
+          <p>{{ .Annotations.detail }}</p>
+          <p style="color:#666;font-size:12px">Depuis {{ .StartsAt.Format "2006-01-02 15:04" }} UTC
+          {{ range $k, $v := .Labels }}{{ if ne $k "alertname" }} · {{ $k }}={{ $v }}{{ end }}{{ end }}</p>
+          {{ end }}
+
+inhibit_rules:
+  # Si l'API est injoignable, son taux d'erreur n'apprend rien de plus : on
+  # n'envoie pas deux mails pour la même panne.
+  - source_matchers: [alertname="ApiInjoignable"]
+    target_matchers: [alertname="TauxErreur5xx"]
+    equal: ['project']

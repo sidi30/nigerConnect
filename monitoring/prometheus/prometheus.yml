@@ -20,6 +20,18 @@ global:
   external_labels:
     project: nigerconnect
 
+# Alertmanager reçoit les alertes et se charge de l'email. Prometheus ne sait
+# pas envoyer de mail lui-même, et c'est tant mieux : le groupement, la
+# répétition et l'extinction des alertes sont un métier à part.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["nigerconnect-alertmanager:9093"]
+
+# Le dossier entier est monté en lecture seule dans /etc/prometheus.
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
 scrape_configs:
   - job_name: prometheus
     static_configs:

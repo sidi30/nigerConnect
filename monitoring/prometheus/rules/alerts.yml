@@ -1,0 +1,92 @@
+# =============================================================================
+# Règles d'alerte — ce qui doit réveiller quelqu'un
+# =============================================================================
+# Cinq règles, pas trente. Une console qui crie en permanence finit ignorée, et
+# une alerte qu'on ignore ne vaut pas mieux que pas d'alerte du tout. Chacune
+# ci-dessous correspond à une panne déjà vécue sur cet hôte ou à une perte
+# irréversible.
+#
+# Les `for:` sont volontairement longs : ils absorbent les pics de déploiement,
+# où l'API redémarre et où le disque bouge.
+# =============================================================================
+
+groups:
+  - name: infra
+    rules:
+      # Le disque est passé de 65 % à 75 % en une journée à cause d'un cache de
+      # build jamais purgé, et une seule fois de plus aurait rempli la machine
+      # pour les douze projets qui la partagent.
+      - alert: DisqueBientotPlein
+        expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 80
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          resume: "Disque hôte à {{ $value | printf \"%.0f\" }} %"
+          detail: >-
+            Le seuil de 80 % est franchi depuis 30 minutes. Le ménage quotidien
+            passe à 04h30 ; s'il ne suffit plus, lancer
+            /opt/ops/docker-maintenance.sh à la main et regarder ce qui a grossi.
+
+      # Un conteneur qui redémarre en boucle sert des erreurs entre chaque
+      # tentative, tout en paraissant « up » par intermittence.
+      - alert: ConteneurEnBoucle
+        expr: changes(container_start_time_seconds{name=~"nigerconnect-.+"}[15m]) > 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          resume: "{{ $labels.name }} redémarre en boucle"
+          detail: >-
+            Plus de deux démarrages en quinze minutes. Regarder
+            `docker logs --tail 100 {{ $labels.name }}`.
+
+      # La sauvegarde est TIRÉE par le PC : si le poste reste éteint ou si le
+      # transfert casse, plus rien ne part hors site et personne ne le sait. Le
+      # PC pose déjà une bannière sur le Bureau, mais un PC éteint ne pose rien
+      # du tout — d'où cette vérification côté serveur, qui est la seule à
+      # fonctionner dans le cas qui compte.
+      - alert: SauvegardeEnRetard
+        expr: time() - nigerconnect_backup_last_success_timestamp_seconds > 172800
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          resume: "Aucune sauvegarde hors site depuis plus de 48 h"
+          detail: >-
+            Dernière préparation réussie il y a
+            {{ $value | humanizeDuration }}. Vérifier que le PC est allumé et
+            relancer C:\Users\ramzi\.ops\backup-pull.ps1.
+
+  - name: application
+    rules:
+      # `up` vaut 0 quand Prometheus n'arrive plus à joindre l'API. Deux minutes
+      # de tolérance couvrent un redémarrage de déploiement.
+      - alert: ApiInjoignable
+        expr: up{job="nigerconnect-api"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          resume: "L'API ne répond plus"
+          detail: >-
+            Prometheus n'obtient plus de métriques depuis 5 minutes. Vérifier
+            `docker ps` et la santé du conteneur nigerconnect-api.
+
+      # Le taux d'erreur, pas le nombre : dix erreurs sur dix requêtes est une
+      # panne, dix sur cent mille est un bruit de fond. Le dénominateur exclut
+      # les sondes de santé, qui gonfleraient artificiellement le trafic sain.
+      - alert: TauxErreur5xx
+        expr: |
+          sum(rate(http_requests_total{status=~"5..", route!~"/health.*"}[10m]))
+            /
+          sum(rate(http_requests_total{route!~"/health.*"}[10m]))
+            > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          resume: "{{ $value | humanizePercentage }} des requêtes en erreur serveur"
+          detail: >-
+            Au-dessus de 5 % depuis dix minutes. La page Observabilité de la
+            console admin montre les routes concernées et les journaux associés.

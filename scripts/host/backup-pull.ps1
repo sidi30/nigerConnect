@@ -182,7 +182,21 @@ try {
     if ($LASTEXITCODE -eq 0) { Write-Log 'Copie distante effacee' }
     else { Write-Log 'Copie distante non effacee (sans gravite, purge auto a 2 jours)' 'WARN' }
 
-    # --- 5. retention -----------------------------------------------------
+    # --- 5. signaler la reussite au serveur -------------------------------
+    # node-exporter publie ce fichier, et Prometheus declenche une alerte email
+    # si l'horodatage depasse 48 h. C'est le PC qui l'ecrit, APRES verification
+    # des empreintes : si le serveur le faisait lui-meme au moment de fabriquer
+    # les archives, un transfert qui echoue en boucle laisserait une metrique
+    # parfaitement fraiche et personne ne serait prevenu.
+    #
+    # Chaine en guillemets SIMPLES : PowerShell ne doit pas toucher aux $ ni au
+    # $(date), qui sont destines au shell distant.
+    $signal = 'd=/var/lib/node-exporter/textfile; mkdir -p $d && { echo "# HELP nigerconnect_backup_last_success_timestamp_seconds Horodatage de la derniere sauvegarde hors site verifiee."; echo "# TYPE nigerconnect_backup_last_success_timestamp_seconds gauge"; echo "nigerconnect_backup_last_success_timestamp_seconds $(date +%s)"; } > $d/.b.tmp && mv -f $d/.b.tmp $d/backup.prom && chmod 644 $d/backup.prom'
+    & ssh -o BatchMode=yes $VpsHost $signal
+    if ($LASTEXITCODE -eq 0) { Write-Log 'Fraicheur signalee au serveur (metrique node-exporter)' }
+    else { Write-Log 'Signal de fraicheur non ecrit - une alerte email suivra sous 48 h' 'WARN' }
+
+    # --- 6. retention -----------------------------------------------------
     if (-not $SansRetention) { Invoke-Retention -Racine $Destination }
 
     if ($incomplet) {

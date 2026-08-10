@@ -76,6 +76,62 @@ if [[ "$STATUS" == "1" ]]; then
   exit 0
 fi
 
+# -----------------------------------------------------------------------------
+# 1b. Configuration d'Alertmanager, générée depuis .env.prod
+#
+# Alertmanager ne lit aucune variable d'environnement dans sa configuration :
+# tout doit être écrit dans le fichier. On remplit donc un gabarit, et on sort
+# le mot de passe SMTP dans un fichier séparé lisible du seul conteneur — de
+# cette façon il n'apparaît ni dans le dépôt, ni dans la configuration, ni dans
+# un `docker inspect`.
+#
+# Sans SMTP configuré, on ne bloque pas le déploiement : la supervision doit
+# rester utilisable même sans email. Alertmanager est alors simplement absent.
+# -----------------------------------------------------------------------------
+AM_DIR="monitoring/alertmanager"
+AM_TMPL="$AM_DIR/alertmanager.yml.tmpl"
+AM_CONF="$AM_DIR/alertmanager.generated.yml"
+AM_PASS="$AM_DIR/smtp_password"
+ALERTING=0
+
+if [[ -f "$AM_TMPL" ]]; then
+  # shellcheck disable=SC1090
+  SMTP_HOST=$(grep -m1 '^SMTP_HOST=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  SMTP_PORT=$(grep -m1 '^SMTP_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  SMTP_USER=$(grep -m1 '^SMTP_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  SMTP_PASS=$(grep -m1 '^SMTP_PASS=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  MAIL_FROM=$(grep -m1 '^MAIL_FROM=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  ALERT_TO=$(grep -m1 '^ALERT_EMAIL_TO=' "$ENV_FILE" | cut -d= -f2- | tr -d '"'"'"'')
+  # À défaut de destinataire dédié, on écrit à l'expéditeur : mieux vaut une
+  # alerte dans une boîte imparfaite qu'une alerte nulle part.
+  ALERT_TO="${ALERT_TO:-$MAIL_FROM}"
+  # Port 465 = TLS implicite, Alertmanager ne doit pas tenter de STARTTLS.
+  REQUIRE_TLS="true"; [[ "$SMTP_PORT" == "465" ]] && REQUIRE_TLS="false"
+
+  if [[ -n "$SMTP_HOST" && -n "$SMTP_PASS" && -n "$ALERT_TO" ]]; then
+    sed -e "s|__SMTP_HOST__|$SMTP_HOST|g" \
+        -e "s|__SMTP_PORT__|${SMTP_PORT:-587}|g" \
+        -e "s|__SMTP_USER__|$SMTP_USER|g" \
+        -e "s|__MAIL_FROM__|$MAIL_FROM|g" \
+        -e "s|__ALERT_EMAIL_TO__|$ALERT_TO|g" \
+        -e "s|__SMTP_REQUIRE_TLS__|$REQUIRE_TLS|g" \
+        "$AM_TMPL" > "$AM_CONF"
+    printf '%s' "$SMTP_PASS" > "$AM_PASS"
+    # Le conteneur tourne en 65534 (nobody) : sans ce chown il ne pourrait pas
+    # lire son propre mot de passe, et Alertmanager refuserait de démarrer.
+    chown 65534:65534 "$AM_PASS" 2>/dev/null || true
+    chmod 400 "$AM_PASS"
+    ALERTING=1
+    log "Alertmanager configuré — les alertes partiront vers $ALERT_TO"
+  else
+    warn "SMTP incomplet dans $ENV_FILE : Alertmanager ne sera pas démarré."
+  fi
+fi
+
+# Dossier lu par le collecteur de fichiers de node-exporter. Créé ici pour que
+# le montage ne fabrique pas un dossier appartenant à root sans qu'on le sache.
+mkdir -p /var/lib/node-exporter/textfile 2>/dev/null || true
+
 if [[ "$DOWN" == "1" ]]; then
   # No `-v`: metrics and logs survive a restart. Wiping data must stay a
   # deliberate, manual `docker volume rm`.
@@ -170,7 +226,14 @@ log "Pulling images…"
 $COMPOSE pull --quiet
 
 log "Starting the monitoring stack…"
-$COMPOSE up -d
+if [[ "$ALERTING" == "1" ]]; then
+  $COMPOSE up -d
+else
+  # SMTP absent : on démarre tout SAUF Alertmanager, qui refuserait de
+  # se lancer sans configuration et redémarrerait en boucle. La supervision
+  # reste entièrement utilisable, seules les alertes par email manquent.
+  $COMPOSE up -d --scale alertmanager=0
+fi
 
 # -----------------------------------------------------------------------------
 # 5. Verify the two things that actually matter
