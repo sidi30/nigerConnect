@@ -16,7 +16,7 @@ import { RedisService } from '../common/redis/redis.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { AdminAuditService } from '../common/audit/audit.service';
 import { NotificationService } from '../notification/notification.service';
-import { geocode, setWorldCitiesLookup } from '../common/geo/city-coords';
+import { geocode, setCountryFallbackLookup, setWorldCitiesLookup } from '../common/geo/city-coords';
 import { geohashEncode } from '../common/geo/geohash';
 import { isAdult } from '../common/age';
 import { WorldCitiesService } from './world-cities';
@@ -175,6 +175,14 @@ export class GeoService implements OnModuleInit {
     if (!this.worldCities) return; // guard for unit-test context (no DI)
     setWorldCitiesLookup((city, countryCode) => {
       const hit = this.worldCities!.findOne(city, countryCode);
+      if (!hit) return null;
+      return { lat: hit.lat, lon: hit.lng };
+    });
+    // Country-level fallback: without it, a member who gave a country the
+    // hardcoded COUNTRY_CENTERS table doesn't know (it holds 16 entries) had no
+    // position at all and silently disappeared from every map.
+    setCountryFallbackLookup((countryCode) => {
+      const hit = this.worldCities!.largestCityOf(countryCode);
       if (!hit) return null;
       return { lat: hit.lat, lon: hit.lng };
     });

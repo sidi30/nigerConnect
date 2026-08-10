@@ -99,6 +99,8 @@ export class WorldCitiesService implements OnModuleInit {
    * We use this map's key iteration order to do prefix matching without a trie.
    */
   private _index = new Map<string, IndexedCity[]>();
+  /** countryCode → its most populated city. Filled on first largestCityOf(). */
+  private _largestByCountry = new Map<string, WorldCity>();
 
   onModuleInit(): void {
     const start = Date.now();
@@ -154,6 +156,25 @@ export class WorldCitiesService implements OnModuleInit {
       // search endpoint will return empty results rather than crashing the app.
       this.logger.error('Failed to load all-the-cities dataset', err);
     }
+  }
+
+  /**
+   * Most populated city of a country — stands in for the country itself when a
+   * member gave us a country but no resolvable city.
+   *
+   * `_all` is already sorted by population descending, so the FIRST entry seen
+   * for a country is its largest city. Built lazily on first call and memoised:
+   * one pass over ~135k rows, then O(1) forever.
+   */
+  largestCityOf(countryCode: string): WorldCity | null {
+    if (this._largestByCountry.size === 0) {
+      for (const city of this._all) {
+        if (!this._largestByCountry.has(city.countryCode)) {
+          this._largestByCountry.set(city.countryCode, city);
+        }
+      }
+    }
+    return this._largestByCountry.get(countryCode.toUpperCase()) ?? null;
   }
 
   /** Push a city into the bucket for `key`, creating the bucket on first use. */

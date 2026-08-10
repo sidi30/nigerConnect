@@ -291,6 +291,26 @@ export function setWorldCitiesLookup(fn: WorldLookupFn): void {
   _worldLookup = fn;
 }
 
+/**
+ * Country-level fallback backed by the world-cities dataset: the most populated
+ * city of a country stands in for the country itself.
+ *
+ * COUNTRY_CENTERS below only holds the 16 countries of the historical diaspora
+ * table, so a member in Russia, India or Belgium had no position at all and
+ * simply vanished from the map. Wiring this in covers every country the dataset
+ * knows, with no new dependency.
+ *
+ * A populated city beats a geometric centroid here: the centre of Russia is a
+ * point in Siberia where nobody lives, whereas Moscow at least reads as "this
+ * member is somewhere in Russia".
+ */
+type CountryLookupFn = (countryCode: string) => CityCoord | null;
+let _countryLookup: CountryLookupFn | null = null;
+
+export function setCountryFallbackLookup(fn: CountryLookupFn): void {
+  _countryLookup = fn;
+}
+
 export function geocode(
   city: string | null | undefined,
   countryCode: string | null | undefined,
@@ -322,6 +342,16 @@ export function geocode(
     return {
       lat: country.lat + (Math.random() - 0.5) * 0.5,
       lon: country.lon + (Math.random() - 0.5) * 0.5,
+    };
+  }
+
+  // Any other country: the dataset's most populated city for it. Kept AFTER the
+  // table above so the 16 curated centres keep their exact previous behaviour.
+  const fallback = _countryLookup?.(cc);
+  if (fallback) {
+    return {
+      lat: fallback.lat + (Math.random() - 0.5) * 0.5,
+      lon: fallback.lon + (Math.random() - 0.5) * 0.5,
     };
   }
 
