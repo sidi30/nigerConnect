@@ -73,6 +73,39 @@ export interface AdminTimeseries {
   series: TimeseriesPoint[];
 }
 
+/**
+ * Une cohorte hebdomadaire d'inscrits et sa survie.
+ *
+ * PRECISION IMPORTANTE : ce n'est pas de la retention par evenements. On ne
+ * garde qu'un `lastSeenAt` par membre, pas un journal de visites — on ne peut
+ * donc pas dire « revenu le 7e jour », seulement « encore la au moins 7 jours
+ * apres son inscription ». C'est une courbe de SURVIE, monotone decroissante,
+ * et elle sous-estime toujours : un membre revenu a J+7 puis disparu compte
+ * comme survivant a J+7, jamais l'inverse.
+ *
+ * `null` quand la fenetre n'est pas echue pour cette cohorte : afficher 0%
+ * parce qu'une cohorte a trois jours n'a pas encore pu atteindre J+30 serait
+ * une contre-verite, et c'est exactement l'erreur qu'un tableau de cohortes
+ * rend invisible.
+ */
+export interface RetentionCohort {
+  /** Lundi de la semaine d'inscription, 'YYYY-MM-DD' (UTC). */
+  week: string;
+  /** Membres inscrits cette semaine-la. */
+  size: number;
+  /** Part encore active au moins N jours apres inscription, 0-100. */
+  d1: number | null;
+  d7: number | null;
+  d30: number | null;
+}
+
+export interface AdminRetention {
+  weeks: number;
+  cohorts: RetentionCohort[];
+  /** Toutes cohortes confondues, sur la periode demandee. */
+  overall: { size: number; d1: number | null; d7: number | null; d30: number | null };
+}
+
 export interface AdminBreakdowns {
   usersByCountry: Array<{ code: string; count: number }>;
   usersByStatus: Array<{ status: 'active' | 'suspended' | 'banned'; count: number }>;
@@ -185,6 +218,89 @@ export class AdminService {
       identity: { pending: identityPending, approved: identityApproved, rejected: identityRejected },
       content: { posts, posts7d, messages24h, comments },
       moderation: { reportsPending, resolved7d },
+    };
+  }
+
+  /**
+   * Survie des cohortes hebdomadaires d'inscrits.
+   *
+   * Une seule requete : `date_trunc('week')` groupe les inscrits par semaine,
+   * et chaque seuil compte ceux dont le dernier passage est au moins N jours
+   * apres l'inscription. `FILTER (WHERE ...)` fait les trois comptes en un
+   * balayage plutot qu'en trois requetes.
+   *
+   * Un seuil n'est calcule que si la cohorte a EU le temps de l'atteindre —
+   * sinon `null`, jamais 0 : une cohorte de trois jours affichee a 0% de
+   * retention a 30 jours est un chiffre faux qui se lit comme un echec.
+   */
+  async retention(weeks: number): Promise<AdminRetention> {
+    const since = new Date(Date.now() - weeks * 7 * 24 * 3_600_000);
+
+    type Row = {
+      week: Date;
+      size: bigint;
+      d1: bigint;
+      elig1: bigint;
+      d7: bigint;
+      elig7: bigint;
+      d30: bigint;
+      elig30: bigint;
+    };
+
+    // Chaque horizon a SON dénominateur : seuls les membres assez âgés pour
+    // l'avoir atteint y comptent. Sans ça, les inscrits d'hier rejoignent le
+    // dénominateur de J+30 et écrasent le taux de leur cohorte — un chiffre
+    // faux qui se lit comme un effondrement.
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      SELECT date_trunc('week', created_at AT TIME ZONE 'UTC') AS week,
+             COUNT(*)::bigint AS size,
+             COUNT(*) FILTER (
+               WHERE last_seen_at >= created_at + INTERVAL '1 day'
+             )::bigint AS d1,
+             COUNT(*) FILTER (WHERE created_at <= NOW() - INTERVAL '1 day')::bigint AS elig1,
+             COUNT(*) FILTER (
+               WHERE last_seen_at >= created_at + INTERVAL '7 days'
+             )::bigint AS d7,
+             COUNT(*) FILTER (WHERE created_at <= NOW() - INTERVAL '7 days')::bigint AS elig7,
+             COUNT(*) FILTER (
+               WHERE last_seen_at >= created_at + INTERVAL '30 days'
+             )::bigint AS d30,
+             COUNT(*) FILTER (WHERE created_at <= NOW() - INTERVAL '30 days')::bigint AS elig30
+      FROM   users
+      WHERE  created_at >= ${since}
+      GROUP  BY 1
+      ORDER  BY 1 DESC
+    `);
+
+    /** Part en %, ou null quand personne n'est encore assez ancien pour compter. */
+    const share = (hit: bigint, eligible: bigint) =>
+      eligible === 0n ? null : Math.round((Number(hit) / Number(eligible)) * 100);
+
+    const cohorts: RetentionCohort[] = rows.map((r) => ({
+      week: r.week.toISOString().slice(0, 10),
+      size: Number(r.size),
+      d1: share(r.d1, r.elig1),
+      d7: share(r.d7, r.elig7),
+      d30: share(r.d30, r.elig30),
+    }));
+
+    /** Agregat toutes cohortes : meme regle, sur les eligibles cumules. */
+    const totalFor = (pick: (r: Row) => bigint, eligPick: (r: Row) => bigint) => {
+      const eligible = rows.reduce((acc, r) => acc + Number(eligPick(r)), 0);
+      if (eligible === 0) return null;
+      const hit = rows.reduce((acc, r) => acc + Number(pick(r)), 0);
+      return Math.round((hit / eligible) * 100);
+    };
+
+    return {
+      weeks,
+      cohorts,
+      overall: {
+        size: rows.reduce((acc, r) => acc + Number(r.size), 0),
+        d1: totalFor((r) => r.d1, (r) => r.elig1),
+        d7: totalFor((r) => r.d7, (r) => r.elig7),
+        d30: totalFor((r) => r.d30, (r) => r.elig30),
+      },
     };
   }
 

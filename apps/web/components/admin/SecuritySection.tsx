@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { KeyRound, ShieldCheck, ShieldAlert, Copy, Check, Globe2 } from "lucide-react";
+import {
+  KeyRound,
+  ShieldCheck,
+  ShieldAlert,
+  Copy,
+  Check,
+  Globe2,
+  Lock,
+  Unlock,
+} from "lucide-react";
 import {
   mfaStatus,
   mfaEnroll,
@@ -475,16 +484,45 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
                   Règle diaspora
                 </h3>
                 <p className="text-sm text-[#8A6B4D] mt-1 max-w-2xl">
-                  NigerConnect met en relation les Nigériens de la diaspora. Ces trois
-                  réglages sont <strong>indépendants</strong> : en lever un ne lève pas les
-                  autres. Effet immédiat, sans redéploiement. Un membre est considéré comme
-                  résidant au Niger si son pays est <strong>NE</strong>.
+                  Trois réglages <strong>indépendants</strong> : en lever un ne lève
+                  pas les autres. Effet immédiat, sans redéploiement. Un membre
+                  compte comme résidant au Niger si son pays est <strong>NE</strong>.
                 </p>
               </div>
 
-              <div className="space-y-4">
+              {/* Etat combine, avant le detail : c'est la question qu'on se pose en
+                  ouvrant la page — qu'est-ce qui s'applique en ce moment. */}
+              <div className="flex flex-wrap items-center gap-2 mb-4 rounded-lg bg-[#FFF8F3] border border-[#E8DFD3] px-3 py-2">
+                <span className="text-xs font-semibold text-[#8A6B4D]">
+                  En vigueur :
+                </span>
+                {[
+                  { on: diasporaContact, label: "Contact limité" },
+                  { on: diasporaSplit, label: "Fils séparés" },
+                  { on: diasporaUnknown, label: "Pays vide = Niger" },
+                ].map((r) => (
+                  <span
+                    key={r.label}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      r.on
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-[#EFE6DA] text-[#8A6B4D] line-through decoration-[#C9B79E]"
+                    }`}
+                  >
+                    {r.on ? (
+                      <Lock className="w-3 h-3" aria-hidden="true" />
+                    ) : (
+                      <Unlock className="w-3 h-3" aria-hidden="true" />
+                    )}
+                    {r.label}
+                  </span>
+                ))}
+              </div>
+
+              <div className="space-y-3">
                 <DiasporaToggle
                   title="Limiter la prise de contact"
+                  scope="Demandes d'ami et premiers messages · sens unique"
                   checked={diasporaContact}
                   busy={busy}
                   onChange={(v) => toggleDiaspora("diasporaContactRestriction", v)}
@@ -498,6 +536,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
 
                 <DiasporaToggle
                   title="Séparer les contenus"
+                  scope="Publications, stories, commentaires, réactions, sondages, avis · symétrique"
                   checked={diasporaSplit}
                   busy={busy}
                   onChange={(v) => toggleDiaspora("diasporaContentSplit", v)}
@@ -512,6 +551,7 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
 
                 <DiasporaToggle
                   title="Traiter un pays non renseigné comme le Niger"
+                  scope="Uniquement les profils sans pays renseigné"
                   checked={diasporaUnknown}
                   busy={busy}
                   onChange={(v) => toggleDiaspora("diasporaUnknownCountryRestricted", v)}
@@ -531,43 +571,88 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
   );
 }
 
-/** Un interrupteur de la carte « Règle diaspora ». */
+/**
+ * Un interrupteur de la carte « Règle diaspora ».
+ *
+ * Chaque regle est une vignette autonome plutot qu'une ligne dans un mur de
+ * texte : le titre, l'etat ECRIT (« Appliquee » / « Levee ») et la portee sont
+ * lisibles sans lire le paragraphe. L'etat ne repose jamais sur la seule
+ * position du curseur ni sur la couleur — les trois reglages etant
+ * independants, confondre lequel est actif est l'erreur qui coute cher.
+ */
 function DiasporaToggle({
   title,
+  scope,
   checked,
   busy,
   onChange,
   children,
 }: {
   title: string;
+  /** Une ligne : ce que la regle touche, avant tout paragraphe. */
+  scope: string;
   checked: boolean;
   busy: boolean;
   onChange: (next: boolean) => void;
   children: React.ReactNode;
 }) {
+  const id = title.replace(/\W+/g, "-").toLowerCase();
   return (
-    <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#E5D5C3] last:border-0 last:pb-0">
-      <div>
-        <p className="font-semibold text-[#1A0F0A] text-sm">{title}</p>
-        <p className="text-sm text-[#8A6B4D] mt-1 max-w-xl">{children}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-label={title}
-        aria-checked={checked}
-        disabled={busy}
-        onClick={() => onChange(!checked)}
-        className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-40 ${
-          checked ? "bg-emerald-500" : "bg-[#D9CBB8]"
-        }`}
-      >
-        <span
-          className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
-            checked ? "translate-x-5" : ""
+    <div
+      className={`rounded-xl border p-4 transition-colors ${
+        checked
+          ? "border-emerald-200 bg-emerald-50/40"
+          : "border-[#E8DFD3] bg-[#FFF8F3]/60"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-[#1A0F0A] text-sm">{title}</p>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                checked
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-[#EFE6DA] text-[#8A6B4D]"
+              }`}
+            >
+              {checked ? (
+                <Lock className="w-3 h-3" aria-hidden="true" />
+              ) : (
+                <Unlock className="w-3 h-3" aria-hidden="true" />
+              )}
+              {checked ? "Appliquée" : "Levée"}
+            </span>
+          </div>
+          <p className="text-xs font-medium text-[#8A6B4D] mt-1">{scope}</p>
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-label={title}
+          aria-checked={checked}
+          aria-describedby={`${id}-desc`}
+          disabled={busy}
+          onClick={() => onChange(!checked)}
+          className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-40 ${
+            checked ? "bg-emerald-500" : "bg-[#D9CBB8]"
           }`}
-        />
-      </button>
+        >
+          <span
+            className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
+              checked ? "translate-x-5" : ""
+            }`}
+          />
+        </button>
+      </div>
+
+      <p
+        id={`${id}-desc`}
+        className="text-[13px] leading-relaxed text-[#8A6B4D] mt-2.5 max-w-2xl"
+      >
+        {children}
+      </p>
     </div>
   );
 }

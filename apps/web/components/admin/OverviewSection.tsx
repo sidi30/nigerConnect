@@ -53,6 +53,7 @@ import {
   VBarChart,
 } from "./charts";
 import { Funnel } from "./Funnel";
+import RetentionCohorts from "./RetentionCohorts";
 
 // Country code → flag emoji (regional indicators). Data label only.
 function flag(code: string): string {
@@ -214,6 +215,11 @@ export default function OverviewSection({
         onRetry={metrics.reload}
         series={series}
       />
+
+      {/* ---- RETENTION ----------------------------------------------------
+          Juste sous les KPI : les totaux montent tant qu'il entre du monde,
+          meme si personne ne revient. C'est ici qu'on le voit. */}
+      <RetentionCohorts />
 
       {/* ---- HERO TREND CHART -------------------------------------------- */}
       <Card className="p-5">

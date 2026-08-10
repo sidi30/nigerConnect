@@ -18,6 +18,13 @@ const timeseriesSchema = z.object({
 });
 type TimeseriesDto = z.infer<typeof timeseriesSchema>;
 
+const retentionSchema = z.object({
+  // 4 semaines minimum pour qu'une courbe veuille dire quelque chose, 26 max
+  // pour borner le balayage.
+  weeks: z.coerce.number().int().min(4).max(26).default(12),
+});
+type RetentionDto = z.infer<typeof retentionSchema>;
+
 const listMissingDobSchema = z.object({
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
@@ -182,6 +189,11 @@ export class AdminController {
   }
 
   /** Per-day time-series for signups / content / reports. Query: ?days=30 (7..90). */
+  @Get('metrics/retention')
+  retention(@Query(new ZodValidationPipe(retentionSchema)) dto: RetentionDto) {
+    return this.admin.retention(dto.weeks);
+  }
+
   @Get('metrics/timeseries')
   timeseries(@Query(new ZodValidationPipe(timeseriesSchema)) dto: TimeseriesDto) {
     return this.admin.timeseries(dto.days);

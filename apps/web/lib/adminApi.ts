@@ -439,6 +439,35 @@ export function fetchMetrics(signal?: AbortSignal): Promise<AdminMetrics> {
   return adminFetch<AdminMetrics>("/admin/metrics", { signal });
 }
 
+/**
+ * Survie d'une cohorte hebdomadaire. `null` = fenêtre non échue pour cette
+ * cohorte (surtout pas 0 : une cohorte de trois jours n'a pas « perdu » ses
+ * membres à 30 jours, elle n'y est pas encore).
+ */
+export interface RetentionCohort {
+  week: string;
+  size: number;
+  d1: number | null;
+  d7: number | null;
+  d30: number | null;
+}
+
+export interface AdminRetention {
+  weeks: number;
+  cohorts: RetentionCohort[];
+  overall: { size: number; d1: number | null; d7: number | null; d30: number | null };
+}
+
+/** GET /admin/metrics/retention — survie par cohorte d'inscription. */
+export function fetchRetention(
+  weeks: number,
+  signal?: AbortSignal,
+): Promise<AdminRetention> {
+  return adminFetch<AdminRetention>(`/admin/metrics/retention?weeks=${weeks}`, {
+    signal,
+  });
+}
+
 export function fetchTimeseries(
   days: number,
   signal?: AbortSignal,
