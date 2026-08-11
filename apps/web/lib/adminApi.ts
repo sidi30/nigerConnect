@@ -1637,3 +1637,222 @@ export function setContactStatus(
     body: { status },
   });
 }
+
+// ── Compte officiel NigerConnect ──
+// La voix de la plateforme : un compte qui n'est pas un membre (absent de la
+// recherche, des suggestions, de la carte) mais qui parle à tout le monde.
+// Toutes les routes sont admin-only côté API.
+
+export interface OfficialAccount {
+  id: string;
+  displayName: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  coverUrl: string | null;
+  isOfficial: boolean;
+  officialSince: string | null;
+  createdAt: string;
+}
+
+export interface OfficialOverview {
+  account: OfficialAccount;
+  stats: {
+    postsCount: number;
+    storiesCount: number;
+    threads: number;
+    unreadThreads: number;
+  };
+  lastBroadcast: {
+    id: string;
+    kind: OfficialBroadcastKind;
+    title: string;
+    createdAt: string;
+    status: OfficialBroadcastStatus;
+  } | null;
+  /** Membres joignables aujourd'hui (opt-out « annonces » respecté). */
+  reach: number;
+  /** Membres actifs, opt-out ignoré — ce que vaudrait une diffusion critique. */
+  reachCritical: number;
+}
+
+export type OfficialBroadcastKind = "notification" | "message";
+export type OfficialBroadcastStatus = "sending" | "sent" | "failed";
+
+export interface OfficialBroadcast {
+  id: string;
+  kind: OfficialBroadcastKind;
+  status: OfficialBroadcastStatus;
+  title: string;
+  body: string;
+  audience: string;
+  targetId: string | null;
+  linkPath: string | null;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  createdAt: string;
+  finishedAt: string | null;
+  createdBy: { id: string; displayName: string | null; firstName: string | null } | null;
+}
+
+export interface OfficialMediaRef {
+  mediaUrl: string;
+  mediaType: "image" | "video";
+}
+
+export interface OfficialPost {
+  id: string;
+  content: string | null;
+  createdAt: string;
+  likeCount: number;
+  commentCount: number;
+  media: OfficialMediaRef[];
+}
+
+export interface OfficialStory {
+  id: string;
+  content: string | null;
+  createdAt: string;
+  storyExpiresAt: string | null;
+  media: OfficialMediaRef[];
+}
+
+export interface OfficialThread {
+  conversationId: string;
+  unreadCount: number;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  peer: {
+    id: string;
+    displayName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    avatarUrl: string | null;
+    city: string | null;
+    countryCode: string | null;
+  } | null;
+}
+
+export interface OfficialThreadMessage {
+  id: string;
+  content: string | null;
+  mediaUrl: string | null;
+  messageType: string;
+  createdAt: string;
+  deletedAt: string | null;
+  sender: { id: string; displayName: string | null; firstName: string | null } | null;
+}
+
+export function fetchOfficialAccount(signal?: AbortSignal): Promise<OfficialOverview> {
+  return adminFetch<OfficialOverview>("/admin/official", { signal });
+}
+
+export function updateOfficialAccount(body: {
+  displayName?: string;
+  bio?: string | null;
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
+}): Promise<OfficialAccount> {
+  return adminFetch<OfficialAccount>("/admin/official", { method: "PATCH", body });
+}
+
+/** Presign + PUT d'une image du compte officiel. Renvoie l'URL CDN à persister. */
+export async function uploadOfficialImage(file: File): Promise<string> {
+  const presigned = await adminFetch<NewsletterUploadResult>("/admin/official/upload", {
+    method: "POST",
+    body: { contentType: file.type },
+  });
+  const headers: Record<string, string> = { "Content-Type": file.type };
+  if (presigned.sseRequired) headers["x-amz-server-side-encryption"] = "AES256";
+  const put = await fetch(presigned.uploadUrl, { method: "PUT", headers, body: file });
+  if (!put.ok) throw new AdminApiError(put.status, "Échec de l'envoi du fichier.");
+  return presigned.publicUrl;
+}
+
+export function publishOfficialPost(body: {
+  content: string;
+  media?: { mediaUrl: string; mediaType: "image"; width?: number; height?: number }[];
+  announce?: boolean;
+  announceTitle?: string;
+}): Promise<{ id: string }> {
+  return adminFetch<{ id: string }>("/admin/official/posts", { method: "POST", body });
+}
+
+export function publishOfficialStory(body: {
+  content?: string;
+  media: { mediaUrl: string; mediaType: "image"; width?: number; height?: number };
+  announce?: boolean;
+}): Promise<{ id: string }> {
+  return adminFetch<{ id: string }>("/admin/official/stories", { method: "POST", body });
+}
+
+export function fetchOfficialContent(
+  signal?: AbortSignal,
+): Promise<{ posts: OfficialPost[]; stories: OfficialStory[] }> {
+  return adminFetch("/admin/official/content", { signal });
+}
+
+export function deleteOfficialContent(id: string): Promise<void> {
+  return adminFetch<void>(`/admin/official/content/${id}`, { method: "DELETE" });
+}
+
+/** Notification à toute la communauté. 202 : l'envoi continue en tâche de fond. */
+export function broadcastOfficialNotification(body: {
+  title: string;
+  body: string;
+  linkPath?: string;
+}): Promise<OfficialBroadcast> {
+  return adminFetch<OfficialBroadcast>("/admin/official/broadcasts/notification", {
+    method: "POST",
+    body,
+  });
+}
+
+/** Message direct à toute la communauté (reçu comme un message, pas une annonce). */
+export function broadcastOfficialMessage(body: {
+  content: string;
+  imageUrl?: string;
+}): Promise<OfficialBroadcast> {
+  return adminFetch<OfficialBroadcast>("/admin/official/broadcasts/message", {
+    method: "POST",
+    body,
+  });
+}
+
+export function fetchOfficialBroadcasts(signal?: AbortSignal): Promise<OfficialBroadcast[]> {
+  return adminFetch<OfficialBroadcast[]>("/admin/official/broadcasts", { signal });
+}
+
+export function sendOfficialDirectMessage(body: {
+  userId: string;
+  content: string;
+  imageUrl?: string;
+}): Promise<{ conversationId: string }> {
+  return adminFetch<{ conversationId: string }>("/admin/official/messages", {
+    method: "POST",
+    body,
+  });
+}
+
+export function fetchOfficialThreads(
+  signal?: AbortSignal,
+): Promise<{ items: OfficialThread[]; nextCursor: string | null }> {
+  return adminFetch("/admin/official/threads", { signal });
+}
+
+export function fetchOfficialThread(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<{ items: OfficialThreadMessage[]; nextCursor: string | null }> {
+  return adminFetch(`/admin/official/threads/${conversationId}`, { signal });
+}
+
+export function replyOfficialThread(
+  conversationId: string,
+  content: string,
+): Promise<OfficialThreadMessage> {
+  return adminFetch<OfficialThreadMessage>(
+    `/admin/official/threads/${conversationId}/reply`,
+    { method: "POST", body: { content } },
+  );
+}

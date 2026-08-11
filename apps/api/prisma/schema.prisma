@@ -122,6 +122,15 @@ model User {
   // ambassadeur mais jamais depuis quand — l'info que reclame la relecture d'un
   // reseau de referents.
   ambassadorSince DateTime?     @map("ambassador_since") @db.Timestamptz
+  // Compte OFFICIEL NigerConnect : la voix de l'application elle-meme. Ce n'est
+  // PAS un membre — il est retire de toutes les surfaces de decouverte (
+  // recherche, suggestions, carte, proximite, demandes d'ami) et personne ne
+  // peut ouvrir une conversation avec lui ; en echange il parle a tout le monde
+  // (notification, message direct, story, publication publique). Pose
+  // uniquement depuis la console admin, jamais auto-attribue : c'est ce qui
+  // permet a son badge de valoir garantie.
+  isOfficial     Boolean        @default(false) @map("is_official")
+  officialSince  DateTime?      @map("official_since") @db.Timestamptz
   role           UserRole       @default(user)
   status         UserStatus     @default(active)
   // Sanction metadata (set alongside status by the admin console). statusReason
@@ -216,6 +225,8 @@ model User {
 
   contactMessages  ContactMessage[] @relation("UserContactMessages")
 
+  officialBroadcasts OfficialBroadcast[] @relation("OfficialBroadcastAuthor")
+
   // Unique per OAuth identity so concurrent link-or-create requests can't mint
   // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
   // Both columns are nullable; Postgres treats NULLs as distinct, so the many
@@ -229,6 +240,9 @@ model User {
   // Powers the E-DIGEST batch selection (opt-in + due members), keeping the
   // hourly cron scan cheap even as the member table grows.
   @@index([digestOptIn, lastDigestSentAt])
+  // Un seul compte officiel en pratique : l'index sert a le retrouver sans
+  // balayer la table a chaque action de la console.
+  @@index([isOfficial])
   @@map("users")
 }
 
@@ -1314,6 +1328,52 @@ model ContactMessage {
   @@index([status, createdAt])
   @@index([userId])
   @@map("contact_messages")
+}
+
+// ── Compte officiel : diffusions ─────────────────────────────────
+
+enum OfficialBroadcastKind {
+  // Notification simple (cloche + push), sans conversation.
+  notification
+  // Message direct : une conversation officiel ↔ membre, un message dedans.
+  message
+}
+
+enum OfficialBroadcastStatus {
+  sending
+  sent
+  failed
+}
+
+// Journal des diffusions du compte officiel. Une notification ou un message
+// « à tout le monde » part en tâche de fond (comme une campagne newsletter) :
+// sans cette ligne, la console n'aurait ni accusé de réception, ni compteur, ni
+// historique de ce qui a déjà été dit à la communauté.
+model OfficialBroadcast {
+  id        String                  @id @default(uuid()) @db.Uuid
+  kind      OfficialBroadcastKind
+  status    OfficialBroadcastStatus @default(sending)
+  title     String                  @db.VarChar(140)
+  body      String                  @db.VarChar(4000)
+  // Cible : 'all' (tous les comptes actifs) ou 'user' (envoi à une personne).
+  audience  String                  @default("all") @db.VarChar(20)
+  // Destinataire unique quand audience = 'user'. SetNull : la suppression du
+  // compte ne doit pas effacer la trace de ce que la plateforme a envoyé.
+  targetId  String?                 @map("target_id") @db.Uuid
+  // Chemin d'ouverture dans l'app au tap (ex. '/post/<id>'). Optionnel.
+  linkPath  String?                 @map("link_path") @db.VarChar(200)
+
+  totalRecipients Int @default(0) @map("total_recipients")
+  sentCount       Int @default(0) @map("sent_count")
+  failedCount     Int @default(0) @map("failed_count")
+
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdBy   User?    @relation("OfficialBroadcastAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz
+
+  @@index([createdAt])
+  @@map("official_broadcasts")
 }
 
 // ── Réglages runtime ─────────────────────────────────────────────

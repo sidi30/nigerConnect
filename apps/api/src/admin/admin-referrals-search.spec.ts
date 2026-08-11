@@ -22,6 +22,8 @@ function makeService(): {
     {} as never, // settings
     {} as never, // profile
     {} as never, // audit
+    {} as never, // notifications
+    {} as never, // mailer
     { get: jest.fn(() => 'private-bucket') } as never, // config
   );
   return { admin, findMany };

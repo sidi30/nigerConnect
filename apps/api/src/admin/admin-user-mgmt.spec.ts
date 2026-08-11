@@ -14,6 +14,8 @@ function makeService(overrides: {
     id: 't-1',
     role: overrides.targetRole ?? 'user',
     email: 'u@example.com',
+    emailVerified: true,
+    firstName: 'Aïcha',
     status: 'active',
     statusReason: null,
     statusExpiresAt: null,
@@ -30,6 +32,8 @@ function makeService(overrides: {
   const reportCount = jest.fn(async () => 1);
   const invitationCount = jest.fn(async () => 2);
   const auditCreate = jest.fn(async () => ({ id: 'a-1' }));
+  const notify = jest.fn(async () => null);
+  const sendRoleGranted = jest.fn(async () => undefined);
   const auditFindMany = jest.fn(async () => []);
   const transaction = jest.fn(async (ops: unknown[]) => ops);
   const findUnique = jest.fn(async () => (overrides.targetRole === null ? null : detailUser));
@@ -58,10 +62,14 @@ function makeService(overrides: {
     {} as never,
     profile as never,
     { log: jest.fn(), recent: jest.fn(async () => []) } as never, // audit
+    { create: notify } as never, // notifications
+    { sendRoleGranted } as never, // mailer
     { get: jest.fn(() => 'private-bucket') } as never,
   );
   return {
     admin,
+    notify,
+    sendRoleGranted,
     userUpdate,
     userUpdateMany,
     userCount,
@@ -268,5 +276,31 @@ describe('AdminService — user management guards', () => {
     await admin.updateUser({ id: 'admin', role: 'admin' }, 't-1', { displayName: 'New Name' });
     const arg = userUpdate.mock.calls[0]![0];
     expect(arg.data).toEqual({ displayName: 'New Name' });
+  });
+
+  it('promoting to admin notifies the person, emails them and leaves an audit row', async () => {
+    const { admin, notify, sendRoleGranted, auditCreate } = makeService({ targetRole: 'user' });
+
+    await admin.updateUser({ id: 'admin', role: 'admin' }, 't-1', { role: 'admin' });
+
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: {
+        actorId: 'admin',
+        action: 'user.role_change',
+        targetUserId: 't-1',
+        meta: { from: 'user', to: 'admin' },
+      },
+    });
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 't-1', type: 'system', expiresInHours: null }),
+    );
+    expect(sendRoleGranted).toHaveBeenCalledWith('u@example.com', 'admin', 'Aïcha');
+  });
+
+  it('a profile edit that does not touch the role stays silent', async () => {
+    const { admin, notify, sendRoleGranted } = makeService({ targetRole: 'user' });
+    await admin.updateUser({ id: 'admin', role: 'admin' }, 't-1', { city: 'Niamey' });
+    expect(notify).not.toHaveBeenCalled();
+    expect(sendRoleGranted).not.toHaveBeenCalled();
   });
 });

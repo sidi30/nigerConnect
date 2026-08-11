@@ -521,6 +521,7 @@ export class ProfileService {
             countryCode: true,
             identityStatus: true,
             isAmbassador: true,
+            isOfficial: true,
             privacyLevel: true,
           },
         },
@@ -535,6 +536,7 @@ export class ProfileService {
             countryCode: true,
             identityStatus: true,
             isAmbassador: true,
+            isOfficial: true,
             privacyLevel: true,
           },
         },
@@ -641,6 +643,10 @@ export class ProfileService {
         // Registration is only complete once the email is verified — hide users
         // whose inscription is still pending from all discovery surfaces.
         { emailVerified: true },
+        // The official NigerConnect account is not a member: it must not show up
+        // in the member directory, nor be reachable for a friend request or a
+        // new DM. It reaches people, people don't go looking for it.
+        { isOfficial: false },
         // Community-wide visibility override lifts the `private` exclusion.
         ...((await this.settings.isGlobalFullVisibility())
           ? []
@@ -704,6 +710,7 @@ export class ProfileService {
         countryCode: true,
         identityStatus: true,
         isAmbassador: true,
+        isOfficial: true,
         privacyLevel: true,
       },
     });
@@ -763,6 +770,7 @@ export class ProfileService {
           phoneVerified: true,
           identityStatus: true,
           isAmbassador: true,
+          isOfficial: true,
           role: true,
           status: true,
           mfaEnabled: true,

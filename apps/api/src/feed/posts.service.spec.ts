@@ -655,3 +655,66 @@ describe('PostsService — diaspora content split', () => {
     });
   });
 });
+
+// Le compte officiel n'est l'ami de personne : sans exception explicite, sa
+// story ne serait vue par aucun membre et sa publication ouverte depuis une
+// notification renverrait 404.
+describe('PostsService — compte officiel', () => {
+  const buildSvc = (prisma: unknown) =>
+    new PostsService(
+      prisma as never,
+      makeRedis() as never,
+      makeBlocks() as never,
+      makeS3() as never,
+      { notify: jest.fn(async () => undefined) } as never,
+      makeSettings() as never,
+      { authorScope: jest.fn(async () => null), sharesContentScope: jest.fn(async () => true) } as never,
+    );
+
+  it('inclut les stories du compte officiel sans lien d’amitié, et les place en tête', async () => {
+    const officialStory = {
+      id: 's-official',
+      authorId: 'official',
+      author: { id: 'official', isOfficial: true },
+    };
+    const friendStory = {
+      id: 's-friend',
+      authorId: 'friend',
+      author: { id: 'friend', isOfficial: false },
+    };
+    const prisma = {
+      friendship: { findMany: jest.fn(async () => [{ requesterId: 'me', addresseeId: 'friend' }]) },
+      block: { findMany: jest.fn(async () => []) },
+      post: { findMany: jest.fn(async () => [friendStory, officialStory]) },
+    };
+    const svc = buildSvc(prisma);
+
+    const groups = await svc.getStoriesFeed('me');
+
+    const where = (prisma.post.findMany as jest.Mock).mock.calls[0]![0].where;
+    expect(where.OR).toContainEqual({ author: { isOfficial: true } });
+    expect(groups[0]!.author).toMatchObject({ isOfficial: true });
+  });
+
+  it('laisse ouvrir une story officielle alors qu’elle est en visibilité « friends »', async () => {
+    const prisma = {
+      post: {
+        findFirst: jest.fn(async () => ({
+          id: 'p-official',
+          authorId: 'official',
+          visibility: 'friends',
+          associationId: null,
+          author: { privacyLevel: 'public', isOfficial: true },
+        })),
+      },
+      friendship: { count: jest.fn(async () => 0) },
+    };
+    const svc = buildSvc(prisma);
+
+    await expect(svc.assertCanViewPost('me', 'p-official')).resolves.toMatchObject({
+      id: 'p-official',
+    });
+    // Aucun test d'amitié n'a été nécessaire : l'exemption passe avant.
+    expect(prisma.friendship.count).not.toHaveBeenCalled();
+  });
+});

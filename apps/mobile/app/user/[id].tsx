@@ -19,6 +19,7 @@ import { Loader } from '@/components/ui/Loader';
 import { StarRating } from '@/components/ui/StarRating';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { OfficialBadge } from '@/components/ui/OfficialBadge';
 import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { PostCard } from '@/components/feed/PostCard';
 import { ReportSheet } from '@/components/ReportSheet';
@@ -392,8 +393,14 @@ export default function UserScreen() {
                 </Pressable>
                 <View style={styles.nameRow}>
                   <Text style={styles.name}>{name}</Text>
-                  {u.identityStatus === 'approved' && <VerifiedBadge size={18} />}
-                  {u.isAmbassador && <AmbassadorBadge size={18} />}
+                  {u.isOfficial ? (
+                    <OfficialBadge size={18} />
+                  ) : (
+                    <>
+                      {u.identityStatus === 'approved' && <VerifiedBadge size={18} />}
+                      {u.isAmbassador && <AmbassadorBadge size={18} />}
+                    </>
+                  )}
                 </View>
                 <Text style={styles.location}>
                   {u.countryCode ? Flags[u.countryCode] ?? '🌍' : '🌍'} {u.city ?? ''}
@@ -431,7 +438,18 @@ export default function UserScreen() {
               </View>
             </View>
 
-            {rel !== 'self' && rel !== 'blocked' ? (
+            {u.isOfficial ? (
+              // Le compte officiel ne se lie d'amitié avec personne et ne reçoit
+              // pas de premier message : les deux boutons enverraient l'app sur
+              // un 403. On explique la nature du compte à la place.
+              <View style={styles.officialNote}>
+                <Feather name="shield" size={14} color={Colors.orange} />
+                <Text style={styles.officialNoteText}>
+                  Compte officiel de NigerConnect. Il s&apos;adresse à toute la communauté ;
+                  répondez-lui depuis la conversation qu&apos;il vous a ouverte.
+                </Text>
+              </View>
+            ) : rel !== 'self' && rel !== 'blocked' ? (
               <View style={styles.actions}>
                 <Pressable
                   onPress={() => openConvoMut.mutate()}
@@ -707,6 +725,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   actions: { paddingHorizontal: Spacing.lg, gap: Spacing.md, marginBottom: Spacing.lg },
+  officialNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    padding: Spacing.md,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.tan100,
+  },
+  officialNoteText: { flex: 1, color: Colors.tan500, fontSize: Typography.sizes.sm, lineHeight: 18 },
   primaryBtn: {
     height: 52,
     borderRadius: Radii.lg,

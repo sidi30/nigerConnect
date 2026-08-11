@@ -33,6 +33,8 @@ function makeService(): {
     {} as never, // settings
     {} as never, // profile (ProfileService — unused in these tests)
     { log: jest.fn(), recent: jest.fn(async () => []) } as never, // audit
+    { create: jest.fn(async () => null) } as never, // notifications
+    { sendRoleGranted: jest.fn(async () => undefined) } as never, // mailer
     { get: jest.fn(() => 'private-bucket') } as never, // config
   );
   return { admin, userUpdate, invitationUpdateMany, transaction };

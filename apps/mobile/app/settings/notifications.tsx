@@ -74,6 +74,12 @@ function routeForNotification(n: Notification): string | null {
       const actor = str('actorId');
       return actor ? `/user/${actor}` : '/(tabs)/invite';
     }
+    case 'announcement': {
+      // Annonce du compte officiel : `path` est un chemin interne validé côté
+      // serveur. Sans lui, l'annonce se lit dans cette liste, pas ailleurs.
+      const path = str('path');
+      return path && path.startsWith('/') ? path : null;
+    }
     case 'weekly_digest': {
       // AGGREGATE-ONLY payload (see digest.service.ts): only numbers + a
       // `screen` hint, never a third-party identity. Unknown/missing hints

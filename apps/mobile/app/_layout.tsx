@@ -258,6 +258,12 @@ function NotificationDeepLink() {
         const actorId = typeof data.actorId === 'string' ? data.actorId : null;
         if (actorId) router.push(`/user/${actorId}` as never);
         else router.push('/(tabs)/invite' as never);
+      } else if (data.type === 'announcement') {
+        // Annonce du compte officiel. `path` est un chemin INTERNE validé côté
+        // serveur (jamais une URL) ; on revérifie ici avant de naviguer, et sans
+        // lui on ouvre simplement l'historique des notifications.
+        const path = typeof data.path === 'string' ? data.path : null;
+        router.push((path && path.startsWith('/') ? path : '/settings/notifications') as never);
       } else if (data.type === 'weekly_digest') {
         // AGGREGATE-ONLY payload (digest.service.ts): only counts + a `screen`
         // hint, never a third-party identity. Unknown/missing hint → feed.

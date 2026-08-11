@@ -44,6 +44,7 @@ const AUTHOR_SELECT = {
   countryCode: true,
   identityStatus: true,
   isAmbassador: true,
+  isOfficial: true,
 } as const satisfies Prisma.UserSelect;
 
 /**
@@ -349,7 +350,7 @@ export class PostsService {
         authorId: true,
         visibility: true,
         associationId: true,
-        author: { select: { privacyLevel: true } },
+        author: { select: { privacyLevel: true, isOfficial: true } },
       },
     });
     if (!post) throw new NotFoundException('Post not found');
@@ -357,6 +358,11 @@ export class PostsService {
     if (await this.blocks.isBlocked(viewerId, post.authorId)) {
       throw new NotFoundException('Post not found');
     }
+    // Everything the official account publishes is addressed to the whole
+    // community — including its stories, which are stored with `friends`
+    // visibility like any other story. Without this, tapping the push that
+    // announced the story would 404 for everyone.
+    if (post.author?.isOfficial) return post;
     // Diaspora split. This is the choke point for the single-post view, the
     // comment list and the liker list — without it, three side channels would
     // serve content the feed deliberately hides. Association posts stay exempt,
@@ -831,12 +837,30 @@ export class PostsService {
     // it never belongs to an association wall.
     const authorScope = await this.diaspora.authorScope(userId);
 
+    // Blocks were never filtered here because the ring only ever showed friends,
+    // and blocking drops the friendship. The official account is neither — a
+    // member who blocked it must stop seeing its stories too.
+    const blockedRows = await this.prisma.block.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = Array.from(
+      new Set(blockedRows.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId))),
+    );
+
     const stories = await this.prisma.post.findMany({
       where: {
         isStory: true,
         deletedAt: null,
         storyExpiresAt: { gt: new Date() },
-        authorId: { in: [...friendIds, userId] },
+        // Friends + self, PLUS the official NigerConnect account: an official
+        // story is an announcement, everyone sees it without being "friends"
+        // with the platform.
+        OR: [
+          { authorId: { in: [...friendIds, userId] } },
+          { author: { isOfficial: true } },
+        ],
+        ...(blockedIds.length ? { authorId: { notIn: blockedIds } } : {}),
         ...(authorScope ? { author: authorScope } : {}),
       },
       include: {
@@ -853,7 +877,11 @@ export class PostsService {
       if (entry) entry.stories.push(s);
       else grouped.set(s.authorId, { author: s.author, stories: [s] });
     }
-    return Array.from(grouped.values());
+    // The official ring comes first: an announcement that lands seventh in the
+    // row is an announcement nobody opens.
+    return Array.from(grouped.values()).sort((a, b) =>
+      Number(b.author?.isOfficial ?? false) - Number(a.author?.isOfficial ?? false),
+    );
   }
 
   /**

@@ -22,6 +22,7 @@ const PUBLIC_USER_FIELDS = {
   countryCode: true,
   identityStatus: true,
   isAmbassador: true,
+  isOfficial: true,
 } as const satisfies Prisma.UserSelect;
 
 @Injectable()
@@ -60,9 +61,16 @@ export class FriendsService {
 
     const addressee = await this.prisma.user.findUnique({
       where: { id: addresseeId },
-      select: { id: true },
+      select: { id: true, isOfficial: true },
     });
     if (!addressee) throw new NotFoundException('User not found');
+    // The official account is a channel, not a member: it has no friends, so a
+    // request would sit pending forever with nobody able to accept it.
+    if (addressee.isOfficial) {
+      throw new ForbiddenException(
+        "Le compte officiel NigerConnect n'accepte pas de demandes d'ami.",
+      );
+    }
 
     const existing = await this.prisma.friendship.findFirst({
       where: {
@@ -402,6 +410,8 @@ export class FriendsService {
         WHERE u.status = 'active'
           AND u.email_verified = true
           AND u.privacy_level <> 'private'
+          -- Le compte officiel n'est pas un membre : il ne se suggère pas.
+          AND u.is_official = false
           AND u.id NOT IN (SELECT id FROM excluded)
       )
       SELECT *

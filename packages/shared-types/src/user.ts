@@ -14,6 +14,13 @@ export interface PublicUser {
   identityStatus: IdentityStatus;
   /** Admin-curated ambassador distinction, independent of identity verification. */
   isAmbassador: boolean;
+  /**
+   * Official NigerConnect account — the voice of the platform itself, not a
+   * member. Carries the blue badge, is absent from every discovery surface
+   * (search, suggestions, map, proximity) and cannot be friended or DMed; it is
+   * the only account allowed to address the whole community at once.
+   */
+  isOfficial?: boolean;
   ratingAvg: number;
   ratingCount: number;
 }

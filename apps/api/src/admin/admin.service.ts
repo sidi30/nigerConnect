@@ -7,6 +7,8 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { AdminAuditService } from '../common/audit/audit.service';
+import { MailerService } from '../common/mail/mailer.service';
+import { NotificationService } from '../notification/notification.service';
 import { ProfileService } from '../profile/profile.service';
 
 // The "full visibility" support override auto-expires after this long so it's
@@ -133,6 +135,8 @@ export class AdminService {
     private readonly settings: SettingsService,
     private readonly profile: ProfileService,
     private readonly audit: AdminAuditService,
+    private readonly notifications: NotificationService,
+    private readonly mailer: MailerService,
     config: ConfigService<Env, true>,
   ) {
     this.privateBucket = config.get('S3_PRIVATE_BUCKET', { infer: true });
@@ -902,6 +906,7 @@ export class AdminService {
         countryCode: true,
         identityStatus: true,
         isAmbassador: true,
+        isOfficial: true,
         ambassadorSince: true,
         createdAt: true,
       },
@@ -947,6 +952,7 @@ export class AdminService {
     emailVerified: true,
     identityStatus: true,
     isAmbassador: true,
+    isOfficial: true,
     ambassadorSince: true,
     createdAt: true,
     lastLoginAt: true,
@@ -1123,6 +1129,7 @@ export class AdminService {
     phoneVerified: true,
     identityStatus: true,
     isAmbassador: true,
+    isOfficial: true,
     ambassadorSince: true,
     mfaEnabled: true,
     canBulkInvite: true,
@@ -1272,7 +1279,7 @@ export class AdminService {
   ) {
     const target = await this.prisma.user.findUnique({
       where: { id: targetId },
-      select: { id: true },
+      select: { id: true, role: true, email: true, emailVerified: true, firstName: true },
     });
     if (!target) throw new NotFoundException('Utilisateur introuvable');
     if (dto.role !== undefined && targetId === actor.id) {
@@ -1288,11 +1295,62 @@ export class AdminService {
     if (dto.bio !== undefined) data.bio = dto.bio;
     if (dto.role !== undefined) data.role = dto.role;
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: targetId },
       data,
       select: AdminService.ADMIN_USER_SELECT,
     });
+
+    // A role change was, until now, completely silent: no audit row, no word to
+    // the person. Both matter — the trace for anyone auditing later, the notice
+    // for the person who suddenly holds moderation powers (and who is the only
+    // one able to say "I never asked for this").
+    if (dto.role !== undefined && dto.role !== target.role) {
+      await this.prisma.adminAuditLog
+        .create({
+          data: {
+            actorId: actor.id,
+            action: 'user.role_change',
+            targetUserId: targetId,
+            meta: { from: target.role, to: dto.role },
+          },
+        })
+        .catch(() => undefined);
+      await this.announceRoleChange(target, dto.role);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Tell a member their role changed: in-app notification (never expires — it is
+   * an account event, not a feed item) plus an email when we hold a verified
+   * address. Best-effort on both channels: a mail outage must not roll back a
+   * role the admin already granted.
+   */
+  private async announceRoleChange(
+    target: { id: string; email: string | null; emailVerified: boolean; firstName: string | null },
+    role: 'user' | 'moderator' | 'admin',
+  ): Promise<void> {
+    const granted = role === 'admin' || role === 'moderator';
+    const label = role === 'admin' ? 'administrateur' : 'modérateur';
+    await this.notifications
+      .create({
+        userId: target.id,
+        type: 'system',
+        title: granted ? `Tu es ${label} 🛡️` : 'Tes droits ont changé',
+        body: granted
+          ? "L'équipe NigerConnect t'a confié des responsabilités sur la plateforme."
+          : "Tes droits d'équipe ont été retirés. Ton compte reste actif.",
+        expiresInHours: null,
+      })
+      .catch((e) => this.logger.warn(`role-change notification failed: ${String(e)}`));
+
+    if (granted && target.email && target.emailVerified) {
+      await this.mailer
+        .sendRoleGranted(target.email, role, target.firstName)
+        .catch((e) => this.logger.warn(`role-change email failed: ${String(e)}`));
+    }
   }
 
   /**

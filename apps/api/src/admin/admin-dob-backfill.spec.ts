@@ -11,6 +11,8 @@ function makeService(doc: { id: string } | null) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never, // notifications
+    {} as never, // mailer
     { get: jest.fn(() => 'private-bucket') } as never,
   );
   return { admin, findFirst, update };

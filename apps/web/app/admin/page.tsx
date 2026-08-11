@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   Award,
+  BadgeCheck,
   LayoutDashboard,
   Inbox,
   LifeBuoy,
@@ -31,6 +32,7 @@ import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
 import ReferralsSection from "@/components/admin/ReferralsSection";
 import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
+import OfficialSection from "@/components/admin/OfficialSection";
 import UsersSection from "@/components/admin/UsersSection";
 import SecuritySection from "@/components/admin/SecuritySection";
 import ObservabilitySection from "@/components/admin/ObservabilitySection";
@@ -47,6 +49,7 @@ type Tab =
   | "invitations"
   | "referrals"
   | "ambassadors"
+  | "official"
   | "security"
   | "observability"
   | "map";
@@ -75,6 +78,7 @@ const NAV: NavEntry[] = [
 const ADMIN_ONLY_NAV: NavEntry[] = [
   { id: "map", label: "Carte", icon: MapIcon },
   { id: "ambassadors", label: "Ambassadeurs", icon: Award },
+  { id: "official", label: "Compte officiel", icon: BadgeCheck },
   { id: "newsletter", label: "Newsletter", icon: Mail },
   { id: "observability", label: "Observabilité", icon: Activity },
 ];
@@ -153,6 +157,7 @@ export default function AdminDashboardPage() {
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
         {tab === "referrals" ? <ReferralsSection /> : null}
         {tab === "ambassadors" ? <AmbassadorsSection /> : null}
+        {tab === "official" ? <OfficialSection /> : null}
         {tab === "security" ? <SecuritySection role={role} /> : null}
         {tab === "observability" ? <ObservabilitySection /> : null}
       </main>

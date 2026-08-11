@@ -162,25 +162,41 @@ describe('DiasporaPolicyService', () => {
   });
 
   describe('content scope (authorScope)', () => {
+    // Every scope is now `{ OR: [ {isOfficial: true}, <side clause> ] }` — the
+    // official account speaks to both sides. `sideOf` pulls the side clause back
+    // out so each rule below still reads as the rule it is testing.
+    const sideOf = (scope: unknown): Record<string, unknown> =>
+      (scope as { OR: Record<string, unknown>[] }).OR[1]!;
+
+    // The exemption itself: without it, half the community would never see a
+    // post from the platform.
+    it('lets the official account through on both sides', async () => {
+      const { svc } = build();
+      for (const viewer of ['paris', 'niamey', 'unknown']) {
+        const scope = (await svc.authorScope(viewer)) as { OR: unknown[] };
+        expect(scope.OR[0]).toEqual({ isOfficial: true });
+      }
+    });
+
     // Content is split symmetrically, unlike contact. A viewer only ever sees
     // authors from their own side.
     it('shows a diaspora viewer only diaspora authors', async () => {
       const { svc } = build();
-      await expect(svc.authorScope('paris')).resolves.toEqual({
+      expect(sideOf(await svc.authorScope('paris'))).toEqual({
         countryCode: { not: null, notIn: ['NE'] },
       });
     });
 
     it('shows a viewer in Niger only home-based authors, including those with no country', async () => {
       const { svc } = build();
-      await expect(svc.authorScope('niamey')).resolves.toEqual({
+      expect(sideOf(await svc.authorScope('niamey'))).toEqual({
         OR: [{ countryCode: null }, { countryCode: 'NE' }],
       });
     });
 
     it('treats a viewer with no country as home-based', async () => {
       const { svc } = build();
-      await expect(svc.authorScope('unknown')).resolves.toEqual({
+      expect(sideOf(await svc.authorScope('unknown'))).toEqual({
         OR: [{ countryCode: null }, { countryCode: 'NE' }],
       });
     });
@@ -196,8 +212,8 @@ describe('DiasporaPolicyService', () => {
     // sides, and none visible to neither.
     it('partitions authors — the two scopes never overlap and never leave a gap', async () => {
       const { svc } = build();
-      const diaspora = (await svc.authorScope('paris'))!;
-      const home = (await svc.authorScope('niamey'))!;
+      const diaspora = sideOf(await svc.authorScope('paris'));
+      const home = sideOf(await svc.authorScope('niamey'));
       const matches = (scope: Record<string, unknown>, country: string | null): boolean =>
         'OR' in scope
           ? country === null || country === 'NE'
@@ -236,10 +252,12 @@ describe('DiasporaPolicyService', () => {
     // in the feed and 404 when opened, or the reverse.
     it('agrees with authorScope on every combination', async () => {
       const { svc } = build();
+      const sideOf = (scope: unknown): Record<string, unknown> =>
+        (scope as { OR: Record<string, unknown>[] }).OR[1]!;
       const inScope = (scope: Record<string, unknown>, country: string | null): boolean =>
         'OR' in scope ? country === null || country === 'NE' : country !== null && country !== 'NE';
       for (const viewer of ['paris', 'niamey', 'unknown']) {
-        const scope = (await svc.authorScope(viewer))!;
+        const scope = sideOf(await svc.authorScope(viewer));
         for (const author of ['paris', 'montreal', 'niamey', 'zinder', 'unknown']) {
           if (viewer === author) continue;
           expect(inScope(scope, COUNTRIES[author]!)).toBe(
@@ -277,10 +295,12 @@ describe('DiasporaPolicyService', () => {
 
     it('the SQL clause follows the unknown-country switch too', async () => {
       const { svc } = build(makePrisma(), makeSettings(true, true, false));
+      const sideOf = (scope: unknown): Record<string, unknown> =>
+        (scope as { OR: Record<string, unknown>[] }).OR[1]!;
       // Unknown-country members now belong to the diaspora side…
-      await expect(svc.authorScope('niamey')).resolves.toEqual({ countryCode: 'NE' });
+      expect(sideOf(await svc.authorScope('niamey'))).toEqual({ countryCode: 'NE' });
       // …so the diaspora clause must let them in, or they would vanish for both.
-      const diaspora = (await svc.authorScope('paris')) as { OR: unknown[] };
+      const diaspora = sideOf(await svc.authorScope('paris')) as { OR: unknown[] };
       expect(diaspora.OR).toContainEqual({ countryCode: null });
     });
 

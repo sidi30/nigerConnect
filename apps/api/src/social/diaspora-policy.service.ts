@@ -62,6 +62,27 @@ export class DiasporaPolicyService {
   }
 
   /**
+   * The official NigerConnect account is exempt from BOTH rules: it is the voice
+   * of the platform, not a member of either side. Without this, its country
+   * (none) would file it as home-based — it could not open a conversation with
+   * a diaspora member, and half the community would never see its posts.
+   * Cached like the country, and invalidated by the same {@link invalidate}.
+   */
+  async isOfficialAccount(userId: string): Promise<boolean> {
+    const key = `diaspora:official:${userId}`;
+    const cached = await this.redis.client.get(key);
+    if (cached !== null) return cached === '1';
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isOfficial: true },
+    });
+    const value = user?.isOfficial === true;
+    await this.redis.client.set(key, value ? '1' : '0', 'EX', CACHE_TTL);
+    return value;
+  }
+
+  /**
    * Country code on file, or null. Cached 5 min in Redis, like BlockService.
    * We cache the COUNTRY, never the home/diaspora verdict: the verdict depends
    * on an admin switch, and caching it would make that switch take up to five
@@ -103,6 +124,15 @@ export class DiasporaPolicyService {
    */
   async authorScope(viewerId: string): Promise<Prisma.UserWhereInput | null> {
     if (!(await this.settings.isDiasporaContentSplit())) return null;
+    // The official account speaks to the whole community — its posts and stories
+    // sit outside the split, exactly like services and associations. Expressed
+    // here (once) rather than at each call site so no content query can forget it.
+    const scope = await this.sideScope(viewerId);
+    return { OR: [{ isOfficial: true }, scope] };
+  }
+
+  /** The side-of-the-split clause alone (see {@link authorScope}). */
+  private async sideScope(viewerId: string): Promise<Prisma.UserWhereInput> {
     // Which side owns the members with no country depends on the admin switch,
     // so the SQL clause has to follow it too — otherwise the list and the
     // single-item check would disagree about them.
@@ -128,12 +158,15 @@ export class DiasporaPolicyService {
   async sharesContentScope(viewerId: string, authorId: string): Promise<boolean> {
     if (viewerId === authorId) return true;
     if (!(await this.settings.isDiasporaContentSplit())) return true;
+    // Same exemption as authorScope: the official account addresses both sides.
+    if (await this.isOfficialAccount(authorId)) return true;
     return (await this.isHomeBased(viewerId)) === (await this.isHomeBased(authorId));
   }
 
-  /** Call after any write that changes a member's country. */
+  /** Call after any write that changes a member's country — or its official flag. */
   async invalidate(userId: string): Promise<void> {
     await this.redis.client.del(`diaspora:country:${userId}`);
+    await this.redis.client.del(`diaspora:official:${userId}`);
   }
 
   /**
@@ -142,6 +175,10 @@ export class DiasporaPolicyService {
    */
   async mayInitiateContact(actorId: string, targetId: string): Promise<boolean> {
     if (!(await this.settings.isDiasporaContactRestricted())) return true;
+    // The official account writes to everyone, and everyone may answer it: it
+    // belongs to neither side, so the one-directional rule has nothing to say.
+    if (await this.isOfficialAccount(actorId)) return true;
+    if (await this.isOfficialAccount(targetId)) return true;
     if (!(await this.isHomeBased(actorId))) return true;
     // Home-based to home-based is the whole point: they can talk freely.
     return this.isHomeBased(targetId);

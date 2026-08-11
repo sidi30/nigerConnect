@@ -64,6 +64,7 @@ const MEMBER_SELECT = {
   // so the badges silently never showed in chat).
   identityStatus: true,
   isAmbassador: true,
+  isOfficial: true,
 } as const satisfies Prisma.UserSelect;
 
 // Nested snippet of the quoted message for swipe-to-reply. Just enough to render
@@ -174,10 +175,27 @@ export class ChatService {
 
     const users = await this.prisma.user.findMany({
       where: { id: { in: uniqueParticipants } },
-      select: { id: true },
+      select: { id: true, isOfficial: true },
     });
     if (users.length !== uniqueParticipants.length) {
       throw new NotFoundException('One or more participants not found');
+    }
+    // Only the official account opens an official conversation. A member can
+    // always ANSWER one (the membership row is there, sendMessage lets it
+    // through) — but they cannot start one, and they cannot drag the official
+    // account into a group. It reaches out; it is not reached out to. The
+    // creator lookup only runs when an official participant is actually in the
+    // list, so the ordinary path keeps exactly the queries it had.
+    if (users.some((u) => u.isOfficial)) {
+      const creator = await this.prisma.user.findUnique({
+        where: { id: creatorId },
+        select: { isOfficial: true },
+      });
+      if (!creator?.isOfficial) {
+        throw new ForbiddenException(
+          "Le compte officiel NigerConnect ne peut pas être ajouté à une conversation.",
+        );
+      }
     }
 
     const isDirect = uniqueParticipants.length === 1;

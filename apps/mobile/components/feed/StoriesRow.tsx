@@ -3,6 +3,7 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
+import { OfficialBadge } from '@/components/ui/OfficialBadge';
 import type { PublicUser } from '@nigerconnect/shared-types';
 
 interface StoryGroup {
@@ -51,6 +52,14 @@ export function StoriesRow({ storyGroups = [], onCreate, onOpen }: Props) {
               </View>
             )}
           </LinearGradient>
+          {/* Le badge est posé SUR l'anneau : dans une rangée de stories, le nom
+              est tronqué et ne suffit pas à distinguer la plateforme d'un membre
+              qui se serait appelé « NigerConnect ». */}
+          {g.author.isOfficial ? (
+            <View style={styles.storyBadge}>
+              <OfficialBadge size={18} />
+            </View>
+          ) : null}
           <Text style={styles.label} numberOfLines={1}>
             {(g.author.displayName ?? g.author.firstName ?? '').split(' ')[0]}
           </Text>
@@ -83,6 +92,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.cream,
     overflow: 'hidden',
   },
+  storyBadge: { position: 'absolute', top: 42, right: 2 },
   storyFallback: { backgroundColor: Colors.tan100, alignItems: 'center', justifyContent: 'center' },
   storyInitials: { color: Colors.orange, fontSize: 18, fontWeight: '800' },
   label: {

@@ -28,6 +28,7 @@ import { PageModule } from './page/page.module';
 import { PollModule } from './poll/poll.module';
 import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
+import { OfficialModule } from './official/official.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { ContactModule } from './contact/contact.module';
@@ -65,6 +66,7 @@ import { ObservabilityModule } from './observability/observability.module';
     PollModule,
     ReviewModule,
     AdminModule,
+    OfficialModule,
     NewsletterModule,
     InvitationsModule,
     ContactModule,

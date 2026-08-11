@@ -475,6 +475,55 @@ export class MailerService implements OnModuleInit {
   }
 
   /**
+   * Staff-role granted email — sent when an admin promotes a member to
+   * moderator or admin from the console. Getting the keys to the moderation
+   * queue (or to the whole console) without a word is both disorienting for the
+   * person and invisible for anyone auditing later: this mail is the trace the
+   * person themself receives.
+   */
+  async sendRoleGranted(
+    to: string,
+    role: 'moderator' | 'admin',
+    firstName?: string | null,
+  ): Promise<void> {
+    const b = MailerService.BRAND;
+    const safeName = this.esc(firstName);
+    const greeting = safeName ? `Bonjour ${safeName},` : 'Bonjour,';
+    const label = role === 'admin' ? 'administrateur' : 'modérateur';
+    const scope =
+      role === 'admin'
+        ? 'Tu as accès à la console complète : membres, sécurité, diffusion et réglages.'
+        : "Tu as accès à la file de modération : signalements, pièces d'identité et support.";
+    const bodyHtml = `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 8px;">
+        <tr><td align="center" style="width:64px;height:64px;background:${b.tan100};border-radius:50%;
+            font-size:32px;line-height:64px;text-align:center;">🛡️</td></tr>
+      </table>
+      <h1 style="margin:8px 0 16px;font-size:24px;font-weight:800;color:${b.brown};text-align:center;">Tu es ${label} 🛡️</h1>
+      <p style="margin:0 0 12px;">${greeting}</p>
+      <p style="margin:0 0 12px;">L'équipe NigerConnect vient de te nommer <strong>${label}</strong>. ${scope}</p>
+      <p style="margin:0 0 22px;font-weight:700;color:${b.brown};">Avant de commencer :</p>
+      ${this.featureRow('🔐', 'Active la double authentification', 'Elle peut être exigée pour ouvrir la console.')}
+      ${this.featureRow('🤝', 'Traite avec mesure', 'Chaque décision touche un membre réel de la communauté.')}
+      <p style="margin:22px 0 0;font-size:13px;color:${b.tan500};">
+        Tu n'as rien demandé ? Réponds à cet email immédiatement : une nomination
+        que tu n'attendais pas doit être vérifiée.
+      </p>`;
+    const text =
+      `NigerConnect — Tu es ${label}\n\n${greeting}\n` +
+      `L'équipe NigerConnect vient de te nommer ${label}. ${scope}\n\n` +
+      `Avant de commencer :\n` +
+      `- Active la double authentification (elle peut être exigée pour ouvrir la console)\n` +
+      `- Traite avec mesure : chaque décision touche un membre réel\n\n` +
+      `Tu n'as rien demandé ? Réponds à cet email immédiatement.`;
+    const html = this.layout({
+      preheader: `Tu viens d'être nommé ${label} sur NigerConnect.`,
+      bodyHtml,
+    });
+    await this.send({ to, subject: `NigerConnect — Tu es ${label} 🛡️`, html, text });
+  }
+
+  /**
    * Invitation email — sent when a user provides an invitee's email address.
    * Contains the one-use invite code and a direct deep-link to the registration
    * page. Fire-and-forget from the caller; this method logs but does not throw.
