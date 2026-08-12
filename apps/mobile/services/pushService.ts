@@ -82,6 +82,15 @@ export async function registerForPushNotifications(): Promise<string | null> {
  * messages privés (le push porte l'aperçu du message). À appeler AVANT
  * d'invalider la session : la route exige un access token encore valide.
  */
+/**
+ * Oublier le token mémorisé sans appeler l'API — pour les cas où la ligne
+ * serveur disparaît d'elle-même (suppression de compte : cascade sur
+ * `push_tokens`).
+ */
+export function forgetRegisteredPushToken(): void {
+  lastRegisteredToken = null;
+}
+
 export async function unregisterCurrentDevice(token?: string | null): Promise<void> {
   const target = token ?? lastRegisteredToken;
   lastRegisteredToken = null;

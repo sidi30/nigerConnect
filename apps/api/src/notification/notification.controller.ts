@@ -81,6 +81,13 @@ export class NotificationController {
     await this.notifications.registerPushToken(me.sub, dto.token, dto.platform);
   }
 
+  /**
+   * Symétrique de l'enregistrement : ouvrir l'attache aux comptes non vérifiés
+   * sans ouvrir le détachement laissait un appareil attaché à un compte qu'on
+   * ne peut plus quitter — la déconnexion prenait 403 et le téléphone gardait
+   * les notifications d'un compte dont on est parti.
+   */
+  @AllowUnverified()
   @Delete('device')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteDevice(

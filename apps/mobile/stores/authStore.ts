@@ -5,7 +5,11 @@ import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
 import { registerEmailUnverifiedHandler, registerLogoutHandler } from '@/services/api';
-import { registerForPushNotifications, unregisterCurrentDevice } from '@/services/pushService';
+import {
+  forgetRegisteredPushToken,
+  registerForPushNotifications,
+  unregisterCurrentDevice,
+} from '@/services/pushService';
 import { prefetchImages } from '@/services/imagePrefetch';
 
 // Best-effort background push registration — never blocks auth flow.
@@ -101,24 +105,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   async logout() {
-    // D'ABORD détacher l'appareil : la route exige la session encore vivante,
-    // et sans ça le téléphone continue de recevoir les notifications du compte
-    // qu'on vient de quitter — aperçu des messages privés compris.
-    await unregisterCurrentDevice();
-    const refresh = await tokenStore.getRefresh();
-    if (refresh) {
-      try {
-        await authApi.logout(refresh);
-      } catch {
-        // silent
+    // Le détachement de l'appareil et la révocation côté serveur ont besoin
+    // d'une session encore vivante : ils passent donc AVANT l'effacement. Mais
+    // ils restent un effort au mieux — l'effacement local est inconditionnel
+    // (`finally`), sinon une déconnexion sur réseau qui pend laisserait les
+    // tokens en SecureStore et l'utilisateur toujours connecté.
+    try {
+      // Sans ça, le téléphone continue de recevoir les notifications du compte
+      // qu'on vient de quitter — aperçu des messages privés compris.
+      await unregisterCurrentDevice();
+      const refresh = await tokenStore.getRefresh();
+      if (refresh) {
+        try {
+          await authApi.logout(refresh);
+        } catch {
+          // silent
+        }
       }
+    } finally {
+      await tokenStore.clear();
+      set({ user: null, isAuthenticated: false });
     }
-    await tokenStore.clear();
-    set({ user: null, isAuthenticated: false });
   },
 
   async deleteAccount() {
     await profileApi.deleteAccount();
+    // Le compte parti, ses push_tokens le suivent (cascade). On oublie quand
+    // même le token mémorisé : la session suivante sur ce téléphone doit
+    // repartir de zéro, pas détacher un identifiant qui n'existe plus.
+    forgetRegisteredPushToken();
     await tokenStore.clear();
     set({ user: null, isAuthenticated: false });
   },

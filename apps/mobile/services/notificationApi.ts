@@ -27,6 +27,9 @@ export const notificationApi = {
   },
   async deleteDevice(token: string): Promise<void> {
     // axios met le corps d'un DELETE dans `data`, pas en 2e argument.
-    await api.delete('/notifications/device', { data: { token } });
+    // Timeout court et explicite : cet appel est sur le chemin de la
+    // déconnexion, où le défaut (15 s, doublé par un rejeu après refresh)
+    // rendrait le bouton inerte sur un réseau qui pend.
+    await api.delete('/notifications/device', { data: { token }, timeout: 3000 });
   },
 };
