@@ -22,6 +22,13 @@ if (Platform.OS !== 'web') {
 }
 
 /**
+ * Dernier token enregistré pour la session en cours. Le récupérer au moment de
+ * la déconnexion coûterait une permission et un aller-retour Expo, alors qu'on
+ * l'a déjà en main à l'ouverture de session.
+ */
+let lastRegisteredToken: string | null = null;
+
+/**
  * Request permission + register the device's Expo push token with the API.
  * Safe to call multiple times — the backend upserts on (userId, token).
  * Silently returns null on simulators / web / denied permission.
@@ -61,6 +68,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const platform: 'ios' | 'android' | 'web' =
       Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
     await notificationApi.registerDevice(token, platform);
+    lastRegisteredToken = token;
     return token;
   } catch {
     return null;
@@ -69,13 +77,17 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
 /**
  * À la déconnexion : détacher le token du compte. Appelait `registerDevice`,
- * c'est-à-dire l'exact inverse — le token restait attaché et l'appareil
- * continuait de recevoir les notifications d'un compte déconnecté.
+ * c'est-à-dire l'exact inverse — et personne ne l'appelait, si bien que le
+ * téléphone restait rattaché au compte quitté et continuait de recevoir ses
+ * messages privés (le push porte l'aperçu du message). À appeler AVANT
+ * d'invalider la session : la route exige un access token encore valide.
  */
-export async function unregisterCurrentDevice(token: string | null): Promise<void> {
-  if (!token) return;
+export async function unregisterCurrentDevice(token?: string | null): Promise<void> {
+  const target = token ?? lastRegisteredToken;
+  lastRegisteredToken = null;
+  if (!target) return;
   try {
-    await notificationApi.deleteDevice(token);
+    await notificationApi.deleteDevice(target);
   } catch {
     // Best-effort : une déconnexion ne doit jamais échouer pour ça.
   }

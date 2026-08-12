@@ -114,6 +114,18 @@ export class PushService implements OnModuleInit {
         messageIdx += chunk.length;
         continue;
       }
+      // Un ticket par message, dans l'ordre. Si Expo en renvoie un nombre
+      // différent, l'appariement ticket↔token est faux à partir de là : on
+      // refuse d'attribuer une erreur — donc de supprimer un token valide —
+      // sur un alignement dont on n'est plus sûr.
+      if (tickets.length !== chunk.length) {
+        this.logger.warn(
+          `Expo returned ${tickets.length} tickets for ${chunk.length} messages — ` +
+            'ticket/token pairing dropped for this chunk (no token removed)',
+        );
+        messageIdx += chunk.length;
+        continue;
+      }
       tickets.forEach((ticket) => {
         const tokenInfo = tokens[messageIdx]!;
         if (ticket.status === 'error') {

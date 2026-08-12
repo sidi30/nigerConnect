@@ -57,4 +57,27 @@ describe('PushService — tri des tickets Expo', () => {
     await svc.sendToUser('u1', 'Titre', 'Corps');
     expect(deleteMany).not.toHaveBeenCalled();
   });
+
+  it('ne supprime rien si Expo renvoie moins de tickets que de messages', async () => {
+    // Appariement ticket↔token perdu : l'erreur pourrait viser un autre
+    // appareil que celui qu'on s'apprête à effacer.
+    const deleteMany = jest.fn(async () => ({ count: 0 }));
+    const prisma = {
+      pushToken: {
+        findMany: jest.fn(async () => [
+          { id: 't1', token: 'ExponentPushToken[aaa]' },
+          { id: 't2', token: 'ExponentPushToken[bbb]' },
+        ]),
+        deleteMany,
+      },
+    };
+    const svc = new PushService({ get: jest.fn(() => undefined) } as never, prisma as never);
+    const expo = (svc as unknown as { expo: Record<string, unknown> }).expo;
+    expo.chunkPushNotifications = (m: unknown[]) => [m];
+    expo.sendPushNotificationsAsync = async () => [
+      { status: 'error', details: { error: 'DeviceNotRegistered' } },
+    ];
+    await svc.sendToUser('u1', 'Titre', 'Corps');
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
 });

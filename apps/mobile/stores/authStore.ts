@@ -5,7 +5,7 @@ import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
 import { registerEmailUnverifiedHandler, registerLogoutHandler } from '@/services/api';
-import { registerForPushNotifications } from '@/services/pushService';
+import { registerForPushNotifications, unregisterCurrentDevice } from '@/services/pushService';
 import { prefetchImages } from '@/services/imagePrefetch';
 
 // Best-effort background push registration — never blocks auth flow.
@@ -101,6 +101,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   async logout() {
+    // D'ABORD détacher l'appareil : la route exige la session encore vivante,
+    // et sans ça le téléphone continue de recevoir les notifications du compte
+    // qu'on vient de quitter — aperçu des messages privés compris.
+    await unregisterCurrentDevice();
     const refresh = await tokenStore.getRefresh();
     if (refresh) {
       try {
