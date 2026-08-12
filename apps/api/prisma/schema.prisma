@@ -1026,7 +1026,13 @@ model PushToken {
   platform  Platform
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  @@unique([userId, token])
+  // Unicité sur le TOKEN seul, pas sur (userId, token) : un téléphone
+  // n'appartient qu'à un compte à la fois. Avec le couple, une ligne d'un
+  // compte quitté survivait à côté de celle du compte suivant, et le fan-out
+  // lisant par userId poussait les messages privés de l'ancien compte sur
+  // l'appareil du nouveau — aperçu du DM affiché sur l'écran verrouillé.
+  @@unique([token])
+  @@index([userId])
   @@map("push_tokens")
 }
 

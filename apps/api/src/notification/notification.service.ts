@@ -180,11 +180,24 @@ export class NotificationService {
     return { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
   }
 
+  /**
+   * Attacher l'appareil au compte — en le RÉCLAMANT aux autres. Un téléphone
+   * appartient à la dernière session qui s'y est connectée, et à elle seule.
+   *
+   * Sans cette revendication, le détachement était purement client : une
+   * session expirée, une déconnexion hors ligne, un téléphone prêté ou revendu
+   * laissaient la ligne de l'ancien compte en base. Le fan-out lisant par
+   * `userId`, ses messages privés continuaient d'arriver sur l'appareil du
+   * compte suivant — aperçu compris, sur l'écran verrouillé.
+   */
   async registerPushToken(userId: string, token: string, platform: 'ios' | 'android' | 'web') {
-    return this.prisma.pushToken.upsert({
-      where: { userId_token: { userId, token } },
-      create: { userId, token, platform },
-      update: { platform },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.pushToken.deleteMany({ where: { token, userId: { not: userId } } });
+      return tx.pushToken.upsert({
+        where: { token },
+        create: { userId, token, platform },
+        update: { platform },
+      });
     });
   }
 

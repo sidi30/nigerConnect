@@ -23,7 +23,9 @@ const registerDeviceSchema = z.object({
 });
 
 const deleteDeviceSchema = z.object({
-  token: z.string().min(1),
+  // Même borne qu'à l'enregistrement (et que la colonne) : inutile d'accepter
+  // en suppression une chaîne qui n'a jamais pu être stockée.
+  token: z.string().min(1).max(500),
 });
 
 @Controller('notifications')

@@ -32,7 +32,10 @@ const linkPathSchema = z
   .string()
   .trim()
   .max(200)
-  .regex(/^\/[A-Za-z0-9\-_/.?=&%]*$/, 'Chemin interne attendu (ex. /post/<id>)')
+  // Un seul `/` en tête, obligatoirement suivi d'autre chose qu'un `/` : sans
+  // ça `//evil.com` passait — c'est une URL protocol-relative, pas un chemin,
+  // et le tap ouvrait un site tiers pour toute la communauté d'un seul envoi.
+  .regex(/^\/(?!\/)[A-Za-z0-9\-_/.?=&%]*$/, 'Chemin interne attendu (ex. /post/<id>)')
   .optional();
 
 /** Notification à toute la communauté : cloche + push, sans conversation. */

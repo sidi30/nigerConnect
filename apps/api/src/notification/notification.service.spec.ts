@@ -96,11 +96,41 @@ describe('NotificationService', () => {
   });
 
   it('upserts a push token', async () => {
-    const prisma = {
-      pushToken: { upsert: jest.fn(async () => ({ id: 'p1' })) },
+    const tx = {
+      pushToken: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+        upsert: jest.fn(async () => ({ id: 'p1' })),
+      },
     };
+    const prisma = { $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) };
     const svc = new NotificationService(prisma as never, makePush() as never);
     await svc.registerPushToken('u1', 'token', 'ios');
-    expect(prisma.pushToken.upsert).toHaveBeenCalled();
+    expect(tx.pushToken.upsert).toHaveBeenCalled();
+  });
+
+  it('réclame l’appareil aux autres comptes avant de l’attacher', async () => {
+    // Bob se connecte sur le téléphone d'Alice : la ligne d'Alice doit partir,
+    // sinon les messages privés d'Alice continuent d'arriver chez Bob.
+    const tx = {
+      pushToken: {
+        deleteMany: jest.fn(async () => ({ count: 1 })),
+        upsert: jest.fn(async () => ({ id: 'p1' })),
+      },
+    };
+    const prisma = { $transaction: jest.fn(async (fn: (t: unknown) => unknown) => fn(tx)) };
+    const svc = new NotificationService(prisma as never, makePush() as never);
+    await svc.registerPushToken('bob', 'ExponentPushToken[T]', 'android');
+
+    expect(tx.pushToken.deleteMany).toHaveBeenCalledWith({
+      where: { token: 'ExponentPushToken[T]', userId: { not: 'bob' } },
+    });
+    // Revendication et attache dans la MÊME transaction : sinon un envoi qui
+    // tombe entre les deux touche encore l'ancien compte.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.pushToken.upsert).toHaveBeenCalledWith({
+      where: { token: 'ExponentPushToken[T]' },
+      create: { userId: 'bob', token: 'ExponentPushToken[T]', platform: 'android' },
+      update: { platform: 'android' },
+    });
   });
 });

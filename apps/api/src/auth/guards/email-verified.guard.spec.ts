@@ -55,11 +55,56 @@ describe('EmailVerifiedGuard', () => {
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it('lets @AllowUnverified() routes pass without touching the DB', async () => {
+  it('lets an unverified user through an @AllowUnverified() route', async () => {
     const prisma = makePrisma(false);
     const guard = new EmailVerifiedGuard(makeReflector({ allowUnverified: true }), prisma as never);
     await expect(guard.canActivate(makeContext(user))).resolves.toBe(true);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  describe('@AllowUnverified() ne dispense QUE de la vérification email', () => {
+    const makePrismaWithStatus = (emailVerified: boolean, status: string) => ({
+      user: { findUnique: jest.fn(async () => ({ emailVerified, status })) },
+    });
+
+    it('coupe quand même un compte banni', async () => {
+      const prisma = makePrismaWithStatus(false, 'banned');
+      const guard = new EmailVerifiedGuard(
+        makeReflector({ allowUnverified: true }),
+        prisma as never,
+      );
+      await expect(guard.canActivate(makeContext(user))).rejects.toMatchObject({
+        response: { code: 'ACCOUNT_BANNED' },
+      });
+    });
+
+    it('coupe quand même un compte suspendu', async () => {
+      const prisma = makePrismaWithStatus(true, 'suspended');
+      const guard = new EmailVerifiedGuard(
+        makeReflector({ allowUnverified: true }),
+        prisma as never,
+      );
+      await expect(guard.canActivate(makeContext(user))).rejects.toMatchObject({
+        response: { code: 'ACCOUNT_SUSPENDED' },
+      });
+    });
+
+    it('ne met pas un compte non vérifié en cache comme vérifié', async () => {
+      // Sinon un passage par une route @AllowUnverified ouvrirait tout le reste
+      // pendant la durée du cache.
+      const prisma = makePrismaWithStatus(false, 'active');
+      const reflector = { getAllAndOverride: jest.fn() } as unknown as Reflector;
+      const guard = new EmailVerifiedGuard(reflector, prisma as never);
+
+      (reflector.getAllAndOverride as jest.Mock).mockImplementation((key: string) =>
+        key === ALLOW_UNVERIFIED_KEY ? true : undefined,
+      );
+      await expect(guard.canActivate(makeContext(user))).resolves.toBe(true);
+
+      (reflector.getAllAndOverride as jest.Mock).mockImplementation(() => undefined);
+      await expect(guard.canActivate(makeContext(user))).rejects.toMatchObject({
+        response: { code: 'EMAIL_NOT_VERIFIED' },
+      });
+    });
   });
 
   it('passes when there is no authenticated user', async () => {

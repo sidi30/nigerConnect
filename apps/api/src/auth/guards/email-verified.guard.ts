@@ -39,11 +39,14 @@ export class EmailVerifiedGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
+    // NB : `@AllowUnverified()` ne dispense QUE du test `emailVerified`. Il
+    // sortait ici, avant les contrôles de statut plus bas — un compte banni
+    // gardait donc l'accès à toutes les routes qui le portent, le temps que son
+    // access token expire. Le décorateur promettait moins que ce qu'il ouvrait.
     const allowUnverified = this.reflector.getAllAndOverride<boolean>(ALLOW_UNVERIFIED_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (allowUnverified) return true;
 
     const request = context.switchToHttp().getRequest<Request & { user?: JwtUserPayload }>();
     const user = request.user;
@@ -61,7 +64,7 @@ export class EmailVerifiedGuard implements CanActivate {
       select: { emailVerified: true, status: true },
     });
 
-    if (record?.emailVerified === false) {
+    if (record?.emailVerified === false && !allowUnverified) {
       throw new ForbiddenException({
         code: 'EMAIL_NOT_VERIFIED',
         message: 'Veuillez vérifier votre adresse email pour continuer.',
@@ -88,7 +91,12 @@ export class EmailVerifiedGuard implements CanActivate {
     }
 
     // Verified + active (or user no longer exists — JwtAuthGuard's concern).
-    this.verifiedCache.set(user.sub, Date.now());
+    // Un compte NON vérifié qui vient de passer par une route @AllowUnverified
+    // ne doit surtout pas être mis en cache comme vérifié : il franchirait
+    // ensuite toutes les autres routes pendant la durée du cache.
+    if (record?.emailVerified !== false) {
+      this.verifiedCache.set(user.sub, Date.now());
+    }
     return true;
   }
 }
