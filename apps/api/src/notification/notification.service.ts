@@ -6,6 +6,40 @@ import { PushService } from './push.service';
 /** Notification history retention (Feature: 24h history). */
 const DEFAULT_TTL_HOURS = 24;
 
+/**
+ * Colonne `users.notify_*` qui commande le PUSH de chaque type. Un type absent
+ * de cette table n'est pas réglable : il part toujours (identité approuvée /
+ * refusée, `system`, `announcement` — ces deux derniers passent déjà par
+ * newsletterOptIn / digestOptIn en amont).
+ *
+ * Seul le push est filtré : la ligne d'historique, elle, est toujours écrite.
+ */
+const PUSH_PREFERENCE_BY_TYPE: Partial<Record<NotificationType, NotificationPreferenceKey>> = {
+  message: 'notifyMessages',
+  friend_request: 'notifySocial',
+  friend_accepted: 'notifySocial',
+  invite_accepted: 'notifySocial',
+  like: 'notifyReactions',
+  comment: 'notifyReactions',
+  mention: 'notifyReactions',
+  poll_new: 'notifyReactions',
+  association_invite: 'notifyGroups',
+  association_join_request: 'notifyGroups',
+  association_join_approved: 'notifyGroups',
+  association_join_rejected: 'notifyGroups',
+  page_follow: 'notifyGroups',
+  review_received: 'notifyGroups',
+  service_response: 'notifyGroups',
+  proximity: 'notifyProximity',
+};
+
+type NotificationPreferenceKey =
+  | 'notifyMessages'
+  | 'notifySocial'
+  | 'notifyReactions'
+  | 'notifyGroups'
+  | 'notifyProximity';
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -54,12 +88,33 @@ export class NotificationService {
           typeof value === 'string' ? value : JSON.stringify(value);
       }
     }
-    // Fire & forget push — real-time delivery
-    void this.push
-      .sendToUser(params.userId, params.title, params.body ?? null, pushData)
+    // Fire & forget push — real-time delivery, sauf si le membre a coupé cette
+    // catégorie dans ses réglages (l'historique ci-dessus, lui, reste complet).
+    void this.shouldPush(params.userId, params.type)
+      .then((allowed) => {
+        if (!allowed) return;
+        return this.push.sendToUser(params.userId, params.title, params.body ?? null, pushData);
+      })
       .catch((e) => this.logger.warn(`Push send failed: ${String(e)}`));
 
     return notification;
+  }
+
+  /**
+   * Le membre veut-il être notifié sur son téléphone pour ce type ? Un type
+   * hors table est réputé non réglable → toujours vrai. Un utilisateur
+   * introuvable (course avec une suppression de compte) → vrai aussi : le push
+   * partira dans le vide, ce qui est sans conséquence, et on ne veut pas
+   * qu'une lecture ratée fasse taire des notifications légitimes.
+   */
+  private async shouldPush(userId: string, type: NotificationType): Promise<boolean> {
+    const key = PUSH_PREFERENCE_BY_TYPE[type];
+    if (!key) return true;
+    const prefs = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { [key]: true } as Record<NotificationPreferenceKey, true>,
+    });
+    return prefs ? prefs[key] !== false : true;
   }
 
   async list(userId: string, cursor?: string, limit = 30) {

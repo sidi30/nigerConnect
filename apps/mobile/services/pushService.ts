@@ -41,7 +41,11 @@ export async function registerForPushNotifications(): Promise<string | null> {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'Notifications',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      // HIGH, pas DEFAULT : en DEFAULT Android range la notification dans le
+      // tiroir sans bandeau. Application fermée, le membre ne voyait donc rien
+      // avant de dérouler la barre d'état — ce qui se vit comme « je ne reçois
+      // pas les notifications ». HIGH affiche le bandeau par-dessus l'écran.
+      importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#E67E22',
     });
@@ -63,12 +67,16 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
 }
 
+/**
+ * À la déconnexion : détacher le token du compte. Appelait `registerDevice`,
+ * c'est-à-dire l'exact inverse — le token restait attaché et l'appareil
+ * continuait de recevoir les notifications d'un compte déconnecté.
+ */
 export async function unregisterCurrentDevice(token: string | null): Promise<void> {
   if (!token) return;
   try {
-    // Best-effort — backend endpoint is fire-and-forget
-    await notificationApi.registerDevice(token, Platform.OS as 'ios' | 'android' | 'web');
+    await notificationApi.deleteDevice(token);
   } catch {
-    // noop
+    // Best-effort : une déconnexion ne doit jamais échouer pour ça.
   }
 }

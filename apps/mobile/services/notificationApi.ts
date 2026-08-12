@@ -25,4 +25,8 @@ export const notificationApi = {
   async registerDevice(token: string, platform: 'ios' | 'android' | 'web'): Promise<void> {
     await api.post('/notifications/register-device', { token, platform });
   },
+  async deleteDevice(token: string): Promise<void> {
+    // axios met le corps d'un DELETE dans `data`, pas en 2e argument.
+    await api.delete('/notifications/device', { data: { token } });
+  },
 };

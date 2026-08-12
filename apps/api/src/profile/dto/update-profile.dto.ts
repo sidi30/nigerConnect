@@ -27,6 +27,12 @@ export const updateProfileSchema = z.object({
   // E-DIGEST opt-out (weekly regional digest). ON by default; mirror of
   // newsletterOptIn — an independent toggle in Privacy settings.
   digestOptIn: z.boolean().optional(),
+  // Push par catégorie. Tout ON par défaut, réglé dans Réglages ▸ Notifications.
+  notifyMessages: z.boolean().optional(),
+  notifySocial: z.boolean().optional(),
+  notifyReactions: z.boolean().optional(),
+  notifyGroups: z.boolean().optional(),
+  notifyProximity: z.boolean().optional(),
 });
 
 export type UpdateProfileDto = z.infer<typeof updateProfileSchema>;

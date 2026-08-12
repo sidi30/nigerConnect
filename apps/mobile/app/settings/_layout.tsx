@@ -41,6 +41,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="associations" options={{ title: 'Mes associations' }} />
       <Stack.Screen name="requests" options={{ title: 'Mes demandes' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+      <Stack.Screen name="push" options={{ title: 'Notifications push' }} />
       <Stack.Screen name="privacy" options={{ title: 'Confidentialité' }} />
       <Stack.Screen name="language" options={{ title: 'Langue' }} />
       <Stack.Screen name="photos" options={{ title: 'Mes photos' }} />

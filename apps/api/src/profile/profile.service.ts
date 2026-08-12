@@ -239,6 +239,11 @@ export class ProfileService {
     if (dto.privacyLevel !== undefined) data.privacyLevel = dto.privacyLevel;
     if (dto.newsletterOptIn !== undefined) data.newsletterOptIn = dto.newsletterOptIn;
     if (dto.digestOptIn !== undefined) data.digestOptIn = dto.digestOptIn;
+    if (dto.notifyMessages !== undefined) data.notifyMessages = dto.notifyMessages;
+    if (dto.notifySocial !== undefined) data.notifySocial = dto.notifySocial;
+    if (dto.notifyReactions !== undefined) data.notifyReactions = dto.notifyReactions;
+    if (dto.notifyGroups !== undefined) data.notifyGroups = dto.notifyGroups;
+    if (dto.notifyProximity !== undefined) data.notifyProximity = dto.notifyProximity;
 
     // Location pin. users.latitude/longitude are a CITY-coarse, publicly read
     // position (centroid + jitter). We must never persist the device's raw GPS

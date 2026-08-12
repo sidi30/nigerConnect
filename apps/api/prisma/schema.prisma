@@ -91,6 +91,20 @@ model User {
   digestOptIn      Boolean   @default(true) @map("digest_opt_in")
   lastDigestSentAt DateTime? @map("last_digest_sent_at") @db.Timestamptz
 
+  // Quelles notifications font vibrer le téléphone. Opt-OUT : TOUT est ON à
+  // l'inscription — un réseau social muet par défaut ne ramène personne — et
+  // le membre coupe ce qu'il veut dans Réglages ▸ Notifications. Ne filtre que
+  // le PUSH : l'historique in-app continue de tout enregistrer, sinon couper
+  // une catégorie ferait disparaître des demandes d'ami en attente.
+  // Les notifications de service (identité vérifiée/refusée, `system`) ne sont
+  // pas réglables : elles répondent à une action du membre ou l'avertissent
+  // d'une décision le concernant.
+  notifyMessages  Boolean @default(true) @map("notify_messages")
+  notifySocial    Boolean @default(true) @map("notify_social")
+  notifyReactions Boolean @default(true) @map("notify_reactions")
+  notifyGroups    Boolean @default(true) @map("notify_groups")
+  notifyProximity Boolean @default(true) @map("notify_proximity")
+
   // One-shot "complète ton profil" email nudge for verified accounts still
   // missing a countryCode (OAuth signups skip the registration form). Stamped
   // BEFORE the send (at-most-once, mirrors lastDigestSentAt) — null means

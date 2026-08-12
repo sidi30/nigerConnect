@@ -51,6 +51,7 @@ const MENU_ITEMS: Array<{
     href: '/settings/notifications' as Href,
     badgeKey: 'notifs',
   },
+  { icon: 'bell', label: 'Notifications push', href: '/settings/push' as Href },
   { icon: 'mail', label: 'Nous contacter', href: '/contact' as Href },
   { icon: 'lock', label: 'Confidentialité', href: '/settings/privacy' as Href },
   { icon: 'globe', label: 'Langue', href: '/settings/language' as Href },

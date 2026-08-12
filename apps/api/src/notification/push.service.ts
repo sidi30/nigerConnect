@@ -118,8 +118,21 @@ export class PushService implements OnModuleInit {
         const tokenInfo = tokens[messageIdx]!;
         if (ticket.status === 'error') {
           const code = ticket.details?.error;
-          if (code === 'DeviceNotRegistered' || code === 'InvalidCredentials') {
+          if (code === 'DeviceNotRegistered') {
+            // The device really is gone (app uninstalled, token rotated) —
+            // the only case where dropping the row is correct.
             stale.push(tokenInfo.id);
+          } else if (code === 'InvalidCredentials') {
+            // OUR problem, not the device's: the Expo project has no APNs key
+            // / FCM credential for this bundle id. Deleting the token here
+            // would silently wipe every device in the fleet and force each
+            // member to reopen the app once the credentials are finally
+            // uploaded. Keep the token, shout instead.
+            this.logger.error(
+              `Push credentials missing — no notification can be delivered: ${
+                ticket.message ?? code
+              }`,
+            );
           } else {
             this.logger.warn(
               `Expo push error for token ${tokenInfo.id}: ${ticket.message ?? code}`,

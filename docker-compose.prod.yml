@@ -316,6 +316,10 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
+      # Read at runtime by next.config.mjs headers(): the CSP must allow the
+      # admin console to PUT presigned uploads to the bucket. Any path is
+      # stripped — only the origin lands in connect-src.
+      NEXT_PUBLIC_CDN_URL: ${CDN_URL:-https://cdn.nigerconnect.app}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
       interval: 30s

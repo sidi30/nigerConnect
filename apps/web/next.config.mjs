@@ -24,12 +24,23 @@ const nextConfig = {
     // CSP connect-src must be an ORIGIN (no path): a source with a path that
     // doesn't end in "/" matches that exact path only, so a value like
     // ".../api" would block ".../api/auth/login". Strip to the origin.
-    let apiConnect = apiUrl;
-    try {
-      apiConnect = new URL(apiUrl).origin;
-    } catch {
-      // keep apiUrl as-is if it's not a parseable absolute URL
-    }
+    const toOrigin = (value) => {
+      try {
+        return new URL(value).origin;
+      } catch {
+        // keep the raw value if it's not a parseable absolute URL
+        return value;
+      }
+    };
+    const apiConnect = toOrigin(apiUrl);
+    // The admin console uploads images by PUTting the bytes STRAIGHT to the
+    // bucket with a presigned URL — the API only hands out the signature. That
+    // second hop is a cross-origin fetch, so the CDN origin has to be in
+    // connect-src or the browser kills the PUT before it leaves (silent
+    // "Failed to fetch": nothing ever reaches the server logs).
+    const cdnConnect = toOrigin(
+      process.env.NEXT_PUBLIC_CDN_URL ?? "https://cdn.nigerconnect.app",
+    );
 
     const csp = [
       "default-src 'self'",
@@ -37,7 +48,7 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: https:",
-      `connect-src 'self' ${apiConnect}`,
+      `connect-src 'self' ${apiConnect} ${cdnConnect}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

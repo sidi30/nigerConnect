@@ -39,6 +39,16 @@ export interface User extends PublicUser {
   newsletterOptIn: boolean;
   /** Receive the weekly activity digest (opt-out, default true). */
   digestOptIn: boolean;
+  /**
+   * Push par catégorie — opt-out, tout à true à l'inscription. Ne filtre que la
+   * notification poussée sur le téléphone : l'historique in-app reste complet.
+   * Les messages de service (identité, système) ne sont pas réglables.
+   */
+  notifyMessages: boolean;
+  notifySocial: boolean;
+  notifyReactions: boolean;
+  notifyGroups: boolean;
+  notifyProximity: boolean;
   languages: string[];
   privacyLevel: PrivacyLevel;
   emailVerified: boolean;

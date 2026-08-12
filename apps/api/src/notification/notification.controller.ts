@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { AllowUnverified } from '../common/decorators/allow-unverified.decorator';
 import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { NotificationService } from './notification.service';
@@ -63,6 +64,14 @@ export class NotificationController {
     await this.notifications.clearAll(me.sub);
   }
 
+  /**
+   * The app registers its push token once, at startup. A member who hasn't
+   * verified their email yet was answered 403 here and the app never asked
+   * again for that session — so their device stayed unreachable until the next
+   * cold start. Storing a token grants nothing (the fan-out still only fires on
+   * notifications the member is entitled to), so let it through.
+   */
+  @AllowUnverified()
   @Post('register-device')
   @HttpCode(HttpStatus.NO_CONTENT)
   async registerDevice(
