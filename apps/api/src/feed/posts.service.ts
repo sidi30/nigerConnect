@@ -703,11 +703,17 @@ export class PostsService {
    * never advertise a country whose posts {@link getFeed} would then refuse.
    */
   async listFeedCountries(viewerId: string) {
-    const homeBased = await this.diaspora.isHomeBased(viewerId);
     const own = await this.diaspora.countryOf(viewerId);
-    const sideFilter = homeBased
-      ? Prisma.sql`u.country_code = ${HOME_COUNTRY}`
-      : Prisma.sql`u.country_code <> ${HOME_COUNTRY}`;
+    // Le côté ne borne la liste QUE si la séparation est active. Sans cette
+    // condition, la liste et le fil se contredisent quand l'admin coupe le
+    // split : les pastilles n'en proposent qu'un, alors que `?country=FR`
+    // renvoie bien des publications françaises.
+    const split = await this.settings.isDiasporaContentSplit();
+    const sideFilter = !split
+      ? Prisma.sql`TRUE`
+      : (await this.diaspora.isHomeBased(viewerId))
+        ? Prisma.sql`u.country_code = ${HOME_COUNTRY}`
+        : Prisma.sql`u.country_code <> ${HOME_COUNTRY}`;
 
     type Row = { countryCode: string; posts: bigint; authors: bigint };
     const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
