@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { AppModule } from '../app.module';
 import { AnimationService } from './animation.service';
+import { AnimationEngagementService } from './animation-engagement.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { emailFor, ROSTER } from './roster';
@@ -42,6 +43,87 @@ async function main(): Promise<void> {
     logger.log(
       `Comptes : ${result.created} créés, ${result.updated} mis à jour, ${result.total} attendus`,
     );
+
+    // --list-work : ce que l'atelier doit rédiger, en JSON sur la sortie
+    // standard. C'est ce qui remplace l'appel HTTP admin : le compte
+    // administrateur ayant le TOTP, aucun jeton ne peut être fabriqué, donc
+    // l'atelier passe par SSH + ce CLI plutôt que par l'API.
+    if (process.argv.includes('--list-work')) {
+      const prisma = app.get(PrismaService);
+      const replies = await prisma.animationReply.findMany({
+        where: { status: 'pending', draft: null },
+        include: { bot: { select: { handle: true } } },
+        orderBy: { dueAt: 'asc' },
+        take: 30,
+      });
+      const work = [];
+      for (const r of replies) {
+        // Le fil de la conversation, pour que la réponse réponde vraiment.
+        const messages = await prisma.message.findMany({
+          where: { conversationId: r.conversationId, deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+          take: 20,
+          select: { content: true, sender: { select: { displayName: true, isAnimated: true } } },
+        });
+        work.push({
+          type: 'reply',
+          id: r.id,
+          handle: r.bot.handle,
+          dueAt: r.dueAt,
+          conversation: messages.map((m) => ({
+            de: m.sender.displayName,
+            bot: m.sender.isAnimated,
+            texte: m.content,
+          })),
+        });
+      }
+      const comments = await prisma.animationAction.findMany({
+        where: { type: 'comment', status: 'pending', draft: null },
+        include: { bot: { select: { handle: true } } },
+        orderBy: { dueAt: 'asc' },
+        take: 30,
+      });
+      for (const c of comments) {
+        const post = c.targetPostId
+          ? await prisma.post.findUnique({
+              where: { id: c.targetPostId },
+              select: { content: true, author: { select: { displayName: true } } },
+            })
+          : null;
+        work.push({
+          type: 'comment',
+          id: c.id,
+          handle: c.bot.handle,
+          dueAt: c.dueAt,
+          publication: post ? { de: post.author.displayName, texte: post.content } : null,
+        });
+      }
+      console.log(JSON.stringify(work, null, 2));
+    }
+
+    // --drafts <fichier> : applique les textes rédigés par l'atelier.
+    const draftsFlag = process.argv.indexOf('--drafts');
+    if (draftsFlag > -1) {
+      const file = process.argv[draftsFlag + 1];
+      if (!file) throw new Error('--drafts attend un chemin de fichier JSON');
+      const drafts = JSON.parse(await readFile(file, 'utf8')) as {
+        type: 'reply' | 'comment';
+        id: string;
+        draft: string;
+      }[];
+      const engagement = app.get(AnimationEngagementService);
+      let applied = 0;
+      for (const d of drafts) {
+        try {
+          if (d.type === 'reply') await animation.draftReply(d.id, d.draft);
+          else await engagement.draftComment(d.id, d.draft);
+          applied += 1;
+        } catch (error) {
+          logger.warn(`Brouillon ${d.id} refusé : ${String(error)}`);
+        }
+      }
+      logger.log(`Brouillons : ${applied} appliqué(s) sur ${drafts.length}`);
+    }
 
     const queueFlag = process.argv.indexOf('--enqueue');
     if (queueFlag > -1) {
