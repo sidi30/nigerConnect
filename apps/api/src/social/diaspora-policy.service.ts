@@ -148,17 +148,21 @@ export class DiasporaPolicyService {
   /**
    * Country a feed request should be narrowed to, from what the client asked.
    *
-   * Resolved SERVER-side on purpose: the default is "my own country", and a
-   * client computing that itself would show a brand-new member the wrong feed
-   * on first launch (it has no profile yet) and would drift the day someone
-   * moves. `'all'` lifts the filter; a member with no country on file has no
-   * "own country" to fall back on, so they see their whole side — the same
-   * thing they saw before this feature existed.
+   * ABSENCE DE PARAMÈTRE = AUCUN FILTRE. C'est une contrainte de compatibilité,
+   * pas une préférence : la majorité des membres tournent sur des versions de
+   * l'application antérieures aux pastilles de pays. Si le serveur appliquait
+   * « mon pays » par défaut, leur fil se retrouverait silencieusement réduit
+   * SANS qu'ils disposent du moindre moyen de l'élargir. C'est exactement ce
+   * qui s'est produit en production le 18/08/2026.
+   *
+   * Le défaut « mon pays » est donc porté par le CLIENT, qui connaît le pays du
+   * membre après connexion et envoie `?country=XX` explicitement. `'all'` reste
+   * la façon de demander le fil complet.
    */
-  async resolveFeedCountry(viewerId: string, requested?: string): Promise<string | null> {
+  // eslint-disable-next-line @typescript-eslint/require-await -- signature conservée (async) : les appelants l'attendent déjà et le corps peut redevenir asynchrone.
+  async resolveFeedCountry(_viewerId: string, requested?: string): Promise<string | null> {
     if (requested === 'all') return null;
-    if (requested) return requested;
-    return this.countryOf(viewerId);
+    return requested ?? null;
   }
 
   /** The side-of-the-split clause alone (see {@link authorScope}). */

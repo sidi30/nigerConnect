@@ -51,6 +51,9 @@ export class AnimationCron implements OnModuleInit, OnModuleDestroy {
       // en rafale à la seconde du balayage.
       await this.engagement.plan();
       await this.engagement.execute();
+      // Les demandes d'ami reçues sont acceptées ici : un compte qui publie et
+      // ne répond jamais à une demande se repère immédiatement.
+      await this.engagement.acceptPendingFriendRequests();
     } catch (error) {
       this.logger.error("Balayage de la file d'animation échoué", error as Error);
     }

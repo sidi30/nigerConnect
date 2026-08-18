@@ -10,6 +10,9 @@ import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 const CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Gestes exécutés par balayage, tous comptes confondus — plafond de sécurité. */
 const MAX_ACTIONS_PER_RUN = 30;
+/** Délai minimum avant d'accepter une demande d'ami. Accepter dans la seconde
+ *  est le geste le moins humain qui soit. */
+const ACCEPT_DELAY_MS = 20 * 60 * 1000;
 
 /**
  * L'heure `hour` tombe-t-elle dans la fenêtre [from, to[ ?
@@ -253,6 +256,50 @@ export class AnimationEngagementService {
       where: { id },
       data: { status: 'skipped', skipReason: reason },
     });
+  }
+
+  /**
+   * Accepte les demandes d'ami reçues par les comptes d'animation.
+   *
+   * Avec un délai : accepter à la seconde où la demande arrive est le geste le
+   * moins humain qui soit. On attend au moins vingt minutes, et on ne traite
+   * qu'un petit lot par balayage pour que vingt acceptations ne partent pas
+   * ensemble.
+   *
+   * Un compte en pause n'accepte rien : le silence est cohérent avec le fait
+   * qu'il ne publie pas non plus.
+   */
+  async acceptPendingFriendRequests(now = new Date()): Promise<number> {
+    const bots = await this.prisma.animationBot.findMany({
+      where: { active: true },
+      select: { userId: true },
+    });
+    if (bots.length === 0) return 0;
+
+    const pending = await this.prisma.friendship.findMany({
+      where: {
+        status: 'pending',
+        addresseeId: { in: bots.map((b) => b.userId) },
+        createdAt: { lte: new Date(now.getTime() - ACCEPT_DELAY_MS) },
+      },
+      select: { id: true, addresseeId: true },
+      orderBy: { createdAt: 'asc' },
+      take: 5,
+    });
+
+    let accepted = 0;
+    for (const f of pending) {
+      try {
+        // Par FriendsService, jamais en direct : c'est lui qui notifie le
+        // demandeur. Une acceptation muette ne se verrait de personne.
+        await this.friends.accept(f.addresseeId, f.id);
+        accepted += 1;
+      } catch (error) {
+        this.logger.warn(`Acceptation ${f.id} échouée : ${String(error)}`);
+      }
+    }
+    if (accepted > 0) this.logger.log(`Animation : ${accepted} demande(s) d'ami acceptée(s)`);
+    return accepted;
   }
 
   /**

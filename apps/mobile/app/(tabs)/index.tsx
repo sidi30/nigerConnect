@@ -65,13 +65,19 @@ export default function FeedTab() {
     );
   }, []);
 
+  // Le pays effectivement demandé au serveur. Le défaut « mon pays » est porté
+  // ICI et non côté serveur : une application ancienne n'envoie rien, et le
+  // serveur ne doit surtout pas filtrer d'office un fil qu'elle n'aurait aucun
+  // moyen d'élargir.
+  const effectiveCountry = country ?? user?.countryCode ?? undefined;
+
   // La clé porte le pays : changer de pastille change de cache, donc pas de
   // fil d'un pays affiché une fraction de seconde sous le libellé d'un autre.
-  const feedKey = ['feed', country ?? 'auto'] as const;
+  const feedKey = ['feed', effectiveCountry ?? 'all'] as const;
 
   const feedQuery = useInfiniteQuery({
     queryKey: feedKey,
-    queryFn: ({ pageParam }) => feedApi.getFeed({ cursor: pageParam, country }),
+    queryFn: ({ pageParam }) => feedApi.getFeed({ cursor: pageParam, country: effectiveCountry }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });

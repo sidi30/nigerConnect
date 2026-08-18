@@ -233,18 +233,18 @@ describe('DiasporaPolicyService', () => {
     const sideOf = (scope: unknown): Record<string, unknown> =>
       (scope as { OR: Record<string, unknown>[] }).OR[1]!;
 
-    it('defaults to the viewer own country, and lifts it on "all"', async () => {
+    // Compatibilité : une application ancienne n'envoie pas de pays et n'a pas
+    // les pastilles. Filtrer d'office lui réduirait le fil sans recours.
+    it('ne filtre RIEN quand le client ne demande pas de pays', async () => {
       const { svc } = build();
-      await expect(svc.resolveFeedCountry('paris')).resolves.toBe('FR');
-      await expect(svc.resolveFeedCountry('paris', 'all')).resolves.toBeNull();
-      await expect(svc.resolveFeedCountry('paris', 'MA')).resolves.toBe('MA');
+      await expect(svc.resolveFeedCountry('paris')).resolves.toBeNull();
+      await expect(svc.resolveFeedCountry('unknown')).resolves.toBeNull();
     });
 
-    // A member who never filled the form has no own country to default to —
-    // they must keep seeing their whole side, not an empty feed.
-    it('leaves a member with no country unfiltered by default', async () => {
+    it('applique le pays demandé, et « all » lève le filtre', async () => {
       const { svc } = build();
-      await expect(svc.resolveFeedCountry('unknown')).resolves.toBeNull();
+      await expect(svc.resolveFeedCountry('paris', 'MA')).resolves.toBe('MA');
+      await expect(svc.resolveFeedCountry('paris', 'all')).resolves.toBeNull();
     });
 
     it('ANDs the country with the side clause, never replaces it', async () => {
