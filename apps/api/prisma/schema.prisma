@@ -145,6 +145,14 @@ model User {
   // permet a son badge de valoir garantie.
   isOfficial     Boolean        @default(false) @map("is_official")
   officialSince  DateTime?      @map("official_since") @db.Timestamptz
+  // Compte d'animation editoriale, pilote par l'atelier (voir AnimationPost).
+  // Marqueur STRICTEMENT INTERNE : absent de USER_PUBLIC_SELECT et de
+  // USER_SELF_SELECT, il ne sort jamais de l'API. Il sert a trois choses et
+  // trois seulement : retirer ces comptes de la carte et de la proximite (elles
+  // supposent une presence physique verifiable), accepter automatiquement les
+  // demandes d'ami, et router leurs messages recus vers la console au lieu de
+  // les laisser sans reponse.
+  isAnimated     Boolean        @default(false) @map("is_animated")
   role           UserRole       @default(user)
   status         UserStatus     @default(active)
   // Sanction metadata (set alongside status by the admin console). statusReason
@@ -240,6 +248,9 @@ model User {
   contactMessages  ContactMessage[] @relation("UserContactMessages")
 
   officialBroadcasts OfficialBroadcast[] @relation("OfficialBroadcastAuthor")
+  animationPosts     AnimationPost[]     @relation("AnimationAuthor")
+  animationReviews   AnimationPost[]     @relation("AnimationReviewer")
+  animationBot       AnimationBot?       @relation("AnimationBotAccount")
 
   // Unique per OAuth identity so concurrent link-or-create requests can't mint
   // duplicate accounts (the DB is the final arbiter — see loginWithOAuth).
@@ -257,6 +268,7 @@ model User {
   // Un seul compte officiel en pratique : l'index sert a le retrouver sans
   // balayer la table a chaque action de la console.
   @@index([isOfficial])
+  @@index([isAnimated])
   @@map("users")
 }
 
@@ -1405,4 +1417,184 @@ model AppSetting {
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("app_settings")
+}
+
+// ── Animation éditoriale ─────────────────────────────────────────
+// L'atelier (Claude Code, sur le poste du propriétaire) REMPLIT cette file ;
+// le cron du serveur la VIDE à l'heure prévue. Les deux moitiés sont séparées
+// pour que l'extinction du poste n'arrête pas la plateforme : le contenu est
+// produit par lots quand la machine est allumée, distribué 24/7 sans elle.
+
+enum AnimationKind {
+  /// Ce qui change dans la loi et impacte les Nigériens du pays. VALIDATION
+  /// HUMAINE OBLIGATOIRE + source citée : une erreur ici coûte un titre de
+  /// séjour ou un permis à quelqu'un.
+  law
+  /// Bon plan, vie moins chère, démarche gratuite. Publié sans validation.
+  tip
+  /// Ambiance, question, entraide. Publié sans validation.
+  chat
+}
+
+enum AnimationStatus {
+  /// Rédigé, en attente de validation humaine (le défaut pour `law`).
+  draft
+  /// Bon pour publication — le cron le prendra à `scheduledAt`.
+  approved
+  /// Publié : `publishedPostId` porte le post réel.
+  published
+  /// Refusé en relecture. Conservé, jamais republié.
+  rejected
+}
+
+model AnimationPost {
+  id          String          @id @default(uuid()) @db.Uuid
+  /// Le compte d'animation qui signera la publication (User.isAnimated).
+  botId       String          @map("bot_id") @db.Uuid
+  bot         User            @relation("AnimationAuthor", fields: [botId], references: [id], onDelete: Cascade)
+  /// Pays visé, dénormalisé depuis le bot : sert au planning et au suivi sans
+  /// jointure, et garde la trace même si le bot change de ville plus tard.
+  countryCode String?         @map("country_code") @db.Char(2)
+  kind        AnimationKind
+  status      AnimationStatus @default(draft)
+  content     String          @db.Text
+  /// Image générée, déjà bindée au bucket public via S3Service.
+  mediaUrl    String?         @map("media_url") @db.VarChar(500)
+  /// Source officielle. EXIGÉE pour `law` — voir AnimationService.
+  sourceUrl   String?         @map("source_url") @db.VarChar(500)
+  scheduledAt DateTime        @map("scheduled_at") @db.Timestamptz
+  publishedAt DateTime?       @map("published_at") @db.Timestamptz
+  /// Post réellement créé, une fois la file vidée. Null tant que non publié.
+  publishedPostId String?     @map("published_post_id") @db.Uuid
+  /// Motif de refus, pour que l'atelier ne repropose pas la même chose.
+  reviewNote  String?         @map("review_note") @db.VarChar(500)
+  reviewedById String?        @map("reviewed_by_id") @db.Uuid
+  reviewedBy  User?           @relation("AnimationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  /// Le cron ne lit que (status, scheduledAt) : index composite dédié.
+  @@index([status, scheduledAt])
+  @@index([botId, scheduledAt])
+  @@map("animation_posts")
+}
+
+/// Réglages d'un compte d'animation, pilotables depuis la console SANS déploiement.
+/// Séparé de User exprès : ce sont des paramètres d'exploitation, pas un profil,
+/// et rien ici ne doit pouvoir remonter dans une sélection publique par accident.
+model AnimationBot {
+  id       String  @id @default(uuid()) @db.Uuid
+  userId   String  @unique @map("user_id") @db.Uuid
+  user     User    @relation("AnimationBotAccount", fields: [userId], references: [id], onDelete: Cascade)
+  /// nc01…nc25 — stable, sert de clé de reprise pour l'atelier.
+  handle   String  @unique @db.VarChar(8)
+  kind     AnimationKind
+  /// Interrupteur par compte : une extinction immédiate sans toucher au code.
+  active   Boolean @default(true)
+
+  // ── Cadence ────────────────────────────────────────────────
+  postsPerWeek    Int @default(2) @map("posts_per_week")
+  commentsPerDay  Int @default(3) @map("comments_per_day")
+  likesPerDay     Int @default(8) @map("likes_per_day")
+  friendReqPerDay Int @default(2) @map("friend_req_per_day")
+  /// Fenêtre d'activité en heure LOCALE du bot. Personne ne commente à 4 h.
+  activeFromHour  Int @default(8) @map("active_from_hour")
+  activeToHour    Int @default(22) @map("active_to_hour")
+
+  /// Thèmes que l'atelier doit couvrir pour ce compte.
+  topics    String[] @default([])
+  notes     String?  @db.VarChar(1000)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  replies AnimationReply[]
+  actions AnimationAction[]
+
+  @@index([active])
+  @@map("animation_bots")
+}
+
+enum AnimationReplyStatus {
+  /// En attente de son heure (voir `dueAt` — délai qui double à chaque tour).
+  pending
+  sent
+  /// Remontée à la console : le bot ne répond plus dans cette conversation.
+  escalated
+  /// Abandonnée (conversation trop ancienne, bot désactivé).
+  skipped
+}
+
+/// Réponse différée d'un compte d'animation à un message reçu.
+///
+/// Le délai double à chaque échange (5, 10, 20, 40 min…) mais est PLAFONNÉ :
+/// non borné, la sixième réponse arriverait le lendemain et la conversation
+/// mourrait — le mécanisme censé faire humain rendrait le compte muet.
+///
+/// `escalated` est le repli assumé : dès qu'un membre demande à qui il parle,
+/// le compte se tait et la conversation atterrit dans la console. On ne
+/// construit pas d'esquive.
+model AnimationReply {
+  id             String   @id @default(uuid()) @db.Uuid
+  botId          String   @map("bot_id") @db.Uuid
+  bot            AnimationBot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversationId String   @map("conversation_id") @db.Uuid
+  /// Message entrant auquel on répond — unique, pour ne jamais répondre deux fois.
+  incomingMessageId String @unique @map("incoming_message_id") @db.Uuid
+  status         AnimationReplyStatus @default(pending)
+  /// Rang de l'échange, base du doublement du délai.
+  attempt        Int      @default(0)
+  dueAt          DateTime @map("due_at") @db.Timestamptz
+  /// Texte rédigé par l'atelier. Null tant qu'il n'est pas passé.
+  draft          String?  @db.Text
+  sentMessageId  String?  @map("sent_message_id") @db.Uuid
+  escalationReason String? @map("escalation_reason") @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status, dueAt])
+  @@index([conversationId])
+  @@map("animation_replies")
+}
+
+enum AnimationActionType {
+  like
+  comment
+  friend_request
+}
+
+enum AnimationActionStatus {
+  /// Programmée, pas encore l'heure. Un `comment` attend aussi son texte.
+  pending
+  done
+  /// Écartée : cible disparue, quota atteint, compte éteint, règle diaspora.
+  skipped
+}
+
+/// Geste d'engagement programmé d'un compte d'animation.
+///
+/// Le serveur CHOISIT la cible et l'heure ; l'atelier n'écrit que le texte des
+/// commentaires. Un like et une demande d'ami n'ont pas de contenu, ils partent
+/// donc seuls — mais toujours à une heure décidée à l'avance et étalée, jamais
+/// en rafale au moment du balayage.
+model AnimationAction {
+  id       String                @id @default(uuid()) @db.Uuid
+  botId    String                @map("bot_id") @db.Uuid
+  bot      AnimationBot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  type     AnimationActionType
+  status   AnimationActionStatus @default(pending)
+  /// Cible : un post (like, comment) ou un membre (friend_request).
+  targetPostId String?           @map("target_post_id") @db.Uuid
+  targetUserId String?           @map("target_user_id") @db.Uuid
+  /// Texte du commentaire, écrit par l'atelier. Null pour like / demande d'ami.
+  draft    String?               @db.Text
+  dueAt    DateTime              @map("due_at") @db.Timestamptz
+  doneAt   DateTime?             @map("done_at") @db.Timestamptz
+  skipReason String?             @map("skip_reason") @db.VarChar(200)
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz
+
+  /// Un compte ne like pas deux fois le même post, ni ne redemande en ami
+  /// quelqu'un qu'il a déjà sollicité. Garanti en base, pas seulement en code.
+  @@unique([botId, type, targetPostId])
+  @@unique([botId, type, targetUserId])
+  @@index([status, dueAt])
+  @@map("animation_actions")
 }

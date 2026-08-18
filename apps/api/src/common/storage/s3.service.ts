@@ -146,6 +146,28 @@ export class S3Service {
   }
 
   /**
+   * Upload an object to the PUBLIC bucket from the server itself.
+   *
+   * The normal path is a presigned PUT the *client* performs — the API never
+   * relays user bytes. This is for the cases where there is no client: a
+   * maintenance CLI seeding avatars for accounts nobody can log into. The key
+   * is caller-supplied so it can follow the same `users/{id}/…` convention
+   * `assertOwnedPublicImage` validates against.
+   */
+  async putPublicObject(key: string, body: Buffer, contentType: string): Promise<string> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.publicBucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        ...(this.sseEnabled ? { ServerSideEncryption: 'AES256' as const } : {}),
+      }),
+    );
+    return this.publicUrl(key);
+  }
+
+  /**
    * Generate a short-lived GET URL for a PRIVATE object. Meant for things like
    * identity documents viewed by moderators, or chat media the peer is about
    * to display. Max TTL is capped at 15 min to limit replay.

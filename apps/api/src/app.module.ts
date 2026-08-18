@@ -33,6 +33,7 @@ import { NewsletterModule } from './newsletter/newsletter.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { ContactModule } from './contact/contact.module';
 import { DigestModule } from './digest/digest.module';
+import { AnimationModule } from './animation/animation.module';
 import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
@@ -71,6 +72,7 @@ import { ObservabilityModule } from './observability/observability.module';
     InvitationsModule,
     ContactModule,
     DigestModule,
+    AnimationModule,
     ObservabilityModule,
   ],
   providers: [

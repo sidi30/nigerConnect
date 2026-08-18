@@ -1,0 +1,230 @@
+================================================================================
+NIGERCONNECT — PROMPTS MIDJOURNEY DES 25 COMPTES D'ANIMATION
+================================================================================
+
+REGLES DE GENERATION
+--------------------
+1. Une seed = un visage. Ne jamais changer la seed d'un personnage.
+2. Generer d'abord les 25 avatars. Choisir la variante retenue, recuperer son
+   URL, puis l'utiliser en --cref <url> --cw 100 pour TOUTE image ulterieure du
+   meme personnage (couverture, story...). La seed seule ne tient pas un visage
+   entre deux prompts differents.
+3. Couvertures : reprendre le meme prompt en --ar 3:1, retirer le cadrage buste,
+   pousser le decor. Le visage n'a pas besoin d'y etre.
+4. TRI A L'ARRIVEE — jeter toute image avec :
+   - des mains visibles
+   - du texte sur les vetements
+   - des bijoux complexes
+   - des oreilles asymetriques
+   C'est la que ca se voit, plus que sur le visage.
+5. Viser l'esthetique photo de telephone : lumiere imparfaite, leger flou,
+   cadrage un peu de travers, arriere-plan reel. Le rendu studio par defaut de
+   Midjourney se repere immediatement.
+
+FORMATS ACCEPTES PAR L'APPLICATION
+----------------------------------
+   JPEG / PNG / WebP uniquement (pas de HEIC) — 15 Mo max par image.
+   Avatar  : carre, 1024x1024 suffit      (--ar 1:1)
+   Couverture : paysage ~1500x500          (--ar 3:1)
+
+NOMMAGE DES FICHIERS
+--------------------
+   nc01-hadiza-seyni-avatar.png ... nc25-boubacar-dodo-avatar.png
+   L'ordre des seeds 101 -> 125 suit exactement la numerotation nc01 -> nc25.
+
+GABARIT
+-------
+   [age] year old Nigerien [woman/man], [morphologie/coiffure],
+   [tenue coherente ville+saison], candid smartphone photo,
+   [lieu reel], natural imperfect lighting, slight motion blur,
+   3/4 bust framing, hands out of frame, no studio look
+   --ar 1:1 --style raw --seed [FIXE]
+
+
+================================================================================
+FRANCE — 8 COMPTES (68 membres)
+================================================================================
+
+--- nc01 — Hadiza Seyni — 22 ans, etudiante, Paris — seed 101 ---------------
+Role : LOI — titre de sejour etudiant, ANEF, changement de statut
+
+22 year old Nigerien woman, braided hair, denim jacket and colorful headwrap, candid smartphone photo in a Paris metro corridor, natural imperfect lighting, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 101
+
+
+--- nc02 — Balkissa Oumarou — 23 ans, etudiante, Lyon — seed 102 ------------
+Role : BONS PLANS — CROUS, colocation, aides au logement
+
+23 year old Nigerien woman, short natural afro, oversized sweater and backpack, candid smartphone photo on a Lyon university campus in autumn, soft overcast light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 102
+
+
+--- nc03 — Rakia Mounkaila — 21 ans, etudiante, Toulouse — seed 103 ---------
+Role : ANIMATION — entraide, questions, reactions
+
+21 year old Nigerien woman, long box braids, hoodie and small gold earrings, candid smartphone photo in a busy student cafeteria, warm indoor lighting, slight motion blur, 3/4 bust framing --ar 1:1 --style raw --seed 103
+
+
+--- nc04 — Salamatou Garba — 34 ans, aide-soignante, Marseille — seed 104 ---
+Role : LOI — passage salarie, titre pluriannuel
+
+34 year old Nigerien woman, hair tied back, light blue medical scrubs under an open jacket, candid smartphone photo outside a hospital entrance, bright Mediterranean daylight, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 104
+
+
+--- nc05 — Mariama Alzouma — 37 ans, comptable, Lille — seed 105 ------------
+Role : BONS PLANS — transferts d'argent, forfaits mobiles
+
+37 year old Nigerien woman, straightened shoulder-length hair, plain blazer over a printed blouse, candid smartphone photo in a small open-plan office, neutral fluorescent light, 3/4 bust framing --ar 1:1 --style raw --seed 105
+
+
+--- nc06 — Abdoulaye Maiga — 24 ans, etudiant, Paris — seed 106 -------------
+Role : LOI — echange du permis nigerien, assurance auto
+
+24 year old Nigerien man, short fade haircut, puffer jacket and crossbody bag, candid smartphone photo on a Paris street at dusk, mixed streetlight and shop light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 106
+
+
+--- nc07 — Moussa Boureima — 22 ans, etudiant, Lyon — seed 107 --------------
+Role : ANIMATION — foot, ambiance, commentaires
+
+22 year old Nigerien man, short hair, football club tracksuit top, candid smartphone photo beside an outdoor city football pitch, late afternoon sun, slight motion blur, 3/4 bust framing --ar 1:1 --style raw --seed 107
+
+
+--- nc08 — Souleymane Zakari — 36 ans, chauffeur VTC, Paris — seed 108 ------
+Role : BONS PLANS — billets Niamey, bagages, colis
+
+36 year old Nigerien man, trimmed beard, dark shirt, candid smartphone photo seated in a parked car in Paris at night, dashboard and streetlight glow on the face, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 108
+
+
+================================================================================
+TURQUIE — 6 COMPTES (44 membres)
+================================================================================
+
+--- nc09 — Aicha Hamidou — 22 ans, etudiante, Bursa — seed 109 --------------
+Role : LOI — ikamet, quartiers fermes, assurance sante
+
+22 year old Nigerien woman, colorful hijab, denim jacket, candid smartphone photo on a Bursa street with tea houses in the background, mild spring light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 109
+
+
+--- nc10 — Zeinabou Issaka — 23 ans, etudiante, Istanbul — seed 110 ---------
+Role : BONS PLANS — loyers, carte transport, inflation
+
+23 year old Nigerien woman, long braids, knitted cardigan, candid smartphone photo on an Istanbul ferry with the Bosphorus behind, windy overcast daylight, slight motion blur, 3/4 bust framing --ar 1:1 --style raw --seed 110
+
+
+--- nc11 — Nafissa Illiassou — 21 ans, etudiante, Konya — seed 111 ----------
+Role : ANIMATION — campus, cuisine, entraide
+
+21 year old Nigerien woman, hijab, thick winter coat, candid smartphone photo outside a Turkish university building in winter, overcast light, slight motion blur, 3/4 bust framing --ar 1:1 --style raw --seed 111
+
+
+--- nc12 — Habsatou Karimou — 33 ans, traductrice, Ankara — seed 112 --------
+Role : LOI — permis de travail, denklik YOK
+
+33 year old Nigerien woman, headwrap, dark turtleneck, candid smartphone photo in a quiet office with a window behind, cool winter daylight, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 112
+
+
+--- nc13 — Harouna Tahirou — 23 ans, etudiant, Bursa — seed 113 -------------
+Role : BONS PLANS — bourse Turkiye Burslari, demarches gratuites
+
+23 year old Nigerien man, short hair, university hoodie and backpack strap visible, candid smartphone photo in a Turkish university corridor, flat indoor lighting, 3/4 bust framing --ar 1:1 --style raw --seed 113
+
+
+--- nc14 — Yacouba Moumouni — 30 ans, ingenieur, Istanbul — seed 114 --------
+Role : ANIMATION — stages, emploi, reactions
+
+30 year old Nigerien man, neat short beard, plain shirt with lanyard badge, candid smartphone photo in a modern office lobby, mixed daylight and ceiling light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 114
+
+
+================================================================================
+NIGER — 5 COMPTES (57 membres) — fil separe par le split diaspora
+================================================================================
+
+--- nc15 — Fatouma Abdou — 21 ans, etudiante, Niamey — seed 115 -------------
+Role : LOI / DEMARCHES — passeport, visas, dossiers de bourse
+
+21 year old Nigerien woman, braided hair with a light headscarf, printed pagne dress, candid smartphone photo on a university campus in Niamey, strong dry-season sunlight, dusty background, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 115
+
+
+--- nc16 — Zalika Chekou — 22 ans, etudiante, Niamey — seed 116 -------------
+Role : BONS PLANS — concours, formations, preparation au depart
+
+22 year old Nigerien woman, hair in a bun, simple t-shirt and shoulder bag, candid smartphone photo in front of a public building with a queue behind, harsh midday light, 3/4 bust framing --ar 1:1 --style raw --seed 116
+
+
+--- nc17 — Djamila Harouna — 35 ans, enseignante, Niamey — seed 117 ---------
+Role : ANIMATION — quotidien, entraide famille
+
+35 year old Nigerien woman, elegant headwrap, embroidered boubou, candid smartphone photo in a school courtyard, late afternoon golden light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 117
+
+
+--- nc18 — Idrissa Garba — 24 ans, etudiant, Zinder — seed 118 --------------
+Role : ANIMATION — humour, culture, langues
+
+24 year old Nigerien man, short hair, plain shirt, candid smartphone photo in a busy Zinder market street, bright dusty sunlight, slight motion blur, 3/4 bust framing --ar 1:1 --style raw --seed 118
+
+
+--- nc19 — Mahamadou Kimba — 38 ans, commercant, Niamey — seed 119 ----------
+Role : BONS PLANS — transferts recus, arnaques aux agences de visa
+
+38 year old Nigerien man, short beard, light boubou, candid smartphone photo in a sunny Niamey courtyard, harsh midday light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 119
+
+
+================================================================================
+MAROC — 3 COMPTES (16 membres)
+================================================================================
+
+--- nc20 — Maimouna Adamou — 22 ans, etudiante, Meknes — seed 120 -----------
+Role : LOI — carte de sejour, equivalences
+
+22 year old Nigerien woman, twisted braids, light jacket over a printed top, candid smartphone photo near an old Meknes city wall, warm afternoon light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 120
+
+
+--- nc21 — Amina Yaye — 23 ans, etudiante, Rabat — seed 121 -----------------
+Role : BONS PLANS — bourse AMCI, logement, cout de la vie
+
+23 year old Nigerien woman, hijab, cardigan and notebook under the arm, candid smartphone photo on a Rabat campus walkway, bright clear daylight, 3/4 bust framing --ar 1:1 --style raw --seed 121
+
+
+--- nc22 — Issoufou Gonda — 23 ans, etudiant, Meknes — seed 122 -------------
+Role : ANIMATION — vie etudiante, entraide, reactions
+
+23 year old Nigerien man, short hair, hooded sweatshirt, candid smartphone photo in a student residence courtyard in Morocco, early evening light, slight motion blur, 3/4 bust framing --ar 1:1 --style raw --seed 122
+
+
+================================================================================
+AMERIQUE DU NORD — 2 COMPTES (14 membres)
+================================================================================
+
+--- nc23 — Ramatou Assoumane — 39 ans, infirmiere, Montreal — seed 123 ------
+Role : LOI — permis d'etudes, PGWP, preuves financieres
+
+39 year old Nigerien woman, short natural hair, winter parka over scrubs, candid smartphone photo outside a Montreal building in snow, cold grey daylight, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 123
+
+
+--- nc24 — Ali Souley — 31 ans, informaticien, New York — seed 124 ----------
+Role : BONS PLANS — envoi d'argent, telephonie, F-1/OPT
+
+31 year old Nigerien man, short hair, hoodie, candid smartphone photo on a New York street at dusk, mixed street lighting, 3/4 bust framing --ar 1:1 --style raw --seed 124
+
+
+================================================================================
+RESTE DE LA DIASPORA — 1 COMPTE (47 membres, 20 pays)
+================================================================================
+
+--- nc25 — Boubacar Dodo — 41 ans, technicien, Bruxelles — seed 125 ---------
+Role : TRANSVERSAL — comparatif entre pays d'accueil
+
+41 year old Nigerien man, greying short beard, work jacket, candid smartphone photo in a Brussels tram shelter under rain, dull overcast light, 3/4 bust framing, hands out of frame --ar 1:1 --style raw --seed 125
+
+
+================================================================================
+RECAPITULATIF DES QUOTAS
+================================================================================
+   Etudiantes  10 : nc01 nc02 nc03 nc09 nc10 nc11 nc15 nc16 nc20 nc21
+   Salariees    5 : nc04 nc05 nc12 nc17 nc23
+   Etudiants    5 : nc06 nc07 nc13 nc18 nc22
+   Salaries     5 : nc08 nc14 nc19 nc24 nc25
+                    ------------------------------------------------
+                    15 femmes / 10 hommes — 25 comptes
+
+   Par pays : France 8 | Turquie 6 | Niger 5 | Maroc 3 | US+CA 2 | Reste 1
+   Par role : Loi 8 | Bons plans 9 | Animation 8
+================================================================================

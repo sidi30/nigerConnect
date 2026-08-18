@@ -81,3 +81,10 @@ SECURITY_REPORT.md
 # elle contient les identifiants SMTP, elle ne doit jamais etre commitee.
 monitoring/alertmanager/alertmanager.generated.yml
 monitoring/alertmanager/smtp_password
+
+# Journaux de l atelier d animation (local, jamais versionne)
+logs/
+
+# Sources Midjourney des avatars d animation : 139 Mo de PNG, hors depot.
+# Le mapping, lui, est versionne (docs/midjourney_session/mapping.json).
+docs/midjourney_session/*.png
