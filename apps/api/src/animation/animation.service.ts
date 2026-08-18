@@ -257,8 +257,16 @@ export class AnimationService {
    * cassé gèle l'animation de toute la plateforme.
    */
   async publishDue(now = new Date()): Promise<{ published: number; failed: number }> {
+    // Un compte en pause ne publie pas non plus. Sans cette condition,
+    // `active: false` n'éteignait que l'engagement et les réponses : un compte
+    // « éteint » depuis la console aurait continué à publier son stock déjà
+    // approuvé, ce qui est exactement ce qu'on croit avoir arrêté.
     const due = await this.prisma.animationPost.findMany({
-      where: { status: 'approved', scheduledAt: { lte: now } },
+      where: {
+        status: 'approved',
+        scheduledAt: { lte: now },
+        bot: { animationBot: { active: true } },
+      },
       orderBy: { scheduledAt: 'asc' },
       take: 20,
     });

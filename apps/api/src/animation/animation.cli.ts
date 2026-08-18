@@ -20,6 +20,11 @@ import { emailFor, ROSTER } from './roster';
  *
  *   docker exec nigerconnect-api node dist/animation/animation.cli.js
  *   docker exec nigerconnect-api node dist/animation/animation.cli.js --avatars /tmp/avatars
+ *   docker exec nigerconnect-api node dist/animation/animation.cli.js --enqueue /tmp/lot.json
+ *
+ * `--enqueue <fichier>` : depose un lot redige hors ligne. Meme chemin que la
+ * route admin (donc memes refus : un contenu juridique sans source est rejete,
+ * et repasse en draft quoi qu'il arrive).
  *
  * `--avatars <dir>` : téléverse les fichiers `nc01.png` … `nc25.png` du dossier
  * comme photos de profil. Le dossier de destination reste `users/{id du
@@ -37,6 +42,21 @@ async function main(): Promise<void> {
     logger.log(
       `Comptes : ${result.created} créés, ${result.updated} mis à jour, ${result.total} attendus`,
     );
+
+    const queueFlag = process.argv.indexOf('--enqueue');
+    if (queueFlag > -1) {
+      const file = process.argv[queueFlag + 1];
+      if (!file) throw new Error('--enqueue attend un chemin de fichier JSON');
+      const items = JSON.parse(await readFile(file, 'utf8')) as Parameters<
+        AnimationService['enqueue']
+      >[0][];
+      let queued = 0;
+      for (const item of items) {
+        await animation.enqueue(item);
+        queued += 1;
+      }
+      logger.log(`File : ${queued} publication(s) déposée(s)`);
+    }
 
     const flag = process.argv.indexOf('--avatars');
     if (flag > -1) {
