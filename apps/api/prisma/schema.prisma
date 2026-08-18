@@ -75,7 +75,7 @@ model User {
   // Map visibility is OFF by default (safety-by-default, RGPD art.25): a member
   // only appears on the public map after an explicit opt-in. Mirrors
   // proximityAlerts, which is likewise opt-in.
-  showOnMap       Boolean  @default(false) @map("show_on_map")
+  showOnMap       Boolean  @default(true) @map("show_on_map")
   proximityAlerts Boolean  @default(false) @map("proximity_alerts")
   // Receive NigerConnect news/announcements (in-app + push + email). Opt-OUT:
   // ON by default; the user toggles it in settings. Critical service messages
@@ -121,7 +121,7 @@ model User {
   proximityUpdatedAt DateTime? @map("proximity_updated_at") @db.Timestamptz
 
   languages    String[]     @default(["fr"])
-  privacyLevel PrivacyLevel @default(friends) @map("privacy_level")
+  privacyLevel PrivacyLevel @default(public) @map("privacy_level")
 
   emailVerified  Boolean        @default(false) @map("email_verified")
   phoneVerified  Boolean        @default(false) @map("phone_verified")
