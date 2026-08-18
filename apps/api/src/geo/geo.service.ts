@@ -228,7 +228,12 @@ export class GeoService implements OnModuleInit {
         // set a city) are invisible to the country/city aggregates. Cluster
         // them geographically so they still appear at wide zooms.
         markers.push(...(await this.orphanClusters(dto, blockedIds, 2)));
-      } else if (dto.zoom < 9) {
+      } else if (dto.zoom < 7) {
+        // Seuil abaissé de 9 à 7 : à 9 il fallait descendre au niveau du
+        // quartier pour qu'un agrégat de ville se résolve enfin en personnes.
+        // À 7 on est au niveau d'une région, ce qui est l'échelle à laquelle on
+        // cherche « qui est près de moi » — et la communauté reste assez petite
+        // pour que le nombre de marqueurs individuels tienne largement.
         markers.push(...(await this.cityClusters(dto, blockedIds)));
         markers.push(...(await this.orphanClusters(dto, blockedIds, 4)));
       } else {

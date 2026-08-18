@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { countryFlag } from '@/constants/countries';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { friendsApi } from '@/services/friendsApi';
 import { geoApi, type MapMarker } from '@/services/geoApi';
@@ -404,7 +405,7 @@ export default function MapTab() {
     if (!webReady || !webRef.current) return;
     const payload = filteredMarkers.map((m) =>
       m.kind === 'country' || m.kind === 'city'
-        ? { ...m, flag: Flags[m.countryCode] ?? '🌍' }
+        ? { ...m, flag: countryFlag(m.countryCode) }
         : m.kind === 'page'
           ? { ...m, emoji: PAGE_KIND_EMOJI[m.pageKind] ?? '📣' }
           : m,
@@ -550,7 +551,7 @@ export default function MapTab() {
                           {name}
                         </Text>
                         <Text style={styles.resultMeta} numberOfLines={1}>
-                          {Flags[item.countryCode ?? ''] ?? '🌍'}{' '}
+                          {countryFlag(item.countryCode)}{' '}
                           {[item.city, item.countryCode].filter(Boolean).join(', ')}
                         </Text>
                       </View>
@@ -664,7 +665,7 @@ function SelectedSheet({
               ) : null}
             </View>
             <Text style={styles.sheetMeta}>
-              {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+              {countryFlag(marker.countryCode)} {marker.city ?? ''}
               {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
             </Text>
             <View style={styles.sheetMetaRow}>
@@ -704,7 +705,7 @@ function SelectedSheet({
               ) : null}
             </View>
             <Text style={styles.sheetMeta}>
-              {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+              {countryFlag(marker.countryCode)} {marker.city ?? ''}
               {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
             </Text>
             <View style={styles.sheetMetaRow}>
@@ -838,7 +839,7 @@ function IndividualSheet({
         <View style={{ flex: 1 }}>
           <Text style={styles.sheetName}>{marker.name}</Text>
           <Text style={styles.sheetMeta}>
-            {Flags[marker.countryCode ?? ''] ?? '🌍'} {marker.city ?? ''}
+            {countryFlag(marker.countryCode)} {marker.city ?? ''}
             {marker.countryCode ? `, ${CountryNames[marker.countryCode] ?? marker.countryCode}` : ''}
           </Text>
         </View>
@@ -945,7 +946,7 @@ function ClusterListSheet({
                     )}
                   </View>
                   <Text style={styles.resultMeta} numberOfLines={1}>
-                    {Flags[item.countryCode ?? ''] ?? '🌍'}{' '}
+                    {countryFlag(item.countryCode)}{' '}
                     {[item.city, item.countryCode].filter(Boolean).join(', ')}
                   </Text>
                 </View>

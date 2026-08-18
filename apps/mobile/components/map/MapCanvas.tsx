@@ -16,7 +16,8 @@ import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker, type Region } from 'react-native-maps';
 import type { MapMarker } from '@/services/geoApi';
-import { Colors, Flags } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
+import { countryFlag } from '@/constants/countries';
 import { colorForId } from '@/constants/lookups';
 
 export interface MapCanvasHandle {
@@ -146,7 +147,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           );
         }
         // country / city cluster
-        const flag = Flags[m.countryCode] ?? '🌍';
+        // `countryFlag` dérive le drapeau des indicateurs régionaux Unicode :
+        // il couvre TOUT code ISO valide. La table `Flags` écrite à la main
+        // n'en listait qu'une poignée, si bien que les Pays-Bas, l'Allemagne ou
+        // la Suisse s'affichaient en 🌍 alors que leur pays était bien connu.
+        const flag = countryFlag(m.countryCode);
         return (
           <Marker
             key={'c:' + m.kind + ':' + m.lat.toFixed(2) + ':' + m.lon.toFixed(2)}
