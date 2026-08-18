@@ -65,3 +65,21 @@ export interface Comment {
   replies?: Comment[];
   createdAt: string;
 }
+
+/**
+ * One country the viewer can switch their feed to. Volume-ordered by the API —
+ * the client renders them in the order it receives, it does not re-sort.
+ */
+export interface FeedCountry {
+  /** ISO-3166-1 alpha-2. */
+  countryCode: string;
+  /** Public posts behind that chip. The viewer's own country may be 0. */
+  posts: number;
+  authors: number;
+}
+
+export interface FeedCountries {
+  items: FeedCountry[];
+  /** The viewer's own country, i.e. the default feed. Null if never filled in. */
+  ownCountry: string | null;
+}

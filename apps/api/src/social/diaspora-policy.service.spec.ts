@@ -224,6 +224,62 @@ describe('DiasporaPolicyService', () => {
       }
     });
   });
+  /**
+   * The country filter narrows the viewer's own side. The trap it must never
+   * fall into: letting a filter ACT AS a way around the split — asking for 'NE'
+   * from the diaspora side has to stay empty, not become a door.
+   */
+  describe('country filter (authorScope + resolveFeedCountry)', () => {
+    const sideOf = (scope: unknown): Record<string, unknown> =>
+      (scope as { OR: Record<string, unknown>[] }).OR[1]!;
+
+    it('defaults to the viewer own country, and lifts it on "all"', async () => {
+      const { svc } = build();
+      await expect(svc.resolveFeedCountry('paris')).resolves.toBe('FR');
+      await expect(svc.resolveFeedCountry('paris', 'all')).resolves.toBeNull();
+      await expect(svc.resolveFeedCountry('paris', 'MA')).resolves.toBe('MA');
+    });
+
+    // A member who never filled the form has no own country to default to —
+    // they must keep seeing their whole side, not an empty feed.
+    it('leaves a member with no country unfiltered by default', async () => {
+      const { svc } = build();
+      await expect(svc.resolveFeedCountry('unknown')).resolves.toBeNull();
+    });
+
+    it('ANDs the country with the side clause, never replaces it', async () => {
+      const { svc } = build();
+      const side = sideOf(await svc.authorScope('paris', 'MA')) as { AND: unknown[] };
+      expect(side.AND).toHaveLength(2);
+      expect(side.AND[1]).toEqual({ countryCode: 'MA' });
+    });
+
+    // The whole point: the filter is a convenience, not a bypass.
+    it('cannot be used to reach the other side of the split', async () => {
+      const { svc } = build();
+      const side = sideOf(await svc.authorScope('paris', 'NE')) as { AND: Record<string, unknown>[] };
+      // Diaspora clause excludes NE, country clause demands NE → provably empty.
+      expect(side.AND[0]).toEqual({ countryCode: { not: null, notIn: ['NE'] } });
+      expect(side.AND[1]).toEqual({ countryCode: 'NE' });
+    });
+
+    it('keeps the official account visible whatever the country asked for', async () => {
+      const { svc } = build();
+      const scope = (await svc.authorScope('paris', 'TR')) as { OR: unknown[] };
+      expect(scope.OR[0]).toEqual({ isOfficial: true });
+    });
+
+    // With the split lifted, the country filter is all that remains — it must
+    // still produce a clause, where the old code returned null (= no filter).
+    it('still filters by country when the split switch is off', async () => {
+      const { svc } = build(makePrisma(), makeSettings(true, false));
+      const scope = (await svc.authorScope('paris', 'FR')) as { OR: unknown[] };
+      expect(scope.OR[1]).toEqual({ countryCode: 'FR' });
+      // …and nothing at all is asked for → unchanged behaviour, no clause.
+      await expect(svc.authorScope('paris')).resolves.toBeNull();
+    });
+  });
+
   describe('single-item scope (sharesContentScope)', () => {
     it.each([
       ['diaspora viewer, diaspora author', 'paris', 'montreal', true],

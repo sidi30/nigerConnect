@@ -83,7 +83,17 @@ export class FeedController {
     @CurrentUser() me: JwtUserPayload,
     @Query(new ZodValidationPipe(feedQuerySchema)) query: FeedQueryDto,
   ) {
-    return this.posts.getFeed(me.sub, query.cursor, query.limit);
+    return this.posts.getFeed(me.sub, query.cursor, query.limit, query.country);
+  }
+
+  /**
+   * Countries the viewer can switch their feed to, ordered by content volume.
+   * Feeds the chips above the feed — declared BEFORE any `feed/:param` route
+   * would be, so 'countries' can never be read as a parameter value.
+   */
+  @Get('feed/countries')
+  getFeedCountries(@CurrentUser() me: JwtUserPayload) {
+    return this.posts.listFeedCountries(me.sub);
   }
 
   @Get('users/:userId/posts')

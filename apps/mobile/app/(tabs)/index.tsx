@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   FlatList,
@@ -20,6 +21,7 @@ import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FriendRequestsBanner } from '@/components/feed/FriendRequestsBanner';
 import { RatesBanner } from '@/components/feed/RatesBanner';
 import { PostCard } from '@/components/feed/PostCard';
+import { CountryFilterBar, type CountrySelection } from '@/components/feed/CountryFilterBar';
 import { ReportSheet } from '@/components/ReportSheet';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
@@ -33,6 +35,9 @@ import { toast } from '@/stores/toastStore';
 // Tab bar content height (kept in sync with `(tabs)/_layout.tsx`).
 const TAB_BAR_CONTENT_HEIGHT = 60;
 
+/** Dernier pays choisi pour le fil. Relu au montage, écrit à chaque choix. */
+const COUNTRY_PREF_KEY = 'feed.country';
+
 export default function FeedTab() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -43,11 +48,40 @@ export default function FeedTab() {
   const fabBottom = TAB_BAR_CONTENT_HEIGHT + Math.max(insets.bottom, 8) + 16;
   const [reportingId, setReportingId] = useState<string | null>(null);
 
+  // `undefined` = mon pays (le serveur résout le défaut). On ne devine pas
+  // côté client : au premier lancement le profil n'est pas encore chargé.
+  const [country, setCountry] = useState<CountrySelection>(undefined);
+  useEffect(() => {
+    void AsyncStorage.getItem(COUNTRY_PREF_KEY).then((saved) => {
+      if (saved) setCountry(saved);
+    });
+  }, []);
+
+  const changeCountry = useCallback((next: CountrySelection) => {
+    setCountry(next);
+    // Best-effort : un choix de filtre non persisté ne doit rien casser.
+    void (next ? AsyncStorage.setItem(COUNTRY_PREF_KEY, next) : AsyncStorage.removeItem(COUNTRY_PREF_KEY)).catch(
+      () => {},
+    );
+  }, []);
+
+  // La clé porte le pays : changer de pastille change de cache, donc pas de
+  // fil d'un pays affiché une fraction de seconde sous le libellé d'un autre.
+  const feedKey = ['feed', country ?? 'auto'] as const;
+
   const feedQuery = useInfiniteQuery({
-    queryKey: ['feed'],
-    queryFn: ({ pageParam }) => feedApi.getFeed({ cursor: pageParam }),
+    queryKey: feedKey,
+    queryFn: ({ pageParam }) => feedApi.getFeed({ cursor: pageParam, country }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+
+  const countriesQuery = useQuery({
+    queryKey: ['feed', 'countries'],
+    queryFn: () => feedApi.getFeedCountries(),
+    // Le volume par pays bouge lentement — inutile de le redemander à chaque
+    // retour sur l'onglet.
+    staleTime: 5 * 60_000,
   });
 
   const storiesQuery = useQuery({
@@ -103,9 +137,9 @@ export default function FeedTab() {
     mutationFn: (postId: string) => feedApi.deletePost(postId),
     // Optimistic: drop the post from the cached feed pages immediately
     onMutate: async (postId) => {
-      await qc.cancelQueries({ queryKey: ['feed'] });
-      const prev = qc.getQueryData(['feed']);
-      qc.setQueryData(['feed'], (old: unknown) => {
+      await qc.cancelQueries({ queryKey: feedKey });
+      const prev = qc.getQueryData(feedKey);
+      qc.setQueryData(feedKey, (old: unknown) => {
         const typed = old as { pages: Array<{ items: Post[] }> } | undefined;
         if (!typed) return old;
         return {
@@ -119,7 +153,7 @@ export default function FeedTab() {
       return { prev };
     },
     onError: (_e, _postId, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['feed'], ctx.prev);
+      if (ctx?.prev) qc.setQueryData(feedKey, ctx.prev);
     },
     // Re-sync with the server so the feed, profile counts and post cache match DB truth.
     onSettled: (_data, _err, postId) => {
@@ -208,6 +242,15 @@ export default function FeedTab() {
         </View>
       </View>
 
+      {/* Hors de la FlatList, donc toujours à l'écran : changer de pays ne doit
+          pas obliger à remonter tout son fil. */}
+      <CountryFilterBar
+        countries={countriesQuery.data?.items ?? []}
+        ownCountry={countriesQuery.data?.ownCountry ?? null}
+        value={country}
+        onChange={changeCountry}
+      />
+
       <Pressable style={[styles.fab, { bottom: fabBottom }]} onPress={() => router.push('/post/new')}>
         <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
         <Feather name="edit-2" size={22} color={Colors.white} />
@@ -280,6 +323,31 @@ export default function FeedTab() {
         ListEmptyComponent={
           feedQuery.isLoading ? (
             <FeedSkeletonList count={3} />
+          ) : country !== 'all' && (countriesQuery.data?.items.length ?? 0) > 1 ? (
+            // Vide À CAUSE du filtre, pas parce que le réseau est vide. Un
+            // membre dans un pays encore peu actif doit voir la sortie —
+            // sinon le filtre ressemble à une application cassée.
+            <View style={styles.empty}>
+              <Feather name="globe" size={48} color={Colors.tan400} style={styles.emptyEmoji} />
+              <Text style={styles.emptyTitle}>Rien encore dans ce pays</Text>
+              <Text style={styles.emptyText}>
+                Personne n’a encore publié ici. Regarde ce que dit le reste de la diaspora,
+                ou ouvre le bal.
+              </Text>
+              <View style={styles.emptyActions}>
+                <Pressable
+                  style={[styles.emptyBtn, styles.emptyBtnPrimary]}
+                  onPress={() => changeCountry('all')}
+                >
+                  <Feather name="globe" size={16} color={Colors.white} />
+                  <Text style={styles.emptyBtnPrimaryText}>Voir tous les pays</Text>
+                </Pressable>
+                <Pressable style={styles.emptyBtn} onPress={() => router.push('/post/new')}>
+                  <Feather name="edit-2" size={16} color={Colors.brown} />
+                  <Text style={styles.emptyBtnText}>Publier le premier post</Text>
+                </Pressable>
+              </View>
+            </View>
           ) : (
             // An empty feed is the first thing a brand-new member sees. Telling
             // them "add friends" without giving them a way to do it is a dead

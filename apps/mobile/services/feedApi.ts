@@ -1,4 +1,10 @@
-import type { Post, Comment, CursorPage, PublicUser } from '@nigerconnect/shared-types';
+import type {
+  Post,
+  Comment,
+  CursorPage,
+  FeedCountries,
+  PublicUser,
+} from '@nigerconnect/shared-types';
 import { api } from './api';
 
 export interface StoryGroup {
@@ -18,8 +24,21 @@ export const feedApi = {
     return data;
   },
 
-  async getFeed(params: { cursor?: string; limit?: number }): Promise<CursorPage<Post>> {
+  /**
+   * `country` absent = le pays du membre, résolu par le serveur (un premier
+   * lancement n'a pas encore de profil en mémoire) ; `'all'` lève le filtre.
+   */
+  async getFeed(params: {
+    cursor?: string;
+    limit?: number;
+    country?: string;
+  }): Promise<CursorPage<Post>> {
     const { data } = await api.get<CursorPage<Post>>('/feed', { params });
+    return data;
+  },
+
+  async getFeedCountries(): Promise<FeedCountries> {
+    const { data } = await api.get<FeedCountries>('/feed/countries');
     return data;
   },
 

@@ -6,13 +6,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+// Value import (not `import type`): `Prisma.sql` is used at runtime by the
+// country-volume query below.
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service, type PresignedUpload } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { BlockService } from '../social/block.service';
-import { DiasporaPolicyService } from '../social/diaspora-policy.service';
+import { DiasporaPolicyService, HOME_COUNTRY } from '../social/diaspora-policy.service';
 import { MentionsService } from './mentions.service';
 import type { CreatePostDto, CreateStoryDto, PresignVideoDto, UpdatePostDto } from './dto/post.dto';
 
@@ -572,8 +574,12 @@ export class PostsService {
     return date;
   }
 
-  async getFeed(userId: string, cursor?: string, limit = 20) {
-    const cacheable = !cursor && limit === FEED_CACHE_LIMIT;
+  async getFeed(userId: string, cursor?: string, limit = 20, country?: string) {
+    // Only the DEFAULT view is cached (no explicit country asked for). Caching
+    // each filter variant would mean tracking every key to bust on write; the
+    // filtered views are the rare path, so they read through to Postgres and
+    // the invalidation logic below stays exactly as it was.
+    const cacheable = !cursor && limit === FEED_CACHE_LIMIT && country === undefined;
     const cacheKey = `feed:${userId}:start`;
     if (cacheable) {
       const cached = await this.redis.client.get(cacheKey);
@@ -613,7 +619,11 @@ export class PostsService {
     // Association posts are exempt — an association is a shared resource open to
     // both sides, and filtering its wall would leave half its members looking at
     // a group that is visible but permanently empty.
-    const authorScope = await this.diaspora.authorScope(userId);
+    //
+    // Country: defaults to the viewer's own (resolved server-side), 'all' lifts
+    // it. It narrows the side, never widens it — see DiasporaPolicyService.
+    const countryFilter = await this.diaspora.resolveFeedCountry(userId, country);
+    const authorScope = await this.diaspora.authorScope(userId, countryFilter);
 
     const posts = await this.prisma.post.findMany({
       where: {
@@ -677,6 +687,54 @@ export class PostsService {
       await this.redis.client.set(cacheKey, JSON.stringify(result), 'EX', FEED_CACHE_TTL);
     }
     return result;
+  }
+
+  /**
+   * Countries the viewer can switch their feed to, ordered by how much content
+   * actually sits behind each one.
+   *
+   * Volume-ordered, not alphabetical, and countries with nothing to show are
+   * left out entirely: a chip that opens an empty feed reads as a broken app,
+   * not as an empty country. The viewer's own country is always included even
+   * at zero posts — it is the default view, so it has to be reachable to come
+   * back to.
+   *
+   * Restricted to the viewer's side of the diaspora split, so the list can
+   * never advertise a country whose posts {@link getFeed} would then refuse.
+   */
+  async listFeedCountries(viewerId: string) {
+    const homeBased = await this.diaspora.isHomeBased(viewerId);
+    const own = await this.diaspora.countryOf(viewerId);
+    const sideFilter = homeBased
+      ? Prisma.sql`u.country_code = ${HOME_COUNTRY}`
+      : Prisma.sql`u.country_code <> ${HOME_COUNTRY}`;
+
+    type Row = { countryCode: string; posts: bigint; authors: bigint };
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      SELECT u.country_code AS "countryCode",
+             COUNT(*) AS posts,
+             COUNT(DISTINCT p.author_id) AS authors
+      FROM posts p
+      JOIN users u ON u.id = p.author_id
+      WHERE p.deleted_at IS NULL
+        AND p.is_story = false
+        AND p.visibility = 'public'
+        AND u.is_official = false
+        AND u.country_code IS NOT NULL
+        AND ${sideFilter}
+      GROUP BY u.country_code
+      ORDER BY posts DESC, u.country_code ASC
+    `);
+
+    const items = rows.map((r) => ({
+      countryCode: r.countryCode,
+      posts: Number(r.posts),
+      authors: Number(r.authors),
+    }));
+    if (own && !items.some((i) => i.countryCode === own)) {
+      items.push({ countryCode: own, posts: 0, authors: 0 });
+    }
+    return { items, ownCountry: own };
   }
 
   /**

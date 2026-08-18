@@ -50,6 +50,13 @@ export type PresignVideoDto = z.infer<typeof presignVideoSchema>;
 export const feedQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  // Country to narrow the feed to. Absent = the viewer's own country, resolved
+  // server-side (DiasporaPolicyService.resolveFeedCountry) — the client never
+  // computes the default, so a fresh install shows the right feed before the
+  // profile has even loaded. 'all' lifts the filter.
+  country: z
+    .union([z.literal('all'), z.string().trim().length(2).toUpperCase()])
+    .optional(),
 });
 export type FeedQueryDto = z.infer<typeof feedQuerySchema>;
 

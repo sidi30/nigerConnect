@@ -7,7 +7,7 @@ import { SettingsService } from '../common/settings/settings.service';
 const CACHE_TTL = 300;
 
 /** ISO-3166-1 alpha-2 for Niger. Members living here are not the diaspora. */
-const HOME_COUNTRY = 'NE';
+export const HOME_COUNTRY = 'NE';
 
 /**
  * NigerConnect connects the Nigerien DIASPORA. Two rules, with two different
@@ -89,7 +89,7 @@ export class DiasporaPolicyService {
    * minutes to bite. The empty string stands in for "no country" because Redis
    * cannot store null.
    */
-  private async countryOf(userId: string): Promise<string | null> {
+  async countryOf(userId: string): Promise<string | null> {
     const key = `diaspora:country:${userId}`;
     const cached = await this.redis.client.get(key);
     if (cached !== null) return cached === '' ? null : cached;
@@ -122,13 +122,43 @@ export class DiasporaPolicyService {
    * these lists is cursor-paginated, and dropping rows after the fact would
    * return short pages and a cursor pointing at a row the caller never saw.
    */
-  async authorScope(viewerId: string): Promise<Prisma.UserWhereInput | null> {
-    if (!(await this.settings.isDiasporaContentSplit())) return null;
+  async authorScope(
+    viewerId: string,
+    country?: string | null,
+  ): Promise<Prisma.UserWhereInput | null> {
+    const split = await this.settings.isDiasporaContentSplit();
+    if (!split && !country) return null;
     // The official account speaks to the whole community — its posts and stories
     // sit outside the split, exactly like services and associations. Expressed
     // here (once) rather than at each call site so no content query can forget it.
-    const scope = await this.sideScope(viewerId);
-    return { OR: [{ isOfficial: true }, scope] };
+    //
+    // The country filter narrows the viewer's OWN side; it never widens it. A
+    // diaspora member asking for 'NE' still gets nothing, because both clauses
+    // are ANDed — the filter is a convenience on top of the rule, not a way
+    // around it.
+    const side = split ? await this.sideScope(viewerId) : null;
+    const countryClause: Prisma.UserWhereInput | null = country ? { countryCode: country } : null;
+    // Both present → AND them. Only one → emit it bare, so the clause stays the
+    // exact shape it had before the country filter existed.
+    const mine =
+      side && countryClause ? { AND: [side, countryClause] } : ((side ?? countryClause) as Prisma.UserWhereInput);
+    return { OR: [{ isOfficial: true }, mine] };
+  }
+
+  /**
+   * Country a feed request should be narrowed to, from what the client asked.
+   *
+   * Resolved SERVER-side on purpose: the default is "my own country", and a
+   * client computing that itself would show a brand-new member the wrong feed
+   * on first launch (it has no profile yet) and would drift the day someone
+   * moves. `'all'` lifts the filter; a member with no country on file has no
+   * "own country" to fall back on, so they see their whole side — the same
+   * thing they saw before this feature existed.
+   */
+  async resolveFeedCountry(viewerId: string, requested?: string): Promise<string | null> {
+    if (requested === 'all') return null;
+    if (requested) return requested;
+    return this.countryOf(viewerId);
   }
 
   /** The side-of-the-split clause alone (see {@link authorScope}). */
