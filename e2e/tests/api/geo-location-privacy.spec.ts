@@ -658,36 +658,45 @@ test.describe('BUG1 (HIGH): proximity ping must not leak live GPS to public map 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BUG2: showOnMap is OFF by default for all new registrations
+// Carte : visible par DÉFAUT, retrait toujours possible
+//
+// Ce bloc testait l'inverse — la carte était en opt-in strict, et ces tests
+// verrouillaient cette garantie. Décision produit du 18/08/2026 : un annuaire de
+// diaspora où 218 membres sur 245 sont invisibles ne remplit pas sa fonction, et
+// aucun réglage d'administration ne pouvait corriger un défaut de schéma.
+//
+// Ce qui reste garanti, et qui est le vrai enjeu : le RETRAIT fonctionne. Un
+// membre qui décoche la carte en disparaît réellement, immédiatement. C'est
+// cette moitié-là qui protège quelqu'un, pas la valeur initiale.
 // ─────────────────────────────────────────────────────────────────────────────
 
-test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations', () => {
+test.describe('Carte : visible par défaut, retrait effectif', () => {
 
   /**
-   * The register endpoint response must include showOnMap=false.
-   * The DB must persist it as false — not a serializer artifact.
+   * L'inscription renvoie showOnMap=true, et la base le persiste réellement —
+   * pas seulement le sérialiseur.
    */
-  test('2a: register response and DB both show showOnMap=false', async ({ request }) => {
+  test('2a: inscription et base rapportent toutes deux showOnMap=true', async ({ request }) => {
     const { user } = await register(request, {
       city: 'Niamey', countryCode: 'NE',
     });
 
     expect(
       user['showOnMap'],
-      'register response must include showOnMap=false for a newly created user',
-    ).toBe(false);
+      'la réponse d’inscription doit porter showOnMap=true pour un nouveau membre',
+    ).toBe(true);
 
     expect(
       getShowOnMapFromDb(user.id),
-      'DB show_on_map column must be false after registration',
-    ).toBe(false);
+      'la colonne show_on_map doit être true après inscription',
+    ).toBe(true);
   });
 
   /**
    * GET /api/auth/me must confirm showOnMap=false for a fresh user,
    * regardless of whether the register response was checked.
    */
-  test('2b: GET /api/auth/me confirms showOnMap=false after register', async ({ request }) => {
+  test('2b: GET /api/auth/me confirme showOnMap=true après inscription', async ({ request }) => {
     const { user, tokens } = await register(request, {
       city: 'Niamey', countryCode: 'NE',
     });
@@ -700,8 +709,8 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
     const meBody = (await meRes.json()) as { user: Record<string, unknown> };
     expect(
       meBody.user['showOnMap'],
-      'GET /api/auth/me must report showOnMap=false for a fresh user',
-    ).toBe(false);
+      'GET /api/auth/me doit rapporter showOnMap=true pour un nouveau membre',
+    ).toBe(true);
   });
 
   /**
@@ -712,10 +721,10 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
    * The geo cache is keyed per viewer; it is explicitly flushed between the two
    * queries so the second read goes to the DB instead of serving a stale cache.
    */
-  test('2c: user absent from individual map pins before opting in; present after PATCH showOnMap=true', async ({
+  test('2c: membre présent sur la carte par défaut, absent après retrait', async ({
     request,
   }) => {
-    // ── Target user: Niamey, email verified, showOnMap=false (default) ────────
+    // ── Cible : Niamey, email vérifié, showOnMap=true (le défaut) ─────────────
     const { user: target, tokens: targetTokens } = await register(request, {
       city: 'Niamey', countryCode: 'NE',
     });
@@ -727,7 +736,7 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
     });
     verifyEmailInDb(observer.id);
 
-    // ── Before opt-in: target must NOT appear in Niger bbox individual markers ─
+    // ── Par défaut : la cible DOIT apparaître dans les marqueurs du Niger ─────
     const niameyUrl =
       `${BASE_URL}/api/geo/members` +
       `?north=${NIGER_BBOX.north}&south=${NIGER_BBOX.south}` +
@@ -740,14 +749,30 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
     const beforeMarkers = (await beforeRes.json()) as Array<{
       kind: string; userId?: string;
     }>;
+    const defaultMarker = beforeMarkers.find(
+      (m) => m.kind === 'individual' && m.userId === target.id,
+    ) as { lat: number; lon: number } | undefined;
     expect(
-      beforeMarkers.find((m) => m.kind === 'individual' && m.userId === target.id),
-      `user with showOnMap=false must NOT appear as an individual map pin (targets the pre-opt-in state)`,
-    ).toBeUndefined();
+      defaultMarker,
+      'un membre doit figurer sur la carte sans avoir rien à activer',
+    ).toBeDefined();
 
-    // ── Target opts in via PATCH profile ─────────────────────────────────────
+    // L'épingle est brouillée autour du centroïde de la ville, jamais posée sur
+    // la position exacte — la vérification reste ici, là où le marqueur existe.
+    const distToNiamey = haversineKm(
+      defaultMarker!.lat, defaultMarker!.lon,
+      NIAMEY_CENTROID.lat, NIAMEY_CENTROID.lon,
+    );
+    expect(
+      distToNiamey,
+      `l'épingle doit rester proche du centroïde de Niamey (moins de ${JITTER_SAFE_KM} km) ; obtenu ${distToNiamey.toFixed(2)} km`,
+    ).toBeLessThan(JITTER_SAFE_KM);
+
+    // ── La cible se retire via PATCH profile ─────────────────────────────────
+    // C'est LA garantie qui protège quelqu'un : le retrait doit être effectif,
+    // et l'être tout de suite.
     const patchRes = await request.patch(`${BASE_URL}/api/profile/me`, {
-      data: { showOnMap: true },
+      data: { showOnMap: false },
       headers: authHdr(targetTokens.accessToken),
     });
     expect(
@@ -757,8 +782,8 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
     const patchBody = (await patchRes.json()) as { user: Record<string, unknown> };
     expect(
       patchBody.user['showOnMap'],
-      'PATCH response must confirm showOnMap=true',
-    ).toBe(true);
+      'la réponse du PATCH doit confirmer showOnMap=false',
+    ).toBe(false);
 
     // ── Flush the geo marker cache for this observer+bbox combination ─────────
     // The cache key mirrors the server's formula:
@@ -775,7 +800,7 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
     ].join(':');
     redisDel(cacheKey);
 
-    // ── After opt-in: target MUST appear in Niger bbox individual markers ─────
+    // ── Après retrait : la cible ne doit PLUS apparaître ─────────────────────
     const afterRes = await request.get(niameyUrl, {
       headers: authHdr(observerTokens.accessToken),
     });
@@ -789,18 +814,8 @@ test.describe('BUG2 (MEDIUM): showOnMap is OFF by default for new registrations'
     );
     expect(
       targetMarker,
-      `user must appear as individual map pin after setting showOnMap=true`,
-    ).toBeDefined();
-
-    // Sanity-check the marker's coordinates are near Niamey
-    const distToNiamey = haversineKm(
-      targetMarker!.lat, targetMarker!.lon,
-      NIAMEY_CENTROID.lat, NIAMEY_CENTROID.lon,
-    );
-    expect(
-      distToNiamey,
-      `individual marker must be near Niamey centroid (within ${JITTER_SAFE_KM} km); got ${distToNiamey.toFixed(2)} km`,
-    ).toBeLessThan(JITTER_SAFE_KM);
+      'un membre qui décoche la carte doit en disparaître réellement',
+    ).toBeUndefined();
   });
 });
 
