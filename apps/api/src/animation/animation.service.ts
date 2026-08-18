@@ -6,6 +6,7 @@ import { PasswordService } from '../auth/password.service';
 import { PostsService } from '../feed/posts.service';
 import { S3Service } from '../common/storage/s3.service';
 import { DiasporaPolicyService } from '../social/diaspora-policy.service';
+import { geocode, jitterCoord } from '../common/geo/city-coords';
 import { ROSTER, emailFor, type RosterEntry } from './roster';
 import type { EnqueueDto, ReviewDto, UpdateBotDto } from './dto/animation.dto';
 
@@ -117,7 +118,13 @@ export class AnimationService {
     countryCode: string;
     showOnMap: boolean;
     proximityAlerts: boolean;
+    latitude: number | null;
+    longitude: number | null;
   } {
+    // Mêmes fonctions que l'inscription : centroïde de la ville puis jitter.
+    // Un centroïde exact placerait les six comptes turcs au même pixel.
+    const coords = geocode(entry.city, entry.countryCode);
+    const jittered = coords ? jitterCoord(coords) : null;
     return {
       firstName: entry.firstName,
       lastName: entry.lastName,
@@ -125,10 +132,12 @@ export class AnimationService {
       bio: entry.bio,
       city: entry.city,
       countryCode: entry.countryCode,
-      // Hors carte : elle suppose une présence physique vérifiable, et ces
-      // comptes n'en ont pas. C'est la surface qui les trahirait en premier.
-      showOnMap: false,
+      showOnMap: true,
+      // La proximité reste coupée : elle déclenche des rencontres physiques,
+      // ce qu'un compte éditorial ne peut évidemment pas honorer.
       proximityAlerts: false,
+      latitude: jittered?.lat ?? null,
+      longitude: jittered?.lon ?? null,
     };
   }
 
