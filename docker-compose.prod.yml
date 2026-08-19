@@ -212,7 +212,8 @@ services:
     volumes:
       - ./models:/models:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      # L'image llama.cpp embarque curl, pas wget.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
