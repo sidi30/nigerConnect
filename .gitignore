@@ -88,3 +88,6 @@ logs/
 # Sources Midjourney des avatars d animation : 139 Mo de PNG, hors depot.
 # Le mapping, lui, est versionne (docs/midjourney_session/mapping.json).
 docs/midjourney_session/*.png
+
+# Modèle GGUF du rédacteur de secours (2 Go) — téléchargé sur le VPS, jamais versionné.
+models/
