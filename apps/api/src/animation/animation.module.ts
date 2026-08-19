@@ -6,6 +6,7 @@ import { SocialModule } from '../social/social.module';
 import { AnimationAdminController } from './animation.admin.controller';
 import { AnimationChatService } from './animation-chat.service';
 import { AnimationEngagementService } from './animation-engagement.service';
+import { AnimationWriterService } from './animation-writer.service';
 import { AnimationCron } from './animation.cron';
 import { AnimationService } from './animation.service';
 
@@ -18,7 +19,18 @@ import { AnimationService } from './animation.service';
 @Module({
   imports: [AuthModule, ChatModule, FeedModule, SocialModule],
   controllers: [AnimationAdminController],
-  providers: [AnimationService, AnimationChatService, AnimationEngagementService, AnimationCron],
-  exports: [AnimationService, AnimationChatService, AnimationEngagementService],
+  providers: [
+    AnimationService,
+    AnimationChatService,
+    AnimationEngagementService,
+    AnimationWriterService,
+    AnimationCron,
+  ],
+  exports: [
+    AnimationService,
+    AnimationChatService,
+    AnimationEngagementService,
+    AnimationWriterService,
+  ],
 })
 export class AnimationModule {}

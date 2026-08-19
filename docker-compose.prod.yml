@@ -174,6 +174,59 @@ services:
   # NestJS API — exposed on https://${API_HOST} via Traefik.
   # No host port mapping — Traefik bridges from `traefik-public`.
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Rédacteur de secours des comptes d'animation — llama.cpp, interne uniquement.
+  #
+  # C'est un FILET, pas le rédacteur principal : l'atelier tourne sur le poste du
+  # propriétaire et écrit mieux. Ce conteneur ne reprend la main que sur ce qui
+  # traîne depuis plus de 45 min (poste éteint, tâche planifiée en échec).
+  #
+  # Pourquoi ici plutôt qu'une API externe : les conversations traitées sont des
+  # messages PRIVÉS de membres réels. Sur cet hôte, ils ne sortent pas du
+  # serveur. Et c'est gratuit, conformément à la règle du projet.
+  #
+  # Aucun label Traefik, aucun port hôte : joignable seulement depuis `internal`.
+  # Le modèle GGUF est monté en lecture seule depuis ./models (hors dépôt).
+  # ---------------------------------------------------------------------------
+  animation-llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: nigerconnect-animation-llm
+    <<: *security-defaults
+    command:
+      - --model
+      - /models/qwen2.5-3b-instruct-q4_k_m.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "4096"
+      # L'hôte est partagé avec une douzaine de projets sans rapport : quatre
+      # fils sur huit cœurs laissent la machine respirer. Une réponse de deux
+      # phrases prend quelques secondes, ce qui est très largement suffisant
+      # pour une file balayée toutes les cinq minutes.
+      - --threads
+      - "4"
+      - --parallel
+      - "1"
+    volumes:
+      - ./models:/models:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Le chargement du modèle prend une bonne minute au premier démarrage.
+      start_period: 180s
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          # Le modèle quantifié pèse 2 Go ; 3 Go couvrent le contexte et le
+          # cache sans mordre sur les voisins.
+          memory: 3G
+
   api:
     build:
       context: .
@@ -215,6 +268,9 @@ services:
       JWT_REFRESH_EXPIRES: 14d
       JWT_ISSUER: nigerconnect-api
       JWT_AUDIENCE: nigerconnect-app
+      # Rédacteur de secours de l'animation. Absente = service éteint, et on
+      # retombe exactement sur l'atelier manuel seul.
+      ANIMATION_LLM_URL: ${ANIMATION_LLM_URL-http://animation-llm:8080}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}
       # Includes the admin host: the admin console (served on ${ADMIN_HOST})
       # makes cross-origin XHR + WebSocket calls to this API. Override in

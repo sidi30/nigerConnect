@@ -10,6 +10,15 @@ import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 const CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Gestes exécutés par balayage, tous comptes confondus — plafond de sécurité. */
 const MAX_ACTIONS_PER_RUN = 30;
+/**
+ * Gestes d'animation maximum sur UNE publication, tous comptes confondus.
+ *
+ * Sans ce plafond, un jour à une seule publication publique met les 25 comptes
+ * sur la même photo : l'auteur voit vingt-cinq inconnus liker et commenter le
+ * même contenu, ce qui est exactement le signal qu'on veut éviter. Deux, c'est
+ * ce qu'on observe quand deux personnes ont vraiment vu passer le post.
+ */
+const MAX_ANIMATION_PER_POST = 2;
 /** Délai minimum avant d'accepter une demande d'ami. Accepter dans la seconde
  *  est le geste le moins humain qui soit. */
 const ACCEPT_DELAY_MS = 20 * 60 * 1000;
@@ -154,10 +163,23 @@ export class AnimationEngagementService {
     let quota = perDay - (await this.plannedToday(bot.id, type, now));
     if (quota <= 0) return 0;
 
+    // Combien de comptes d'animation sont DÉJÀ posés sur chacune de ces
+    // publications ? Compté ici, pour tous les comptes : la contrainte
+    // d'unicité en base ne protège que du doublon d'un même compte, elle ne
+    // voit pas les vingt-quatre autres qui visent la même photo.
+    const load = await this.prisma.animationAction.groupBy({
+      by: ['targetPostId'],
+      where: { type, targetPostId: { in: postIds }, status: { not: 'skipped' } },
+      _count: { _all: true },
+    });
+    const perPost = new Map(load.map((r) => [r.targetPostId, r._count._all]));
+
     let planned = 0;
     for (const targetPostId of postIds) {
       if (quota <= 0) break;
+      if ((perPost.get(targetPostId) ?? 0) >= MAX_ANIMATION_PER_POST) continue;
       if (await this.enqueue(bot, type, { targetPostId }, now)) {
+        perPost.set(targetPostId, (perPost.get(targetPostId) ?? 0) + 1);
         planned += 1;
         quota -= 1;
       }
@@ -178,8 +200,10 @@ export class AnimationEngagementService {
     now: Date,
   ): Promise<boolean> {
     // Étalement : entre 5 min et ~3 h après le balayage, dérivé de l'identifiant
-    // de la cible pour rester stable si le balayage rejoue.
-    const key = target.targetPostId ?? target.targetUserId ?? '';
+    // de la cible ET de celui du compte — pour rester stable si le balayage
+    // rejoue, sans donner la même minute à tous les comptes visant la même
+    // cible (c'est ce qui a fait partir huit « j'aime » à la même seconde).
+    const key = bot.id + (target.targetPostId ?? target.targetUserId ?? '');
     const spread = [...key].reduce((a, c) => a + c.charCodeAt(0), 0) % 175;
     try {
       await this.prisma.animationAction.create({
