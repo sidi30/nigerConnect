@@ -85,6 +85,89 @@ const FORBIDDEN: readonly { re: RegExp; why: string }[] = [
 /** Ville de chaque compte, par handle — même source que la création des comptes. */
 const CITY_BY_HANDLE = new Map(ROSTER.map((e) => [e.handle, `${e.city} (${e.countryCode})`]));
 
+/** Ville nue de chaque compte, pour vérifier ce que le brouillon raconte. */
+const OWN_CITY = new Map(ROSTER.map((e) => [e.handle, e.city]));
+
+/**
+ * Toutes les villes du roster, plus celles que le modèle sort spontanément.
+ *
+ * Sert à un contrôle purement mécanique : un brouillon qui nomme une ville
+ * autre que celle du compte est faux. Le 20/08/2026, nc11 — qui habite Konya —
+ * a envoyé « en ce moment je suis en famille à Istanbul » à un membre réel. La
+ * consigne donnait pourtant la bonne ville deux lignes plus haut : on ne peut
+ * pas compter sur le modèle pour tenir un fait, seulement le vérifier après.
+ */
+const KNOWN_CITIES: readonly string[] = [
+  ...new Set(ROSTER.map((e) => e.city)),
+  'Niamey',
+  'Agadez',
+  'Maradi',
+  'Tahoua',
+  'Dosso',
+  'Bordeaux',
+  'Nantes',
+  'Nice',
+  'Strasbourg',
+  'Genève',
+  'Londres',
+  'Berlin',
+  'Casablanca',
+  'Marrakech',
+  'Tunis',
+  'Alger',
+  'Dakar',
+  'Abidjan',
+  'Bamako',
+  'Ouagadougou',
+  'Cotonou',
+  'Lomé',
+  'Accra',
+  'Lagos',
+  'Kano',
+  'Tripoli',
+  'Le Caire',
+  'Dubaï',
+  'Toronto',
+  'Ottawa',
+  'Washington',
+  'Izmir',
+  'Antalya',
+  'Kayseri',
+  'Eskisehir',
+];
+
+/** Sans accents ni casse : « Meknès » et « meknes » doivent se rencontrer. */
+const flatten = (v: string): string =>
+  v
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+
+/** Villes aplaties une seule fois : la liste ne change pas d'un appel à l'autre. */
+const FLAT_CITIES: readonly string[] = KNOWN_CITIES.map(flatten);
+
+/**
+ * Le brouillon nomme-t-il une ville qui n'est pas celle du compte ?
+ *
+ * Volontairement strict : ce contrôle ne sert QUE les brouillons du filet, qui
+ * se limitent aux salutations. Dans une salutation, nommer une autre ville que
+ * la sienne n'a aucune raison d'être — c'est une invention, pas une nuance.
+ *
+ * On compare sur des mots entiers découpés à la main plutôt qu'avec une
+ * expression construite : « Le Caire » et « New York » en contiennent deux, et
+ * une frontière de mot ne suffirait pas.
+ */
+export function mentionsForeignCity(text: string, ownCity: string | null): boolean {
+  const words = flatten(text).split(/[^a-z0-9]+/).filter(Boolean);
+  const own = ownCity ? flatten(ownCity) : null;
+  return FLAT_CITIES.some((city) => {
+    if (own && city === own) return false;
+    const parts = city.split(/[^a-z0-9]+/).filter(Boolean);
+    // Sous-suite contiguë : « new york » ne se déclenche pas sur « york » seul.
+    return words.some((_, i) => parts.every((part, j) => words[i + j] === part));
+  });
+}
+
 /**
  * Ouvertures que le filet sait traiter : salutations et « ça va ? ».
  *
@@ -244,7 +327,10 @@ export class AnimationWriterService {
         continue;
       }
 
-      const verdict = this.vet(await this.generate(this.replyPrompt(reply.bot, messages)));
+      const verdict = this.vet(
+        await this.generate(this.replyPrompt(reply.bot, messages)),
+        OWN_CITY.get(reply.bot.handle) ?? null,
+      );
       if (!verdict.ok) {
         // Une réponse privée refusée n'est pas écartée en silence : quelqu'un
         // attend un message. Elle revient au propriétaire.
@@ -298,7 +384,10 @@ export class AnimationWriterService {
         continue;
       }
 
-      const verdict = this.vet(await this.generate(this.commentPrompt(action.bot, post.content)));
+      const verdict = this.vet(
+        await this.generate(this.commentPrompt(action.bot, post.content)),
+        OWN_CITY.get(action.bot.handle) ?? null,
+      );
       if (!verdict.ok) {
         // Un commentaire, personne ne l'attend : l'écarter suffit.
         await this.skipAction(action.id, `brouillon refusé (${verdict.why})`);
@@ -419,7 +508,7 @@ export class AnimationWriterService {
    * ne fait rien, alors qu'un mauvais message part chez un membre et ne se
    * rattrape pas. Le doute joue donc toujours contre l'envoi.
    */
-  vet(raw: string): { ok: true; text: string } | { ok: false; why: string } {
+  vet(raw: string, ownCity: string | null = null): { ok: true; text: string } | { ok: false; why: string } {
     // Le modèle encadre parfois sa réponse de guillemets, ou la préfixe.
     let text = raw.trim().replace(/^["'«»\s]+|["'«»\s]+$/g, '');
     text = text.replace(/^(?:TOI|Réponse|Commentaire)\s*:\s*/i, '').trim();
@@ -439,6 +528,16 @@ export class AnimationWriterService {
     // filet générique juste en dessous dirait seulement « parle de bots ».
     for (const { re, why } of FORBIDDEN) {
       if (re.test(text)) return { ok: false, why };
+    }
+    // Le modèle n'a aucune source d'information : toute allusion à l'actualité
+    // est une invention. nc11 a demandé « tu as entendu parler de ces derniers
+    // événements ? » à un membre, sans qu'aucun événement n'existe.
+    if (/\b(?:derniers? (?:é|e)v(?:é|e)nements?|l(?:'|’)actualit(?:é|e)|les nouvelles du pays)\b/i.test(text)) {
+      return { ok: false, why: 'référence à une actualité que le modèle ignore' };
+    }
+    // Le fait le plus facile à vérifier, et celui que le modèle rate le plus.
+    if (mentionsForeignCity(text, ownCity)) {
+      return { ok: false, why: 'le brouillon situe le compte dans une autre ville' };
     }
     // Le brouillon qui parle lui-même de bots relance exactement le soupçon
     // qu'on escalade ailleurs.

@@ -1,4 +1,8 @@
-import { AnimationWriterService, isSimpleOpener } from './animation-writer.service';
+import {
+  AnimationWriterService,
+  isSimpleOpener,
+  mentionsForeignCity,
+} from './animation-writer.service';
 
 /**
  * `vet()` est la dernière barrière avant qu'un texte écrit par un modèle ne
@@ -117,5 +121,57 @@ describe('isSimpleOpener', () => {
     expect(isSimpleOpener([membre('')])).toBe(false);
     expect(isSimpleOpener([{ content: null, sender: { isAnimated: false } }])).toBe(false);
     expect(isSimpleOpener([membre(`Bonjour ${'x'.repeat(100)}`)])).toBe(false);
+  });
+});
+
+/**
+ * Le contrôle qui manquait le 20/08/2026 : nc11, qui habite Konya, a envoyé
+ * « en ce moment je suis en famille à Istanbul » à un membre réel. La consigne
+ * donnait pourtant la bonne ville. On ne peut pas demander au modèle de tenir
+ * un fait — seulement le vérifier après coup.
+ */
+describe('mentionsForeignCity', () => {
+  it('laisse passer la ville du compte', () => {
+    expect(mentionsForeignCity('Salut ! Je suis à Konya en ce moment.', 'Konya')).toBe(false);
+    // Accents et casse ne doivent pas créer de faux négatif.
+    expect(mentionsForeignCity('je vis a meknes', 'Meknès')).toBe(false);
+  });
+
+  it('attrape une autre ville', () => {
+    expect(
+      mentionsForeignCity('Salut ! En ce moment je suis en famille à Istanbul.', 'Konya'),
+    ).toBe(true);
+    expect(mentionsForeignCity('Je suis à Paris pour mes études.', 'Niamey')).toBe(true);
+  });
+
+  it('gère les villes en deux mots sans se déclencher sur un seul', () => {
+    expect(mentionsForeignCity('Je suis à New York.', 'Konya')).toBe(true);
+    // « York » seul n'est pas « New York » : pas de faux positif.
+    expect(mentionsForeignCity('Le quartier de York est joli.', 'Konya')).toBe(false);
+  });
+
+  it('ne se déclenche pas sur un texte sans ville', () => {
+    expect(mentionsForeignCity('Bonjour ! Ça va bien et toi ?', 'Konya')).toBe(false);
+  });
+});
+
+describe('vet — faits invérifiables', () => {
+  const writer = new AnimationWriterService({} as never, { get: () => undefined } as never);
+
+  it('refuse un brouillon qui déplace le compte', () => {
+    const v = writer.vet('Salut ! En ce moment je suis en famille à Istanbul.', 'Konya');
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.why).toBe('le brouillon situe le compte dans une autre ville');
+  });
+
+  it('refuse une allusion à une actualité inventée', () => {
+    const v = writer.vet('Salut ! Tu as entendu parler de ces derniers événements ?', 'Konya');
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.why).toBe('référence à une actualité que le modèle ignore');
+  });
+
+  it('accepte la même phrase avec la bonne ville et sans actualité', () => {
+    const v = writer.vet('Salut ! Je suis à Konya en ce moment. Et toi ?', 'Konya');
+    expect(v.ok).toBe(true);
   });
 });
