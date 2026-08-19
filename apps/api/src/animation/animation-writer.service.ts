@@ -85,6 +85,43 @@ const FORBIDDEN: readonly { re: RegExp; why: string }[] = [
 /** Ville de chaque compte, par handle — même source que la création des comptes. */
 const CITY_BY_HANDLE = new Map(ROSTER.map((e) => [e.handle, `${e.city} (${e.countryCode})`]));
 
+/**
+ * Ouvertures que le filet sait traiter : salutations et « ça va ? ».
+ *
+ * Le périmètre est étroit et c'est délibéré. Mis face à « tu as prévu de venir
+ * à Konya ? », un modèle de trois milliards de paramètres répond « je suis à
+ * Konya mais je ne viendrai pas à Konya » — il suit la formulation de la
+ * question au lieu de la fiche du personnage. Testé, reproduit quatre fois sur
+ * cinq, y compris avec le fait rappelé juste avant la question.
+ *
+ * Une salutation n'a pas ce piège : il n'y a rien à contredire. Or c'est très
+ * exactement ce qui traînait le 19/08/2026 — trois des sept réponses en attente
+ * étaient « Salut » ou « Bonjour ». Le filet couvre donc le cas qui a fait mal,
+ * et laisse le reste à l'atelier, ou au propriétaire si l'atelier est à terre.
+ */
+const OPENER = /^\s*(?:re)?\s*(?:salut|bonjour|bonsoir|coucou|hey|hello|fofo|sannu|yaya)\b[\s\S]{0,60}$/i;
+
+/** « ça va ? », « comment vas-tu ? » — l'autre moitié des ouvertures. */
+const HOW_ARE_YOU = /^\s*(?:comment (?:vas[- ]tu|ça va|tu vas)|ça va|cv|tu vas bien)\b[\s\S]{0,40}$/i;
+
+/**
+ * Ce fil est-il une simple prise de contact, sans question piège ?
+ *
+ * Vrai seulement si le membre n'a écrit qu'un message et que ce message est une
+ * ouverture. Dès qu'il y a un échange en cours, il y a un contexte à tenir, et
+ * c'est là que le petit modèle dérape.
+ */
+export function isSimpleOpener(
+  messages: readonly { content: string | null; sender: { isAnimated: boolean } }[],
+): boolean {
+  const fromMember = messages.filter((m) => !m.sender.isAnimated);
+  const only = fromMember[0];
+  if (!only || fromMember.length !== 1 || messages.length !== 1) return false;
+  const text = (only.content ?? '').trim();
+  if (!text || text.length > 80) return false;
+  return OPENER.test(text) || HOW_ARE_YOU.test(text);
+}
+
 /** Réponse d'un serveur compatible OpenAI — c'est le contrat de llama.cpp. */
 interface CompletionChoice {
   message?: { content?: string };
@@ -193,6 +230,17 @@ export class AnimationWriterService {
       const suspect = messages.some((m) => !m.sender.isAnimated && looksLikeSuspicion(m.content));
       if (suspect) {
         await this.escalateReply(reply.id, "Le membre demande s'il parle à une personne réelle.");
+        continue;
+      }
+
+      // Hors ouverture simple, le filet ne tente rien : mieux vaut une
+      // conversation sur le bureau du propriétaire qu'une réponse qui se
+      // contredit devant le membre.
+      if (!isSimpleOpener(messages)) {
+        await this.escalateReply(
+          reply.id,
+          'Sans réponse depuis 45 min et hors du périmètre du filet — à reprendre à la main.',
+        );
         continue;
       }
 
@@ -312,9 +360,16 @@ export class AnimationWriterService {
           `${m.sender.isAnimated ? 'TOI' : (m.sender.displayName ?? 'Un membre')} : ${m.content ?? '(média)'}`,
       )
       .join('\n');
+    // La ville est répétée juste avant la consigne d'écriture : sur un petit
+    // modèle, ce qui est proche de la fin pèse plus lourd que le message
+    // système, et c'est là que se jouait la contradiction sur le lieu.
     return {
       system: this.persona(bot),
-      user: `Conversation privée :\n${thread}\n\nÉcris ta réponse au dernier message.`,
+      user: [
+        `Conversation privée :\n${thread}`,
+        `Tu habites à ${CITY_BY_HANDLE.get(bot.handle) ?? 'ta ville'} et tu y es en ce moment.`,
+        'Réponds au dernier message, à la première personne, en une ou deux phrases, et pose une question en retour.',
+      ].join('\n\n'),
     };
   }
 
@@ -373,7 +428,11 @@ export class AnimationWriterService {
     if (text.length > MAX_DRAFT_CHARS) return { ok: false, why: 'réponse trop longue' };
     if (/\n\s*\n/.test(text)) return { ok: false, why: 'plusieurs paragraphes' };
     // Le modèle qui récite la consigne au lieu d'y obéir.
-    if (/\b(?:en tant qu|je suis un mod(?:è|e)le|instructions?)\b/i.test(text)) {
+    if (
+      /\b(?:en tant qu|je suis un mod(?:è|e)le|instructions?|fait établi|première personne)\b/i.test(
+        text,
+      )
+    ) {
       return { ok: false, why: 'le modèle récite ses consignes' };
     }
     // Les motifs précis d'abord : ils nomment ce qui s'est passé, alors que le

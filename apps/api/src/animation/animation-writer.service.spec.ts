@@ -1,4 +1,4 @@
-import { AnimationWriterService } from './animation-writer.service';
+import { AnimationWriterService, isSimpleOpener } from './animation-writer.service';
 
 /**
  * `vet()` est la dernière barrière avant qu'un texte écrit par un modèle ne
@@ -81,5 +81,41 @@ describe('AnimationWriterService.vet', () => {
     // Éteint, il ne touche à rien : c'est ce qui garde le comportement d'avant
     // en développement et dans les tests.
     await expect(writer.fillDrafts()).resolves.toBe(0);
+  });
+});
+
+/**
+ * Le filet ne rédige que les prises de contact. Ce périmètre n'est pas une
+ * précaution de principe : mis face à « tu as prévu de venir à Konya ? », le
+ * modèle local répond « je suis à Konya mais je ne viendrai pas à Konya ».
+ * Une salutation n'offre pas cette prise.
+ */
+describe('isSimpleOpener', () => {
+  const membre = (content: string) => ({ content, sender: { isAnimated: false } });
+  const compte = (content: string) => ({ content, sender: { isAnimated: true } });
+
+  it.each(['Salut', 'Bonjour', 'Bonsoir', 'Coucou', 'Fofo', 'Sannu', 'Salut ça va ?', 'ça va ?'])(
+    'reconnaît « %s » comme une ouverture',
+    (texte) => {
+      expect(isSimpleOpener([membre(texte)])).toBe(true);
+    },
+  );
+
+  it('refuse une question de fond, même en premier message', () => {
+    expect(isSimpleOpener([membre('As-tu prévu de venir à Konya ?')])).toBe(false);
+    expect(isSimpleOpener([membre('Comment on renouvelle son ikamet ?')])).toBe(false);
+  });
+
+  it('refuse dès qu’une conversation est engagée', () => {
+    // Il y a alors un contexte à tenir, et c'est là que le modèle dérape.
+    expect(
+      isSimpleOpener([membre('Salut'), compte('Salut ! Ça va ?'), membre('Je suis à Lyon')]),
+    ).toBe(false);
+  });
+
+  it('refuse un message vide, un média seul ou un pavé', () => {
+    expect(isSimpleOpener([membre('')])).toBe(false);
+    expect(isSimpleOpener([{ content: null, sender: { isAnimated: false } }])).toBe(false);
+    expect(isSimpleOpener([membre(`Bonjour ${'x'.repeat(100)}`)])).toBe(false);
   });
 });
