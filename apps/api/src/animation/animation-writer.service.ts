@@ -316,25 +316,26 @@ export class AnimationWriterService {
         continue;
       }
 
-      // Hors ouverture simple, le filet ne tente rien : mieux vaut une
-      // conversation sur le bureau du propriétaire qu'une réponse qui se
-      // contredit devant le membre.
-      if (!isSimpleOpener(messages)) {
-        await this.escalateReply(
-          reply.id,
-          'Sans réponse depuis 45 min et hors du périmètre du filet — à reprendre à la main.',
-        );
-        continue;
-      }
+      // Hors ouverture simple, le filet ne tente rien : mieux vaut attendre
+      // l'atelier qu'une réponse qui se contredit devant le membre.
+      //
+      // On laisse `pending`, on n'escalade PAS. Escalader condamnerait le fil
+      // pour de bon — `escalated` est le statut du membre qui a demandé s'il
+      // parlait à une personne, et rien ne le réarme. Une conversation que ce
+      // service ne sait pas traiter doit rester disponible pour l'atelier, qui
+      // repassera dessus dès que le poste sera rallumé.
+      if (!isSimpleOpener(messages)) continue;
 
       const verdict = this.vet(
         await this.generate(this.replyPrompt(reply.bot, messages)),
         OWN_CITY.get(reply.bot.handle) ?? null,
       );
       if (!verdict.ok) {
-        // Une réponse privée refusée n'est pas écartée en silence : quelqu'un
-        // attend un message. Elle revient au propriétaire.
-        await this.escalateReply(reply.id, `Brouillon refusé (${verdict.why})`);
+        // Même raisonnement : un brouillon refusé laisse la ligne intacte, pas
+        // condamnée. L'atelier écrira mieux, et le prochain balayage pourra
+        // retenter. Le refus est journalisé pour qu'un motif qui revient se
+        // voie sans avoir à fouiller la base.
+        this.logger.warn(`Brouillon refusé pour ${reply.bot.handle} : ${verdict.why}`);
         continue;
       }
       await this.prisma.animationReply.update({

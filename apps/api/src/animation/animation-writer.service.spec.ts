@@ -175,3 +175,29 @@ describe('vet — faits invérifiables', () => {
     expect(v.ok).toBe(true);
   });
 });
+
+/**
+ * Le filet ne condamne jamais un fil qu'il ne sait pas traiter.
+ *
+ * `escalated` est réservé au membre qui demande s'il parle à une personne
+ * réelle : rien ne réarme ce statut. L'utiliser pour « hors de mon périmètre »
+ * tuait la conversation pour de bon, alors que l'atelier savait la traiter dès
+ * le rallumage du poste. Une seule sortie possible ici : laisser `pending`.
+ */
+describe('le filet ne condamne pas les fils hors périmètre', () => {
+  const source = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, 'animation-writer.service.ts'),
+    'utf8',
+  ) as string;
+
+  it("n'escalade que pour la suspicion", () => {
+    const appels = source.match(/escalateReply\(/g) ?? [];
+    // Un appel dans fillReplies (suspicion) + la définition de la méthode.
+    expect(appels).toHaveLength(2);
+    expect(source).toContain("Le membre demande s'il parle à une personne réelle.");
+  });
+
+  it('laisse simplement passer une conversation hors périmètre', () => {
+    expect(source).toContain('if (!isSimpleOpener(messages)) continue;');
+  });
+});
