@@ -30,6 +30,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { Toast } from '@/components/ui/Toast';
 import { captureRenderError, initSentry } from '@/services/sentry';
+import { serializeBounded } from '@/services/queryPersist';
 
 // Boot Sentry as early as possible — before any React render — so the very
 // first error during font loading or auth hydration still gets captured.
@@ -83,7 +84,15 @@ const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'nigerconnect:rq',
   // Throttle writes so we don't churn AsyncStorage on every cache update.
-  throttleTime: 1000,
+  // Cinq secondes plutôt qu'une : chaque écriture sérialise TOUT le cache sur
+  // le thread JS, et une seconde d'intervalle faisait payer ce prix pendant
+  // que l'utilisatrice fait défiler le fil.
+  throttleTime: 5000,
+  // Sérialisation bornée : au-delà de ~2 Mo, les familles lourdes sautent, puis
+  // le cache entier. Sans ce plafond il grossissait toute la journée, et le
+  // démarrage finissait par geler assez longtemps pour que le téléphone
+  // propose de quitter l'application.
+  serialize: serializeBounded,
 });
 
 export default function RootLayout() {

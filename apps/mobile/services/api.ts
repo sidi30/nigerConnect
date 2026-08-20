@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
 import Constants from 'expo-constants';
 import { tokenStore } from './secureStore';
+import { isSessionRejected } from './authFailure';
 
 const resolvedUrl =
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
@@ -113,6 +114,12 @@ api.interceptors.response.use(
             const { data } = await axios.post<{ tokens: { accessToken: string; refreshToken: string } }>(
               `${BASE_URL}/api/auth/refresh`,
               { refreshToken: refresh },
+              // `axios` nu n'hérite PAS du timeout de l'instance `api` : sans
+              // ceci l'appel pend jusqu'au verdict du système. Toutes les
+              // requêtes en attente s'accrochent à `refreshPromise`, donc
+              // l'écran se fige — c'est ce que voit l'utilisatrice quand le
+              // téléphone finit par proposer de quitter l'application.
+              { timeout: 15000 },
             );
             await tokenStore.save(data.tokens.accessToken, data.tokens.refreshToken);
             return data.tokens.accessToken;
@@ -122,6 +129,8 @@ api.interceptors.response.use(
         }
         const newToken = await refreshPromise;
         if (!newToken) {
+          // `null` ne remonte que d'un cas : aucun jeton de rafraîchissement en
+          // magasin. Il n'y a donc rien à sauver, la session est bien finie.
           await tokenStore.clear();
           if (onLogout) await onLogout();
           return Promise.reject(error);
@@ -130,8 +139,14 @@ api.interceptors.response.use(
         (original.headers as Record<string, string>).Authorization = `Bearer ${newToken}`;
         return api.request(original);
       } catch (refreshError) {
-        await tokenStore.clear();
-        if (onLogout) await onLogout();
+        // Le serveur a refusé le jeton de rafraîchissement : la session est
+        // bien morte, on nettoie. Mais un simple échec réseau ne prouve RIEN —
+        // effacer là-dessus déconnectait l'utilisatrice à la moindre coupure,
+        // et elle retrouvait l'écran de connexion au redémarrage.
+        if (isSessionRejected(refreshError)) {
+          await tokenStore.clear();
+          if (onLogout) await onLogout();
+        }
         return Promise.reject(refreshError);
       }
     }

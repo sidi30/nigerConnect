@@ -4,6 +4,8 @@ import { authApi } from '@/services/authApi';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { tokenStore } from '@/services/secureStore';
+import { sessionCache } from '@/services/sessionCache';
+import { isSessionRejected } from '@/services/authFailure';
 import { registerEmailUnverifiedHandler, registerLogoutHandler } from '@/services/api';
 import {
   forgetRegisteredPushToken,
@@ -80,10 +82,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { user } = await authApi.me();
       set({ user, isAuthenticated: true, isHydrated: true });
+      void sessionCache.save(user);
       kickOffPushRegistration();
       kickOffImagePrefetch(user);
-    } catch {
-      await tokenStore.clear();
+    } catch (error) {
+      // Le serveur a refusé la session : là, et seulement là, on efface.
+      if (isSessionRejected(error)) {
+        await Promise.all([tokenStore.clear(), sessionCache.clear()]);
+        set({ user: null, isAuthenticated: false, isHydrated: true });
+        return;
+      }
+      // Sinon le réseau n'a pas répondu — délai dépassé, coupure, 5xx. Effacer
+      // ici déconnectait l'utilisatrice à chaque démarrage sur un réseau
+      // capricieux : l'application semblait « se réinitialiser ». On garde les
+      // jetons et on rouvre sur le dernier profil connu ; le cache React Query
+      // fournit le contenu, et le premier appel qui aboutit tranchera.
+      const cached = await sessionCache.load();
+      if (cached) {
+        set({ user: cached, isAuthenticated: true, isHydrated: true });
+        kickOffPushRegistration();
+        return;
+      }
+      // Aucun profil en cache : on ne peut rien afficher, mais on ne détruit
+      // pas la session pour autant — la prochaine tentative peut aboutir.
       set({ isHydrated: true });
     }
   },
@@ -92,6 +113,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user, tokens } = await authApi.login({ email, password });
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
+    void sessionCache.save(user);
     kickOffPushRegistration();
     kickOffImagePrefetch(user);
   },
@@ -100,6 +122,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user, tokens } = await authApi.register(input);
     await tokenStore.save(tokens.accessToken, tokens.refreshToken);
     set({ user, isAuthenticated: true });
+    void sessionCache.save(user);
     kickOffPushRegistration();
     kickOffImagePrefetch(user);
   },
@@ -123,7 +146,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
     } finally {
-      await tokenStore.clear();
+      // Le profil en cache part avec les jetons : sinon le prochain démarrage
+      // hors ligne rouvrirait sur le compte qu'on vient de quitter.
+      await Promise.all([tokenStore.clear(), sessionCache.clear()]);
       set({ user: null, isAuthenticated: false });
     }
   },
@@ -134,7 +159,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // même le token mémorisé : la session suivante sur ce téléphone doit
     // repartir de zéro, pas détacher un identifiant qui n'existe plus.
     forgetRegisteredPushToken();
-    await tokenStore.clear();
+    await Promise.all([tokenStore.clear(), sessionCache.clear()]);
     set({ user: null, isAuthenticated: false });
   },
 
