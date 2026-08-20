@@ -203,3 +203,87 @@ Une seule source de données, trois surfaces :
    `users/{userId}/…` et `assertOwnedPublicImage` s'appuie dessus. Une
    réalisation n'appartient à aucun utilisateur : même question que pour les
    médias d'association, à trancher une fois pour les deux.
+
+---
+
+# Vérification et certification
+
+Ajout du propriétaire, 20/08/2026. **Deux niveaux distincts**, qui ne disent pas
+la même chose et ne doivent pas porter le même badge :
+
+| Niveau | Comment on l'obtient | Ce que ça prouve |
+|---|---|---|
+| **Vérifié** | Le fondateur envoie une pièce d'identité | La personne derrière la fiche existe et est bien celle qu'elle dit |
+| **De confiance** | 10 avis reçus | D'autres membres ont traité avec lui et le disent |
+
+Le premier est une preuve d'identité, le second une preuve de réputation. Un
+escroc peut être vérifié ; un inconnu honnête peut n'avoir aucun avis. Les
+confondre en un seul badge tromperait les gens.
+
+## La pièce d'identité — le point le plus risqué du projet
+
+C'est la donnée la plus sensible que NigerConnect manipulerait. Le VPS est
+partagé avec une douzaine de projets sans rapport. Une fuite de passeports de
+membres de la diaspora n'est pas un incident technique : pour des personnes dont
+le séjour dépend de leurs papiers, c'est un préjudice réel et irréparable.
+
+**Règle : on ne conserve pas la pièce.** Le besoin est de vérifier UNE fois, pas
+d'archiver. Le parcours :
+
+1. Envoi direct vers le **bucket privé** (`S3_PRIVATE_BUCKET`, politique
+   `anonymous=none` — jamais le bucket public servi par `cdn.nigerconnect.app`).
+2. Le relecteur ouvre le document via une **URL signée de courte durée**.
+3. Il tranche : vérifié / refusé.
+4. **Le fichier est supprimé immédiatement après la décision.** `S3Service` sait
+   déjà supprimer dans le bucket privé.
+5. Ne restent en base que : la décision, la date, qui a décidé, et le type de
+   pièce présenté. Jamais l'image, jamais le numéro du document.
+
+Contrôles qui vont avec :
+
+- **Purge automatique de secours** : tout document de plus de 7 jours non traité
+  est supprimé, décision ou pas. Un oubli du relecteur ne doit pas se transformer
+  en archive de passeports.
+- **Chaque consultation est auditée** (`AuditModule`) : qui a ouvert quel
+  dossier, quand. Y compris le propriétaire.
+- **Le document n'est jamais visible d'un autre membre**, à aucun moment, sous
+  aucune vue.
+- L'envoi passe par le mobile, jamais par un lien partageable.
+
+Ce n'est pas de la prudence décorative : sans ces règles, la fonctionnalité crée
+un risque plus grand que la valeur qu'elle apporte.
+
+## Le badge « de confiance » — 10 avis
+
+Le module d'avis existe déjà (`apps/api/src/review/`, modèle `Review` avec
+`targetType`, `rating`, `comment`). Il suffit d'étendre `ReviewTargetType` à
+`realisation` plutôt que d'écrire un second système de notation.
+
+Le seuil de 10 est le choix du propriétaire. Mais **un seuil brut se truque avec
+dix comptes créés le même jour**, et un badge de confiance truqué est pire que
+pas de badge : il sert de caution à celui qui arnaque. Conditions minimales à
+poser avec le seuil :
+
+- **un avis par compte**, garanti en base (contrainte d'unicité), pas seulement
+  en code ;
+- **l'auteur de l'avis ne peut pas être le fondateur** ni un compte qu'il a
+  lui-même créé ;
+- **compte d'un âge minimum** au moment de l'avis — dix comptes nés hier ne
+  valent pas dix témoignages ;
+- le badge **retombe** si des avis sont supprimés et que le compte repasse sous
+  le seuil : ce n'est pas un acquis définitif.
+
+Une piste plus solide, à arbitrer : ne compter que les avis de membres ayant
+réellement interagi (une réponse à une annonce, un échange). Plus juste, mais
+plus lent à atteindre — donc à décider en fonction de la vitesse de démarrage
+souhaitée.
+
+## Attention à la soupe de badges
+
+On en compte désormais quatre : compte personnel vérifié, association certifiée,
+réalisation vérifiée, réalisation de confiance. Au-delà, plus personne ne sait
+ce qu'un badge veut dire, et ils cessent tous de rassurer.
+
+À traiter comme **un seul système visuel cohérent**, conçu d'un bloc — pas
+quatre pastilles ajoutées au fil des demandes. Une réalisation peut porter les
+deux siens en même temps : la maquette doit le prévoir dès le départ.
