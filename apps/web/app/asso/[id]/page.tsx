@@ -107,7 +107,7 @@ export default function AssoDashboardPage({ params }: { params: Promise<{ id: st
         <Card
           title="Membres et demandes"
           body="Approuver les demandes d'adhésion, gérer les rôles et le bureau."
-          soon
+          href={`/asso/${association.id}/membres`}
         />
         <Card
           title="Publications"
@@ -129,9 +129,19 @@ export default function AssoDashboardPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function Card({ title, body, soon }: { title: string; body: string; soon?: boolean }) {
-  return (
-    <div className="bg-white border border-[#E8DFD3] rounded-2xl p-5">
+function Card({
+  title,
+  body,
+  soon,
+  href,
+}: {
+  title: string;
+  body: string;
+  soon?: boolean;
+  href?: string;
+}) {
+  const inner = (
+    <>
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-semibold">{title}</h2>
         {soon ? (
@@ -141,8 +151,21 @@ function Card({ title, body, soon }: { title: string; body: string; soon?: boole
         ) : null}
       </div>
       <p className="text-sm text-[#5A4634] mt-2">{body}</p>
-    </div>
+    </>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="bg-white border border-[#E8DFD3] rounded-2xl p-5 block hover:border-[#E05206] transition-colors"
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className="bg-white border border-[#E8DFD3] rounded-2xl p-5">{inner}</div>;
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

@@ -202,3 +202,157 @@ async function publicPost<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) throw new AssoApiError(res.status, await extractError(res));
   return (await res.json()) as T;
 }
+
+// ---------------------------------------------------------------------------
+// Membres, demandes d'adhésion, bureau exécutif (B4)
+// ---------------------------------------------------------------------------
+
+/** The public shape of a person, as every association surface returns it. */
+export interface MemberUser {
+  id: string;
+  displayName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  avatarUrl?: string | null;
+  city?: string | null;
+  countryCode?: string | null;
+}
+
+export interface AssociationMember {
+  associationId: string;
+  userId: string;
+  role: AssociationRole | "moderator";
+  status: "pending" | "approved" | "rejected";
+  joinedAt: string;
+  user: MemberUser;
+}
+
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export type OfficerTitle =
+  | "president"
+  | "vice_president"
+  | "secretary"
+  | "treasurer"
+  | "spokesperson"
+  | "other";
+
+export interface AssociationOfficer {
+  id: string;
+  associationId: string;
+  userId: string;
+  title: OfficerTitle;
+  customTitle?: string | null;
+  sortOrder: number;
+  acceptedAt: string | null;
+  createdAt: string;
+  user: MemberUser;
+}
+
+/** Roles an officer may hand out. `owner` is absent on purpose: it only moves
+ *  through the ownership transfer flow, never by editing a role (A3). */
+export const ASSIGNABLE_ROLES = ["admin", "moderator", "member"] as const;
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+export const OFFICER_TITLES: ReadonlyArray<{ value: OfficerTitle; label: string }> = [
+  { value: "president", label: "Président·e" },
+  { value: "vice_president", label: "Vice-président·e" },
+  { value: "secretary", label: "Secrétaire" },
+  { value: "treasurer", label: "Trésorier·ère" },
+  { value: "spokesperson", label: "Porte-parole" },
+  { value: "other", label: "Autre (à préciser)" },
+];
+
+export function officerTitleLabel(officer: AssociationOfficer): string {
+  if (officer.title === "other") return officer.customTitle ?? "Autre";
+  return OFFICER_TITLES.find((t) => t.value === officer.title)?.label ?? officer.title;
+}
+
+/** Best display name available, without ever rendering an empty line. */
+export function personName(user: MemberUser): string {
+  const full = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  return user.displayName?.trim() || full || "Membre";
+}
+
+export function roleLabelOf(role: AssociationMember["role"]): string {
+  if (role === "moderator") return "Modérateur";
+  return roleLabel(role as AssociationRole);
+}
+
+export function listMembers(
+  associationId: string,
+  params: { cursor?: string | null; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<Page<AssociationMember>> {
+  return assoFetch<Page<AssociationMember>>(
+    `/associations/${associationId}/members${query(params)}`,
+    { signal },
+  );
+}
+
+export function listPendingRequests(
+  associationId: string,
+  params: { cursor?: string | null; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<Page<AssociationMember>> {
+  return assoFetch<Page<AssociationMember>>(
+    `/associations/${associationId}/pending${query(params)}`,
+    { signal },
+  );
+}
+
+export function approveRequest(associationId: string, userId: string): Promise<unknown> {
+  return assoFetch(`/associations/${associationId}/members/${userId}/approve`, { method: "POST" });
+}
+
+export function rejectRequest(
+  associationId: string,
+  userId: string,
+  reason?: string,
+): Promise<unknown> {
+  return assoFetch(`/associations/${associationId}/members/${userId}/reject`, {
+    method: "POST",
+    body: reason ? { reason } : {},
+  });
+}
+
+export function changeRole(
+  associationId: string,
+  userId: string,
+  role: AssignableRole,
+): Promise<unknown> {
+  return assoFetch(`/associations/${associationId}/members/${userId}/role`, {
+    method: "PATCH",
+    body: { role },
+  });
+}
+
+export function listOfficers(
+  associationId: string,
+  signal?: AbortSignal,
+): Promise<AssociationOfficer[]> {
+  return assoFetch<AssociationOfficer[]>(`/associations/${associationId}/officers`, { signal });
+}
+
+export function designateOfficer(
+  associationId: string,
+  body: { userId: string; title: OfficerTitle; customTitle?: string; sortOrder?: number },
+): Promise<unknown> {
+  return assoFetch(`/associations/${associationId}/officers`, { method: "POST", body });
+}
+
+export function removeOfficer(associationId: string, userId: string): Promise<void> {
+  return assoFetch<void>(`/associations/${associationId}/officers/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+function query(params: { cursor?: string | null; limit?: number }): string {
+  const parts: string[] = [];
+  if (params.cursor) parts.push(`cursor=${encodeURIComponent(params.cursor)}`);
+  if (params.limit) parts.push(`limit=${params.limit}`);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
