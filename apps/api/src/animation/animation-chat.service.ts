@@ -109,6 +109,18 @@ export class AnimationChatService {
       });
       if (escalated > 0) continue;
 
+      // Une conversation, une réponse en attente à la fois. Quelqu'un qui
+      // écrit trois messages d'affilée n'appelle pas trois réponses : il en
+      // appelle une, qui tiendra compte de tout ce qu'il vient d'écrire.
+      // L'unicité porte sur `incomingMessageId`, donc elle ne protégeait de
+      // rien ici — trois messages, trois identifiants, trois lignes, et le
+      // compte répondait trois fois de suite. Rien ne trahit plus vite un
+      // compte fabriqué.
+      const alreadyWaiting = await this.prisma.animationReply.count({
+        where: { conversationId: msg.conversationId, status: 'pending' },
+      });
+      if (alreadyWaiting > 0) continue;
+
       const attempt = await this.prisma.animationReply.count({
         where: { conversationId: msg.conversationId, status: 'sent' },
       });
@@ -154,7 +166,15 @@ export class AnimationChatService {
     });
 
     let sent = 0;
+    // Deuxième filet, indispensable pour deux raisons : les lignes déjà en base
+    // avant le garde-fou ci-dessus, et le cas où deux d'entre elles arrivent à
+    // échéance dans la même passe.
+    const answered = new Set<string>();
     for (const reply of due) {
+      if (answered.has(reply.conversationId)) {
+        await this.absorb(reply.id);
+        continue;
+      }
       if (!reply.bot.active) {
         await this.prisma.animationReply.update({
           where: { id: reply.id },
@@ -171,6 +191,23 @@ export class AnimationChatService {
           where: { id: reply.id },
           data: { status: 'sent', sentMessageId: message.id },
         });
+        answered.add(reply.conversationId);
+        // Les sœurs de cette conversation sont désormais sans objet : la
+        // réponse qui vient de partir répond à tout le fil. Les laisser en
+        // attente, c'est promettre un deuxième message.
+        const absorbed = await this.prisma.animationReply.updateMany({
+          where: {
+            conversationId: reply.conversationId,
+            status: 'pending',
+            id: { not: reply.id },
+          },
+          data: { status: 'skipped' },
+        });
+        if (absorbed.count > 0) {
+          this.logger.log(
+            `Animation : ${absorbed.count} réponse(s) en double absorbée(s) dans la conversation ${reply.conversationId}`,
+          );
+        }
         sent += 1;
       } catch (error) {
         this.logger.error(`Réponse d'animation ${reply.id} échouée : ${String(error)}`);
@@ -181,6 +218,11 @@ export class AnimationChatService {
       }
     }
     return sent;
+  }
+
+  /** Écarte une réponse devenue sans objet. */
+  private async absorb(id: string): Promise<void> {
+    await this.prisma.animationReply.update({ where: { id }, data: { status: 'skipped' } });
   }
 
   /** Conversations remontées à la console, en attente d'une réponse humaine. */
