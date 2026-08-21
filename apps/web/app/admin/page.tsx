@@ -6,6 +6,7 @@ import {
   Activity,
   Award,
   BadgeCheck,
+  Building2,
   LayoutDashboard,
   Inbox,
   LifeBuoy,
@@ -32,6 +33,7 @@ import NewsletterSection from "@/components/admin/NewsletterSection";
 import InvitationsSection from "@/components/admin/InvitationsSection";
 import ReferralsSection from "@/components/admin/ReferralsSection";
 import AmbassadorsSection from "@/components/admin/AmbassadorsSection";
+import AssociationsSection from "@/components/admin/AssociationsSection";
 import OfficialSection from "@/components/admin/OfficialSection";
 import UsersSection from "@/components/admin/UsersSection";
 import SecuritySection from "@/components/admin/SecuritySection";
@@ -49,6 +51,7 @@ type Tab =
   | "invitations"
   | "referrals"
   | "ambassadors"
+  | "associations"
   | "official"
   | "security"
   | "observability"
@@ -78,6 +81,10 @@ const NAV: NavEntry[] = [
 const ADMIN_ONLY_NAV: NavEntry[] = [
   { id: "map", label: "Carte", icon: MapIcon },
   { id: "ambassadors", label: "Ambassadeurs", icon: Award },
+  // Certification (A5) est admin-only côté API (@Roles('admin') sur
+  // verify/unverify) — même raisonnement que le reste de ce bloc : un 403
+  // ferait bondir un modérateur vers /admin/login.
+  { id: "associations", label: "Associations", icon: Building2 },
   { id: "official", label: "Compte officiel", icon: BadgeCheck },
   { id: "newsletter", label: "Newsletter", icon: Mail },
   { id: "observability", label: "Observabilité", icon: Activity },
@@ -157,6 +164,7 @@ export default function AdminDashboardPage() {
         {tab === "invitations" ? <InvitationsSection role={role} /> : null}
         {tab === "referrals" ? <ReferralsSection /> : null}
         {tab === "ambassadors" ? <AmbassadorsSection /> : null}
+        {tab === "associations" ? <AssociationsSection /> : null}
         {tab === "official" ? <OfficialSection /> : null}
         {tab === "security" ? <SecuritySection role={role} /> : null}
         {tab === "observability" ? <ObservabilitySection /> : null}

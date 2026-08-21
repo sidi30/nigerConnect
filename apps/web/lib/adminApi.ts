@@ -1856,3 +1856,113 @@ export function replyOfficialThread(
     { method: "POST", body: { content } },
   );
 }
+
+// ── Associations — certification (A5, admin-only) ──────────────────────────
+// GET /associations is the same public/authenticated endpoint the mobile app
+// and the admin console both hit — it is intentionally NOT admin-scoped and
+// has no dedicated admin listing, so this reuses it. Its projection
+// (ASSOCIATION_PUBLIC_SELECT in association.service.ts) never includes
+// `verificationNote`/`verifiedById`/`pendingOwnerId`/`deletedAt`/
+// `normalizedName` — those stay internal even from this console. `verifiedAt`
+// alone is public ("Vérifiée le …").
+//
+// There is no free-text search param on this endpoint (only `category`/
+// `country`), so AssociationsSection paginates it into a local pool and
+// filters client-side — see the component for that logic.
+
+export type AssociationCategory =
+  | "generaliste"
+  | "etudiants"
+  | "femmes"
+  | "jeunesse"
+  | "culture"
+  | "business"
+  | "sport"
+  | "religieux";
+
+export interface AdminAssociation {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  logoUrl: string | null;
+  coverUrl: string | null;
+  category: AssociationCategory;
+  countryCode: string | null;
+  city: string | null;
+  website: string | null;
+  contactEmail: string | null;
+  isVerified: boolean;
+  verifiedAt: string | null;
+  requiresApproval: boolean;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminAssociationList {
+  items: AdminAssociation[];
+  nextCursor: string | null;
+}
+
+export interface AdminAssociationFilters {
+  category?: AssociationCategory;
+  country?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+/** GET /associations — paginated, public projection (see note above). */
+export function listAssociations(
+  params: AdminAssociationFilters = {},
+  signal?: AbortSignal,
+): Promise<AdminAssociationList> {
+  const qs = new URLSearchParams();
+  if (params.category) qs.set("category", params.category);
+  if (params.country) qs.set("country", params.country);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  const s = qs.toString();
+  return adminFetch<AdminAssociationList>(`/associations${s ? `?${s}` : ""}`, { signal });
+}
+
+/**
+ * The raw row `admin.service.ts#verifyAssociation/unverifyAssociation`
+ * returns — unlike `listAssociations`, it is NOT run through
+ * ASSOCIATION_PUBLIC_SELECT, so `verifiedById`/`verificationNote` come back
+ * here. Kept as its own type (not `AdminAssociation`) so nobody accidentally
+ * expects those two fields out of the list endpoint above.
+ */
+export interface AdminAssociationVerification {
+  id: string;
+  isVerified: boolean;
+  verifiedAt: string | null;
+  verifiedById: string | null;
+  verificationNote: string | null;
+}
+
+/**
+ * POST /admin/associations/:id/verify — grant the "Association vérifiée"
+ * badge. `note` is an internal moderation note (never shown to the
+ * association or on any public page). Admin-only.
+ */
+export function verifyAssociation(
+  id: string,
+  note?: string,
+): Promise<AdminAssociationVerification> {
+  return adminFetch<AdminAssociationVerification>(`/admin/associations/${id}/verify`, {
+    method: "POST",
+    body: note ? { note } : {},
+  });
+}
+
+/** POST /admin/associations/:id/unverify — revoke it. Same shape, admin-only. */
+export function unverifyAssociation(
+  id: string,
+  note?: string,
+): Promise<AdminAssociationVerification> {
+  return adminFetch<AdminAssociationVerification>(`/admin/associations/${id}/unverify`, {
+    method: "POST",
+    body: note ? { note } : {},
+  });
+}
