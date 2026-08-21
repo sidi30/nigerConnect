@@ -3,7 +3,7 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
-import { OfficialBadge } from '@/components/ui/OfficialBadge';
+import { Badge } from '@/components/ui/Badge';
 import type { PublicUser } from '@nigerconnect/shared-types';
 
 interface StoryGroup {
@@ -57,7 +57,7 @@ export function StoriesRow({ storyGroups = [], onCreate, onOpen }: Props) {
               qui se serait appelé « NigerConnect ». */}
           {g.author.isOfficial ? (
             <View style={styles.storyBadge}>
-              <OfficialBadge size={18} />
+              <Badge kind="official" size={18} />
             </View>
           ) : null}
           <Text style={styles.label} numberOfLines={1}>

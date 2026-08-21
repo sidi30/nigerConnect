@@ -12,9 +12,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { ConversationSkeletonList } from '@/components/ui/Skeleton';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
-import { OfficialBadge } from '@/components/ui/OfficialBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId, relativeTime } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
@@ -131,14 +129,7 @@ export default function MessagesTab() {
                         >
                           {title}
                         </Text>
-                        {peer.isOfficial ? (
-                          <OfficialBadge size={12} />
-                        ) : (
-                          <>
-                            {peer.identityStatus === 'approved' && <VerifiedBadge size={12} />}
-                            {peer.isAmbassador && <AmbassadorBadge size={12} />}
-                          </>
-                        )}
+                        <BadgeGroup kinds={selectPersonBadges(peer)} size={12} />
                       </View>
                       <Text
                         style={[

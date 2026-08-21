@@ -19,8 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
 import { NCImage } from '@/components/ui/NCImage';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { ReviewsSection } from '@/components/reviews/ReviewsSection';
 import { servicesApi } from '@/services/servicesApi';
 import { chatApi } from '@/services/chatApi';
@@ -148,8 +147,7 @@ export default function ServiceDetailScreen() {
             <View style={{ flex: 1 }}>
               <View style={styles.nameRow}>
                 <Text style={styles.authorName}>{svc.author.displayName}</Text>
-                {svc.author.identityStatus === 'approved' && <VerifiedBadge size={13} />}
-                {svc.author.isAmbassador && <AmbassadorBadge size={13} />}
+                <BadgeGroup kinds={selectPersonBadges(svc.author)} size={13} />
               </View>
               <Text style={styles.authorMeta}>
                 {Flags[svc.author.countryCode ?? ''] ?? '🌍'} {svc.author.city ?? ''} ·{' '}

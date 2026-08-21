@@ -1,9 +1,27 @@
-import type { Association, AssociationMember, AssociationEvent, CursorPage, Post } from '@nigerconnect/shared-types';
+import type {
+  Association,
+  AssociationMember,
+  AssociationEvent,
+  AssociationOfficer,
+  AssociationOfficerTitle,
+  AssociationRole,
+  CursorPage,
+  Post,
+} from '@nigerconnect/shared-types';
 import { api } from './api';
 
 export interface MyAssociation extends Association {
-  role: 'admin' | 'moderator' | 'member';
+  // A3 widened AssociationRole to include 'owner' — this stayed narrower
+  // (pre-A3) and made an owner's own membership badge silently disappear.
+  role: AssociationRole;
   joinedAt: string;
+}
+
+export interface DesignateOfficerInput {
+  userId: string;
+  title: AssociationOfficerTitle;
+  customTitle?: string;
+  sortOrder?: number;
 }
 
 export type AssociationCategory =
@@ -105,5 +123,24 @@ export const associationsApi = {
   async upcomingEvents(): Promise<AssociationEvent[]> {
     const { data } = await api.get<AssociationEvent[]>('/events/upcoming');
     return data;
+  },
+
+  // ── A4 — bureau exécutif ────────────────────────────────────
+  // `officers()` only ever returns ACCEPTED seats (see association.service.ts
+  // listOfficers) — a pending invite never shows here, by design.
+  async officers(id: string): Promise<AssociationOfficer[]> {
+    const { data } = await api.get<AssociationOfficer[]>(`/associations/${id}/officers`);
+    return data;
+  },
+  async designateOfficer(id: string, input: DesignateOfficerInput): Promise<AssociationOfficer> {
+    const { data } = await api.post<AssociationOfficer>(`/associations/${id}/officers`, input);
+    return data;
+  },
+  async acceptOfficerSeat(id: string): Promise<AssociationOfficer> {
+    const { data } = await api.post<AssociationOfficer>(`/associations/${id}/officers/accept`);
+    return data;
+  },
+  async removeOfficer(id: string, userId: string): Promise<void> {
+    await api.delete(`/associations/${id}/officers/${userId}`);
   },
 };

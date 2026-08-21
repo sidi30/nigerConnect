@@ -8,6 +8,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -18,12 +19,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { Badge } from '@/components/ui/Badge';
 import { PostCard } from '@/components/feed/PostCard';
-import { associationsApi } from '@/services/associationsApi';
+import { associationsApi, type DesignateOfficerInput } from '@/services/associationsApi';
 import { feedApi } from '@/services/feedApi';
 import { friendsApi } from '@/services/friendsApi';
+import { notificationApi } from '@/services/notificationApi';
 import { useAuthStore } from '@/stores/authStore';
-import type { Post } from '@nigerconnect/shared-types';
+import type { AssociationOfficerTitle, Post } from '@nigerconnect/shared-types';
 import {
   Colors,
   CountryNames,
@@ -33,7 +36,13 @@ import {
   Spacing,
   Typography,
 } from '@/constants/theme';
-import { relativeTime } from '@/constants/lookups';
+import {
+  ASSOCIATION_OFFICER_TITLE_LABELS,
+  officerTitleLabel,
+  relativeTime,
+  selectOfficerInviteBanner,
+  visibleOfficers,
+} from '@/constants/lookups';
 import { describeError } from '@/services/apiError';
 
 /**
@@ -44,10 +53,21 @@ import { describeError } from '@/services/apiError';
  */
 
 const ROLE_LABELS: Record<string, { color: string; bg: string; label: string }> = {
+  owner: { color: Colors.orange, bg: Colors.peach50, label: 'Propriétaire' },
   admin: { color: Colors.orange, bg: Colors.peach50, label: 'Admin' },
   moderator: { color: Colors.info, bg: Colors.infoSoft, label: 'Modérateur' },
   member: { color: Colors.tan500, bg: Colors.tan100, label: 'Membre' },
 };
+
+// A4 — titres proposables lors de la désignation d'un membre du bureau.
+const OFFICER_TITLE_OPTIONS: AssociationOfficerTitle[] = [
+  'president',
+  'vice_president',
+  'secretary',
+  'treasurer',
+  'spokesperson',
+  'other',
+];
 
 export default function AssociationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -175,6 +195,100 @@ export default function AssociationDetailScreen() {
     },
     onError: (e) => Alert.alert('Invitation impossible', describeError(e, 'Association introuvable.')),
   });
+
+  // ── A4 — bureau exécutif ────────────────────────────────────
+  // Un owner peut désigner/retirer au même titre qu'un admin (miroir exact de
+  // association.service.ts assertRole(['admin','owner']) côté API).
+  const canManageOfficers = membership?.role === 'admin' || membership?.role === 'owner';
+
+  const officersQuery = useQuery({
+    queryKey: ['association', id, 'officers'],
+    queryFn: () => associationsApi.officers(id!),
+    enabled: !!id,
+  });
+
+  // Il n'existe aucun endpoint « mon siège en attente » (un siège proposé
+  // n'apparaît qu'après acceptation dans officers(), par consentement
+  // explicite). Le seul signal côté client est la notification d'invitation
+  // elle-même — comme pour friend_request, elle route vers cette page. Limite
+  // assumée : la notification (donc ce bandeau) disparaît 24h après l'envoi,
+  // ou plus tôt si l'utilisateur fait "Tout effacer" (même contrainte que
+  // toutes les notifications de l'app, pas une régression introduite ici).
+  const notifsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => notificationApi.list(),
+    enabled: !!id && !!me,
+  });
+
+  const [officerActionTaken, setOfficerActionTaken] = useState(false);
+  const officers = officersQuery.data ?? [];
+  // Client-owned invariant (see constants/lookups.ts `visibleOfficers`) —
+  // only accepted seats, sortOrder-ordered — kept independent of the API's
+  // own filtering/ordering rather than trusted blindly.
+  const sortedOfficers = visibleOfficers(officers);
+  const alreadyOfficer = !!me && officers.some((o) => o.user.id === me.id);
+  const showOfficerInviteBanner = selectOfficerInviteBanner({
+    notifications: notifsQuery.data?.items ?? [],
+    associationId: id,
+    alreadyOfficer,
+    actionTaken: officerActionTaken,
+  });
+
+  function invalidateOfficers() {
+    setOfficerActionTaken(true);
+    void qc.invalidateQueries({ queryKey: ['association', id, 'officers'] });
+  }
+
+  const acceptOfficerMut = useMutation({
+    mutationFn: () => associationsApi.acceptOfficerSeat(id!),
+    onSuccess: invalidateOfficers,
+    onError: (e) => Alert.alert('Action impossible', describeError(e, 'Invitation introuvable ou expirée.')),
+  });
+  const declineOfficerMut = useMutation({
+    mutationFn: () => associationsApi.removeOfficer(id!, me!.id),
+    onSuccess: invalidateOfficers,
+    onError: (e) => Alert.alert('Action impossible', describeError(e, 'Invitation introuvable ou expirée.')),
+  });
+  const removeOfficerMut = useMutation({
+    mutationFn: (userId: string) => associationsApi.removeOfficer(id!, userId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['association', id, 'officers'] }),
+    onError: (e) => Alert.alert('Retrait impossible', describeError(e, 'Association introuvable.')),
+  });
+
+  function confirmRemoveOfficer(userId: string, name: string) {
+    Alert.alert('Retirer du bureau ?', `${name} ne sera plus affiché·e comme membre du bureau.`, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Retirer', style: 'destructive', onPress: () => removeOfficerMut.mutate(userId) },
+    ]);
+  }
+
+  // ── Désignation d'un membre du bureau (admin/owner) ─────────
+  const [designateOpen, setDesignateOpen] = useState(false);
+  const [designateUserId, setDesignateUserId] = useState<string | null>(null);
+  const [designateTitle, setDesignateTitle] = useState<AssociationOfficerTitle>('president');
+  const [designateCustomTitle, setDesignateCustomTitle] = useState('');
+
+  const designateMut = useMutation({
+    mutationFn: (input: DesignateOfficerInput) => associationsApi.designateOfficer(id!, input),
+    onSuccess: () => {
+      setDesignateOpen(false);
+      setDesignateUserId(null);
+      setDesignateCustomTitle('');
+      Alert.alert('Invitation envoyée', 'La personne devra accepter pour apparaître au bureau.');
+    },
+    onError: (e) => Alert.alert('Désignation impossible', describeError(e, 'Association introuvable.')),
+  });
+
+  function submitDesignate() {
+    if (!designateUserId) return;
+    designateMut.mutate({
+      userId: designateUserId,
+      title: designateTitle,
+      customTitle: designateTitle === 'other' ? designateCustomTitle.trim() : undefined,
+      // Ajoute en fin de liste — pas de réordonnancement manuel pour l'instant.
+      sortOrder: officers.length,
+    });
+  }
 
   async function shareJoinLink() {
     const name = assocQuery.data?.name ?? 'cette association';
@@ -329,9 +443,7 @@ export default function AssociationDetailScreen() {
             </View>
             <View style={styles.nameRow}>
               <Text style={styles.name}>{a.name}</Text>
-              {a.isVerified ? (
-                <Feather name="check-circle" size={18} color={Colors.white} />
-              ) : null}
+              {a.isVerified ? <Badge kind="association_verified" size={18} verifiedAt={a.verifiedAt} /> : null}
             </View>
             <Text style={styles.location}>
               {Flags[a.countryCode ?? ''] ?? '🌍'} {a.city ?? ''}
@@ -518,6 +630,96 @@ export default function AssociationDetailScreen() {
           </View>
         ) : null}
 
+        <View style={styles.section}>
+          <View style={styles.pubHeader}>
+            <Text style={styles.sectionTitle}>Bureau exécutif</Text>
+            {canManageOfficers ? (
+              <Pressable
+                style={styles.writeBtn}
+                onPress={() => {
+                  setDesignateUserId(null);
+                  setDesignateTitle('president');
+                  setDesignateCustomTitle('');
+                  setDesignateOpen(true);
+                }}
+              >
+                <Feather name="user-plus" size={14} color={Colors.white} />
+                <Text style={styles.writeLabel}>Désigner</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {showOfficerInviteBanner ? (
+            <View style={styles.officerInvite}>
+              <Feather name="award" size={20} color={Colors.info} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.officerInviteTitle}>On te propose une place au bureau</Text>
+                <Text style={styles.officerInviteHint}>
+                  Ta fonction ne sera visible qu’après ton acceptation — c’est un choix qui n’engage que toi.
+                </Text>
+              </View>
+              <View style={{ gap: 6 }}>
+                <Pressable
+                  onPress={() => acceptOfficerMut.mutate()}
+                  disabled={acceptOfficerMut.isPending || declineOfficerMut.isPending}
+                  style={[styles.reqBtn, styles.reqApprove]}
+                  accessibilityLabel="Accepter la place au bureau"
+                >
+                  <Feather name="check" size={16} color={Colors.white} />
+                </Pressable>
+                <Pressable
+                  onPress={() => declineOfficerMut.mutate()}
+                  disabled={acceptOfficerMut.isPending || declineOfficerMut.isPending}
+                  style={[styles.reqBtn, styles.reqReject]}
+                  accessibilityLabel="Refuser la place au bureau"
+                >
+                  <Feather name="x" size={16} color={Colors.danger} />
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {officersQuery.isLoading ? (
+            <Loader style={{ marginTop: Spacing.sm }} />
+          ) : officersQuery.isError ? (
+            <Text style={styles.sectionHint}>Impossible de charger le bureau.</Text>
+          ) : sortedOfficers.length === 0 ? (
+            <Text style={styles.sectionHint}>Aucun membre du bureau désigné pour l’instant.</Text>
+          ) : (
+            sortedOfficers.map((o) => (
+              <Pressable
+                key={o.user.id}
+                style={styles.officerRow}
+                onPress={() => router.push(`/user/${o.user.id}`)}
+              >
+                <Avatar uri={o.user.avatarUrl} name={o.user.displayName ?? 'N'} size={44} border={false} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestName} numberOfLines={1}>
+                    {o.user.displayName ?? 'Membre'}
+                  </Text>
+                  <Text style={styles.officerTitle} numberOfLines={1}>
+                    {officerTitleLabel(o)}
+                  </Text>
+                </View>
+                {canManageOfficers ? (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      confirmRemoveOfficer(o.user.id, o.user.displayName ?? 'Ce membre');
+                    }}
+                    disabled={removeOfficerMut.isPending}
+                    hitSlop={10}
+                    style={styles.officerRemoveBtn}
+                    accessibilityLabel="Retirer du bureau"
+                  >
+                    <Feather name="x" size={14} color={Colors.tan600} />
+                  </Pressable>
+                ) : null}
+              </Pressable>
+            ))
+          )}
+        </View>
+
         {a.description ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>À propos</Text>
@@ -671,6 +873,113 @@ export default function AssociationDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={designateOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDesignateOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {designateUserId ? 'Choisir la fonction' : 'Désigner un membre du bureau'}
+              </Text>
+              <Pressable onPress={() => setDesignateOpen(false)} hitSlop={10}>
+                <Feather name="x" size={22} color={Colors.brown} />
+              </Pressable>
+            </View>
+
+            {!designateUserId ? (
+              members.length === 0 ? (
+                <Text style={styles.sectionHint}>Aucun membre à proposer pour l’instant.</Text>
+              ) : (
+                <FlatList
+                  data={members.filter((m) => m.user.id !== me?.id)}
+                  keyExtractor={(m) => m.user.id}
+                  contentContainerStyle={{ gap: Spacing.sm, paddingVertical: Spacing.sm }}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.friendRow}
+                      onPress={() => setDesignateUserId(item.user.id)}
+                    >
+                      <Avatar
+                        uri={item.user.avatarUrl}
+                        name={item.user.displayName ?? 'N'}
+                        size={40}
+                        border={false}
+                      />
+                      <Text style={styles.friendName} numberOfLines={1}>
+                        {item.user.displayName ?? 'Membre'}
+                      </Text>
+                      <Feather name="chevron-right" size={18} color={Colors.tan400} />
+                    </Pressable>
+                  )}
+                />
+              )
+            ) : (
+              <View style={{ gap: Spacing.md, paddingVertical: Spacing.sm }}>
+                <View style={styles.titleChipsRow}>
+                  {OFFICER_TITLE_OPTIONS.map((t) => (
+                    <Pressable
+                      key={t}
+                      onPress={() => setDesignateTitle(t)}
+                      style={[styles.titleChip, designateTitle === t && styles.titleChipActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.titleChipLabel,
+                          designateTitle === t && styles.titleChipLabelActive,
+                        ]}
+                      >
+                        {ASSOCIATION_OFFICER_TITLE_LABELS[t]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {designateTitle === 'other' ? (
+                  <TextInput
+                    value={designateCustomTitle}
+                    onChangeText={setDesignateCustomTitle}
+                    placeholder="Titre (ex. Responsable communication)"
+                    placeholderTextColor={Colors.tan400}
+                    style={styles.titleInput}
+                    maxLength={100}
+                  />
+                ) : null}
+                <Pressable
+                  onPress={() => setDesignateUserId(null)}
+                  style={styles.secondaryBtn}
+                >
+                  <Feather name="arrow-left" size={15} color={Colors.orange} />
+                  <Text style={styles.secondaryLabel}>Changer de membre</Text>
+                </Pressable>
+                <Pressable
+                  onPress={submitDesignate}
+                  disabled={
+                    designateMut.isPending ||
+                    (designateTitle === 'other' && !designateCustomTitle.trim())
+                  }
+                  style={({ pressed }) => [
+                    styles.joinBtn,
+                    (designateMut.isPending ||
+                      (designateTitle === 'other' && !designateCustomTitle.trim())) && {
+                      opacity: 0.5,
+                    },
+                    pressed && { opacity: 0.9 },
+                  ]}
+                >
+                  <LinearGradient colors={Gradients.orange} style={StyleSheet.absoluteFill} />
+                  <Text style={styles.joinLabel}>
+                    {designateMut.isPending ? '…' : 'Proposer le siège'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -810,6 +1119,58 @@ const styles = StyleSheet.create({
   },
   reqApprove: { backgroundColor: Colors.green },
   reqReject: { backgroundColor: Colors.dangerSoft, borderWidth: 1, borderColor: Colors.dangerMuted },
+  officerInvite: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radii.lg,
+    backgroundColor: Colors.infoSoft,
+    borderWidth: 1,
+    borderColor: Colors.info,
+    marginBottom: Spacing.sm,
+  },
+  officerInviteTitle: { fontSize: Typography.sizes.sm + 1, fontWeight: '700', color: Colors.brown },
+  officerInviteHint: { fontSize: Typography.sizes.xs, color: Colors.brownSoft, marginTop: 2 },
+  officerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.tan100,
+  },
+  officerTitle: { fontSize: Typography.sizes.xs + 1, color: Colors.tan500, marginTop: 1 },
+  officerRemoveBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: Radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.tan100,
+  },
+  titleChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  titleChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.tan100,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+  },
+  titleChipActive: { backgroundColor: Colors.peach50, borderColor: Colors.orange },
+  titleChipLabel: { fontSize: Typography.sizes.sm, fontWeight: '600', color: Colors.tan600 },
+  titleChipLabelActive: { color: Colors.orange },
+  titleInput: {
+    height: 44,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.md,
+    fontSize: Typography.sizes.sm,
+    color: Colors.brown,
+  },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalCard: {
     backgroundColor: Colors.cream,

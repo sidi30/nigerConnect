@@ -26,9 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Conversation, CursorPage, Message } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
-import { OfficialBadge } from '@/components/ui/OfficialBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { Colors, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
@@ -877,14 +875,7 @@ export default function ChatScreen() {
               <Text style={styles.peerName} numberOfLines={1}>
                 {peerName}
               </Text>
-              {peer.isOfficial ? (
-                <OfficialBadge size={13} />
-              ) : (
-                <>
-                  {peer.identityStatus === 'approved' && <VerifiedBadge size={13} />}
-                  {peer.isAmbassador && <AmbassadorBadge size={13} />}
-                </>
-              )}
+              <BadgeGroup kinds={selectPersonBadges(peer)} size={13} />
             </View>
             <Text style={styles.peerStatus} numberOfLines={1}>
               {peer.countryCode ? Flags[peer.countryCode] : ''} {peer.city ?? ''}

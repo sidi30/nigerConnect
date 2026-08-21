@@ -6,8 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ProximityEncounterSummary } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { geoApi } from '@/services/geoApi';
 import { toast } from '@/stores/toastStore';
 import { Colors, Flags, Radii, Spacing, Typography } from '@/constants/theme';
@@ -95,8 +94,7 @@ export default function ProximityRequestScreen() {
             />
             <View style={styles.nameRow}>
               <Text style={styles.name}>{requesterName(requester)}</Text>
-              {requester.identityStatus === 'approved' ? <VerifiedBadge size={18} /> : null}
-              {requester.isAmbassador ? <AmbassadorBadge size={18} /> : null}
+              <BadgeGroup kinds={selectPersonBadges(requester)} size={18} />
             </View>
             {requester.city ? (
               <Text style={styles.loc}>

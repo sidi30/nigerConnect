@@ -6,8 +6,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import type { PublicUser } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { profileApi } from '@/services/profileApi';
 import { Colors, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
@@ -74,8 +73,7 @@ export default function UserFriendsScreen() {
                   <Text style={styles.name} numberOfLines={1}>
                     {item.displayName ?? `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim()}
                   </Text>
-                  {item.identityStatus === 'approved' && <VerifiedBadge size={12} />}
-                  {item.isAmbassador && <AmbassadorBadge size={12} />}
+                  <BadgeGroup kinds={selectPersonBadges(item)} size={12} />
                 </View>
                 <Text style={styles.meta} numberOfLines={1}>
                   {Flags[item.countryCode ?? ''] ?? ''} {item.city ?? ''}

@@ -14,9 +14,7 @@ import { HeartBurst } from '../ui/HeartBurst';
 import type { Post, SharedPost } from '@nigerconnect/shared-types';
 import { Avatar } from '../ui/Avatar';
 import { NCImage } from '../ui/NCImage';
-import { VerifiedBadge } from '../ui/VerifiedBadge';
-import { AmbassadorBadge } from '../ui/AmbassadorBadge';
-import { OfficialBadge } from '../ui/OfficialBadge';
+import { BadgeGroup, selectPersonBadges } from '../ui/Badge';
 import { MentionText } from '../ui/MentionText';
 import { LikersSheet } from './LikersSheet';
 import { ReactionBar } from './ReactionBar';
@@ -145,14 +143,7 @@ function PostCardImpl({
             <Text style={styles.name} numberOfLines={1}>
               {author.displayName ?? `${author.firstName ?? ''} ${author.lastName ?? ''}`.trim()}
             </Text>
-            {author.isOfficial ? (
-              <OfficialBadge />
-            ) : (
-              <>
-                {author.identityStatus === 'approved' && <VerifiedBadge />}
-                {author.isAmbassador && <AmbassadorBadge />}
-              </>
-            )}
+            <BadgeGroup kinds={selectPersonBadges(author)} />
           </View>
           <Text style={styles.meta}>
             {author.city ? `${author.city} · ` : ''}
@@ -343,14 +334,7 @@ function SharedPostPreview({
         <Text style={styles.sharedName} numberOfLines={1}>
           {name}
         </Text>
-        {author.isOfficial ? (
-          <OfficialBadge size={11} />
-        ) : (
-          <>
-            {author.identityStatus === 'approved' && <VerifiedBadge size={11} />}
-            {author.isAmbassador && <AmbassadorBadge size={11} />}
-          </>
-        )}
+        <BadgeGroup kinds={selectPersonBadges(author)} size={11} />
         <Text style={styles.sharedTime}>· {relativeTime(shared.createdAt)}</Text>
       </View>
       {shared.content ? (

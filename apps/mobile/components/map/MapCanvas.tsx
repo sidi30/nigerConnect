@@ -19,6 +19,11 @@ import type { MapMarker } from '@/services/geoApi';
 import { Colors } from '@/constants/theme';
 import { countryFlag } from '@/constants/countries';
 import { colorForId } from '@/constants/lookups';
+// Reuses the same amber as Badge.tsx's `association_verified` kind (single
+// source of truth for the colour) — this pin can't render `<Badge>` itself:
+// a native map Marker snapshots its children to a static bitmap, so a
+// Pressable/Animated badge component isn't appropriate here.
+import { ASSOCIATION_AMBER } from '@/components/ui/Badge';
 
 export interface MapCanvasHandle {
   /** Animate the camera to a point at an approximate Leaflet-style zoom. */
@@ -141,7 +146,13 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
             >
               <View style={[styles.entity, m.kind === 'association' ? styles.assoc : styles.page]}>
                 <Text style={styles.entityEmoji}>{m.kind === 'association' ? '🏛️' : '📣'}</Text>
-                {verified ? <View style={styles.verif}><Text style={styles.verifText}>✓</Text></View> : null}
+                {verified ? (
+                  // A5 — association badge is squarish/amber, distinct from the
+                  // round green dot pages use, even at this tiny pin scale.
+                  <View style={[styles.verif, m.kind === 'association' && styles.verifAssoc]}>
+                    <Text style={styles.verifText}>✓</Text>
+                  </View>
+                ) : null}
               </View>
             </Marker>
           );
@@ -263,6 +274,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
+  // A5 — squared-off + amber, not the round green dot: react-native-maps
+  // markers are rasterized to a bitmap, so a clip-path shield isn't available
+  // here (unlike the Leaflet WebView) — a reduced border radius is the
+  // simplest reliable way to read as "not a circle" at 16px.
+  verifAssoc: { borderRadius: 4, backgroundColor: ASSOCIATION_AMBER },
   verifText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   cluster: {
     backgroundColor: '#fff',

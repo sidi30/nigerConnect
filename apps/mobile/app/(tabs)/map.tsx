@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
+import { Badge } from '@/components/ui/Badge';
 import { countryFlag } from '@/constants/countries';
 import { Colors, CountryNames, Flags, Radii, Spacing, Typography } from '@/constants/theme';
 import { friendsApi } from '@/services/friendsApi';
@@ -81,6 +82,11 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
   .marker-ind-initials{display:flex;align-items:center;justify-content:center;background:#E05206;color:#fff;font-weight:800;font-size:16px;font-family:system-ui}
   .marker-assoc{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#1565C0;border:3px solid #fff;box-shadow:0 3px 10px rgba(21,101,192,.5);font-size:22px;position:relative}
   .marker-assoc .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+  /* A5 — association verified badge: amber SHIELD (clip-path), not the green
+     dot person/page badges use above. This runs in the WebView's own browser
+     engine (Leaflet), not react-native — clip-path is fine here even though
+     react-native-svg isn't installed in the RN app itself. */
+  .marker-assoc .verif-assoc{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;background:#B45309;border:2px solid #fff;clip-path:polygon(50% 0%,100% 22%,100% 62%,50% 100%,0% 62%,0% 22%);color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center}
   .marker-page{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:14px;background:#E05206;border:3px solid #fff;box-shadow:0 3px 10px rgba(224,82,6,.5);font-size:22px;position:relative}
   .marker-page .verif{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border-radius:50%;background:#0DB02B;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
   .marker-me{width:22px;height:22px;border-radius:50%;background:#1E88E5;border:3px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3),0 2px 6px rgba(0,0,0,.4)}
@@ -212,7 +218,8 @@ const LEAFLET_HTML = `<!DOCTYPE html><html><head>
         mk.addTo(markerLayer);
       } else if (m.kind === 'association') {
         const e = entry('a:' + (m.id || (m.lat + ',' + m.lon)));
-        const verif = m.isVerified ? '<div class="verif">✓</div>' : '';
+        // A5 — amber shield (verif-assoc), not the green dot pages/individuals use.
+        const verif = m.isVerified ? '<div class="verif-assoc">✓</div>' : '';
         const html = '<div class="marker-assoc' + e.cls + '" style="' + e.style.replace(/^;/,'') + '">🏛️' + verif + '</div>';
         const icon = L.divIcon({ html: html, className: '', iconSize: [52, 52], iconAnchor: [26, 26] });
         const mk = L.marker([m.lat, m.lon], { icon });
@@ -660,9 +667,7 @@ function SelectedSheet({
           <View style={{ flex: 1 }}>
             <View style={styles.sheetNameRow}>
               <Text style={styles.sheetName}>{marker.name}</Text>
-              {marker.isVerified ? (
-                <Feather name="check-circle" size={14} color={Colors.green} />
-              ) : null}
+              {marker.isVerified ? <Badge kind="association_verified" size={14} /> : null}
             </View>
             <Text style={styles.sheetMeta}>
               {countryFlag(marker.countryCode)} {marker.city ?? ''}
@@ -864,7 +869,7 @@ function IndividualSheet({
   );
 }
 
-// Gold matches the mobile AmbassadorBadge so the map list reads consistently.
+// Gold matches the `ambassador` badge kind (components/ui/Badge.tsx) so the map list reads consistently.
 const AMBASSADOR_GOLD = '#E8A300';
 
 function ClusterListSheet({

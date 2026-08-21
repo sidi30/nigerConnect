@@ -14,8 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PublicUser } from '@nigerconnect/shared-types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { Colors, Radii, Spacing, Typography } from '@/constants/theme';
 import { colorForId } from '@/constants/lookups';
 import { chatApi } from '@/services/chatApi';
@@ -69,8 +68,7 @@ export default function NewChatScreen() {
             <Text style={styles.name} numberOfLines={1}>
               {name}
             </Text>
-            {item.identityStatus === 'approved' && <VerifiedBadge size={12} />}
-            {item.isAmbassador && <AmbassadorBadge size={12} />}
+            <BadgeGroup kinds={selectPersonBadges(item)} size={12} />
           </View>
           {item.city || item.countryCode ? (
             <Text style={styles.meta} numberOfLines={1}>

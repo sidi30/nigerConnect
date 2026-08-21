@@ -14,8 +14,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/services/api';
 import { profileApi } from '@/services/profileApi';
@@ -162,8 +161,7 @@ export default function ProfileTab() {
             <View style={{ flex: 1 }}>
               <View style={styles.nameRow}>
                 <Text style={styles.name}>{displayName}</Text>
-                {verified && <VerifiedBadge size={18} />}
-                {user.isAmbassador && <AmbassadorBadge size={18} />}
+                <BadgeGroup kinds={selectPersonBadges({ identityStatus: user.identityStatus, isAmbassador: user.isAmbassador })} size={18} />
               </View>
               <Text style={styles.location}>
                 {user.countryCode ? Flags[user.countryCode] ?? '🌍' : '🌍'}{' '}

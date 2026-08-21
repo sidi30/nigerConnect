@@ -30,6 +30,75 @@ export const ASSOCIATION_CATEGORY_LABELS: Record<string, string> = {
   religieux: '🕌 Religieux',
 };
 
+// A4 — titres du bureau exécutif d'une association. 'other' n'a pas de
+// libellé fixe : afficher `officer.customTitle` à la place (voir
+// officerTitleLabel ci-dessous).
+export const ASSOCIATION_OFFICER_TITLE_LABELS: Record<string, string> = {
+  president: 'Président(e)',
+  vice_president: 'Vice-président(e)',
+  secretary: 'Secrétaire',
+  treasurer: 'Trésorier(ère)',
+  spokesperson: 'Porte-parole',
+  other: 'Autre',
+};
+
+/** Titre à afficher pour un membre du bureau : le libellé fixe, ou le titre libre pour 'other'. */
+export function officerTitleLabel(officer: { title: string; customTitle: string | null }): string {
+  if (officer.title === 'other') return officer.customTitle ?? 'Membre du bureau';
+  return ASSOCIATION_OFFICER_TITLE_LABELS[officer.title] ?? officer.title;
+}
+
+interface OfficerSeatLike {
+  sortOrder: number;
+  acceptedAt: string | null | undefined;
+}
+
+/**
+ * Which officer seats the bureau screen renders, in what order.
+ *
+ * Mirrors the API's own invariant on purpose (association.service.ts
+ * `listOfficers`: `acceptedAt: { not: null }`, `orderBy: [{ sortOrder: 'asc' }, …]`) —
+ * the API is the only place that should ever produce a pending seat here,
+ * but for a volunteer association's public leadership list, silently
+ * rendering someone who never accepted as if they'd agreed to sit on the
+ * board is a real trust problem, not a cosmetic one. Filtering + sorting
+ * again client-side costs nothing and makes "only accepted seats, in
+ * sortOrder" a guarantee this app owns, instead of a hope about the API.
+ */
+export function visibleOfficers<T extends OfficerSeatLike>(officers: T[]): T[] {
+  return officers
+    .filter((o) => !!o.acceptedAt)
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+interface OfficerInviteNotificationLike {
+  type: string;
+  data: unknown;
+}
+
+/**
+ * Whether the "on te propose une place au bureau" accept/decline banner
+ * should show. Extracted out of app/associations/[id].tsx so the rule — the
+ * banner needs a matching pending-invite notification for THIS association,
+ * the viewer must not already be an officer, and it hides for good once the
+ * viewer has acted this session — is provable without rendering the screen.
+ */
+export function selectOfficerInviteBanner(params: {
+  notifications: OfficerInviteNotificationLike[];
+  associationId: string | undefined;
+  alreadyOfficer: boolean;
+  actionTaken: boolean;
+}): boolean {
+  const { notifications, associationId, alreadyOfficer, actionTaken } = params;
+  if (!associationId || alreadyOfficer || actionTaken) return false;
+  return notifications.some((n) => {
+    if (n.type !== 'association_officer_invite') return false;
+    const data = n.data as { associationId?: string } | null;
+    return data?.associationId === associationId;
+  });
+}
+
 const PALETTE = ['#E05206', '#FF6D00', '#0DB02B', '#1565C0', '#7B1FA2', '#E8833A'];
 
 export function colorForId(id: string | undefined | null): string {

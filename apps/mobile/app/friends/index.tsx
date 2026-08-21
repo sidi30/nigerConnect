@@ -13,8 +13,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Loader } from '@/components/ui/Loader';
-import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { AmbassadorBadge } from '@/components/ui/AmbassadorBadge';
+import { BadgeGroup, selectPersonBadges } from '@/components/ui/Badge';
 import { friendsApi } from '@/services/friendsApi';
 import { profileApi } from '@/services/profileApi';
 import { describeError } from '@/services/apiError';
@@ -161,8 +160,7 @@ export default function FriendsScreen() {
                     {item.displayName ??
                       `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim()}
                   </Text>
-                  {item.identityStatus === 'approved' && <VerifiedBadge size={12} />}
-                  {item.isAmbassador && <AmbassadorBadge size={12} />}
+                  <BadgeGroup kinds={selectPersonBadges(item)} size={12} />
                 </View>
                 <Text style={styles.meta} numberOfLines={1}>
                   {Flags[item.countryCode ?? ''] ?? ''} {item.city ?? ''}
@@ -323,8 +321,7 @@ export default function FriendsScreen() {
                           {item.displayName ??
                             `${item.firstName ?? ''} ${item.lastName ?? ''}`.trim()}
                         </Text>
-                        {item.identityStatus === 'approved' && <VerifiedBadge size={12} />}
-                        {item.isAmbassador && <AmbassadorBadge size={12} />}
+                        <BadgeGroup kinds={selectPersonBadges(item)} size={12} />
                       </View>
                       <Text style={styles.meta} numberOfLines={1}>
                         {Flags[item.countryCode ?? ''] ?? ''} {item.city ?? ''}

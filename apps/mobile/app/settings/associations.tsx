@@ -7,8 +7,10 @@ import { useRouter } from 'expo-router';
 import { associationsApi } from '@/services/associationsApi';
 import { Colors, CountryNames, Flags, Gradients, Radii, Spacing, Typography } from '@/constants/theme';
 import { Loader } from '@/components/ui/Loader';
+import { Badge } from '@/components/ui/Badge';
 
 const ROLE_LABELS: Record<string, { color: string; bg: string; label: string }> = {
+  owner: { color: Colors.orange, bg: Colors.peach50, label: 'Propriétaire' },
   admin: { color: Colors.orange, bg: Colors.peach50, label: 'Admin' },
   moderator: { color: Colors.info, bg: Colors.infoSoft, label: 'Modérateur' },
   member: { color: Colors.tan500, bg: Colors.tan100, label: 'Membre' },
@@ -74,7 +76,12 @@ export default function MyAssociationsScreen() {
                     {a.name}
                   </Text>
                   {a.isVerified ? (
-                    <Feather name="check-circle" size={14} color={Colors.info} />
+                    // Ergonomics rule (Badge.tsx header comment): this row is
+                    // itself the tap target (navigates on press) — a nested
+                    // interactive badge here would carve out a dead zone in
+                    // the middle of the row. Non-interactive; the full label
+                    // is one tap away on the association's own header.
+                    <Badge kind="association_verified" size={14} verifiedAt={a.verifiedAt} interactive={false} />
                   ) : null}
                 </View>
                 <Text style={styles.meta} numberOfLines={1}>

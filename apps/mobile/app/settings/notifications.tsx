@@ -44,7 +44,12 @@ function routeForNotification(n: Notification): string | null {
     case 'association_invite':
     case 'association_join_request':
     case 'association_join_approved':
-    case 'association_join_rejected': {
+    case 'association_join_rejected':
+    // A4 — le siège se rejoint (accepte/refuse) directement sur la page de
+    // l'association, pas ici : pas de bouton dans la liste de notifications.
+    case 'association_officer_invite':
+    case 'association_role_changed':
+    case 'association_ownership_transfer': {
       const a = str('associationId');
       return a ? `/associations/${a}` : null;
     }
@@ -115,6 +120,9 @@ const TYPE_LABELS: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
   weekly_digest: { icon: 'trending-up', color: Colors.info },
   announcement: { icon: 'volume-2', color: Colors.orange },
   system: { icon: 'volume-2', color: Colors.tan500 },
+  association_officer_invite: { icon: 'award', color: Colors.info },
+  association_role_changed: { icon: 'shield', color: Colors.info },
+  association_ownership_transfer: { icon: 'key', color: Colors.info },
 };
 
 export default function NotificationsScreen() {
