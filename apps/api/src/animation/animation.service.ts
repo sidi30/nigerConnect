@@ -31,11 +31,21 @@ const BOT_SELECT = {
  *   - le CRON du serveur appelle `publishDue` toutes les cinq minutes et vide
  *     la file à l'heure prévue, que le poste soit allumé ou non.
  *
- * Un contenu `law` ne sort jamais sans relecture humaine ET sans source. Ces
- * publications s'adressent à des gens dont le séjour dépend de l'information :
- * une erreur sur « peut-on encore échanger son permis » coûte une voiture, un
- * emploi, parfois le titre de séjour. La règle est portée à trois niveaux —
- * contrainte CHECK en base, refus ici, et statut `draft` par défaut.
+ * Un contenu `law` ne sort jamais sans source officielle. Ces publications
+ * s'adressent à des gens dont le séjour dépend de l'information : une erreur
+ * sur « peut-on encore échanger son permis » coûte une voiture, un emploi,
+ * parfois le titre de séjour. La règle est portée à trois niveaux — schéma
+ * Zod, refus ici, et contrainte CHECK en base.
+ *
+ * En revanche la relecture humaine n'est PLUS un passage obligé (choix du
+ * propriétaire, 22/08/2026). Elle l'était, et le résultat s'est vu : trois
+ * `law` correctement sourcées ont dormi en `draft` pendant que le fil restait
+ * vide, parce que personne n'était devant la console. Une file qui attend un
+ * humain absent ne protège personne — elle éteint la plateforme. Ce qui
+ * protège vraiment est mécanique et tient sans surveillance : la source
+ * obligatoire ci-dessus, et `vet()` côté rédaction. L'atelier garde la main
+ * pour garer lui-même un texte douteux (`hold`), et `review()` reste ouvert
+ * pour corriger ou retirer après coup.
  */
 @Injectable()
 export class AnimationService {
@@ -191,10 +201,11 @@ export class AnimationService {
   // ── File de publication ────────────────────────────────────
 
   /**
-   * L'atelier dépose une publication. Un contenu juridique arrive
-   * obligatoirement en `draft` : même si l'appelant demande `approved`, il
-   * repasse en attente de relecture. C'est volontairement non négociable
-   * depuis l'extérieur — l'atelier est un rédacteur, pas un validateur.
+   * L'atelier dépose une publication, et elle part à l'heure dite sans
+   * attendre personne — y compris un contenu juridique, dès lors qu'il porte
+   * sa source officielle. Le seul chemin vers `draft` est désormais `hold` :
+   * l'atelier gare ce dont il doute, au lieu que tout un genre soit garé par
+   * principe.
    */
   async enqueue(dto: EnqueueDto) {
     const bot = await this.prisma.user.findFirst({
@@ -209,7 +220,7 @@ export class AnimationService {
       );
     }
 
-    const status: AnimationStatus = dto.kind === 'law' ? 'draft' : 'approved';
+    const status: AnimationStatus = dto.hold ? 'draft' : 'approved';
 
     return this.prisma.animationPost.create({
       data: {
@@ -234,7 +245,7 @@ export class AnimationService {
     });
   }
 
-  /** Relecture humaine : le seul chemin qui fait sortir un `law` de la file. */
+  /** Reprise en main d'un brouillon garé par l'atelier, ou corrigé après coup. */
   async review(id: string, reviewerId: string, dto: ReviewDto) {
     const item = await this.prisma.animationPost.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Publication introuvable');

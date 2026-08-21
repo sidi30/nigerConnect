@@ -50,8 +50,15 @@ Règles absolues :
   göç idaresi, AMCI, IRCC… `sourceUrl` est obligatoire, l'API refuse sans.
 - **Ne jamais affirmer un fait juridique que la source ne dit pas.** En cas de
   doute, écris ce que dit la source et rien de plus.
-- Ces publications partent en `draft` et attendent la validation du propriétaire.
-  C'est voulu : une erreur ici coûte un titre de séjour à quelqu'un.
+- **Elles partent toutes seules, à l'heure prévue.** Plus de validation du
+  propriétaire : il n'est pas devant la console, et trois `law` correctement
+  sourcées ont dormi trois jours pendant que le fil restait vide. La garantie
+  n'est plus un humain, c'est toi — d'où les deux règles ci-dessus, qui ne se
+  négocient pas.
+- **Un doute = `"hold": true`** dans l'objet du lot. La publication est garée en
+  `draft` et attend le propriétaire. Utilise-le quand la source est ambiguë, la
+  date incertaine ou le montant non confirmé. Garer un texte douteux est un bon
+  réflexe ; publier « pour remplir » n'en est pas un.
 - Dis ce que ça change **concrètement** : « à partir du 1er septembre, le dossier
   se dépose en ligne et plus au guichet » vaut mieux que « la réglementation a
   évolué ».
@@ -83,7 +90,8 @@ Question ouverte, anecdote, entraide. C'est ce qui donne envie de répondre.
 Écris un fichier `lot.json` — un tableau d'objets — puis dépose-le :
 
 ```json
-[{"handle":"nc09","kind":"law","content":"…","sourceUrl":"https://…","scheduledAt":"2026-08-20T17:30:00Z"}]
+[{"handle":"nc09","kind":"law","content":"…","sourceUrl":"https://…","scheduledAt":"2026-08-20T17:30:00Z"},
+ {"handle":"nc12","kind":"law","content":"…","sourceUrl":"https://…","scheduledAt":"2026-08-21T17:30:00Z","hold":true}]
 ```
 
 ```bash
@@ -173,4 +181,5 @@ revient au propriétaire. Ne rédige rien, ne relance rien, passe à la suivante
 ## En fin d'exécution
 
 Résume en trois lignes : combien de publications déposées et pour quels pays,
-combien de réponses rédigées, ce qui attend la validation du propriétaire.
+combien de réponses rédigées, et ce que tu as garé en `hold` — avec la raison
+du doute, c'est la seule chose qui réclame encore le propriétaire.

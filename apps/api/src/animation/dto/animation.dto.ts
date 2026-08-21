@@ -19,6 +19,12 @@ export const enqueueSchema = z
     sourceUrl: z.string().url().max(500).optional(),
     /** ISO 8601. Le cron publie dès que l'heure est passée. */
     scheduledAt: z.string().datetime(),
+    /**
+     * Gare la publication en `draft` au lieu de la programmer. C'est l'atelier
+     * qui le demande, quand il a écrit quelque chose dont il n'est pas sûr —
+     * pas une relecture imposée de l'extérieur.
+     */
+    hold: z.boolean().optional(),
   })
   .refine((d) => d.kind !== 'law' || !!d.sourceUrl, {
     message: 'Une publication juridique exige une source officielle',
@@ -26,7 +32,11 @@ export const enqueueSchema = z
   });
 export type EnqueueDto = z.infer<typeof enqueueSchema>;
 
-/** Relecture humaine d'un brouillon. Le texte peut être corrigé au passage. */
+/**
+ * Reprise en main d'un brouillon garé. Le texte peut être corrigé au passage.
+ * Ce n'est plus un passage obligé : seul ce que l'atelier a lui-même mis de
+ * côté (`hold`) attend ici.
+ */
 export const reviewSchema = z.object({
   action: z.enum(['approve', 'reject']),
   content: z.string().trim().min(1).max(5000).optional(),
