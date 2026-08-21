@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT 2: B2, B1, B4 et B3 livres et DEPLOYES le 2026-08-21. Reste B5 (quota disque par association). Le correctif mobile du bouton Ecrire attend l OTA (review iOS). Sprint 1 en production.",
+  "current": "SPRINT 2 TERMINE et DEPLOYE (2026-08-21): B1 back-office, B2 ADR medias, B3 publications (reservees aux dirigeants), B4 registre des membres, B5 quota disque. API 846/846 (67 suites), mobile 74/74, web tsc+eslint+build. RESTE EN ATTENTE: l OTA mobile (bouton Ecrire masque aux non-dirigeants) jusqu au verdict de la review iOS 1.15.0.",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -395,7 +395,7 @@
   "sprint": {
     "id": "S2-ASSOC",
     "goal": "L association publie depuis un ordinateur: back-office web, authentifie par compte personnel de dirigeant.",
-    "status": "EN COURS",
+    "status": "TERMINE",
     "prerequisTranches": "Q2 (compte personnel + elevation de role) tranchee le 2026-08-21.",
     "items": [
       {
@@ -425,7 +425,10 @@
         "id": "B5",
         "title": "Quota disque par association + alerte volume AVANT d ouvrir la video",
         "priority": 4,
-        "status": "todo"
+        "status": "done",
+        "livrable": "commit 9909e39, deploye le 2026-08-21. 200 Mo par association dans associations/{id}/. Reclamation CONDITIONNELLE (updateMany where mediaBytes <= quota - taille) dans la meme transaction que la creation: deux dirigeants simultanes ne peuvent pas franchir le plafond chacun de son cote. Suppression = purge des objets + restitution des octets. Endpoint GET /associations/{id}/storage (dirigeants seulement) + jauge sur le tableau de bord, rouge au-dela de 80%. 7 tests, mutation-testes.",
+        "limite": "Une image televersee depuis le MOBILE atterrit encore sous users/{auteur}/ et n est donc PAS comptee. Le jour ou le mobile deposera sous le prefixe association, elle comptera sans autre changement.",
+        "migration": "20260821200000_association_media_bytes. Repetee sur dump prod dans un conteneur jetable: 12 ms, aucune reecriture (NOT NULL a defaut constant), 0 partout. En prod: 1 etape, 0 echec, 0 rollback."
       },
       {
         "id": "B3",
@@ -436,7 +439,7 @@
         "mobile": "apps/mobile/app/associations/[id].tsx: le bouton Ecrire disparait pour un simple membre. COMMITE MAIS PAS LIVRE -- l OTA est retenu jusqu au verdict de la review iOS 1.15.0. Exposition en attendant: un membre non dirigeant qui tape Ecrire recoit un 403. En prod, une seule association, 2 membres."
       }
     ],
-    "reste": "B5 quota disque par association (compteur d octets a l attache + decrement a la suppression, migration a repeter sur dump).",
+    "reste": "RIEN. B1, B2, B3, B4, B5 livres et deployes.",
     "deploiement": {
       "date": "2026-08-21",
       "portee": "web + api recreees (aucune migration en attente) sur GO explicite du proprio. Deploie le commit 4d86390.",
@@ -539,9 +542,9 @@
     "debugger_bugs": 1
   },
   "openQuestions": [
-    "OTA mobile du sprint 1: a livrer des que la review App Store de 1.15.0 est tranchee (JS-only, sans bump).",
-    "MARKETPLACE: positionnement -- onglet Services pair (actuel) vs fondu sous onglet Entraide avec formulaire intention-first. Impacte la tab-bar (deja 6 onglets).",
-    "S2 proximite: reprise ou maintien en pause?"
+    "OTA mobile: 2 correctifs en attente (bouton Ecrire reserve aux dirigeants + ecrans du sprint 1). Retenu jusqu au verdict de la review iOS 1.15.0. Option proposee au proprio: livrer un OTA ANDROID seulement, Android n etant pas en review.",
+    "Sprint 3 (les adherents) debloque par la decision Q6: les 6 bornes de la fiche sans compte sont ecrites dans memory/backlog.md, et les CGU doivent etre ecrites AVANT la mise en service.",
+    "MARKETPLACE: positionnement -- onglet Services pair (actuel) vs fondu sous onglet Entraide."
   ],
   "sprint1EspaceAssociation": {
     "sprint": "S1 « Le socle association devient sur et lisible »",
