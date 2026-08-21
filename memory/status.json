@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT 2 EN COURS. B2 (ADR medias portes par une association) et B1 (connexion + selecteur + tableau de bord du back-office) livres et commites, non deployes. Reste B4, B5, B3. Sprint 1 est en production cote API depuis le 2026-08-21; son OTA mobile attend le verdict de la review iOS 1.15.0.",
+  "current": "SPRINT 2 EN COURS. B2 (ADR medias) et B1 (back-office: connexion, selecteur, tableau de bord) livres ET DEPLOYES le 2026-08-21 -- https://nigerconnect.app/asso/login. Reste B4 (membres depuis le web), B5 (quota disque), B3 (publications). Sprint 1 en production cote API; son OTA mobile attend le verdict de la review iOS 1.15.0.",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -432,7 +432,13 @@
         "status": "todo"
       }
     ],
-    "reste": "B4 gestion des membres depuis le web, B5 quota disque par association, B3 CRUD publications avec medias."
+    "reste": "B4 gestion des membres depuis le web, B5 quota disque par association, B3 CRUD publications avec medias.",
+    "deploiement": {
+      "date": "2026-08-21",
+      "portee": "web + api recreees (aucune migration en attente) sur GO explicite du proprio. Deploie le commit 4d86390.",
+      "verifications": "/asso/login sert la page en 200 avec meta robots noindex,nofollow; robots.txt interdit /asso; l accueil repond 200; api health db:ok redis:ok; 0 erreur 5xx api et 0 erreur web depuis le redemarrage; les deux conteneurs healthy.",
+      "reste": "le parcours n a toujours pas ete exerce avec un vrai compte dirigeant -- il faut se connecter sur https://nigerconnect.app/asso/login pour le juger."
+    }
   },
   "backlogEpics": [
     {
@@ -519,7 +525,7 @@
   },
   "checkpoints": {
     "deploy_approved": false,
-    "deploy_approved_scope": "CONSOMME. Le GO du 2026-08-21 portait sur l API du sprint 1 association UNIQUEMENT, il est utilise. Aucun autre deploiement n est approuve."
+    "deploy_approved_scope": "CONSOMME. Deux GO donnes le 2026-08-21: (1) API du sprint 1 association, (2) web du sprint 2 (B1). Les deux sont utilises. Aucun autre deploiement n est approuve."
   },
   "iterations": {
     "debugger_bugs": 1
