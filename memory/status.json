@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT 2: B2 (ADR medias), B1 (back-office) et B4 (registre des membres) livres ET DEPLOYES le 2026-08-21. Le proprio a valide B1 en se connectant. Reste B5 (quota) et B3 (publications) -- B3 exige d abord l implementation de l ADR-002 cote API et une decision produit (qui publie au nom de l association).",
+  "current": "SPRINT 2: B2, B1, B4 et B3 livres et DEPLOYES le 2026-08-21. Reste B5 (quota disque par association). Le correctif mobile du bouton Ecrire attend l OTA (review iOS). Sprint 1 en production.",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -431,10 +431,12 @@
         "id": "B3",
         "title": "CRUD publications avec medias, reutilisant le pipeline existant (video inerte tant que video_enabled=OFF)",
         "priority": 3,
-        "status": "todo"
+        "status": "done (sans le quota)",
+        "livrable": "commit 0390ae4, deploye le 2026-08-21. API: publier en visibility=association exige desormais admin/moderator/owner (etait: simple membre approuve) + 11 tests dont un mutation-teste. ADR-002 mis en oeuvre: POST /associations/{id}/media/presign signe sous associations/{id}/ apres assertRole; l attache accepte l espace de l association ET users/{authorId}/ (chemin mobile). Web: /asso/{id}/publications (composer texte + images, liste, suppression de ses propres publications).",
+        "mobile": "apps/mobile/app/associations/[id].tsx: le bouton Ecrire disparait pour un simple membre. COMMITE MAIS PAS LIVRE -- l OTA est retenu jusqu au verdict de la review iOS 1.15.0. Exposition en attendant: un membre non dirigeant qui tape Ecrire recoit un 403. En prod, une seule association, 2 membres."
       }
     ],
-    "reste": "B5 quota disque par association, B3 publications avec medias.",
+    "reste": "B5 quota disque par association (compteur d octets a l attache + decrement a la suppression, migration a repeter sur dump).",
     "deploiement": {
       "date": "2026-08-21",
       "portee": "web + api recreees (aucune migration en attente) sur GO explicite du proprio. Deploie le commit 4d86390.",
@@ -443,7 +445,8 @@
     },
     "b3Constat": "B3 est moins gros que prevu: Post.associationId existe deja (nullable + index), POST /posts accepte visibility=association, GET /associations/{id}/posts existe. Manque: (1) l implementation de l ADR-002 cote API -- endpoint de presign sous associations/{id}/ garde par assertRole, attache via assertOwnedPublicMedia; (2) le compositeur web. Sans (1), une publication d association attacherait encore un media range dans l espace personnel de son auteur.",
     "b3Question": "Aujourd hui n importe quel MEMBRE approuve peut publier en visibility=association (posts.service.ts:80 ne verifie que status=approved). Pour un back-office ou l ASSOCIATION publie, il faut trancher: publication reservee aux dirigeants, ou publication de membre conservee en plus?",
-    "retourProprio2026-08-21": "Le proprio s est connecte a https://nigerconnect.app/asso : selecteur, role et compteur corrects. B1 est donc prouve de bout en bout, pas seulement compile."
+    "retourProprio2026-08-21": "Le proprio s est connecte a https://nigerconnect.app/asso : selecteur, role et compteur corrects. B1 est donc prouve de bout en bout, pas seulement compile.",
+    "decisionProprio2026-08-21": "Publier au nom d une association = reserve aux dirigeants. Retenu: les 3 memes roles que pour annoncer un evenement (admin, moderator, owner), par coherence avec createEvent."
   },
   "backlogEpics": [
     {
