@@ -1,626 +1,203 @@
-# NigerConnect — Backlog produit (priorisé)
+# Backlog — Espace association
 
-> PO/SM : maître d'orchestre. Source de vérité du board = ce fichier + `memory/status.json`.
-> Priorité = Valeur ÷ Effort (échelle 1–5). Le haut est raffiné (Ready), le bas reste grossier.
-> Contraintes transverses (rappel CLAUDE.md, à porter dans CHAQUE item) : validation **Zod** sur tout body,
-> **AuthZ/anti-IDOR** (filtrer par owner, vérifier ownership avant write), **privacy** public/friends/private
-> (ne rien fuiter via feed/map/recherche/proximité), médias via `S3Service.assertOwnedPublicImage`,
-> **mobile OTA vs rebuild** : un module natif AJOUTÉ ⇒ rebuild EAS ; JS-only ⇒ OTA (et NE PAS bumper
-> la version sinon l'OTA cible un runtimeVersion que les builds existants n'ont pas).
+> Rédigé le 2026-08-20 par `gwani-orchestrator` (PO + SM).
+> Sources : demande propriétaire du 2026-08-20, `memory/market.md` §2026-08-20,
+> analyse de risques `gwani-challengeur`, lecture du code existant.
+> Règle projet : **zéro solution payante** (`memory/zero-solution-payante.md`).
 
----
+## Sprint Goal global
 
-# SPRINT S-BETA — « La diaspora prend vie » (VIDÉO stories-first + E-TAUX + E-DIGEST)
+> Donner aux associations de la diaspora un espace qu'elles administrent elles-mêmes —
+> visible, crédible et sûr — sans que NigerConnect touche jamais à l'argent
+> ni ne transforme ses adhérents en annuaire aspirable.
 
-> **Sprint Goal** : livrer la beta vidéo *stories-first* (éphémère 24h, disque borné), réservée aux comptes
-> vérifiés, protégée par kill-switch fail-closed + modération, PLUS deux compagnons rétention (taux du jour,
-> digest hebdo) — le tout sans dégrader le VPS partagé ni la sécurité, en s'arrêtant au gate `READY_FOR_DEPLOY`.
->
-> **Décisions proprio VERROUILLÉES** (ne pas re-débattre) : (1) format = STORIES-FIRST (vidéo éphémère 24h
-> d'abord, feed permanent gated ensuite) ; (2) cohorte = VERIFIED-ONLY (`identityStatus='approved'`) ;
-> (3) modération = OUI avec garde-fous (risque T&S résiduel accepté, borné par cohorte + kill-switch
-> `video_enabled` fail-closed + Report + takedown soft-delete+`s3.deleteObject` + rate-limit + SLA retrait) ;
-> (4) scope = VIDÉO + E-TAUX + E-DIGEST + kill-switch. E-GP au sprint SUIVANT. Carte native/Lottie EXCLUES.
->
-> **Approche vidéo = A** (verrouillée) : compression **on-device** (H.265, clip court, cap taille dur), stockage
-> **MinIO** self-host avec **lifecycle/purge**, **ZÉRO transcode serveur**. Modules natifs
-> (`react-native-compressor`, `expo-video`) ⇒ **rebuild EAS + bump 1.9.0 → 1.10.0**. Réactiver le micro.
->
-> **CONTRAINTES DURES (dans CHAQUE item)** : ZÉRO solution payante (OSS auto-hébergeable, sinon écartée) ·
-> VPS unique partagé (coût-ressource = critère de rejet) · **risque n°1 = disque** ⇒ bornage OBLIGATOIRE
-> (stories TTL 24h + MinIO lifecycle + garde disque globale fail-closed + purge objet S3 au delete/expiry) ·
-> Zod partout · AuthZ anti-IDOR · privacy public/friends/private (un private ne fuite JAMAIS) · médias bindés
-> owner + **Content-Type réel vérifié (HEAD) et confronté au `mediaType` client** (anti-spoofing).
->
-> **Joints code réels confirmés (file:line)** :
-> - `s3.service.ts:212 assertOwnedPublicImage` — image-only (allowlist `image/jpeg|png|webp|heic`, cap 15 Mo),
->   HEAD vérifie le Content-Type réel MAIS le `mediaType` client n'est jamais confronté au HEAD. Vidéo rejetée.
->   `deleteObject` (`:243`) existe mais non câblé à l'expiry stories.
-> - `posts.service.ts:598 deleteExpiredStories` — `updateMany` **soft-delete DB uniquement**, **aucune purge S3**
->   (dette disque à corriger). Création story `:124-136` : `storyExpiresAt=now+24h`, guard image, `isStory:true`.
-> - `docker-compose.prod.yml:153 minio-init` — `mc mb` + ACL seulement, **aucun `mc ilm` lifecycle** configuré.
-> - `schema.prisma:221 enum MediaType { image video }` + `PostMedia` complet ⇒ quasi aucune migration média.
-> - Mobile : aucun module vidéo présent ; micro OFF (`microphonePermission:false`, `RECORD_AUDIO` blocké).
-
-## S-VIDEO-0 — ADR pipeline stories-vidéo (gwani-architect) · **Prio 5.0 — GATE (bloque S-VIDEO-1/2/3)**
-**But** : figer le contrat technique complet AVANT tout code, et trancher les 3 sous-décisions restantes avec une reco.
-- Contrat presign vidéo (`video/mp4` + `video/quicktime`), **garde média vidéo** = nouveau
-  `assertOwnedPublicMedia(url, ownerId, expectedMediaType)` : HEAD → Content-Type réel ∈ allowlist vidéo,
-  **confronter au `mediaType` déclaré client** (rejet si divergence = anti-spoofing image↔vidéo), cap taille
-  vidéo dure, garder le garde image existant pour les photos.
-- **Bornage disque** : MinIO lifecycle sur préfixe éphémère stories (`mc ilm rule add`, expire 48h) à ajouter au
-  `minio-init` ; **purge objet S3 dans `deleteExpiredStories`** (corriger la dette soft-delete) et au delete/takedown ;
-  **garde disque globale fail-closed** (au-delà d'un seuil volume MinIO → bascule `video_enabled=false` + alerte).
-- **Quota/user** (Redis, throttle existant) + **rate-limit upload** ; **gate verified-only** (`identityStatus='approved'`) ;
-  kill-switch `video_enabled` (AppSetting, **fail-closed**) ; flux modération (Report existant → takedown soft-delete +
-  `s3.deleteObject`) ; privacy stories vidéo.
-- **Sous-décisions à trancher (reco + marquer ce qui exige un OK proprio explicite)** :
-  1. Limites exactes (défauts proposés : 30 s stories / 720p / ≤25 Mo / quota 10 vidéos ou 200 Mo/user / 5 uploads/j).
-  2. Audio sonore (réactiver `RECORD_AUDIO`) vs muet d'abord.
-  3. Privacy : parité bucket public + uuid vs bucket privé + presigned GET pour `friends`/`private`.
-- **Livrable** : `docs/adr/ADR-video-stories.md` + `memory/video-api-contracts.json`. Ne bloque pas : applique les
-  défauts s'ils sont raisonnables, marque explicitement ce qui requiert un GO proprio.
-**DoD** : ADR complet, contrat presign+garde+caps+quota+lifecycle+purge+garde-disque+kill-switch+modération+gate
-verified figés ; empreinte ressource chiffrée (hôte partagé) ; 0 dépendance payante ; sous-décisions tranchées/marquées.
-
-## S-VIDEO-1 — Backend DARK (gwani-backend) · **Prio 5.0 — dépend de S-VIDEO-0**
-Presign vidéo · garde média vidéo (`assertOwnedPublicMedia` : Content-Type réel HEAD confronté au `mediaType` client +
-caps vidéo) · quota/user Redis + rate-limit upload · **MinIO lifecycle stories + purge objet S3 au delete/expiry
-(corrige `deleteExpiredStories`)** · **garde disque globale fail-closed** · kill-switch `video_enabled` fail-closed ·
-**gate verified-only** sur publication vidéo · flux Report→takedown (soft-delete + `s3.deleteObject`). **AUCUN mobile.**
-Déployable et **INERTE tant que `video_enabled=false`**.
-**DoD** : Zod tout body · AuthZ anti-IDOR · privacy respectée · média bindé owner + Content-Type vérifié ·
-lifecycle + garde disque + purge **testés** (disque borné prouvé) · flag OFF prouvé inerte · `tsc` api + jest verts.
-
-## S-VIDEO-2 — Mobile rebuild vidéo (gwani-frontend) · **Prio 4.5 — dépend de S-VIDEO-1 (contrat)**
-Capture/pick vidéo + compression **H.265** (`react-native-compressor`) + vignette + player (`expo-video`) dans le
-story composer/viewer · progress/retry/cancel · **pas d'autoplay cellular** (vignette + tap-to-play) · réactiver le
-micro (`microphonePermission`, retirer `RECORD_AUDIO` de `blockedPermissions`, ajouter `READ_MEDIA_VIDEO`) ·
-**bump `app.json` 1.9.0 → 1.10.0** (module natif ⇒ rebuild). **Le build EAS = action SORTANTE ⇒ NE PAS lancer** (gate proprio).
-**DoD** : `tsc` mobile vert · flux capture→compress→upload→lecture démontré · no-autoplay-cellular · bump 1.10.0 fait.
-
-## S-VIDEO-3 — QA + Sécurité (gwani-qa-tester → gwani-pentest) · **Prio 5.0 — GATE DUR**
-e2e + unit · pentest OBLIGATOIRE : binding média, **spoofing `mediaType` vs Content-Type**, IDOR, fuite privacy
-stories-vidéo, quota/rate-limit contournables, kill-switch fail-closed, gate verified-only, purge/lifecycle disque.
-**DoD** : suites vertes (api tsc + mobile tsc + jest + e2e) · verdict `gwani-pentest` = **OK_TO_DEPLOY** (0 critical/high).
-
-## E-TAUX — Taux du jour + prix crowdsourcés (gwani-pm-spec → backend/frontend) · **Prio 4.0 — OTA-safe sur 1.10.0**
-Taux XOF↔EUR/USD/CAD (**source GRATUITE** : open-data recalculé OU saisie communautaire modérée, **PAS d'API payante**)
-+ prix signalés (`CommunityPrice` : type/route/montant/devise/votes/createdAt) + bandeau léger en tête de feed.
-Zod, AuthZ (1 saisie/vote par user), **anti-spam**, modération/report. Parallélisable avec S-VIDEO-*.
-**DoD** : Zod · AuthZ · anti-spam · aucune source payante · tests verts · revue + pentest.
-
-## E-DIGEST — Digest hebdo push (gwani-pm-spec → backend) · **Prio 3.0 — API-only, OTA-safe**
-1 cron (comme stories/invitations) + **Expo Push (gratuit)** · notif hebdo agrégée (événements/annonces/nouveaux
-membres de la région) · **opt-out** simple dans les réglages · **privacy stricte : jamais révéler un compte private**
-(agrégats seulement). Parallélisable.
-**DoD** : Zod · privacy stricte (compte private jamais exposé) · opt-out respecté · cron idempotent · tests verts.
+**Cette demande est trop grosse pour un seul sprint.** Elle couvre 7 capacités dont
+3 (back-office, carte, site public) sont chacune un sprint à elles seules. Le découpage
+ci-dessous est ordonné pour que **chaque incrément soit utilisable seul**, même si les
+suivants ne sont jamais faits.
 
 ---
 
-# VAGUE 360° — juillet 2026 (LIVES · Marketplace secondaire · Profil · gaps diaspora)
+## Décisions structurantes en attente du propriétaire
 
-> Discovery livrée : recherche marché `memory/market.md`, diagnostic stratégique (gwani-conseiller-strategique
-> 2026-07-02), ADR streaming `docs/adr/ADR-LIVES-streaming.md` (+ `memory/lives-api-contracts.json`).
-> **Priorité de vague = valeur ÷ risque.**
->
-> ## CONTRAINTES TRANSVERSES DURES (priment sur tout, à porter dans CHAQUE item)
-> - **ZÉRO solution payante** (règle absolue proprio 2026-07-02) : aucun SaaS/API/licence payant. Brique
->   normalement payante ⇒ alternative GRATUITE + open-source + sécurisée, auto-hébergeable en conteneur sur le VPS ;
->   si aucune n'existe ⇒ **ABANDONNER la feature** (la noter « écartée — dépendance payante sans alternative »).
->   Jamais dégrader la sécurité pour rester gratuit.
-> - **Infra imposée** = VPS unique 46.224.193.109, Docker/Traefik, hôte PARTAGÉ, RAM/CPU serrés. Toute feature
->   doit tenir sans dégrader les apps voisines ; le coût ressource est un critère de rejet (cf. LIVES écarté).
-> - **Efficacité** : pas de dérive de périmètre, pas de sur-ingénierie. Mieux vaut peu d'items finis à 100 % (code +
->   Zod + AuthZ + tests verts + revue) que beaucoup à 80 %.
-> - **Audit dépendances payantes du backlog** : ⚠️ ANIM-8 (carte native) évaluait `@rnmapbox/maps` (Mapbox = offre
->   payante/clé) — à REMPLACER par `react-native-maps` (tuiles OS natives gratuites) ou GARDER Leaflet OSS. Le reste
->   (MinIO/S3 self-host, Postgres/PostGIS, Redis, Expo Push, géocodage table locale, i18n locale, carte Leaflet OSS,
->   événements sur carte existante) est déjà 100 % gratuit/auto-hébergé.
+Voir le rapport de l'orchestrateur. Résumé : Q1 adhésion **gratuite déclarative**,
+Q2 **compte personnel + élévation de rôle**, Q3 carte **QR → page de vérif serveur**,
+Q4 site public en **sous-chemin `/asso/{slug}`**, Q5 badge **écusson ambre**.
+Aucune de ces réponses ne bloque le Sprint 1.
 
-## E-PROFILE — Profil à l'échelle · **Prio 5.0 — SPRINT S3 EN COURS** (OTA-safe, aucune décision bloquante)
-Audit confirmé (ask #3) :
-- **Bug** : `apps/mobile/app/(tabs)/profile.tsx:112` `friendsCount = friendsQuery.data?.items.length` = taille de la 1re page curseur (~30). Un membre à 500 amis affiche « 30 Amis ». (`assocsCount` à re-vérifier.)
-- Profil tiers `apps/mobile/app/user/[id].tsx:468-491` : section « Amis » rend toute la 1re page en bande horizontale, **sans total ni « voir tout »** ; grille Photos aplatit toutes les images des posts chargés (non borné).
-- **Aucun endpoint de comptage autoritatif** (`friendsApi.list()` / `getFriendsOf` renvoient des pages curseur ; `profile.service.ts` gate déjà la liste : private⇒404, friends⇒amis only).
-- **PR1** (backend) : exposer des compteurs autoritatifs (`friendsCount/postsCount/photosCount/inviteesCount`) via `_count` Prisma sur `/profile/me` et `/profile/:id`. Le `friendsCount` d'un tiers **suit exactement le gating de la liste** (sinon fuite de la taille du réseau d'un compte privé). Zod, AuthZ, pas de migration. shared-types : ajouter les champs (optionnels).
-- **PR2** (frontend) : profil (moi + tiers) → compteur amis autoritatif ; aperçu amis borné (N max, ex. 9-12) + « Voir tous les amis » → écran `/friends` (ou écran amis-d'un-tiers) paginé. Photos bornées.
-- **PR3** (tests) : unit jest counts + gating privacy du compteur tiers + `tsc --noEmit` api/mobile vert.
-- **PR4** (revue+sécu) : gwani-reviewer + gwani-pentest (le compteur ne doit pas fuiter la taille du réseau d'un compte privé).
-- Livraison : API deploy (pas de migration). Mobile OTA iOS, **pas de bump**.
-
-## E-MARKET — Marketplace « sexy mais SECONDAIRE » · **Prio 4.0 — SPRINT S4 EN COURS (GO proprio)** (ask #2)
-> **POSITIONNEMENT TRANCHÉ (proprio 2026-07-02)** : un onglet **« Entraide » UNIQUE** — demandes d'aide GRATUITES
-> en premier (landing), annonces/services PAYANTS en **section secondaire** (jamais le défaut). Refonte nav :
-> l'onglet « Services » actuel devient « Entraide » ; aucun commerce dans Fil/Carte. Formulaire **intention-first**
-> (« J'ai besoin d'aide » gratuit par défaut vs « Je propose un service » révèle tarif/champs pro).
-- Multi-images par annonce : **le modèle `ServiceRequest` n'a AUCUN champ image** (`services.service.ts:26-40`, `dto/service.dto.ts:14-22`) ⇒ **migration Prisma** (relation images ou `String[]`) + binder chaque URL via `S3Service.assertOwnedPublicImage` (clé `users/{userId}/...`). Galerie responsive sur la carte + page détail.
-- Tarif optionnel : `budget` (string) existe déjà — structurer (montant + « gratuit/à débattre »).
-- **Formulaire dynamique intention-first** : 1re question = intention (« J'ai besoin d'aide » gratuit par défaut vs « Je propose un service » payant révèle les champs pro). Verbes d'entrée chaleureux (Proposer/Donner/Demander) plutôt que « Vendre ».
-- Design page détail élégant (galerie, auteur vérifié, contacter en 1 tap → chat, avis via module review existant).
-- Livraison : API migration + deploy ; Mobile OTA (multi-images = expo-image-picker déjà présent à vérifier ; si nouveau module natif ⇒ STOP rebuild).
-
-## E-LIVES — Streaming live · **❌ ÉCARTÉE (abandonnée 2026-07-02, décision proprio)** (ask #1)
-> **NE PAS IMPLÉMENTER. Ne pas re-proposer sans demande explicite du proprio.** Feature abandonnée : le coût
-> ressource sur le VPS unique partagé est refusé ; la vidéo impose une brique de fait payante/dédiée (interdite par
-> la règle zéro-payant) sans alternative tenable sur l'infra ; l'audio self-hosté (LiveKit OSS + coturn) a AUSSI été
-> refusé pour son empreinte RAM/CPU/bande passante sur l'hôte partagé. L'ADR `docs/adr/ADR-LIVES-streaming.md`
-> reste comme trace de décision (chiffrage : vidéo ~150-250 Mbps/100 viewers intenable ; audio ~6,4 Mbps mais coût
-> ressource refusé). Historique de l'analyse conservé ci-dessous à titre d'archive uniquement.
->
-> ~~ADR livré `docs/adr/ADR-LIVES-streaming.md`. **Tension à trancher** :~~
-> - Demande proprio : vidéo complète (réactions RT, viewers, chat live, **co-diffusion jusqu'à 3**, **badge LIVE carte**).
-> - Reco conseiller (honnêteté avant flatterie) : **NE PAS** livrer la vidéo complète en V1 — VPS unique 1 Go
->   mutualisé, egress ~150 Mbps/100 viewers intenable en self-host, pas de masse critique (live vide = churn),
->   modération live impossible sans équipe T&S, connectivité diaspora hostile à la vidéo, badge géolocalisé =
->   classe de risque privacy F-01/F-02 en pire. **Recommande LIVE AUDIO « Salons »** (Spaces-like) : ~60× moins
->   de bande passante, marche au pays, co-diffusion à 3 naturelle, réutilise `chat.gateway.ts` + réactions déjà livrées.
-> - Si vidéo malgré tout : **LiveKit Cloud** (SFU managé) derrière une abstraction serveur ; self-host SFU sur VPS
->   prod EXCLU ; `@livekit/react-native` = **module natif ⇒ rebuild EAS + bump 1.8.0→1.9.0**.
-> Réel réutilisable dans les deux cas : réactions/chat/compteur viewers/invitations co-host/**badge map** passent par
-> le **gateway WS existant** (auth JWT RS256, Zod rejoué, rate-limit Redis), PAS le SFU. Badge LIVE = enrichissement
-> de marqueurs déjà autorisés (comme `hasActiveStory`) ⇒ un compte private ne peut structurellement pas fuiter sur `/geo/*`.
-> **8 questions ouvertes** (budget/hébergement, périmètre V1 1-diffuseur vs 3, enregistrement/replay, chat éphémère vs
-> persisté, RGPD/souveraineté, plafonds coût, lives des comptes privés, GO build) → cf. `status.json.openQuestions`.
-> Découpage possible dès accord : LIVE-0..5 backend DARK (feature flag, sans toucher mobile) puis LIVE-6 = build mobile (gate proprio).
-
-## E-DIASPORA — Gaps diaspora (moat vs me-too) · **Prio 3.5 — BACKLOG** (ask #4)
-Priorisés par le conseiller + `market.md` (fort levier rétention/acquisition, coût infra ≈ 0 pour les 2 premiers) :
-1. **Événements géolocalisés** sur la carte existante (RSVP + « qui y va » scopé friends) — fêtes nationales, associations, religieux. Viral, zéro coût vidéo. Le « wow » pas cher.
-2. **Entraide « Démarches » structurée** localisée par pays d'accueil (titre de séjour, passeport consulaire, équivalences…) + contributeurs de confiance (ambassadeurs). Récurrent (rétention) + partageable/SEO web (acquisition).
-3. **i18n haoussa/zarma/français** (aucun concurrent ne le fait, coût faible) ; **groupes par ville d'accueil** ; **annonces officielles vérifiées**.
-À dé-prioriser (me-too, les géants gagnent) : reels/short-video, marketplace commerce générique, stickers DM.
+**Q6 (soulevée par l'analyse de risques, non anticipée dans la demande) :
+un adhérent doit-il obligatoirement avoir un compte NigerConnect ?**
+C'est la question qui commande le modèle de données des sprints 3 à 5. Elle bloque le
+Sprint 3, pas avant.
 
 ---
 
-## NOUVELLES FEATURES RÉTENTION (validées proprio 2026-07-02) — spec par gwani-pm-spec APRÈS E-MARKET
-> Toutes : coût infra ~0, ZÉRO dépendance payante, AUCUN paiement in-app. À spécifier (pm-spec) puis architecturer.
+## Sprint 1 — « Le socle association devient sûr et lisible » ✅ LIVRÉ
 
-### E-GP — Colis-voyageurs « GP » · **Prio 4.5 (valeur max, synergie Entraide)**
-**Story** : En tant que voyageur, je publie mon trajet (ex. Niamey→Paris le 12, 10 kg dispo) ; en tant que membre, je cherche à envoyer un colis/documents. **MISE EN RELATION UNIQUEMENT** — aucun paiement, aucune transaction dans l'app (négociation via le chat existant).
-- S'intègre SOUS « Entraide » (section dédiée ou type d'annonce). Réutilise le modèle d'annonces + chat existant.
-- Sécurité/confiance : profils vérifiés (email déjà vérifié, badge identité), signalement, visibilité selon la privacy existante (un compte private ne fuit pas). **Disclaimer légal clair** : contenu des colis = responsabilité des utilisateurs, rappel douanes.
-- Modèle : `TripAnnouncement` (origine, destination, date, capacité kg) + `ParcelRequest` (ou réutiliser ServiceRequest typé `gp`). Zod, AuthZ owner, pas de médias sensibles. C'est la feature n°1 des groupes WhatsApp diaspora.
+**Goal :** avant d'ouvrir un back-office aux associations, refermer les fuites que ce
+back-office amplifierait, et poser la gouvernance (bureau exécutif, certification)
+dont tous les sprints suivants dépendent.
 
-### E-TAUX — Taux du jour + prix crowdsourcés · **Prio 4.0 (habitude quotidienne)**
-**Story** : En tant que membre de la diaspora, je vois en tête de feed le taux XOF↔EUR/USD/CAD et des prix signalés par la communauté (billet d'avion Niamey↔diaspora, frais d'envoi d'argent WU/Wave/…, kilo de colis), afin d'ouvrir l'app tous les jours.
-- Taux : source GRATUITE (ex. taux de référence BCE/open-data recalculé, OU saisie communautaire modérée) — **PAS d'API payante**.
-- Prix : saisie communautaire + **votes de confiance** + horodatage. Modèle `CommunityPrice` (type, route, montant, devise, votes, createdAt), modération/report.
-- Affichage : bandeau léger en tête de feed. Zod, AuthZ (1 saisie/vote par user), anti-spam.
+Ce sprint est **utilisable seul** : les associations existantes gagnent un bureau
+exécutif affiché et un badge de certification distinct, et trois fuites de production
+sont refermées.
 
-### E-DIGEST — Digest hebdo push · **Prio 3.0 (rappel des dormants, quick-win)**
-**Story** : En tant que membre inactif, je reçois une notif hebdo personnalisée (« cette semaine : N événements près de toi, N nouvelles annonces entraide, N nouveaux membres de ta région ») pour revenir dans l'app.
-- Réutilise les données existantes + **1 cron** (comme le cron stories/invitations). Expo Push (gratuit). Opt-out simple dans les réglages.
-- **Privacy stricte** : jamais révéler un compte private ; agrégats seulement. Quick-win si le comptage reste simple.
+| # | Item | Valeur | Effort | Prio |
+|---|------|--------|--------|------|
+| A1 | Fermer l'annuaire des membres (fuite prod) | Critique | S | 1 |
+| A2 | Plus d'association orpheline à la suppression de compte (fuite prod) | Critique | S | 2 |
+| A3 | Gouvernance : `owner` non rétrogradable + journal d'audit | Élevée | M | 3 |
+| A4 | Bureau exécutif (titres, photo, ordre d'affichage) | Élevée | M | 4 |
+| A5 | Certification association : traçabilité + badge distinct | Élevée | M | 5 |
+| A6 | `slug` unique + nom unique (anti-squat, prépare le site public) | Moyenne | S | 6 |
 
-## E-DIASPORA — Événements géolocalisés (rappel) · **Prio 3.5**
-Événements sur la carte Leaflet existante (RSVP + « qui y va » scopé friends), coût infra ~0. Cf. section E-DIASPORA plus haut.
+### A1 — Fermer l'annuaire des membres
 
-## ROADMAP PRIORISÉE (arbitrage PO, sous réserve vélocité)
-1. **S3 Profil** — ✅ livré + déployé (2026-07-02).
-2. **S4 E-MARKET** — 🚧 EN COURS (multi-images + détail + formulaire intention-first, sous « Entraide »).
-3. **S5 E-GP** — colis-voyageurs (valeur max, synergie Entraide, réutilise annonces+chat).
-4. **S6 E-DIASPORA événements** — carte existante, coût ~0.
-5. **S7 E-TAUX** — taux + prix crowdsourcés (habitude quotidienne).
-6. **S8 E-DIGEST** — digest hebdo (quick-win, peut se glisser plus tôt si vraiment petit).
-> E-LIVES : ❌ écartée (abandonnée, ne pas re-proposer). Sprints Animations (ANIM-*) : conservés au backlog, ANIM-8 à re-cadrer sur react-native-maps (déjà présent, gratuit) et non Mapbox.
+> En tant qu'adhérent d'une association religieuse ou politique, je veux que mon
+> appartenance ne soit pas consultable par n'importe quel inscrit, afin de ne pas
+> exposer ma famille restée au pays.
 
----
+**Constat vérifié dans le code (pas une hypothèse) :**
+`apps/api/src/association/association.controller.ts:115` — `GET /associations/:id/members`
+n'a ni `@CurrentUser` ni `assertRole`. `listMembers` (`association.service.ts:418`)
+retourne `displayName, firstName, lastName, avatarUrl, city, countryCode` pour tous les
+membres `approved`, **sans filtrer `privacyLevel`, ni `showOnMap`, ni les blocages, ni
+`isAnimated`**. `JwtAuthGuard` étant global (`apps/api/src/auth/auth.module.ts:37`),
+la route n'est pas anonyme — mais **tout compte authentifié** peut énumérer l'annuaire
+nominatif de n'importe quelle association. La catégorie `religieux` existe déjà dans
+`dto/association.dto.ts:11` → donnée sensible RGPD art. 9.
 
-## Synthèse concurrentielle (actionnable, surface par surface)
+C'est le trou dans le dispositif de confidentialité que `geo.service.ts:403` respecte
+pourtant partout ailleurs.
 
-### Feed / posts / commentaires — modèle **Instagram**
-- **Liste des likers** (qui a aimé) : standard IG/FB. Augmente la preuve sociale et la découverte de profils. *Backend déjà prêt* (`GET /posts/:id/likes`).
-- **Like de commentaire** : engagement granulaire, hiérarchise les meilleures réponses. Colonne `Comment.likeCount` déjà présente mais inerte.
-- **Réactions multi-emoji** (❤️😂😮😢👍) au lieu du like binaire : expressivité IG/FB, signal de sentiment plus riche pour la modération et le tri.
-- Parité différée : double-tap-to-like, enregistrer/bookmark, “partager en story”, @mention dans commentaire, commentaire épinglé.
+**Critères d'acceptation**
+- Given un utilisateur non-membre, When il appelle `GET /associations/:id/members`, Then 403.
+- Given un membre `approved`, When il liste, Then il ne voit **pas** les membres dont
+  `privacyLevel = private`, ni les comptes `isAnimated`, ni ceux qu'il a bloqués / qui l'ont bloqué.
+- Given un compte `private`, When il rejoint une association, Then il compte dans
+  `memberCount` mais n'apparaît dans aucune liste.
+- Le compteur reste public ; la liste ne l'est pas.
 
-### Chat — modèle **Instagram / WhatsApp**
-- **Swipe-to-reply** : geste attendu par tout utilisateur mobile. *Backend déjà prêt* (`replyToId` partout). Pur travail geste/UI.
-- Parité différée : réactions emoji sur un message (long-press), accusés de lecture déjà partiels (`message:read`), présence en ligne, messages vocaux, galerie média de conversation.
+### A2 — Plus d'association orpheline
 
-### Stories — modèle **Instagram**
-- **Répondre à une story** (→ DM à l'auteur) + **liker une story** + **like animé moderne** qui différencie le produit.
-- Parité différée : “vu par” (seen-by list), barre de réactions rapides emoji, overlays texte/stickers, multi-média par story.
+> En tant que propriétaire, je veux qu'aucune association ne se retrouve sans
+> administrateur, afin qu'un fichier de données personnelles ait toujours un responsable.
 
-### Services — modèle **Facebook Marketplace**
-- **Barre de recherche plein-texte** (manque vs filtres par thème déjà présents). Réduit le temps pour trouver un service.
-- Parité différée : contacter le prestataire en 1 tap (chat), avis/notation (module `review` existe), tri par proximité (PostGIS dispo), photos sur la demande, “marquer résolu”.
+**Constat vérifié :** `leave()` (`association.service.ts:379`) refuse la sortie du dernier
+admin, mais `deleteAccount` (`apps/api/src/profile/profile.service.ts:873`) fait
+`prisma.user.delete()` qui **cascade `association_members`** sans passer par ce garde-fou.
+Le commentaire du code liste explicitement « association memberships » parmi les cascades.
+Résultat : association vivante, adhérents, données personnelles — et zéro administrateur,
+sans aucun endpoint pour en réattribuer un. `createdById` passe à NULL : plus personne
+n'est identifiable comme responsable de traitement.
 
-### Carte — modèle **Snapchat (Snap Map)**
-- Différenciateur fort : **anneau de story autour de l'avatar sur la carte** (tap → ouvre la story), **pins avatars animés**, **pulsation “actif récemment”**, clustering animé, calque “amis uniquement”. Le ping de proximité existe déjà (`POST /geo/proximity/ping`).
+**Critères d'acceptation**
+- Given le dernier admin d'une association, When il supprime son compte, Then le rôle est
+  transféré au modérateur le plus ancien, sinon au membre `approved` le plus ancien, et le
+  nouveau responsable est notifié (in-app + e-mail).
+- Given aucun membre restant, When le dernier admin part, Then l'association est
+  soft-delete (pas de suppression dure) et sort des listes publiques.
+- Test de non-régression : le scénario exact ci-dessus, en Jest.
 
----
+### A3 — Gouvernance : `owner` non rétrogradable + audit
 
-## ITEMS
+> En tant que fondateur d'une association, je veux ne pas pouvoir être évincé par un
+> administrateur que j'ai promu, afin que mon association ne me soit pas prise.
 
-### B1 — [QUICK WIN] Voir QUI a liké un post (liste des likers)  · Prio 4.0 (V4/E1)
-**Story** : En tant qu'utilisateur, je veux voir la liste des personnes qui ont aimé un post afin de découvrir qui interagit et d'ouvrir leurs profils.
-**Given/When/Then**
-- Given un post avec ≥1 like, When je tape sur le compteur de likes, Then une feuille/écran liste les likers (avatar, nom) paginée.
-- Given un liker dans la liste, When je le tape, Then j'ouvre `/user/[id]`.
-- Given un post sur lequel je n'ai pas le droit de voir (privacy), When j'appelle l'endpoint, Then 403 (déjà géré par `assertCanViewPost`).
-**Contraintes** : aucun nouveau backend. Privacy = réutiliser le gate existant. Pagination curseur.
-**Backend** : déjà fait — `apps/api/src/feed/feed.controller.ts:112` (`GET posts/:id/likes`), `likes.service.ts:79` (`listLikers`).
-**shared-types** : ajouter un type `Liker`/réutiliser `PublicUser` dans `packages/shared-types/src/post.ts`.
-**Mobile** :
-- `apps/mobile/services/feedApi.ts` — ajouter `getLikers(postId, cursor?)` → `GET /posts/${id}/likes` (manque, cf. map).
-- `apps/mobile/components/feed/PostCard.tsx:178` — rendre le compteur de likes tappable (`onLikeCountPress`).
-- nouvel écran/sheet likers (ex. `apps/mobile/app/post/[id]/likes.tsx` ou bottom-sheet) → push `/user/[id]`.
-- Câbler depuis `apps/mobile/app/(tabs)/index.tsx` et `apps/mobile/app/post/[id].tsx`.
-**Livraison** : JS-only → OTA iOS. Pas de bump.
+**Constat vérifié :** `changeRole` (`association.service.ts:398`) ne protège que le cas
+« je me rétrograde moi-même en étant le dernier admin ». Rien n'empêche l'admin B, promu
+la veille, de passer le fondateur en `member` et de garder l'association, son nom, son
+badge et sa future liste de diffusion.
 
-### B2 — Swipe-to-reply dans le chat  · Prio 1.6 (V4/E2.5)
-**Story** : En tant qu'utilisateur du chat, je veux glisser un message pour y répondre afin de citer le message dans ma réponse, comme IG/WhatsApp.
-**Given/When/Then**
-- Given un message, When je le glisse latéralement au-delà d'un seuil, Then une barre de composition “En réponse à …” s'affiche avec un aperçu du message cité.
-- Given une réponse envoyée, When elle s'affiche, Then la bulle montre un aperçu cliquable du message cité (auteur + extrait).
-- Given un `replyToId` invalide/d'une autre conversation, When j'envoie, Then rejet serveur (Zod uuid + appartenance conversation).
-**Contraintes** : geste via `react-native-gesture-handler` (~2.28, déjà installé) + `react-native-reanimated` (4.1.7, déjà installé) ⇒ **pas de module natif nouveau ⇒ OTA OK**. AuthZ : vérifier que `replyToId` appartient à la même conversation côté gateway.
-**Backend** : `replyToId` déjà accepté (`apps/api/src/chat/dto/chat.dto.ts:13`, gateway `chat.gateway.ts:161`). À AJOUTER : sérialiser le message cité (`replyTo` imbriqué : auteur + extrait/type) dans la réponse du gateway + endpoint historique, et valider l'appartenance conversation du `replyToId`.
-**shared-types** : `packages/shared-types/src/message.ts:44` — ajouter `replyTo?: { id; senderName; content; messageType } | null` (aujourd'hui seul le scalaire `replyToId` existe).
-**Mobile** : `apps/mobile/app/chat/[id].tsx` — wrapper la bulle (render à :803) dans un `Swipeable`/`GestureDetector`, état `replyingTo`, aperçu au-dessus de l'input, passer `replyToId` à `chatApi.sendMessage` (option déjà supportée `chatApi.ts:31`), retirer le `replyToId: null` codé en dur (:122), rendre l'aperçu cité dans la bulle.
-**Livraison** : JS-only → OTA iOS. Pas de bump.
+**Critères d'acceptation**
+- Un admin ne peut pas modifier le rôle d'un autre admin (403), sauf le rôle `owner`.
+- Le transfert de propriété exige l'**acceptation** du destinataire.
+- Tout changement de rôle est journalisé (qui, quand, avant → après) et **notifié à la
+  personne concernée**.
 
-### B3 — Liker un commentaire  · Prio 1.6 (V4/E2.5)
-**Story** : En tant qu'utilisateur, je veux liker un commentaire afin de valoriser les meilleures réponses.
-**Given/When/Then**
-- Given un commentaire, When je tape le cœur, Then `likeCount` s'incrémente et l'état “liké par moi” persiste (optimiste + confirmé serveur).
-- Given un commentaire déjà liké, When je re-tape, Then unlike (toggle), `likeCount` décrémente, pas de double-compte (contrainte d'unicité).
-- Given un commentaire d'un post que je ne peux pas voir, When je like, Then 403.
-**Contraintes** : nouveau modèle `CommentLike` (migration Prisma + `prisma migrate deploy` au déploiement API). AuthZ : visibilité du post parent. Zod sur params. Unicité `(userId, commentId)` pour empêcher le double-like (IDOR/triche).
-**Backend** :
-- `apps/api/prisma/schema.prisma` — ajouter modèle `CommentLike (@@id([userId, commentId]))`, relation vers `Comment` (`likeCount` déjà à :485).
-- `apps/api/src/feed/comments.service.ts` — `toggleCommentLike(userId, commentId)` (transaction maj `likeCount`), exposer `isLikedByMe` dans `list` (:131).
-- `apps/api/src/feed/feed.controller.ts` — `POST comments/:id/like`.
-**shared-types** : `packages/shared-types/src/post.ts:51` — `Comment.isLikedByMe: boolean`.
-**Mobile** : `apps/mobile/components/feed/CommentItem.tsx` — bouton like + compteur ; `apps/mobile/services/feedApi.ts` — `toggleCommentLike(commentId)` ; maj optimiste dans `apps/mobile/app/post/[id].tsx`.
-**Livraison** : API = migration + deploy dernier commit. Mobile JS-only → OTA iOS.
+### A4 — Bureau exécutif
 
-### B6 — Barre de recherche dans la section Services  · Prio 2.0 (V4/E2)
-**Story** : En tant qu'utilisateur cherchant un service, je veux une barre de recherche plein-texte afin de filtrer par mots-clés en plus des thèmes.
-**Given/When/Then**
-- Given des demandes de service, When je tape “plombier” dans la barre, Then la liste se filtre sur titre+description (insensible casse), combinable avec les filtres thème/pays/urgence existants.
-- Given une recherche vide, When je l'efface, Then la liste revient au filtrage par thème seul.
-- Given une requête, When je tape vite, Then debounce (pas de spam réseau).
-**Contraintes** : Zod (param `q` borné, ex. max 80). Pas de fuite privacy (les service-requests sont publics par nature — confirmer). Recherche `contains mode:insensitive` (pas besoin de PostGIS).
-**Backend** : `apps/api/src/marketplace/dto/service.dto.ts:25` — ajouter `q: z.string().trim().min(1).max(80).optional()` ; `apps/api/src/marketplace/services.service.ts:43` — `if (dto.q) where.OR = [{ title: { contains: dto.q, mode:'insensitive' } }, { description: { contains: dto.q, mode:'insensitive' } }]`.
-**shared-types** : `packages/shared-types/src/service-request.ts` — ajouter `q?` au type de params si typé côté client.
-**Mobile** : `apps/mobile/app/(tabs)/services.tsx` — `TextInput` de recherche (au-dessus des pills :100), état `query` debouncé, passer `q` à `servicesApi.list` (:51) ; `apps/mobile/services/servicesApi.ts:4` — accepter `q`.
-**Livraison** : API = deploy dernier commit (pas de migration). Mobile JS-only → OTA iOS.
+> En tant que membre, je veux voir nommément le président, le trésorier et le secrétaire
+> avec leur photo, afin de savoir à qui j'ai affaire.
 
-### B7 — [BUG] La notif “demande d'ami” n'ouvre pas le profil du demandeur  · Prio 3.3 (V5/E1.5)
-**Story** : En tant que destinataire d'une demande d'ami, je veux qu'en tapant la notification j'atterrisse sur le profil du demandeur avec les actions Accepter/Refuser, afin de répondre en 1 geste.
-**Given/When/Then**
-- Given une notif `friend_request`, When je la tape (in-app OU push), Then j'ouvre `/user/[requesterId]` qui affiche “Accepter la demande / Refuser” (état `incoming`).
-- Given j'accepte depuis ce profil, When je tape Accepter, Then `POST /friends/accept/:friendshipId` (déjà câblé `user/[id].tsx:163`).
-- Given `friend_accepted`, When je la tape, Then j'ouvre le profil de celui qui a accepté.
-**Cause racine (cf. map)** : le payload push de `friend_request` ne contient que `{ friendshipId }` — pas de `requesterId`. Les deux handlers routent en dur vers `/friends`.
-**Backend** : `apps/api/src/social/friends.service.ts:88` — ajouter `requesterId` (et pour accepted, l'acteur) dans `data`. Vérifier `notification.service.ts:46` propage bien les champs `data` dans `pushData`.
-**Mobile** :
-- `apps/mobile/app/settings/notifications.tsx:25-27` — `routeForNotification` : `friend_request`/`friend_accepted` → `/user/${data.requesterId}` (fallback `/friends` si absent).
-- `apps/mobile/app/_layout.tsx:234-236` — deep-link push : router vers `/user/${data.requesterId}` (fallback `/friends`).
-**Contraintes** : ne pas exposer de données privées dans le payload (juste l'id). Garder le fallback `/friends` pour les anciennes notifs sans `requesterId`.
-**Chaîne** : bug-hunter → fixer → e2e-tester (préférence proprio).
-**Livraison** : API = deploy dernier commit. Mobile JS-only → OTA iOS.
+Distinct du rôle technique (`admin`/`moderator`/`member`) qui régit les droits : un
+trésorier n'est pas forcément administrateur de la page. Deux axes séparés, ne pas les confondre.
 
-### B5 — Story : répondre + liker + like animé moderne  · Prio 1.0 (V4/E4) → SPLIT
-> Décision lib (à valider proprio) : **garder reanimated 4** (déjà natif dans le build ⇒ OTA-safe) pour un “heart-burst” spring custom différenciant ; OU **lottie-react-native** pour une animation premium type Telegram — mais c'est un **module natif ⇒ rebuild EAS obligatoire + bump version** (pas d'OTA). Recommandation PO : reanimated en Sprint, lottie en option si on rebuild de toute façon.
-- **B5a — Liker une story (animé)** · V3/E2.5. Réutiliser `POST /posts/:id/like` (fonctionne sur l'id de story) + composant cœur animé reanimated dans `apps/mobile/app/stories/[authorId].tsx`. JS-only → OTA si reanimated.
-- **B5b — Répondre à une story (→ DM)** · V3/E3. Endpoint qui crée un message chat vers l'auteur référant la story (réutilise chat) ; input de réponse dans le story viewer. Backend (conversation lookup/create + ref story) + mobile. Migration possible si on tague le message.
+**Critères d'acceptation**
+- Un admin peut désigner des membres du bureau avec un titre
+  (`president`, `vice_president`, `secretary`, `treasurer`, `spokesperson`, `other` + libellé libre)
+  et un ordre d'affichage.
+- Le bureau est visible par tous ceux qui voient l'association — **le titre est public,
+  c'est la fonction de la feature**, mais l'inscription au bureau requiert le consentement
+  explicite de la personne (elle accepte, elle peut se retirer).
+- Un compte `private` peut siéger au bureau sans être exposé ailleurs.
 
-### B4 — [EPIC] Réactions multi-emoji sur un post  · Prio 0.8 (V4/E5)
-**Story** : En tant qu'utilisateur, je veux réagir avec ❤️😂😮😢👍 (long-press) au lieu d'un like binaire, comme IG/FB.
-**Périmètre** : nouveau modèle `Reaction (userId, postId, emoji)` (migration), agrégation par emoji, endpoints set/remove + likers par emoji, sérialisation `myReaction` + `reactionCounts`, shared-types, UI long-press picker + barre de comptes. **Migration de l'existant `Like`** à arbitrer (garder `Like` comme ❤️ ou migrer vers `Reaction`). Nécessite **gwani-architect** d'abord (ADR + contrat). Probable Sprint 2.
+### A5 — Certification association traçable + badge distinct
+
+> En tant qu'utilisateur, je veux distinguer d'un coup d'œil une association vérifiée
+> d'un compte personnel vérifié, afin de ne pas confondre une page officielle avec un particulier.
+
+**Constat vérifié :** `Association.isVerified` existe en base (`schema.prisma:908`) mais
+**aucun endpoint ne le pose ni ne le retire** — uniquement des lectures. Un badge qui dit
+« la plateforme garantit » sans procédure d'octroi ni de retrait est un passif.
+
+**Critères d'acceptation**
+- `verifiedAt`, `verifiedBy`, `verificationNote` ajoutés ; endpoint admin d'octroi **et de retrait**.
+- Badge distinct (voir Q5) sur mobile ET web, libellé au tap « Association vérifiée le … ».
+- Zéro module natif ajouté → compatible OTA.
+
+### A6 — `slug` unique + nom unique
+
+**Constat vérifié :** aucun `@@unique` sur `Association.name` (`schema.prisma:897-921`),
+aucun slug. Le premier arrivé prendra l'URL canonique du site public et le référencement
+Google sur le nom de la vraie association. `identityStatus === 'approved'` prouve que la
+personne est bien elle-même, **pas qu'elle a mandat pour représenter l'association**.
 
 ---
 
-## PARITY SWEEP — opportunités rangées (grossier, bas de backlog)
+## Sprint 2 — « L'association publie depuis un ordinateur »
 
-| # | Surface | Opportunité (réf concurrent) | V | E |
-|---|---------|------------------------------|---|---|
-| P-01 | Chat | Réactions emoji sur un message (long-press, IG) | 3 | 2 |
-| P-02 | Story | “Vu par” / seen-by list (IG) — besoin tracking vues | 3 | 3 |
-| P-03 | Story | Barre de réactions rapides emoji (IG) | 3 | 2 |
-| P-04 | Carte | **Anneau de story autour de l'avatar → tap ouvre la story (Snap Map)** — différenciateur fort | 4 | 4 |
-| P-05 | Carte | Pulsation “actif récemment” + pins avatars animés (Snap) | 3 | 3 |
-| P-06 | Services | Contacter le prestataire en 1 tap (chat) | 4 | 2 |
-| P-07 | Services | Avis/notation prestataire (module review existe) | 3 | 3 |
-| P-08 | Services | Tri par proximité (PostGIS dispo) | 3 | 2 |
-| P-09 | Feed | Double-tap-to-like (IG) | 3 | 1 |
-| P-10 | Feed | Enregistrer/bookmark un post (IG) | 3 | 2 |
-| P-11 | Feed/Story | Partager un post en story (IG) | 2 | 3 |
-| P-12 | Commentaire | @mention + notif (IG) | 3 | 3 |
-| P-13 | Commentaire | Commentaire épinglé par l'auteur (IG/YT) | 2 | 2 |
-| P-14 | Chat | Présence en ligne / dernière activité | 3 | 2 |
-| P-15 | Chat | Messages vocaux (module natif audio ⇒ rebuild) | 3 | 4 |
+Back-office web (`apps/web`, host dédié comme `tenant.*`), authentification par compte
+personnel de dirigeant. Publications (images ET vidéos), annonces/événements, gestion des
+membres. **Prérequis : Sprint 1** (sans A3, un back-office donne les clés à n'importe quel admin).
 
----
+- B1 — Auth back-office : session web sur compte NigerConnect, sélection de l'association, `assertRole`.
+- B2 — Décision d'architecture **médias portés par une association** : la convention
+  `users/{userId}/…` de `S3Service.assertOwnedPublicImage` ne suffit plus. À trancher en ADR
+  (préfixe `associations/{id}/…` + assertion basée sur le rôle), **pas à contourner**.
+- B3 — CRUD publications avec médias, réutilisant le pipeline vidéo existant.
+- B4 — Gestion des membres et des demandes d'adhésion depuis le web.
+- B5 — **Quota disque par association** + alerte volume AVANT d'ouvrir la vidéo.
 
-# Sprint 2 — Proximité (« Rencontre de proximité rue-à-rue », double-aveugle)
+> ⚠️ La vidéo repose sur le kill-switch `video_enabled`, **actuellement OFF**
+> (`memory/status.json` : S-BETA DEPLOYED_DARK). Les publications vidéo d'association
+> seront donc inertes tant que le propriétaire n'active pas le flag.
 
-> Design VALIDÉ et décisions VERROUILLÉES : `memory/proximity-rencontre-design.md` (ne pas rediscuter, appliquer).
-> Modèle : `ProximityEncounter` mutuel à 2 participants, **anonyme des deux côtés** (`encounterId` opaque,
-> distance **gelée** au croisement). Statuts `active→requested→accepted|declined|expired`. L'un OU l'autre `connect`
-> (demandeur révélé) ; `accept` → visibilité mutuelle + `Friendship(accepted)`. Collision (les 2 cliquent) = match direct.
-> 2 niveaux INDÉPENDANTS : visibilité profil (globale) ≠ notif proximité (rayon local) — la visibilité globale ne
-> conditionne JAMAIS le croisement ni la demande.
->
-> **Garde-fous non négociables (à porter dans CHAQUE item)** : jamais de coordonnées/distance fine renvoyées ;
-> foreground-only, ZÉRO background ; position éphémère écrasée, zéro historique ; `encounterId` opaque usage unique ;
-> plafonds + cooldown + **pas de re-demande après decline/block** ; kill-switch `proximity_enabled` (AppSetting) ;
-> ID vérifiée (`identityStatus=approved`) + **18+ (DOB)** des DEUX côtés ; signal **jitté** (1–10 min).
->
-> **Socle réel (~80% existe)** : `apps/api/src/geo/geo.service.ts` `proximityPing` (l.445), matcher Haversine sur
-> `proximity_lat/lon` privés, dédup zone/cooldown Redis (l.550–595), cap fan-out `PROXIMITY_MATCH_LIMIT`,
-> `blockedIds`. Mobile : `hooks/useProximityAlerts.ts` (watch foreground + ping), `services/geoApi.ts:131`.
-> **Livraison mobile** : aucun module natif nouveau (réutilise expo-location foreground + expo-notifications déjà
-> dans le build) ⇒ **OTA iOS**. **NE PAS bumper `app.json version`** (orphelinerait l'OTA). Si un module natif
-> s'avère requis ⇒ STOP, signaler (rebuild EAS + bump). API : deploy dernier commit + `prisma migrate deploy`.
+## Sprint 3 — « Les adhérents »
 
-## ITEMS Sprint 2
+**Bloqué par Q6.** Notion d'adhésion distincte du membre-suiveur, statut de cotisation
+déclaratif, journal append-only des changements de statut, annuaire opt-in exportable CSV
+par le bureau.
 
-### PX0 — [INFRA] Kill-switch `proximity_enabled` + allowlist ville pilote (g)  · Prio 5.0 (V5/E1)
-**Story** : En tant que proprio, je veux activer/désactiver la proximité globalement et la restreindre à une ville pilote, afin de livrer la feature DARK puis faire un rollout maîtrisé.
-**Given/When/Then**
-- Given `app_settings.proximity_enabled='false'`, When un user ping ou appelle un endpoint encounter, Then 200 `{matches:[]}` / 403 silencieux — aucune notif, aucun encounter créé.
-- Given `proximity_enabled='true'` + `proximity_city='Niamey'`, When le pinger n'est pas rattaché à la ville pilote, Then il ne croise personne (gate par `user.city`/zone).
-- Given le flag flip à 'true', When un user éligible ping, Then le flux normal s'active sans redeploy.
-**Contraintes** : lecture `AppSetting` (key/value string, `schema.prisma:1034` — **pas de migration**, juste 2 rows). Cache court (≤60s) pour ne pas lire la DB à chaque ping. Fail-CLOSED si lecture échoue (proximité OFF).
-**Backend** : nouveau helper `geo.service.ts` `isProximityEnabled()/isCityAllowed(city)` lisant `AppSetting` ; gate en tête de `proximityPing` (avant l.449) ET de chaque endpoint encounter (PX4). Seed des clés via le mécanisme AppSetting admin existant.
-**shared-types** : néant.
-**Livraison** : API deploy (pas de migration). Flag posé à `false` au déploiement (DARK).
-**DoD** : flag OFF prouvé inerte (test) ; flag ON + ville prouvé filtrant ; fail-closed testé.
+## Sprint 4 — « La carte d'adhérent »
 
-### PX1 — DOB sur IdentityDocument + gate 18+ + capture à la revue admin (a)  · Prio 4.5 (V5/E2)
-**Story** : En tant que plateforme, je veux exiger une date de naissance validée à la revue manuelle de la pièce d'identité, afin de garantir 18+ fiable et bloquer la proximité tant que la DOB est absente.
-**Given/When/Then**
-- Given un admin qui approuve une pièce, When il valide SANS saisir `dateOfBirth`, Then 400 (DOB obligatoire si `decision='approved'`).
-- Given une DOB saisie `< 18 ans` à ce jour, When l'admin approuve, Then approbation possible MAIS l'utilisateur reste **inéligible proximité** (gate `isAdult`).
-- Given un user `identityStatus='approved'` mais DOB absente (approuvé avant cette feature), When il ping, Then aucun croisement (gate bloque tant que DOB null).
-- Given DOB présente + ≥18 + `approved`, When il ping, Then éligible.
-**Contraintes** : Zod ; DOB stockée sur `IdentityDocument` (privé, jamais exposée au public ni au pair) ; ne jamais renvoyer la DOB dans une réponse API destinée à un autre user.
-**Backend / prisma** :
-- `apps/api/prisma/schema.prisma:728` `IdentityDocument` — ajouter `dateOfBirth DateTime? @db.Date @map("date_of_birth")`. **Migration**.
-- `apps/api/src/auth/dto/verify-identity.dto.ts:10` `reviewIdentitySchema` — ajouter `dateOfBirth: z.string().date().optional()` + `.refine(d => d.decision!=='approved' || !!d.dateOfBirth)` (obligatoire à l'approbation) + refus si futur.
-- `apps/api/src/auth/auth.service.ts:863` `reviewIdentity(...)` — accepter `dateOfBirth`, le persister sur le doc approuvé (transaction l.878-893). Helper `isAdult(dob)` (≥18 ans) réutilisable.
-- Gate proximité (consommé par PX2) : un user n'est éligible que si `identityStatus='approved'` ET il existe un `IdentityDocument` approuvé avec `dateOfBirth` non null et `isAdult`. Exposer `proximityEligible` via une vue/agrégat ou jointure dans la requête matcher.
-**Admin review UI** : champ `dateOfBirth` (date picker) dans l'écran de revue des pièces (admin console web `apps/web` — surface qui consomme `admin.service.ts:901 listIdentityDocuments` + `POST` review). Vérifier le câblage exact dans `apps/web` avant impl.
-**shared-types** : ajouter `dateOfBirth?` au type de payload review si typé client.
-**Livraison** : migration + deploy. Admin = web.
-**DoD** : migration verte ; DOB obligatoire à l'approbation prouvée ; gate <18 et DOB-absente prouvés bloquants ; DOB jamais fuitée (vérifié pentest).
+PDF via `pdfkit` (**jamais puppeteer/chromium** : l'API est plafonnée à 1 Go sur un VPS
+mutualisé), QR → page de vérification serveur, token opaque ≥ 128 bits, rotation du token
+à la révocation, génération à la volée sans stockage en bucket public.
 
-### PX2 — Découpler proximité de showOnMap/privacy + anonymiser le payload matcher (b)  · Prio 5.0 (V5/E2) — SPIKE
-**Story** : En tant qu'utilisateur discret (profil masqué/privé), je veux pouvoir croiser et être croisé en proximité sans apparaître sur la carte ni révéler mon identité, afin que la proximité soit un canal autonome double-aveugle.
-**Given/When/Then**
-- Given un pinger `proximityAlerts=true`, `showOnMap=false`, `privacyLevel='private'`, éligible (PX1), When il ping, Then il croise/est croisé normalement (les gates carte ne s'appliquent PLUS).
-- Given un croisement, When la notif part vers l'autre, Then elle ne contient NI nom, NI avatar, NI userId du pinger — seulement `encounterId` opaque + bucket de distance.
-- Given la réponse du ping au pinger, When `matches[]` revient, Then chaque entrée = `{ encounterId, distance:bucket }` UNIQUEMENT (plus de `userId/name/avatarUrl`).
-- Given un user non éligible (PX1 : pas approuvé / pas 18+ / DOB absente), When il ping, Then `{matches:[]}`.
-**Contraintes** : aucune coordonnée/distance fine ; le payload ne doit JAMAIS permettre de résoudre l'autre avant `accept` (cf. PX7). Conserver dédup zone/cooldown/familiar Redis existants. Jitter (1–10 min) du signal sortant = anti-corrélation temporelle.
-**Backend** : `apps/api/src/geo/geo.service.ts` —
-- `proximityPing` gate l.**463-469** : retirer `!pinger.showOnMap` et `pinger.privacyLevel==='private'` ; remplacer par éligibilité PX1 (`approved` + DOB adulte). Garder `proximityAlerts`.
-- `updateMany` l.**478-481** : retirer `showOnMap: true` de la clause `where`.
-- requête candidats l.**517-521** : retirer `AND show_on_map = TRUE` et `AND privacy_level <> 'private'` ; ajouter `AND identity_status = 'approved'` + jointure éligibilité DOB/adulte.
-- notif l.**602-609** : `title` générique (ex. « Quelqu'un est à proximité »), `body` sans nom, `data:{ encounterId }` (PLUS `userId`), `actorId` retiré (ne pas révéler l'acteur via la notif).
-- `matches.push` l.**617-622** : renvoyer `{ encounterId, distance: bucket }` seulement (supprimer `userId/name/avatarUrl`). `pingerName` (l.532) devient inutile pour la notif.
-- Jitter : différer l'émission de la notif d'un délai aléatoire 1–10 min (queue/scheduled — pas de `setTimeout` volatil en prod ; réutiliser un mécanisme durable s'il existe, sinon table d'attente). **À cadrer avec gwani-architect** si pas de job-runner existant.
-**shared-types** : `packages/shared-types/src/proximity.ts` (nouveau) — `EncounterMatch { encounterId; distance:number }`, `ProximityEncounterSummary`.
-**Mobile** : `services/geoApi.ts:131-139` (type retour `matches`), `hooks/useProximityAlerts.ts:116` `maybeNotify` (ne plus afficher de nom — heads-up générique « Une rencontre à proximité »).
-**Couplage** : livré AVEC PX3 (l'`encounterId` provient de l'encounter). = cœur du spike Sprint 2.
-**Livraison** : API deploy. Mobile OTA (pas de bump).
-**DoD** : aucun attribut identifiant dans notif/`matches` (test asserte) ; gates carte retirés ; éligibilité PX1 appliquée ; pentest OK sur la dé-anonymisation.
+## Sprint 5 — « La liste de diffusion »
 
-### PX3 — Modèle `ProximityEncounter` + migration + dédup paire non-ordonnée (c)  · Prio 5.0 (V5/E3) — SPIKE
-**Story** : En tant que système, je veux matérialiser chaque croisement en un objet mutuel opaque dédupliqué par paire, afin de porter le cycle connect/accept/decline sans jamais lier l'identité avant accord.
-**Given/When/Then**
-- Given deux users qui se croisent, When le matcher tourne, Then UN seul `ProximityEncounter` existe pour la paire **non ordonnée** (A<B), `status='active'`, `distanceBucket` gelé, `requesterId=null`.
-- Given un encounter déjà `active/requested/accepted` pour la paire, When ils se recroisent, Then pas de nouvel objet (idempotent) ; le bucket reste **gelé** (anti-triangulation).
-- Given un encounter `declined`, When ils se recroisent, Then **aucun** nouvel encounter (silence — cf. PX5).
-- Given lecture d'un encounter par un tiers (ni A ni B), When il tente, Then 404.
-**Contraintes** : `encounterId` = uuid opaque, aucun attribut de l'autre stocké en clair côté client ; participants stockés triés `userAId<userBId` ⇒ `@@unique([userAId, userBId])` = dédup non-ordonnée (corrige le risque de double-objet symétrique). `version Int` pour lock optimiste (PX4). Pas d'historique de position dans l'objet (juste bucket + zone).
-**Backend / prisma** :
-- `schema.prisma` — modèle `ProximityEncounter { id uuid; userAId; userBId; status ProximityEncounterStatus @default(active); requesterId String? ; distanceBucket Int; zone String; version Int @default(0); createdAt; respondedAt DateTime?; expiresAt DateTime? }` + enum `ProximityEncounterStatus { active requested accepted declined expired }` + relations vers `User` (3 FKs : A, B, requester) + `@@unique([userAId, userBId])` + index. **Migration**.
-- `geo.service.ts` matcher (boucle l.541-623) : remplacer la création de notif directe par `upsert` de l'encounter pour la paire triée ; si existant non-`active`/`declined` → skip selon règle ; récupérer `encounterId` pour PX2.
-**shared-types** : enrichir `proximity.ts`.
-**Livraison** : migration + deploy.
-**DoD** : migration verte ; dédup non-ordonnée prouvée (A→B et B→A = 1 objet) ; bucket gelé prouvé ; accès tiers = 404.
+**Prérequis bloquant, non négociable :** séparer les identités d'envoi bulk et
+transactionnelle. Aujourd'hui `MailerService` a un seul `from`, une seule clé DKIM, un seul
+relais IONOS pour les resets de mot de passe **et** les campagnes. Et
+`MailerService.send()` (`apps/api/src/common/mail/mailer.service.ts:147`) **avale
+l'exception et se contente de logger** : tout comptage d'échec en amont est décoratif.
+La première association qui envoie à 800 adresses collectées sur papier peut dégrader la
+réputation du domaine — et faire tomber les codes de vérification d'inscription **en
+silence**, au moment précis du décollage (79 inscriptions les 09-10/08/2026).
 
-### PX4 — Endpoints connect/accept/decline + collision (lock optimiste) + plafonds/cooldown/jitter (d)  · Prio 5.0 (V5/E3)
-**Story** : En tant qu'utilisateur croisé, je veux pouvoir demander à connecter (je me révèle), accepter ou refuser, afin de transformer un croisement anonyme en lien — avec gestion saine des deux qui cliquent en même temps.
-**Given/When/Then**
-- Given un encounter `active` dont je suis participant, When `POST /geo/proximity/encounters/:id/connect`, Then `status→requested`, `requesterId=moi` ; l'AUTRE reçoit une notif révélant le demandeur (moi) UNIQUEMENT.
-- Given je ne suis PAS participant, When je `connect/accept/decline`, Then **404** (ni 403 — ne pas confirmer l'existence).
-- Given l'encounter est `requested` par l'autre, When je `connect`, Then = `accept` (collision) → `accepted`.
-- Given `requested` (par l'autre), When j'`accept`, Then `status→accepted`, `Friendship(accepted)` créé/réutilisé, visibilité mutuelle ; je ne peux PAS accepter ma propre demande (`requesterId===moi` → 400).
-- Given deux `connect` simultanés, When ils s'exécutent en concurrence, Then le **lock optimiste** (`where:{id,version}`+`version++`) sérialise : 1er=requested, 2e détecté requested-par-l'autre ⇒ accepted (pas de double-transition, pas de perte).
-- Given `accepted/declined/expired`, When `connect/accept`, Then 409/400 (transition invalide).
-- Given mes plafonds atteints (`connects/jour` ~5–10, `encounters reçus/jour` ~3 puis silence) ou cooldown actif, When j'agis, Then 429.
-**Contraintes** : Zod (param `:id` uuid) ; **AuthZ stricte = participant only, sinon 404** (anti-IDOR critique) ; transition d'état atomique sous lock optimiste/transaction ; réutiliser `Friendship(accepted)` en vérifiant les DEUX directions (`@@unique([requesterId,addresseeId])` ordonné `schema.prisma:377` — upsert prudent) ; jitter sur la notif de `connect`.
-**Backend** :
-- `geo.controller.ts` — `GET /geo/proximity/encounters` (liste anonyme), `POST …/:id/connect|accept|decline` (`@HttpCode(200)`).
-- `geo.service.ts` — `listEncounters(userId)`, `connect/accept/decline(userId, encounterId)` ; à l'accept, créer/réutiliser `Friendship(accepted)` (cf. `friends.service.ts:95-115` pour le pattern, réutiliser le service).
-- DTO Zod dédiés.
-**shared-types** : `proximity.ts` — types réponses connect/accept/decline + liste.
-**Livraison** : API deploy.
-**DoD** : non-participant=404 prouvé ; collision sans race prouvée (test concurrent) ; plafonds/cooldown 429 prouvés ; Friendship réutilisée sans doublon ; pentest OK (IDOR/rejeu/race).
+## Sprint 6 — « Le site public »
 
-### PX5 — Anti-spam : dédup paire + interdiction de re-création après decline/block (e)  · Prio 4.0 (V4/E2)
-**Story** : En tant qu'utilisateur ayant refusé (ou bloqué) quelqu'un, je veux ne plus jamais être re-sollicité par cette personne via proximité ou amitié, afin de ne pas être harcelé.
-**Given/When/Then**
-- Given un encounter `declined` pour la paire, When ils se recroisent, Then aucun nouvel encounter ni notif (silence permanent pour cette paire).
-- Given A a bloqué B (`Block`), When le matcher tourne, Then aucun encounter (déjà filtré `blockedIds`, vérifier la symétrie).
-- Given une `Friendship` `declined` existante, When on re-`sendRequest`, Then **plus de re-send permissif automatique** : aligner sur la règle proximité (corrige `friends.service.ts:71` qui ré-ouvre une `declined` en `pending`).
-- Given le block intervient APRÈS un encounter `requested`, When l'autre tente `accept`, Then 403/404 (block prime).
-**Contraintes** : pas d'IDOR ; le « decline » ne doit pas révéler qui a refusé (silencieux des deux côtés).
-**Backend** :
-- `geo.service.ts` matcher : avant upsert encounter, exclure les paires avec encounter `declined` et avec `Block` (l'un OU l'autre sens).
-- `apps/api/src/social/friends.service.ts:71` — retirer/durcir le re-send auto d'une `declined` (au minimum : pas de réouverture silencieuse ; décision proprio = bloquer ou exiger un délai). **À confirmer proprio** car ça change le comportement amitié existant.
-**Livraison** : API deploy.
-**DoD** : re-croisement après decline prouvé silencieux ; block (2 sens) prouvé bloquant ; `friends.service.ts:71` durci + test ; pentest OK (anti-harcèlement/rejeu).
-
-### PX6 — UI mobile : liste rencontres anonymes + écran demande + accept/decline + réglages proximité (f)  · Prio 3.5 (V4/E3) — Sprint 3
-**Story** : En tant qu'utilisateur, je veux voir mes rencontres de proximité anonymes, demander à connecter, et répondre aux demandes, afin de vivre le parcours double-aveugle.
-**Given/When/Then**
-- Given des encounters `active`, When j'ouvre l'écran proximité, Then liste ANONYME (bucket distance, libellé zone, « Demander à connecter ») — aucun nom/avatar.
-- Given je tape « connecter », When `POST …/connect`, Then état `requested` (en attente).
-- Given une demande reçue (`requested` par l'autre), When j'ouvre la notif, Then écran révélant le DEMANDEUR (nom/avatar) + Accepter/Refuser.
-- Given j'accepte, Then visibilité mutuelle + ami ; Given je refuse, Then disparaît, plus de re-sollicitation.
-- Given réglages, When je règle mon rayon minimum + toggle notif proximité, Then `proximityAlerts/proximityRadius` persistés (le croisement n'a lieu que si les DEUX consentent — le plus restrictif gagne).
-**Contraintes** : aucune fuite avant accept (l'écran liste ne reçoit que `{encounterId,distance}`) ; OTA-safe (pas de module natif). Deep-link notif proximité → écran demande.
-**Mobile** : nouvel écran `apps/mobile/app/proximity/index.tsx` + `apps/mobile/app/proximity/[encounterId].tsx` ; `services/geoApi.ts` (listEncounters/connect/accept/decline) ; routing notif `app/settings/notifications.tsx` + `app/_layout.tsx` (type `proximity` → écran demande) ; réglages `app/settings/privacy.tsx:26-28,146-183` (rayon « minimum », libellé consentement mutuel) ; `hooks/useProximityAlerts.ts:116` heads-up générique.
-**Livraison** : OTA iOS, **pas de bump**.
-**DoD** : parcours démontré ; aucun attribut identifiant côté liste (vérifié) ; deep-link OK.
-
-### PX7 — [TESTS] e2e double-aveugle : aucun des deux ne résout l'autre avant accept (h)  · Prio 5.0 (V5/E2)
-**Story** : En tant que garant sécurité, je veux des tests e2e prouvant l'anonymat symétrique jusqu'à l'accept, afin d'empêcher toute régression de fuite.
-**Given/When/Then (cas « les deux invisibles »)**
-- Given A et B `proximityAlerts=true`, `showOnMap=false`, `privacyLevel='private'`, tous deux `approved`+18+, When ils se croisent, Then chacun obtient un `encounterId` mais AUCUN endpoint accessible ne renvoie l'identité/avatar/userId de l'autre.
-- Given B `connect`, When A lit, Then A voit B (demandeur révélé) mais B ne voit toujours pas A.
-- Given A `accept`, Then et SEULEMENT alors les deux se résolvent + `Friendship(accepted)`.
-- Given un tiers C, When il sonde l'`encounterId`, Then 404.
-- Given decline puis re-croisement, Then silence (PX5).
-**Backend tests** : `e2e/tests/api/proximity.spec.ts` (Playwright API, cf. `e2e/tests/api/*`). Couvre PX2/PX3/PX4/PX5. + unit Jest sur le matcher anonymisé (`apps/api/src/geo/*.spec.ts`).
-**Livraison** : tests (pas de deploy).
-**DoD** : suite verte ; un test échoue si on réintroduit `userId/name/avatar` dans notif/`matches`/liste (test de non-régression de fuite).
-
-### PX8 — [SÉCURITÉ] Audit gwani-pentest OBLIGATOIRE du diff proximité  · Prio 5.0 (V5/E1)
-**Story** : En tant que proprio, je veux un audit offensif du diff sensible (dé-anonymisation, IDOR, rejeu, race), afin d'obtenir un verdict `OK_TO_DEPLOY` avant toute activation.
-**Périmètre** : déanonymisation (peut-on relier `encounterId`→user avant accept ?), IDOR sur `:id` (non-participant), rejeu (re-`connect`/`accept`), race (double connect, lock optimiste), fuite DOB, timing/oracle (404 vs 403), abus plafonds/cooldown, kill-switch contournable.
-**Livraison** : verdict `BLOCK_DEPLOY`/`OK_TO_DEPLOY` (corrige+teste). **Gate dur** avant READY_FOR_DEPLOY.
-**DoD** : verdict `OK_TO_DEPLOY`, 0 critical/high non résolu.
-
----
-
-# Sprint Animations — « façon Snapchat » (4 axes validés proprio)
-
-> Demande proprio : système d'animation **sur la carte ET sur les icônes** — fluide, original, beau, façon Snapchat.
-> Les 4 axes sont VALIDÉS (tout). Découpage en **2 vagues** selon le critère de livraison mobile :
-> **Vague A = OTA-safe** (axes 1 + 3) : reanimated 4.1.7 + worklets 0.5.1 sont DÉJÀ dans le build, animations
-> webview = CSS/JS pur ⇒ **aucun module natif ⇒ OTA iOS, PAS de bump** `app.json version` (sinon l'OTA
-> orpheline les builds existants). **Vague B = natifs** (axes 2 + 4) : `react-native-maps` ET `lottie-react-native`
-> = 2 modules natifs ⇒ **UN SEUL rebuild EAS + UN SEUL bump** (1.7.0 → 1.8.0) couvrant les deux (cf. justif §Vagues).
->
-> **Socle réel vérifié (file:line)** : carte = WebView Leaflet `apps/mobile/app/(tabs)/map.tsx`, HTML/JS injecté
-> l.58-201 (`renderMarkers` l.135-197 avec `markerLayer.clearLayers()` l.136 = flash actuel ; classes CSS pins
-> l.62-77 ; `flyTo` l.107-109 déjà animé ; `drawMe`/zone l.115-124 ; injection l.358-360). Like feed =
-> `components/feed/PostCard.tsx` `ActionButton` l.288-315 (Feather heart statique), `handleLike` l.70-77.
-> Like commentaire = `components/feed/CommentItem.tsx` heart l.137-141, `handleLike` l.48-55. Tab bar =
-> `app/(tabs)/_layout.tsx` `TabIcon` l.18-39 (statique), badge l.32-36. Stories = `app/stories/[authorId].tsx`
-> (PAS de like/reply aujourd'hui). `GestureHandlerRootView` au root `app/_layout.tsx:123`. reanimated réellement
-> utilisé : `components/ui/Skeleton.tsx`, `Toast.tsx` ; `ReanimatedSwipeable` en prod dans le chat.
->
-> **Contraintes perf transverses (à porter dans CHAQUE item, = critères DoD)** :
-> - **60fps, zéro jank**. reanimated : tout sur le **thread UI/worklet** (`useSharedValue`/`withSpring`/`withTiming`),
->   JAMAIS de re-render React par frame, pas de `setState` dans une boucle d'anim.
-> - **WebView Leaflet** : animer uniquement `transform`/`opacity` (composités GPU), pas de `width/height/top/left`
->   (reflow). Keyframes CSS, `will-change:transform`. **Plafonner** : pas d'anim d'entrée au-delà de ~60 pins
->   visibles (stagger borné), réutiliser/differ les markers au lieu de `clearLayers()` global.
-> - Respecter **reduce-motion** (désactiver/raccourcir si l'OS le demande) et dégrader proprement sur entrée de gamme.
-> - **Aucune régression `npx tsc --noEmit`** (api + mobile). Démo visuelle obligatoire (capture/vidéo) à la review.
-
-## VAGUE A — OTA-safe (axes 1 + 3) = Sprint Animations v1
-
-### ANIM-1 — [OTA] Carte vivante : entrée des pins (drop + fade + stagger)  · Prio 4.0 (V4/E1)
-**Story** : En tant qu'utilisateur ouvrant la carte, je veux que les pins avatars apparaissent en tombant/fondu de façon échelonnée, afin d'une première impression vivante et premium façon Snap Map.
-**Given/When/Then**
-- Given un viewport avec des pins, When `renderMarkers` s'exécute, Then chaque pin entre par un drop (translateY) + fade (opacity 0→1) avec un léger stagger ; au repos, transform/opacity stables (pas de boucle).
-- Given un re-render (pan/zoom léger), When les mêmes pins restent visibles, Then ils ne re-jouent PAS l'entrée (anti-clignotement — diff au lieu de clear global).
-- Given > ~60 pins, When ils entrent, Then le stagger est borné/désactivé pour tenir 60fps.
-**Contraintes perf** : CSS `@keyframes` sur `transform: translateY()` + `opacity` uniquement ; `animation` posée à l'ajout du divIcon ; ne PAS animer si le pin existait déjà.
-**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` — bloc `LEAFLET_HTML` : ajouter keyframes dans `<style>` (l.62-77), classe d'entrée sur `.marker-ind`/`.marker-assoc`/`.marker-page`/`.marker-cluster`, et logique de diff dans `renderMarkers` (l.135-197) pour ne pas `clearLayers()` aveuglément (l.136).
-**Livraison** : **[OTA]** front-only (CSS/JS dans la WebView). Pas de bump.
-**DoD** : entrée fluide 60fps prouvée (démo) ; pas de re-jeu sur pan ; cap > 60 pins respecté ; tsc vert.
-
-### ANIM-2 — [OTA front + petit ajout API] Pulsation « actif récemment » + halo de proximité  · Prio 3.5 (V4/E1.5)
-**Story** : En tant qu'utilisateur, je veux qu'un halo pulsé entoure les personnes actives récemment (et un anneau de proximité autour de « moi »), afin de repérer qui est vivant sur la carte façon Snapchat.
-**Given/When/Then**
-- Given un membre actif < N min (`activeRecently`), When il est rendu, Then un halo pulse en boucle douce (scale+opacity) sous son avatar ; les inactifs n'ont PAS de halo.
-- Given mon marqueur « moi » (`drawMe` l.115-124), When la carte se localise, Then un anneau de proximité animé apparaît (pulse une fois à la localisation, puis statique discret).
-- Given le champ d'activité absent (vieux client/API), When je rends, Then dégradation propre = pas de halo (jamais de crash).
-**Contraintes** : la pulsation infinie = 1 seul élément CSS animé par pin actif (GPU). **Dépendance backend** (n'empêche PAS l'OTA front, déployée indépendamment) : exposer `activeRecently:boolean` (ou `lastActiveAt`) sur le marqueur individuel — `MapMarker.individual` ne l'a PAS (`apps/mobile/services/geoApi.ts:25-28`). Source : `apps/api/src/geo/geo.service.ts` (select + build marqueur ~l.258-286, dériver de `lastSeenAt`/`updatedAt`). **Pas de migration** si le champ existe déjà sur `User` ; sinon arbitrer. Privacy : ne JAMAIS exposer un horodatage fin — juste un booléen.
-**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` (`<style>` keyframe `pulse`, `.marker-ind` halo conditionnel dans `renderMarkers` l.160-169 ; `drawMe` l.115-124 anneau animé) ; `apps/mobile/services/geoApi.ts:25-28` (type) ; `apps/api/src/geo/geo.service.ts` (champ `activeRecently`) ; `packages/shared-types` si le type marqueur y est partagé.
-**Livraison** : **[OTA]** front. Backend = deploy dernier commit (pas de migration a priori). Pas de bump mobile.
-**DoD** : halo seulement sur actifs ; dégradation si champ absent ; 60fps ; pas de fuite d'horodatage (revue) ; tsc vert.
-
-### ANIM-3 — [OTA] Transitions de cluster douces + recentrage/localisation premium  · Prio 3.0 (V4/E2)
-**Story** : En tant qu'utilisateur qui pan/zoome, je veux des transitions de cluster douces et un recentrage fluide, afin que la carte respire au lieu de « sauter ».
-**Given/When/Then**
-- Given un changement de viewport qui recompose les clusters, When `renderMarkers` re-rend, Then les clusters apparaissent/disparaissent en fondu (pas de flash de `clearLayers`).
-- Given un tap « recentrer » (`recenterOnMe`) ou un `flyTo`, When la caméra bouge, Then l'animation a un easing premium (durée/ease cohérents) et le « moi » pulse une fois à l'arrivée.
-- Given un cluster dont le `count` change, When il se met à jour, Then une micro-anim (bump scale) signale le changement.
-**Contraintes perf** : réutiliser le diff d'ANIM-1 ; fondu via opacity ; pas de relayout.
-**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` — `renderMarkers` (l.135-197, diff/fondu clusters l.184-195), `flyTo`/`recenterMe` (l.107-127), injection (l.358-360, `onZoomToCluster` l.547-552).
-**Livraison** : **[OTA]** front-only. Pas de bump.
-**DoD** : pas de flash sur recompose ; recentrage fluide 60fps ; bump cluster visible ; tsc vert.
-
-### ANIM-4 — [OTA] Heart-burst au like (feed + commentaire + story) + double-tap-to-like (P-09)  · Prio 4.5 (V5/E2)
-**Story** : En tant qu'utilisateur, je veux une animation de cœur moderne (burst + particules) au like sur le feed, les commentaires et les stories, et pouvoir double-taper une photo pour liker, afin d'un engagement satisfaisant façon Instagram/Snap.
-**Given/When/Then**
-- Given un post non liké, When je tape le cœur, Then heart-burst (scale spring + petites particules/rayons) + bascule couleur ; un re-tap (unlike) joue l'anim inverse douce. Optimiste, source de vérité inchangée (`feedApi.toggleLike`).
-- Given une photo de post, When je double-tape (P-09), Then un gros cœur apparaît/disparaît au centre + like si non liké (jamais d'unlike au double-tap).
-- Given un commentaire, When je tape son cœur, Then micro heart-burst (échelle réduite).
-- Given une story, When je tape « j'aime », Then heart-burst (réutilise `POST /posts/:id/like` sur l'id de story, cf. B5a).
-**Contraintes perf** : reanimated worklets (`useSharedValue`+`withSpring`/`withSequence`), anim sur le thread UI, AUCUN `setState` par frame ; particules = composant léger réutilisable (`components/ui/HeartBurst.tsx` à créer). Gesture double-tap via `Gesture.Tap().numberOfTaps(2)` (gesture-handler déjà au root `app/_layout.tsx:123`).
-**Fichiers** : nouveau `apps/mobile/components/ui/HeartBurst.tsx` ; `apps/mobile/components/feed/PostCard.tsx` (`ActionButton` l.288-315 + `handleLike` l.70-77 + double-tap sur `PhotoGallery` l.263-286) ; `apps/mobile/components/feed/CommentItem.tsx` (heart l.137-141, `handleLike` l.48-55) ; `apps/mobile/app/stories/[authorId].tsx` (ajouter bouton like animé) ; câblage `apps/mobile/app/(tabs)/index.tsx:237` inchangé.
-**Livraison** : **[OTA]** JS-only (reanimated déjà natif). Pas de bump.
-**DoD** : 60fps sur le burst (démo) ; double-tap = like only ; optimiste cohérent serveur ; tsc vert.
-
-### ANIM-5 — [OTA] Tab bar animée : bounce de l'onglet actif + badge animé  · Prio 3.5 (V4/E1.5)
-**Story** : En tant qu'utilisateur, je veux que l'onglet sélectionné rebondisse et que le badge non-lu s'anime, afin d'une navigation vivante façon Snapchat.
-**Given/When/Then**
-- Given un changement d'onglet, When un onglet devient `focused`, Then son icône joue un bounce (spring scale) ; l'inactif revient à l'échelle 1 en douceur.
-- Given un nouveau message, When `unreadTotal` augmente, Then le badge fait un pop (scale) + éventuel halo ; à 0, il disparaît en fondu.
-- Given des changements rapides d'onglet, When je tabote vite, Then pas d'accumulation d'anims (interruptibles).
-**Contraintes perf** : reanimated worklet sur `focused`/`badge` ; pas de re-render de toute la tab bar.
-**Fichiers** : `apps/mobile/app/(tabs)/_layout.tsx` — `TabIcon` (l.18-39) → animer `Feather` (scale sur `focused`) et le badge (l.32-36, pop sur changement de valeur).
-**Livraison** : **[OTA]** JS-only. Pas de bump.
-**DoD** : bounce 60fps interruptible ; badge pop sur incrément ; tsc vert.
-
-### ANIM-6 — [OTA] Badges animés (vérifié / ambassadeur) + transitions d'icônes  · Prio 2.5 (V3/E1.5)
-**Story** : En tant qu'utilisateur, je veux que les badges vérifié/ambassadeur aient une entrée animée et que les bascules d'icônes (ex. ami ajouté) soient fluides, afin d'un produit qui se distingue dans le détail.
-**Given/When/Then**
-- Given un profil/post vérifié ou ambassadeur, When le badge apparaît, Then entrée pop discrète (scale/rotation légère), une seule fois (pas de boucle).
-- Given une bascule d'icône d'action (ex. `user-plus` → `check` après ajout d'ami sur la map sheet), When l'état change, Then cross-fade/scale au lieu d'un switch sec.
-**Contraintes perf** : anims one-shot, pas de boucle ; réutilisables.
-**Fichiers** : `apps/mobile/components/ui/AmbassadorBadge.tsx` (l.14-25), `apps/mobile/components/ui/VerifiedBadge.tsx` ; transitions d'icônes optionnelles dans `apps/mobile/app/(tabs)/map.tsx` (`IndividualSheet` `friendIcon` l.734-741) et boutons d'action friend.
-**Livraison** : **[OTA]** JS-only. Pas de bump.
-**DoD** : entrée one-shot ; bascule fluide ; tsc vert.
-
-## VAGUE B — Natifs (axes 2 + 4) = UN SEUL rebuild EAS + UN SEUL bump (1.7.0 → 1.8.0)
-
-> **Justification du regroupement** : `react-native-maps` (axe 2) ET `lottie-react-native` (axe 4) sont tous deux
-> des **modules natifs** ⇒ chacun impose un rebuild EAS (l'OTA crasherait). Les livrer ensemble = **un seul
-> build iOS + un seul bump `app.json version`** au lieu de deux cycles store. On gèle la Vague A en OTA d'abord
-> (valeur immédiate sans rebuild), puis on groupe tout le natif dans le build 1.8.0. **STOP avant build = action
-> sortante, approbation proprio obligatoire** (Norton CA + EAS `sidi30`, cf. CLAUDE.md).
-
-### ANIM-7 — [REBUILD+bump] ADR carte native Snapchat : react-native-maps vs @rnmapbox/maps  · Prio 4.0 (V5/E2) — ARCHITECT D'ABORD
-**Story** : En tant que proprio, je veux une décision d'architecture documentée avant de migrer la carte Leaflet vers du natif, afin de ne pas casser geo/markers/clustering/proximité.
-**Périmètre ADR (gwani-architect)** : choix `react-native-maps` (Google/Apple) vs `@rnmapbox/maps` (style Snap, vector) ; impact sur le contrat `geo/members` (clustering aujourd'hui côté serveur/bounds), portage des markers avatars (divIcon → marqueur natif/Marker custom + anneau story P-04), clustering natif vs serveur, recentrage/proximité, coût (clé API Mapbox ?), **stratégie migration vs cohabitation** (garder Leaflet en web `apps/web`, natif en mobile ?), et plan de non-régression. Produit : ADR + impact sur `app.json` (plugin natif, permissions).
-**Fichiers à cadrer** : `apps/mobile/app/(tabs)/map.tsx` (réécriture du rendu), `apps/mobile/services/geoApi.ts`, `apps/api/src/geo/geo.service.ts`, `packages/shared-types`, `app.json` (plugin + version bump).
-**Livraison** : ADR (doc). **Pré-requis** d'ANIM-8. Pas de code prod tant que l'ADR n'est pas validé proprio.
-**DoD** : ADR écrit + arbitrage lib tranché + plan migration/cohabitation + estimation rebuild.
-
-### ANIM-8 — [REBUILD+bump] Carte native : pins avatars 60fps + anneau de story (P-04) + Snap-glide + clustering natif  · Prio 3.5 (V5/E5)
-**Story** : En tant qu'utilisateur, je veux une carte native ultra-fluide façon Snap Map — pins avatars vrais natifs, anneau de story autour de l'avatar (tap → ouvre la story), glisse 60fps, clustering natif — afin d'une expérience carte best-in-class.
-**Given/When/Then** (détaillé après ADR ANIM-7)
-- Given la lib choisie, When je pan/zoome, Then 60fps natif (vs WebView), pins avatars rendus nativement.
-- Given un membre avec story active, When je vois son pin, Then un **anneau de story** (P-04) l'entoure ; tap → ouvre `app/stories/[authorId].tsx`.
-- Given une densité de pins, When je dézoome, Then clustering natif fluide.
-- Given la proximité/`drawMe`, When localisé, Then parité fonctionnelle avec l'actuel (zone, recenter, sheets).
-**Contraintes** : **module natif ⇒ rebuild EAS + bump**. Non-régression totale du parcours carte actuel (sheets, recherche, filtres, friend actions). Réutiliser les endpoints geo existants (sauf décision ADR contraire).
-**Fichiers** : `apps/mobile/app/(tabs)/map.tsx` (réécriture rendu carte), `app.json` (plugin + `version`), composant pin natif + anneau story.
-**Livraison** : **[REBUILD+bump]** — groupé avec ANIM-9 dans le build 1.8.0.
-**DoD** : parité fonctionnelle prouvée (aucune régression sheets/recherche/filtres) ; 60fps natif ; anneau story tap→story ; bug-hunter→fixer→e2e ; build EAS seulement après GO proprio.
-
-### ANIM-9 — [REBUILD+bump] Premium Lottie : like premium, écrans de succès, empty-states animés  · Prio 3.0 (V4/E3)
-**Story** : En tant qu'utilisateur, je veux des animations Lottie premium (like premium, écrans de succès, empty-states illustrés), afin d'un produit qui paraît haut de gamme.
-**Given/When/Then**
-- Given une action de succès (ami accepté, post publié, invitation envoyée), When elle réussit, Then un Lottie de succès joue puis se ferme.
-- Given un écran vide (feed/services/recherche sans résultat), When affiché, Then un empty-state illustré animé (vs texte sec actuel).
-- Given un like « premium » (option), When déclenché, Then anim Lottie riche (au-delà du heart-burst reanimated d'ANIM-4).
-**Contraintes** : `lottie-react-native` = **module natif ⇒ rebuild EAS + bump**. Poids des fichiers `.json` Lottie maîtrisé (lazy/bundle). Ne PAS remplacer ANIM-4 (reanimated reste le défaut OTA-livrable ; Lottie = couche premium).
-**Fichiers** : nouveau `apps/mobile/components/ui/LottieSuccess.tsx` / `LottieEmpty.tsx` + assets ; empty-states existants (feed `app/(tabs)/index.tsx`, services `app/(tabs)/services.tsx`, recherche) ; `app.json` (version bump partagé).
-**Livraison** : **[REBUILD+bump]** — groupé avec ANIM-8 dans le build 1.8.0.
-**DoD** : Lottie jouent sans jank ; poids assets maîtrisé ; build EAS seulement après GO proprio ; e2e visuel.
+`nigerconnect.app/asso/{slug}`, **`noindex` par défaut**, opt-in nominatif et révocable
+pour chaque membre du bureau, seuls les contenus explicitement marqués « publiable »,
+exclusion stricte des comptes `isAnimated`, purge du cache CDN intégrée au retrait de contenu.

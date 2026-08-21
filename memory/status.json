@@ -1,7 +1,7 @@
 {
-  "current": "SWEEP-2607 DEPLOYED (API+web VPS, migration last_seen_at OK) + OTA iOS 1.10.0 publie | S-BETA toujours DARK (flags video/digest OFF) — attente activation flags + Export Compliance ASC (proprio)",
-  "updatedAt": "2026-07-29",
-  "updatedBy": "main (sweep+deploy+OTA)",
+  "current": "SPRINT1-ASSOC: COMMITE (1c51159, 1951694, eada4e2). Gates verts api tsc + jest 828/828, mobile 74/74, web tsc, shared-types. B1 LEVE: migration repetee sur dump prod + donnees adverses dans un conteneur jetable sur le VPS, un bug de depassement de longueur trouve et corrige. PAS READY_FOR_DEPLOY: decisions proprio Q1-Q6 + fusion admin avec le chantier moderation.",
+  "updatedAt": "2026-08-21",
+  "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
     "sprint": "Sweep post-S-BETA « mesurer et durcir »",
     "status": "DEPLOYED",
@@ -33,7 +33,10 @@
     "goal": "Beta video stories-first (ephemere 24h, disque borne), verified-only, kill-switch fail-closed + moderation, + E-TAUX + E-DIGEST. STOP au gate READY_FOR_DEPLOY (aucun deploy/build sans GO proprio).",
     "status": "DEPLOYED_DARK + iOS_BUILD_SUBMITTED",
     "shipped_2026-07-03": {
-      "commits": ["80d3478 feature", "5dfba4a fix-build (retire plugin no-op react-native-compressor bloquant eas config)"],
+      "commits": [
+        "80d3478 feature",
+        "5dfba4a fix-build (retire plugin no-op react-native-compressor bloquant eas config)"
+      ],
       "api": "DEPLOYE DARK VPS: migrations add_etaux+add_digest OK, health ok, flags video_enabled+digest_enabled OFF fail-closed (inerte), lifecycle MinIO stories/ 2j actif, 0 erreur. Backup pre-deploy-80d3478.",
       "ios": "BUILD EAS 1.10.0 (buildNumber 30, buildId e8207b2a) auto-submit TestFlight (ASC D7QVR3G93J), submission 76d469b6. Android NON builde (proprio: iOS seul).",
       "reste": "Export Compliance ASC (proprio interactif). Activation flags via PATCH /admin/settings au rollout cohorte verified. git push origin non fait. Android build parite plus tard.",
@@ -78,127 +81,239 @@
       "mobile": "aucun module video present; micro OFF (microphonePermission:false, RECORD_AUDIO blocke)."
     },
     "items": [
-      { "id": "S-VIDEO-0", "title": "ADR pipeline stories-video (presign+garde media video+caps+quota+MinIO lifecycle+purge+garde disque+kill-switch+moderation+gate verified+privacy)", "priority": 5.0, "type": "adr", "agent": "gwani-architect", "status": "done", "gate": "debloque S-VIDEO-1/2/3", "deliverable": "docs/adr/ADR-video-stories.md + memory/video-api-contracts.json" },
-      { "id": "S-VIDEO-1", "title": "Backend DARK: presign video, assertOwnedPublicMedia (Content-Type reel vs mediaType), quota Redis+rate-limit, MinIO lifecycle+purge S3 (fix deleteExpiredStories), garde disque fail-closed, video_enabled fail-closed, gate verified-only, Report->takedown+purge", "priority": 5.0, "type": "story", "agent": "gwani-backend", "status": "done", "blockedBy": null, "delivery": "deployable INERTE (flag off)", "result": {
-        "gates": { "apiTsc": "vert", "jest": "363/363 verts (37 suites) — +31 tests S-VIDEO-1, 0 regression sur les 332 existants", "sharedTypesBuild": "n/a (aucun type partage modifie — mediaType existait deja)", "lint": "non lance (eslint v9 flat-config vs .eslintrc legacy = mismatch env pre-existant, hors DoD; code suit les idiomes en place)" },
-        "filesTouched": [
-          "common/settings/settings.service.ts (isVideoEnabled fail-closed)",
-          "common/storage/s3.service.ts (MAX_PUBLIC_VIDEO_BYTES + ALLOWED_VIDEO_TYPES + assertOwnedPublicMedia/Detailed anti-spoof + video extensions ; assertOwnedPublicImage inchange)",
-          "feed/dto/post.dto.ts (presignVideoSchema Zod)",
-          "feed/posts.service.ts (presignStoryVideo + createStory video-gated + quotas Redis + purgePostMedia + deleteExpiredStories batch-purge + deleteStory purge)",
-          "feed/feed.controller.ts (POST /stories/presign @Throttle 5/min + create @Throttle 10/min)",
-          "feed/video-disk-guard.cron.ts (NEW — scrape metrics MinIO, trip video_enabled=false fail-closed, jamais de rearmement auto)",
-          "feed/feed.module.ts (VideoDiskGuardCron provider)",
-          "moderation/moderation.service.ts (removeContent(post) purge S3 avant soft-delete)",
-          "admin/admin.controller.ts + admin.service.ts (toggle videoEnabled dans /admin/settings — rearme le disjoncteur)",
-          "common/config/env.validation.ts (VIDEO_DISK_GUARD_BYTES defaut 10Go + MINIO_METRICS_URL)",
-          "docker-compose.prod.yml + docker-compose.yml (mc ilm expire-days 2 prefix stories/)",
-          "apps/api/.env.example + .env.prod.example (doc env)"
-        ],
-        "inertieProuvee": "test posts.service.spec: video_enabled OFF => presign ForbiddenException(VIDEO_DISABLED) sans signer + create rejete sans post.create ; image story OFF reste fonctionnelle (assertOwnedPublicImage users/ inchange).",
-        "diskBoundingProuve": "layerA purge: deleteStory + deleteExpiredStories(batch 200) + moderation.removeContent purgent chaque PostMedia (deleteObject + thumbnail) AVANT soft-delete (tests verts) ; layerB lifecycle: mc ilm rule prefix stories/ (prod+dev compose) ; layerC garde: VideoDiskGuardCron parseBucketUsage + trip>=seuil + fail-safe sur erreur metrics (tests verts).",
-        "antiSpoofProuve": "s3.service.spec: video reel declare video OK ; image declaree video ET video declaree image => 400 ; prefixe autrui => 400 avant HEAD (anti-IDOR) ; host etranger/oversize/type non supporte => 400.",
-        "decisionsDette": [
-          "IMAGE story: binding volontairement INCHANGE (assertOwnedPublicImage, prefixe users/). Migrer vers stories/ aurait casse le flux photo-story existant en prod (mobile presign /profile/me/photos/presign => users/). Le spoof image reste ferme (Content-Type reel confronte a l'allowlist image). Les objets image-story sont quand meme purges par le cron (parsePublicKey), seul le lifecycle MinIO (prefixe stories/) ne les couvre pas — le cron reste le mecanisme primaire.",
-          "Compteurs Redis journaliers UTC (pas glissants) = choix ADR-005 assume beta.",
-          "assertOwnedPublicMediaDetailed ajoute pour exposer ContentLength (quota octets) sans double HEAD ; assertOwnedPublicMedia (contrat -> string) est un wrapper mince.",
-          "mc ilm rule add non-idempotent mais minio-init tourne once (restart:no) ; doublon d'expiration sur meme prefixe = inoffensif."
-        ]
-      } },
-      { "id": "S-VIDEO-2", "title": "Mobile rebuild: capture/pick video + compression H.265 (react-native-compressor) + vignette + player (expo-video), progress/retry/cancel, no-autoplay-cellular, reactiver micro, BUMP 1.10.0", "priority": 4.5, "type": "story", "agent": "gwani-frontend", "status": "done", "blockedBy": null, "delivery": "rebuild EAS = SORTANT, gate proprio (NON lance)", "result": {
-        "gates": { "mobileTsc": "vert (npx tsc --noEmit apps/mobile)", "bump": "1.10.0 (app.json version, runtimeVersion policy appVersion)", "easBuild": "NON lance (action sortante = gate proprio)" },
-        "depsAdded": ["expo-video@~3.0.16 (playback, PAS expo-av)", "expo-video-thumbnails@~10.0.8 (vignette)", "react-native-compressor@^2.0.2 (compression H265 on-device + stripAudio + cancel)"],
-        "filesTouched": [
-          "apps/mobile/app.json (version 1.9.0->1.10.0 ; plugins expo-video {no bg playback/PiP} + react-native-compressor ; android permissions +READ_MEDIA_VIDEO retire de blockedPermissions ; RECORD_AUDIO RESTE bloque + microphonePermission:false ; libelles camera/photos incluent video)",
-          "apps/mobile/services/storyVideoService.ts (NEW — pickStoryVideo, prepareStoryVideo H265 720p bitrate 3Mbps stripAudio true cap 30s/25Mo, vignette expo-video-thumbnails, uploadPreparedVideo presign /stories/presign + PUT + thumbnail via image presign owned users/, cancelPreparation, describeStoryVideoError mappe VIDEO_DISABLED/IDENTITY_NOT_APPROVED/quotas)",
-          "apps/mobile/hooks/useStoryVideoUpload.ts (NEW — machine phase idle/compressing/ready/uploading/done/error, progress, cancel compress+upload, retry)",
-          "apps/mobile/app/stories/new.tsx (composer photo+video, VideoStage: preview vignette+badge muet+taille, overlay progress %, cancel, retry, erreur claire)",
-          "apps/mobile/app/stories/[authorId].tsx (viewer: StoryVideoPlayer pour media video, barre progression pilotee par le player, pas de timer 5s sur video, tap-zones masquees tant que la video attend le 1er tap)",
-          "apps/mobile/components/feed/StoryVideoPlayer.tsx (NEW — useVideoPlayer muted, no-autoplay-cellular via NetInfo: poster+play badge tap-to-play sur reseau metre, autoplay Wi-Fi, playToEnd->advance)"
-        ],
-        "muteDecision": "MUET garanti par react-native-compressor stripAudio:true (piste audio retiree du fichier) + player muted. Choix: micro RESTE bloque (RECORD_AUDIO blocked, microphonePermission:false) — CONFORME ADR SD-2 (qui exige explicitement le micro bloque en beta ; reactivation audio = GO PROPRIO). La consigne 'reactiver micro' a ete ecartee au profit de l'ADR car stripAudio rend RECORD_AUDIO inutile et son ajout declencherait des questions data-safety store contradictoires avec le muet beta.",
-        "progressRetryCancel": "Compression: progress 0..1 + Video.cancelCompression(id). Upload: FileSystem createUploadTask progress + task.cancelAsync(). Retry re-tente l'upload si deja compresse, sinon relance pick+compress. Erreurs serveur (403/429) degradees en messages FR clairs.",
-        "noAutoplayCellular": "NetInfo.fetch(): type cellular|unknown|none => metre => poster+tap-to-play (aucune conso data auto) ; Wi-Fi/ethernet => autoplay quand la story est active. Toujours muted.",
-        "privacy": "Flux stories inchange (visibility friends herite). Vignette uploadee via le presign image owne (users/{id}/), jamais d'URL client brute. Flux photo-story existant intact.",
-        "easGate": "REBUILD EAS OBLIGATOIRE (modules natifs expo-video + react-native-compressor => OTA insuffisant) mais NON lance — action sortante reservee au GO proprio."
-      } },
-      { "id": "S-VIDEO-3", "title": "QA+Securite: e2e+unit; pentest OBLIGATOIRE (binding media, mediaType spoofing, IDOR, fuite privacy stories-video, quota/rate-limit, kill-switch, verified-only, purge/lifecycle disque)", "priority": 5.0, "type": "security", "agent": "gwani-qa-tester->gwani-pentest", "status": "done", "blockedBy": "S-VIDEO-1,S-VIDEO-2", "gate": "OK_TO_DEPLOY dur", "pentest": {
-        "verdict": "OK_TO_DEPLOY",
-        "at": "2026-07-03",
-        "by": "gwani-pentest",
-        "scope": "diff beta complet: video stories (S-VIDEO-1/2 backend INERTE flag off), E-TAUX, E-DIGEST",
-        "findings": { "critical": 0, "high": 0, "medium": 1, "low": 0, "resolved": 1, "open": 0 },
-        "report": "memory/security.json",
-        "summary": "1 MEDIUM trouve+corrige (SEC-002: GET /community-prices?status=removed re-listait le contenu retire par moderation a tout membre authentifie — takedown contournable via query param). Fix: list schema status verrouille au litteral 'active' (status=removed => 400). Test de non-regression ajoute. jest 393->394 verts (40 suites), api tsc vert, 0 regression. BUG-001 (fuite PII E-TAUX) re-verifie CLOS: routes auth-gated (JwtAuthGuard global, plus de @Public sur list/:id/banner) + projection submitter PII-free. Video: kill-switch fail-closed prouve, verified-gate lecture DB fraiche, anti-spoof HEAD confronte mediaType declare, prefixe stories/{userId}/ anti-IDOR, quotas, purge S3 au delete/expiry/takedown, disjoncteur disque fail-closed jamais re-arme auto. E-DIGEST: agregats numbers-only, private/friends jamais comptes, opt-out respecte, idempotence stamp-avant-push, kill-switch fail-closed."
-      } },
-      { "id": "E-TAUX", "title": "Taux du jour (source GRATUITE) + prix crowdsources (CommunityPrice, votes, anti-spam) + bandeau feed", "priority": 4.0, "type": "story", "agent": "gwani-pm-spec->backend/frontend", "status": "mobile_done", "spec": "memory/spec-etaux.md", "specNote": "Source taux tranchee = BCE (eurofxref-daily.xml, gratuit, sans cle) + peg fixe EUR/XOF=655.957 (traite UEMOA) ; saisie communautaire moderee reservee aux PRIX (billet/transfert/colis), pas au taux de change. Q1 a confirmer proprio (non bloquant pour l'archi).", "delivery": "OTA-safe sur 1.10.0, parallelisable", "nextAgent": "gwani-qa-tester->gwani-pentest", "mobileResult": {
-        "gates": { "mobileTsc": "vert (npx tsc --noEmit apps/mobile, 0 erreur)", "bump": "AUCUN (1.10.0 inchangee, zero module natif ajoute)", "lint": "non lance (eslint v9 flat-config vs .eslintrc legacy = mismatch env pre-existant deja signale par S-VIDEO-1/gwani-backend, hors DoD)" },
-        "filesTouched": [
-          "apps/mobile/services/ratesApi.ts (NEW — today/banner/list/mine/get/create/update/remove/vote + describeCommunityPriceError qui mappe 429->message throttle FR, 403->message anti-auto-vote/contenu retire FR, 404, fallback message serveur)",
-          "apps/mobile/services/moderationApi.ts (ReportTargetType += 'community_price', mirrore le backend deja livre)",
-          "apps/mobile/constants/lookups.ts (COMMUNITY_PRICE_TYPE_LABELS billet_avion/transfert_argent/colis_kg)",
-          "apps/mobile/components/feed/RatesBanner.tsx (NEW — bandeau compact tete de feed : peg EUR/XOF toujours affiche, USD/CAD masques si null, skeleton pulse pendant le chargement, etat source:unavailable degrade proprement sans '-' casse, tap -> /rates)",
-          "apps/mobile/components/rates/CommunityPriceCard.tsx (NEW — carte prix : type/route(flags)/provider/montant/note, vote toggle thumbs up/down avec etat myVote, report (masque si owner), edit/delete owner-only)",
-          "apps/mobile/app/(tabs)/index.tsx (RatesBanner insere au-dessus de StoriesRow dans ListHeaderComponent, useQuery ['rates','banner'] staleTime 60s, refetch inclus dans le pull-to-refresh existant)",
-          "apps/mobile/app/rates/index.tsx (NEW — ecran liste : useInfiniteQuery paginee par curseur, filtres par type (pills, meme idiome que services.tsx), petit strip taux du jour, FAB Signaler un prix, vote mutation avec update optimiste du cache + toast d'erreur FR sur 403/429, delete owner-only, ReportSheet reutilise targetType='community_price')",
-          "apps/mobile/app/rates/new.tsx (NEW — formulaire creation : type/montant/devise/prestataire/ville+pays depart+arrivee/note, validation inline miroir manuel du schema Zod backend (createCommunityPriceSchema : amount>0<=1e8, currency 3 lettres, countryCode 2 lettres, note<=280), erreurs affichees onBlur ET onSubmit, hint '5 signalements max/jour', toast succes/erreur (throttle 429 -> message clair) apres submit)"
-        ],
-        "sourceUnavailableHandling": "RatesBanner: rates.source==='unavailable' => peg EUR/XOF 655,957 toujours affiche (jamais absent), USD/CAD masques (pas de '-' trompeur), libelle 'Taux du jour bientot' au lieu d'un horodatage ; ecran /rates strip taux idem (usdXof/cadXof null => segment absent de la phrase, jamais affiche a null). Skeleton pulse tant que le premier fetch est en vol (loading && !rates).",
-        "throttle429Handling": "describeCommunityPriceError(status===429) => message serveur si present ('Vous avez atteint la limite de signalements aujourd'hui') sinon fallback FR 'Trop de tentatives, reessaie dans quelques minutes.' ; affiche via toast.error() sur l'echec de creation ET sur l'echec de vote (le vote a aussi un throttle IP coarse cote controller).",
-        "autoVote403Handling": "describeCommunityPriceError(status===403) => message serveur si present sinon fallback FR explicite 'Tu ne peux pas voter sur ton propre signalement, ni sur un contenu retire.' ; en plus, cote UI, les boutons vote sont deja disabled quand isMine=true (submitter.id===userId) — le 403 reste un filet de securite si l'etat client est perime, jamais une IDOR car submitterId vient toujours du JWT cote API (aucun champ owner envoye par le mobile).",
-        "privacy": "Aucune donnee sensible affichee : submitter = projection publique deja renvoyee par l'API (meme forme que les autres modules). Aucune URL media, aucun flux d'upload implique (CommunityPrice n'a pas de media, conforme a la spec). Report reutilise le flux existant ReportSheet/moderationApi tel quel.",
-        "nativeModules": "AUCUN ajoute — uniquement TanStack Query + Zustand + composants RN/Feather deja presents. OTA-safe confirme, pas de bump 1.10.0."
-      }, "backendResult": {
-        "gates": { "apiTsc": "vert", "jest": "383/383 verts (39 suites) — +20 tests E-TAUX (6 rates + 14 community-prices), 0 regression sur les 363 S-VIDEO-1", "sharedTypesBuild": "vert (packages/shared-types/src/rates.ts ajoute + rebuild)" },
-        "migration": "prisma/migrations/20260703000000_add_etaux/migration.sql (additive: enum ReportTargetType+=community_price, CommunityPriceType/Status, tables fx_rate_snapshots + community_prices + community_price_votes)",
-        "filesTouched": [
-          "prisma/schema.prisma (FxRateSnapshot, CommunityPrice, CommunityPriceVote, enum +community_price, User relations)",
-          "src/rates/dto/rate.dto.ts (Zod create/update/list/vote)",
-          "src/rates/rates.service.ts (getToday fail-open + getBanner cache Redis 5min + parseEcbXml defensif + upsertSnapshot idempotent)",
-          "src/rates/community-prices.service.ts (CRUD owner-only anti-IDOR + throttle Redis 5/j + vote toggle transactionnel anti-auto-vote)",
-          "src/rates/rates.controller.ts (GET /rates/today, /rates/banner @Public)",
-          "src/rates/community-prices.controller.ts (CRUD /community-prices + /:id/vote, list/detail @Public, @Throttle create/vote)",
-          "src/rates/rates.cron.ts (fetch BCE 6h, fail-open, no-op en test, idiome StoriesCron)",
-          "src/rates/rates.module.ts + app.module.ts (RatesModule enregistre)",
-          "src/moderation/moderation.service.ts (removeContent + getTarget case community_price)",
-          "src/moderation/dto/report.dto.ts (targetType += community_price)",
-          "src/rates/rates.service.spec.ts + community-prices.service.spec.ts (20 tests)",
-          "packages/shared-types/src/rates.ts + index.ts"
-        ],
-        "preuves": "Anti-spam: throttle Redis incrementCounter key communityprice:submit:{userId}:{yyyymmdd} cap 5/j => 429 sans DB (teste) + contrainte DB @@id(userId,priceId) sur vote (unique) + anti-auto-vote submitterId===userId => 403 (teste). AuthZ: update/delete verifient submitterId===userId AVANT mutation (403 non-owner, 404 inconnu — testes, pas d'IDOR ; submitterId toujours du JWT jamais du body). Fail-open BCE: getToday sert le dernier snapshot si fetch echoue (cron catch+log, aucun upsert) ; table vide => peg 655.957 seul, usd/cad null, source unavailable (jamais de valeur inventee) — teste. parseEcbXml retourne null si USD/CAD manquant (skip, garde l'ancien) — teste. Cache-first banner: 2e appel <5min sert Redis sans DB — teste. ZERO dep payante (BCE XML public sans cle + peg constant)."
-      } },
-      { "id": "E-DIGEST", "title": "Digest hebdo push (1 cron + Expo Push gratuit, opt-out, privacy stricte jamais compte private)", "priority": 3.0, "type": "story", "agent": "gwani-pm-spec->backend->frontend", "status": "mobile_done", "spec": "memory/spec-edigest.md", "specNote": "5 features (F1 agregats privacy-safe, F2 cron idempotent, F3 opt-out reglages, F4 deep-link, F5 kill-switch digest_enabled). Migration additive proposee: User.digestOptIn + User.lastDigestSentAt + NotificationType.weekly_digest. 5 questions ouvertes proprio (definition inactif lastLoginAt>7j, source evenements AssociationEvent-proxy vs E-DIASPORA S6, kill-switch Must/Should, routage tap, taille de lot) — non bloquantes pour l'archi (reco PM appliquee par defaut).", "delivery": "OTA-safe sur 1.10.0, parallelisable, aucun bump", "nextAgent": "gwani-qa-tester->gwani-pentest", "mobileResult": {
-        "gates": { "mobileTsc": "vert (npx tsc --noEmit apps/mobile, 0 erreur)", "sharedTypesBuild": "vert (User.digestOptIn + NotificationType += weekly_digest ajoutes puis rebuild)", "bump": "AUCUN (1.10.0 inchangee, zero module natif)" },
-        "filesTouched": [
-          "packages/shared-types/src/user.ts (User.digestOptIn: boolean, miroir newsletterOptIn)",
-          "packages/shared-types/src/notification.ts (NotificationType += 'weekly_digest')",
-          "apps/mobile/app/settings/privacy.tsx (switch 'Resume hebdomadaire' sous 'Annonces & nouveautes': state digestOptIn init depuis user.digestOptIn, saveDigestMut PATCH /profile/me {digestOptIn}, saveDigest() optimiste + rollback+Alert onError)",
-          "apps/mobile/app/settings/notifications.tsx (routeForNotification: case 'weekly_digest' lit data.screen -> /(tabs)/services si 'services'|'marketplace' sinon /(tabs) feed ; TYPE_LABELS += weekly_digest icone trending-up)",
-          "apps/mobile/app/_layout.tsx (NotificationDeepLink.handle: branche data.type==='weekly_digest' -> meme mapping screen, avant le fallback /settings/notifications)"
-        ],
-        "optimisticRollback": "saveDigest() bascule le Switch immediatement (setDigestOptIn) puis mutate ; onError restaure la valeur precedente + Alert.alert('Erreur', ...) — meme idiome que les autres toggles de privacy.tsx mais avec rollback explicite (les autres switches de cet ecran n'en avaient pas).",
-        "privacy": "Le payload weekly_digest ne contient que des nombres (eventsCount/annoncesCount/newMembersCount) + screen (string technique) — aucun nom/avatar/id de tiers rendu a l'ecran ni consomme par le routing (screen sert uniquement a choisir la route, jamais affiche).",
-        "routingCoverage": "Couvre a la fois la liste in-app (settings/notifications.tsx tap sur l'item) et le deep-link push froid/chaud (_layout.tsx NotificationDeepLink) ; les deux lisent le meme champ data.screen avec le meme fallback feed.",
-        "nativeModules": "AUCUN ajoute."
-      }, "backendResult": {
-        "gates": { "apiTsc": "vert", "jest": "392/392 verts (40 suites) — +9 tests E-DIGEST (privacy 2, opt-out 2, idempotence 3, kill-switch 1, eligibility 1), 0 regression sur la baseline 383", "sharedTypesBuild": "n/a (aucun type partage touche)" },
-        "migration": "prisma/migrations/20260703100000_add_digest/migration.sql (additive & reversible: enum NotificationType += weekly_digest, User += digest_opt_in BOOLEAN default true + last_digest_sent_at TIMESTAMPTZ, index (digest_opt_in,last_digest_sent_at))",
-        "filesTouched": [
-          "prisma/schema.prisma (User.digestOptIn @default(true) + User.lastDigestSentAt + enum weekly_digest + index digestOptIn/lastDigestSentAt)",
-          "src/digest/digest.service.ts (processBatch fail-closed kill-switch + selection dormants/opt-in/due bornee 200 + computeAggregates 3 compteurs region-scoped privacy-safe + stamp AVANT push at-most-once + skip 0/0/0)",
-          "src/digest/digest.cron.ts (setInterval 1h .unref(), no-op en test, idiome StoriesCron)",
-          "src/digest/digest.module.ts + app.module.ts (DigestModule enregistre)",
-          "src/common/settings/settings.service.ts (isDigestEnabled() fail-closed, defaut 'false' ship DARK, miroir isProximityEnabled/isVideoEnabled)",
-          "src/profile/dto/update-profile.dto.ts (Zod digestOptIn: z.boolean().optional())",
-          "src/profile/profile.service.ts updateMe (persist digestOptIn)",
-          "src/common/prisma/user-select.ts (USER_SELF_SELECT += digestOptIn — expose au GET/PATCH profile)",
-          "src/digest/digest.service.spec.ts (9 tests)"
-        ],
-        "preuves": "PRIVACY STRICTE (test 'counts ONLY public + active new members'): computeAggregates newMembers where impose privacyLevel:'public' + status:'active' + id:{not:me} — un compte private/friends n'est JAMAIS atteignable par la requete de comptage (jamais compte, jamais nomme). Test 'payload plain numbers only': data du push = exactement {screen,eventsCount,annoncesCount,newMembersCount} (que des nombres), actorId undefined => aucun nom/id/avatar de tiers dans title/body/data. OPT-OUT (test 'never selects digestOptIn=false' + 'static guarantee'): where du batch impose digestOptIn:true — un membre opt-out n'est ni pushe ni stampe, meme dormant/eligible sinon. IDEMPOTENCE at-most-once (3 tests): stamp lastDigestSentAt=now ecrit AVANT notification.create (invocationCallOrder verifie) ; 2e run dans la meme fenetre => 0 doublon (findMany exclut le membre stampe) ; 0/0/0 => stampe mais aucun push creux. KILL-SWITCH fail-closed (defaut 'false'): isDigestEnabled=false => 0 push, findMany jamais appele, aucun stamp. ELIGIBILITE: actif recent (lastLoginAt<7j) et sans region (countryCode null) exclus. ZERO dep payante (Expo Push existant + cron in-process setInterval, comptages sur colonnes indexees)."
-      } }
+      {
+        "id": "S-VIDEO-0",
+        "title": "ADR pipeline stories-video (presign+garde media video+caps+quota+MinIO lifecycle+purge+garde disque+kill-switch+moderation+gate verified+privacy)",
+        "priority": 5,
+        "type": "adr",
+        "agent": "gwani-architect",
+        "status": "done",
+        "gate": "debloque S-VIDEO-1/2/3",
+        "deliverable": "docs/adr/ADR-video-stories.md + memory/video-api-contracts.json"
+      },
+      {
+        "id": "S-VIDEO-1",
+        "title": "Backend DARK: presign video, assertOwnedPublicMedia (Content-Type reel vs mediaType), quota Redis+rate-limit, MinIO lifecycle+purge S3 (fix deleteExpiredStories), garde disque fail-closed, video_enabled fail-closed, gate verified-only, Report->takedown+purge",
+        "priority": 5,
+        "type": "story",
+        "agent": "gwani-backend",
+        "status": "done",
+        "blockedBy": null,
+        "delivery": "deployable INERTE (flag off)",
+        "result": {
+          "gates": {
+            "apiTsc": "vert",
+            "jest": "363/363 verts (37 suites) — +31 tests S-VIDEO-1, 0 regression sur les 332 existants",
+            "sharedTypesBuild": "n/a (aucun type partage modifie — mediaType existait deja)",
+            "lint": "non lance (eslint v9 flat-config vs .eslintrc legacy = mismatch env pre-existant, hors DoD; code suit les idiomes en place)"
+          },
+          "filesTouched": [
+            "common/settings/settings.service.ts (isVideoEnabled fail-closed)",
+            "common/storage/s3.service.ts (MAX_PUBLIC_VIDEO_BYTES + ALLOWED_VIDEO_TYPES + assertOwnedPublicMedia/Detailed anti-spoof + video extensions ; assertOwnedPublicImage inchange)",
+            "feed/dto/post.dto.ts (presignVideoSchema Zod)",
+            "feed/posts.service.ts (presignStoryVideo + createStory video-gated + quotas Redis + purgePostMedia + deleteExpiredStories batch-purge + deleteStory purge)",
+            "feed/feed.controller.ts (POST /stories/presign @Throttle 5/min + create @Throttle 10/min)",
+            "feed/video-disk-guard.cron.ts (NEW — scrape metrics MinIO, trip video_enabled=false fail-closed, jamais de rearmement auto)",
+            "feed/feed.module.ts (VideoDiskGuardCron provider)",
+            "moderation/moderation.service.ts (removeContent(post) purge S3 avant soft-delete)",
+            "admin/admin.controller.ts + admin.service.ts (toggle videoEnabled dans /admin/settings — rearme le disjoncteur)",
+            "common/config/env.validation.ts (VIDEO_DISK_GUARD_BYTES defaut 10Go + MINIO_METRICS_URL)",
+            "docker-compose.prod.yml + docker-compose.yml (mc ilm expire-days 2 prefix stories/)",
+            "apps/api/.env.example + .env.prod.example (doc env)"
+          ],
+          "inertieProuvee": "test posts.service.spec: video_enabled OFF => presign ForbiddenException(VIDEO_DISABLED) sans signer + create rejete sans post.create ; image story OFF reste fonctionnelle (assertOwnedPublicImage users/ inchange).",
+          "diskBoundingProuve": "layerA purge: deleteStory + deleteExpiredStories(batch 200) + moderation.removeContent purgent chaque PostMedia (deleteObject + thumbnail) AVANT soft-delete (tests verts) ; layerB lifecycle: mc ilm rule prefix stories/ (prod+dev compose) ; layerC garde: VideoDiskGuardCron parseBucketUsage + trip>=seuil + fail-safe sur erreur metrics (tests verts).",
+          "antiSpoofProuve": "s3.service.spec: video reel declare video OK ; image declaree video ET video declaree image => 400 ; prefixe autrui => 400 avant HEAD (anti-IDOR) ; host etranger/oversize/type non supporte => 400.",
+          "decisionsDette": [
+            "IMAGE story: binding volontairement INCHANGE (assertOwnedPublicImage, prefixe users/). Migrer vers stories/ aurait casse le flux photo-story existant en prod (mobile presign /profile/me/photos/presign => users/). Le spoof image reste ferme (Content-Type reel confronte a l'allowlist image). Les objets image-story sont quand meme purges par le cron (parsePublicKey), seul le lifecycle MinIO (prefixe stories/) ne les couvre pas — le cron reste le mecanisme primaire.",
+            "Compteurs Redis journaliers UTC (pas glissants) = choix ADR-005 assume beta.",
+            "assertOwnedPublicMediaDetailed ajoute pour exposer ContentLength (quota octets) sans double HEAD ; assertOwnedPublicMedia (contrat -> string) est un wrapper mince.",
+            "mc ilm rule add non-idempotent mais minio-init tourne once (restart:no) ; doublon d'expiration sur meme prefixe = inoffensif."
+          ]
+        }
+      },
+      {
+        "id": "S-VIDEO-2",
+        "title": "Mobile rebuild: capture/pick video + compression H.265 (react-native-compressor) + vignette + player (expo-video), progress/retry/cancel, no-autoplay-cellular, reactiver micro, BUMP 1.10.0",
+        "priority": 4.5,
+        "type": "story",
+        "agent": "gwani-frontend",
+        "status": "done",
+        "blockedBy": null,
+        "delivery": "rebuild EAS = SORTANT, gate proprio (NON lance)",
+        "result": {
+          "gates": {
+            "mobileTsc": "vert (npx tsc --noEmit apps/mobile)",
+            "bump": "1.10.0 (app.json version, runtimeVersion policy appVersion)",
+            "easBuild": "NON lance (action sortante = gate proprio)"
+          },
+          "depsAdded": [
+            "expo-video@~3.0.16 (playback, PAS expo-av)",
+            "expo-video-thumbnails@~10.0.8 (vignette)",
+            "react-native-compressor@^2.0.2 (compression H265 on-device + stripAudio + cancel)"
+          ],
+          "filesTouched": [
+            "apps/mobile/app.json (version 1.9.0->1.10.0 ; plugins expo-video {no bg playback/PiP} + react-native-compressor ; android permissions +READ_MEDIA_VIDEO retire de blockedPermissions ; RECORD_AUDIO RESTE bloque + microphonePermission:false ; libelles camera/photos incluent video)",
+            "apps/mobile/services/storyVideoService.ts (NEW — pickStoryVideo, prepareStoryVideo H265 720p bitrate 3Mbps stripAudio true cap 30s/25Mo, vignette expo-video-thumbnails, uploadPreparedVideo presign /stories/presign + PUT + thumbnail via image presign owned users/, cancelPreparation, describeStoryVideoError mappe VIDEO_DISABLED/IDENTITY_NOT_APPROVED/quotas)",
+            "apps/mobile/hooks/useStoryVideoUpload.ts (NEW — machine phase idle/compressing/ready/uploading/done/error, progress, cancel compress+upload, retry)",
+            "apps/mobile/app/stories/new.tsx (composer photo+video, VideoStage: preview vignette+badge muet+taille, overlay progress %, cancel, retry, erreur claire)",
+            "apps/mobile/app/stories/[authorId].tsx (viewer: StoryVideoPlayer pour media video, barre progression pilotee par le player, pas de timer 5s sur video, tap-zones masquees tant que la video attend le 1er tap)",
+            "apps/mobile/components/feed/StoryVideoPlayer.tsx (NEW — useVideoPlayer muted, no-autoplay-cellular via NetInfo: poster+play badge tap-to-play sur reseau metre, autoplay Wi-Fi, playToEnd->advance)"
+          ],
+          "muteDecision": "MUET garanti par react-native-compressor stripAudio:true (piste audio retiree du fichier) + player muted. Choix: micro RESTE bloque (RECORD_AUDIO blocked, microphonePermission:false) — CONFORME ADR SD-2 (qui exige explicitement le micro bloque en beta ; reactivation audio = GO PROPRIO). La consigne 'reactiver micro' a ete ecartee au profit de l'ADR car stripAudio rend RECORD_AUDIO inutile et son ajout declencherait des questions data-safety store contradictoires avec le muet beta.",
+          "progressRetryCancel": "Compression: progress 0..1 + Video.cancelCompression(id). Upload: FileSystem createUploadTask progress + task.cancelAsync(). Retry re-tente l'upload si deja compresse, sinon relance pick+compress. Erreurs serveur (403/429) degradees en messages FR clairs.",
+          "noAutoplayCellular": "NetInfo.fetch(): type cellular|unknown|none => metre => poster+tap-to-play (aucune conso data auto) ; Wi-Fi/ethernet => autoplay quand la story est active. Toujours muted.",
+          "privacy": "Flux stories inchange (visibility friends herite). Vignette uploadee via le presign image owne (users/{id}/), jamais d'URL client brute. Flux photo-story existant intact.",
+          "easGate": "REBUILD EAS OBLIGATOIRE (modules natifs expo-video + react-native-compressor => OTA insuffisant) mais NON lance — action sortante reservee au GO proprio."
+        }
+      },
+      {
+        "id": "S-VIDEO-3",
+        "title": "QA+Securite: e2e+unit; pentest OBLIGATOIRE (binding media, mediaType spoofing, IDOR, fuite privacy stories-video, quota/rate-limit, kill-switch, verified-only, purge/lifecycle disque)",
+        "priority": 5,
+        "type": "security",
+        "agent": "gwani-qa-tester->gwani-pentest",
+        "status": "done",
+        "blockedBy": "S-VIDEO-1,S-VIDEO-2",
+        "gate": "OK_TO_DEPLOY dur",
+        "pentest": {
+          "verdict": "OK_TO_DEPLOY",
+          "at": "2026-07-03",
+          "by": "gwani-pentest",
+          "scope": "diff beta complet: video stories (S-VIDEO-1/2 backend INERTE flag off), E-TAUX, E-DIGEST",
+          "findings": {
+            "critical": 0,
+            "high": 0,
+            "medium": 1,
+            "low": 0,
+            "resolved": 1,
+            "open": 0
+          },
+          "report": "memory/security.json",
+          "summary": "1 MEDIUM trouve+corrige (SEC-002: GET /community-prices?status=removed re-listait le contenu retire par moderation a tout membre authentifie — takedown contournable via query param). Fix: list schema status verrouille au litteral 'active' (status=removed => 400). Test de non-regression ajoute. jest 393->394 verts (40 suites), api tsc vert, 0 regression. BUG-001 (fuite PII E-TAUX) re-verifie CLOS: routes auth-gated (JwtAuthGuard global, plus de @Public sur list/:id/banner) + projection submitter PII-free. Video: kill-switch fail-closed prouve, verified-gate lecture DB fraiche, anti-spoof HEAD confronte mediaType declare, prefixe stories/{userId}/ anti-IDOR, quotas, purge S3 au delete/expiry/takedown, disjoncteur disque fail-closed jamais re-arme auto. E-DIGEST: agregats numbers-only, private/friends jamais comptes, opt-out respecte, idempotence stamp-avant-push, kill-switch fail-closed."
+        }
+      },
+      {
+        "id": "E-TAUX",
+        "title": "Taux du jour (source GRATUITE) + prix crowdsources (CommunityPrice, votes, anti-spam) + bandeau feed",
+        "priority": 4,
+        "type": "story",
+        "agent": "gwani-pm-spec->backend/frontend",
+        "status": "mobile_done",
+        "spec": "memory/spec-etaux.md",
+        "specNote": "Source taux tranchee = BCE (eurofxref-daily.xml, gratuit, sans cle) + peg fixe EUR/XOF=655.957 (traite UEMOA) ; saisie communautaire moderee reservee aux PRIX (billet/transfert/colis), pas au taux de change. Q1 a confirmer proprio (non bloquant pour l'archi).",
+        "delivery": "OTA-safe sur 1.10.0, parallelisable",
+        "nextAgent": "gwani-qa-tester->gwani-pentest",
+        "mobileResult": {
+          "gates": {
+            "mobileTsc": "vert (npx tsc --noEmit apps/mobile, 0 erreur)",
+            "bump": "AUCUN (1.10.0 inchangee, zero module natif ajoute)",
+            "lint": "non lance (eslint v9 flat-config vs .eslintrc legacy = mismatch env pre-existant deja signale par S-VIDEO-1/gwani-backend, hors DoD)"
+          },
+          "filesTouched": [
+            "apps/mobile/services/ratesApi.ts (NEW — today/banner/list/mine/get/create/update/remove/vote + describeCommunityPriceError qui mappe 429->message throttle FR, 403->message anti-auto-vote/contenu retire FR, 404, fallback message serveur)",
+            "apps/mobile/services/moderationApi.ts (ReportTargetType += 'community_price', mirrore le backend deja livre)",
+            "apps/mobile/constants/lookups.ts (COMMUNITY_PRICE_TYPE_LABELS billet_avion/transfert_argent/colis_kg)",
+            "apps/mobile/components/feed/RatesBanner.tsx (NEW — bandeau compact tete de feed : peg EUR/XOF toujours affiche, USD/CAD masques si null, skeleton pulse pendant le chargement, etat source:unavailable degrade proprement sans '-' casse, tap -> /rates)",
+            "apps/mobile/components/rates/CommunityPriceCard.tsx (NEW — carte prix : type/route(flags)/provider/montant/note, vote toggle thumbs up/down avec etat myVote, report (masque si owner), edit/delete owner-only)",
+            "apps/mobile/app/(tabs)/index.tsx (RatesBanner insere au-dessus de StoriesRow dans ListHeaderComponent, useQuery ['rates','banner'] staleTime 60s, refetch inclus dans le pull-to-refresh existant)",
+            "apps/mobile/app/rates/index.tsx (NEW — ecran liste : useInfiniteQuery paginee par curseur, filtres par type (pills, meme idiome que services.tsx), petit strip taux du jour, FAB Signaler un prix, vote mutation avec update optimiste du cache + toast d'erreur FR sur 403/429, delete owner-only, ReportSheet reutilise targetType='community_price')",
+            "apps/mobile/app/rates/new.tsx (NEW — formulaire creation : type/montant/devise/prestataire/ville+pays depart+arrivee/note, validation inline miroir manuel du schema Zod backend (createCommunityPriceSchema : amount>0<=1e8, currency 3 lettres, countryCode 2 lettres, note<=280), erreurs affichees onBlur ET onSubmit, hint '5 signalements max/jour', toast succes/erreur (throttle 429 -> message clair) apres submit)"
+          ],
+          "sourceUnavailableHandling": "RatesBanner: rates.source==='unavailable' => peg EUR/XOF 655,957 toujours affiche (jamais absent), USD/CAD masques (pas de '-' trompeur), libelle 'Taux du jour bientot' au lieu d'un horodatage ; ecran /rates strip taux idem (usdXof/cadXof null => segment absent de la phrase, jamais affiche a null). Skeleton pulse tant que le premier fetch est en vol (loading && !rates).",
+          "throttle429Handling": "describeCommunityPriceError(status===429) => message serveur si present ('Vous avez atteint la limite de signalements aujourd'hui') sinon fallback FR 'Trop de tentatives, reessaie dans quelques minutes.' ; affiche via toast.error() sur l'echec de creation ET sur l'echec de vote (le vote a aussi un throttle IP coarse cote controller).",
+          "autoVote403Handling": "describeCommunityPriceError(status===403) => message serveur si present sinon fallback FR explicite 'Tu ne peux pas voter sur ton propre signalement, ni sur un contenu retire.' ; en plus, cote UI, les boutons vote sont deja disabled quand isMine=true (submitter.id===userId) — le 403 reste un filet de securite si l'etat client est perime, jamais une IDOR car submitterId vient toujours du JWT cote API (aucun champ owner envoye par le mobile).",
+          "privacy": "Aucune donnee sensible affichee : submitter = projection publique deja renvoyee par l'API (meme forme que les autres modules). Aucune URL media, aucun flux d'upload implique (CommunityPrice n'a pas de media, conforme a la spec). Report reutilise le flux existant ReportSheet/moderationApi tel quel.",
+          "nativeModules": "AUCUN ajoute — uniquement TanStack Query + Zustand + composants RN/Feather deja presents. OTA-safe confirme, pas de bump 1.10.0."
+        },
+        "backendResult": {
+          "gates": {
+            "apiTsc": "vert",
+            "jest": "383/383 verts (39 suites) — +20 tests E-TAUX (6 rates + 14 community-prices), 0 regression sur les 363 S-VIDEO-1",
+            "sharedTypesBuild": "vert (packages/shared-types/src/rates.ts ajoute + rebuild)"
+          },
+          "migration": "prisma/migrations/20260703000000_add_etaux/migration.sql (additive: enum ReportTargetType+=community_price, CommunityPriceType/Status, tables fx_rate_snapshots + community_prices + community_price_votes)",
+          "filesTouched": [
+            "prisma/schema.prisma (FxRateSnapshot, CommunityPrice, CommunityPriceVote, enum +community_price, User relations)",
+            "src/rates/dto/rate.dto.ts (Zod create/update/list/vote)",
+            "src/rates/rates.service.ts (getToday fail-open + getBanner cache Redis 5min + parseEcbXml defensif + upsertSnapshot idempotent)",
+            "src/rates/community-prices.service.ts (CRUD owner-only anti-IDOR + throttle Redis 5/j + vote toggle transactionnel anti-auto-vote)",
+            "src/rates/rates.controller.ts (GET /rates/today, /rates/banner @Public)",
+            "src/rates/community-prices.controller.ts (CRUD /community-prices + /:id/vote, list/detail @Public, @Throttle create/vote)",
+            "src/rates/rates.cron.ts (fetch BCE 6h, fail-open, no-op en test, idiome StoriesCron)",
+            "src/rates/rates.module.ts + app.module.ts (RatesModule enregistre)",
+            "src/moderation/moderation.service.ts (removeContent + getTarget case community_price)",
+            "src/moderation/dto/report.dto.ts (targetType += community_price)",
+            "src/rates/rates.service.spec.ts + community-prices.service.spec.ts (20 tests)",
+            "packages/shared-types/src/rates.ts + index.ts"
+          ],
+          "preuves": "Anti-spam: throttle Redis incrementCounter key communityprice:submit:{userId}:{yyyymmdd} cap 5/j => 429 sans DB (teste) + contrainte DB @@id(userId,priceId) sur vote (unique) + anti-auto-vote submitterId===userId => 403 (teste). AuthZ: update/delete verifient submitterId===userId AVANT mutation (403 non-owner, 404 inconnu — testes, pas d'IDOR ; submitterId toujours du JWT jamais du body). Fail-open BCE: getToday sert le dernier snapshot si fetch echoue (cron catch+log, aucun upsert) ; table vide => peg 655.957 seul, usd/cad null, source unavailable (jamais de valeur inventee) — teste. parseEcbXml retourne null si USD/CAD manquant (skip, garde l'ancien) — teste. Cache-first banner: 2e appel <5min sert Redis sans DB — teste. ZERO dep payante (BCE XML public sans cle + peg constant)."
+        }
+      },
+      {
+        "id": "E-DIGEST",
+        "title": "Digest hebdo push (1 cron + Expo Push gratuit, opt-out, privacy stricte jamais compte private)",
+        "priority": 3,
+        "type": "story",
+        "agent": "gwani-pm-spec->backend->frontend",
+        "status": "mobile_done",
+        "spec": "memory/spec-edigest.md",
+        "specNote": "5 features (F1 agregats privacy-safe, F2 cron idempotent, F3 opt-out reglages, F4 deep-link, F5 kill-switch digest_enabled). Migration additive proposee: User.digestOptIn + User.lastDigestSentAt + NotificationType.weekly_digest. 5 questions ouvertes proprio (definition inactif lastLoginAt>7j, source evenements AssociationEvent-proxy vs E-DIASPORA S6, kill-switch Must/Should, routage tap, taille de lot) — non bloquantes pour l'archi (reco PM appliquee par defaut).",
+        "delivery": "OTA-safe sur 1.10.0, parallelisable, aucun bump",
+        "nextAgent": "gwani-qa-tester->gwani-pentest",
+        "mobileResult": {
+          "gates": {
+            "mobileTsc": "vert (npx tsc --noEmit apps/mobile, 0 erreur)",
+            "sharedTypesBuild": "vert (User.digestOptIn + NotificationType += weekly_digest ajoutes puis rebuild)",
+            "bump": "AUCUN (1.10.0 inchangee, zero module natif)"
+          },
+          "filesTouched": [
+            "packages/shared-types/src/user.ts (User.digestOptIn: boolean, miroir newsletterOptIn)",
+            "packages/shared-types/src/notification.ts (NotificationType += 'weekly_digest')",
+            "apps/mobile/app/settings/privacy.tsx (switch 'Resume hebdomadaire' sous 'Annonces & nouveautes': state digestOptIn init depuis user.digestOptIn, saveDigestMut PATCH /profile/me {digestOptIn}, saveDigest() optimiste + rollback+Alert onError)",
+            "apps/mobile/app/settings/notifications.tsx (routeForNotification: case 'weekly_digest' lit data.screen -> /(tabs)/services si 'services'|'marketplace' sinon /(tabs) feed ; TYPE_LABELS += weekly_digest icone trending-up)",
+            "apps/mobile/app/_layout.tsx (NotificationDeepLink.handle: branche data.type==='weekly_digest' -> meme mapping screen, avant le fallback /settings/notifications)"
+          ],
+          "optimisticRollback": "saveDigest() bascule le Switch immediatement (setDigestOptIn) puis mutate ; onError restaure la valeur precedente + Alert.alert('Erreur', ...) — meme idiome que les autres toggles de privacy.tsx mais avec rollback explicite (les autres switches de cet ecran n'en avaient pas).",
+          "privacy": "Le payload weekly_digest ne contient que des nombres (eventsCount/annoncesCount/newMembersCount) + screen (string technique) — aucun nom/avatar/id de tiers rendu a l'ecran ni consomme par le routing (screen sert uniquement a choisir la route, jamais affiche).",
+          "routingCoverage": "Couvre a la fois la liste in-app (settings/notifications.tsx tap sur l'item) et le deep-link push froid/chaud (_layout.tsx NotificationDeepLink) ; les deux lisent le meme champ data.screen avec le meme fallback feed.",
+          "nativeModules": "AUCUN ajoute."
+        },
+        "backendResult": {
+          "gates": {
+            "apiTsc": "vert",
+            "jest": "392/392 verts (40 suites) — +9 tests E-DIGEST (privacy 2, opt-out 2, idempotence 3, kill-switch 1, eligibility 1), 0 regression sur la baseline 383",
+            "sharedTypesBuild": "n/a (aucun type partage touche)"
+          },
+          "migration": "prisma/migrations/20260703100000_add_digest/migration.sql (additive & reversible: enum NotificationType += weekly_digest, User += digest_opt_in BOOLEAN default true + last_digest_sent_at TIMESTAMPTZ, index (digest_opt_in,last_digest_sent_at))",
+          "filesTouched": [
+            "prisma/schema.prisma (User.digestOptIn @default(true) + User.lastDigestSentAt + enum weekly_digest + index digestOptIn/lastDigestSentAt)",
+            "src/digest/digest.service.ts (processBatch fail-closed kill-switch + selection dormants/opt-in/due bornee 200 + computeAggregates 3 compteurs region-scoped privacy-safe + stamp AVANT push at-most-once + skip 0/0/0)",
+            "src/digest/digest.cron.ts (setInterval 1h .unref(), no-op en test, idiome StoriesCron)",
+            "src/digest/digest.module.ts + app.module.ts (DigestModule enregistre)",
+            "src/common/settings/settings.service.ts (isDigestEnabled() fail-closed, defaut 'false' ship DARK, miroir isProximityEnabled/isVideoEnabled)",
+            "src/profile/dto/update-profile.dto.ts (Zod digestOptIn: z.boolean().optional())",
+            "src/profile/profile.service.ts updateMe (persist digestOptIn)",
+            "src/common/prisma/user-select.ts (USER_SELF_SELECT += digestOptIn — expose au GET/PATCH profile)",
+            "src/digest/digest.service.spec.ts (9 tests)"
+          ],
+          "preuves": "PRIVACY STRICTE (test 'counts ONLY public + active new members'): computeAggregates newMembers where impose privacyLevel:'public' + status:'active' + id:{not:me} — un compte private/friends n'est JAMAIS atteignable par la requete de comptage (jamais compte, jamais nomme). Test 'payload plain numbers only': data du push = exactement {screen,eventsCount,annoncesCount,newMembersCount} (que des nombres), actorId undefined => aucun nom/id/avatar de tiers dans title/body/data. OPT-OUT (test 'never selects digestOptIn=false' + 'static guarantee'): where du batch impose digestOptIn:true — un membre opt-out n'est ni pushe ni stampe, meme dormant/eligible sinon. IDEMPOTENCE at-most-once (3 tests): stamp lastDigestSentAt=now ecrit AVANT notification.create (invocationCallOrder verifie) ; 2e run dans la meme fenetre => 0 doublon (findMany exclut le membre stampe) ; 0/0/0 => stampe mais aucun push creux. KILL-SWITCH fail-closed (defaut 'false'): isDigestEnabled=false => 0 push, findMany jamais appele, aucun stamp. ELIGIBILITE: actif recent (lastLoginAt<7j) et sans region (countryCode null) exclus. ZERO dep payante (Expo Push existant + cron in-process setInterval, comptages sur colonnes indexees)."
+        }
+      }
     ],
     "decisionsProprioTrancheesADR": "limites exactes / audio sonore vs muet / privacy bucket public vs prive presigned = tranchees a l'ADR avec reco; marquer ce qui exige GO proprio explicite.",
-    "gates": { "sharedTypesBuild": "vert (gwani-debugger 2026-07-03: CommunityPriceSubmitter PII-free ajoute, rebuild)", "apiTsc": "vert (gwani-debugger 2026-07-03)", "mobileTsc": "vert (gwani-debugger 2026-07-03, inchange — CommunityPriceCard n'utilise que id/displayName/avatarUrl)", "jest": "vert 393/393 (40 suites, +1 test projection PII-free BUG-001, 0 regression sur 392)", "e2e": "specs ECRITES non-executees: 4 suites api/{video-stories,rates-etaux,digest-optout}.spec.ts. Guard privacy BUG-001 MIS A JOUR par gwani-debugger (anonyme -> 401 auth-gated + projection authentifiee PII-free ; banner/list passent auth). tsc e2e vert (exit 0). NON lancees ici: Docker/Postgres/Redis/API down. A executer en CI/manuel API up.", "qa": "BUG-001 RESOLU (gwani-debugger 2026-07-03) — double barriere: routes /community-prices list+:id + /rates/banner auth-gated (anonyme 401) ET projection submitter PII-free (id/displayName/avatarUrl/isAmbassador, plus de firstName/lastName/city/countryCode). /rates/today (FX pur) reste public. => RELANCER gwani-qa-tester (e2e API up) puis gwani-pentest.", "reviewer": "CHANGES_REQUESTED adresse (gwani-debugger 2026-07-03): bloquant privacy corrige (auth-gate + projection minimisee) ; nit toggle admin digest_enabled CABLE (admin.patchSettings + getSettings + DTO digestEnabled, miroir videoEnabled). Nit restant NON traite (hors scope debugger, digest screen routing) laisse au frontend/reviewer. => re-revue possible.", "pentest": null, "diskBounded": "vert (S-VIDEO-1: triple garde testee — purge cron/manuel/takedown + lifecycle prefix + disjoncteur fail-closed)", "mobileBump": "1.10.0 fait (S-VIDEO-2)" },
+    "gates": {
+      "sharedTypesBuild": "vert (gwani-debugger 2026-07-03: CommunityPriceSubmitter PII-free ajoute, rebuild)",
+      "apiTsc": "vert (gwani-debugger 2026-07-03)",
+      "mobileTsc": "vert (gwani-debugger 2026-07-03, inchange — CommunityPriceCard n'utilise que id/displayName/avatarUrl)",
+      "jest": "vert 393/393 (40 suites, +1 test projection PII-free BUG-001, 0 regression sur 392)",
+      "e2e": "specs ECRITES non-executees: 4 suites api/{video-stories,rates-etaux,digest-optout}.spec.ts. Guard privacy BUG-001 MIS A JOUR par gwani-debugger (anonyme -> 401 auth-gated + projection authentifiee PII-free ; banner/list passent auth). tsc e2e vert (exit 0). NON lancees ici: Docker/Postgres/Redis/API down. A executer en CI/manuel API up.",
+      "qa": "BUG-001 RESOLU (gwani-debugger 2026-07-03) — double barriere: routes /community-prices list+:id + /rates/banner auth-gated (anonyme 401) ET projection submitter PII-free (id/displayName/avatarUrl/isAmbassador, plus de firstName/lastName/city/countryCode). /rates/today (FX pur) reste public. => RELANCER gwani-qa-tester (e2e API up) puis gwani-pentest.",
+      "reviewer": "CHANGES_REQUESTED adresse (gwani-debugger 2026-07-03): bloquant privacy corrige (auth-gate + projection minimisee) ; nit toggle admin digest_enabled CABLE (admin.patchSettings + getSettings + DTO digestEnabled, miroir videoEnabled). Nit restant NON traite (hors scope debugger, digest screen routing) laisse au frontend/reviewer. => re-revue possible.",
+      "pentest": null,
+      "diskBounded": "vert (S-VIDEO-1: triple garde testee — purge cron/manuel/takedown + lifecycle prefix + disjoncteur fail-closed)",
+      "mobileBump": "1.10.0 fait (S-VIDEO-2)"
+    },
     "stopAt": "READY_FOR_DEPLOY — ne PAS appeler gwani-deployer ni gwani-mobile-deployer sans GO proprio explicite."
   },
   "beta": {
@@ -282,10 +397,60 @@
     "goal": "De-risking OTA-safe: rendre la page profil correcte a l'echelle (compteurs autoritatifs, apercu amis borne + voir tout pagine) et corriger le bug du compteur d'amis plafonne a une page. Zero decision proprio bloquante, zero module natif => OTA iOS sans bump.",
     "deliveryNote": "Increment 100% OTA iOS. API: 1 endpoint/enrichissement de comptage (pas de migration a priori, _count Prisma). Mobile JS-only. NE PAS bumper app.json version (orphelinerait l'OTA). Privacy: le friendsCount d'un tiers suit exactement le gating existant de la liste d'amis (private=>404, friends=>amis only).",
     "items": [
-      { "id": "PR1", "title": "Endpoint/enrichissement compteurs autoritatifs (friends/posts/photos/filleuls) via _count, gate privacy identique a la liste", "priority": 5.0, "status": "todo", "type": "story", "surfaces": ["api/profile", "api/social", "shared-types"], "agent": "gwani-backend", "migration": false },
-      { "id": "PR2", "title": "Profil (moi + tiers): compteur amis autoritatif, apercu amis borne (N max) + Voir tous les amis => ecran paginate", "priority": 4.5, "status": "todo", "type": "story", "surfaces": ["mobile/profile.tsx", "mobile/user/[id].tsx", "mobile/friends", "mobile/profileApi"], "agent": "gwani-frontend", "delivery": "OTA iOS sans bump" },
-      { "id": "PR3", "title": "TESTS: unit jest counts + gating privacy du compteur tiers + non-regression tsc api/mobile", "priority": 5.0, "status": "todo", "type": "test", "surfaces": ["api/profile spec", "e2e/tests/api"], "agent": "bug-hunter->fixer->e2e-tester" },
-      { "id": "PR4", "title": "REVUE gwani-reviewer + verdict gwani-pentest sur le gating du compteur (fuite de taille de reseau d'un compte prive?)", "priority": 4.0, "status": "done", "type": "security", "surfaces": ["api/profile", "api/social"], "agent": "gwani-reviewer + gwani-pentest", "gate": "OK_TO_DEPLOY" }
+      {
+        "id": "PR1",
+        "title": "Endpoint/enrichissement compteurs autoritatifs (friends/posts/photos/filleuls) via _count, gate privacy identique a la liste",
+        "priority": 5,
+        "status": "todo",
+        "type": "story",
+        "surfaces": [
+          "api/profile",
+          "api/social",
+          "shared-types"
+        ],
+        "agent": "gwani-backend",
+        "migration": false
+      },
+      {
+        "id": "PR2",
+        "title": "Profil (moi + tiers): compteur amis autoritatif, apercu amis borne (N max) + Voir tous les amis => ecran paginate",
+        "priority": 4.5,
+        "status": "todo",
+        "type": "story",
+        "surfaces": [
+          "mobile/profile.tsx",
+          "mobile/user/[id].tsx",
+          "mobile/friends",
+          "mobile/profileApi"
+        ],
+        "agent": "gwani-frontend",
+        "delivery": "OTA iOS sans bump"
+      },
+      {
+        "id": "PR3",
+        "title": "TESTS: unit jest counts + gating privacy du compteur tiers + non-regression tsc api/mobile",
+        "priority": 5,
+        "status": "todo",
+        "type": "test",
+        "surfaces": [
+          "api/profile spec",
+          "e2e/tests/api"
+        ],
+        "agent": "bug-hunter->fixer->e2e-tester"
+      },
+      {
+        "id": "PR4",
+        "title": "REVUE gwani-reviewer + verdict gwani-pentest sur le gating du compteur (fuite de taille de reseau d'un compte prive?)",
+        "priority": 4,
+        "status": "done",
+        "type": "security",
+        "surfaces": [
+          "api/profile",
+          "api/social"
+        ],
+        "agent": "gwani-reviewer + gwani-pentest",
+        "gate": "OK_TO_DEPLOY"
+      }
     ],
     "status": "READY_FOR_DEPLOY",
     "result": {
@@ -306,13 +471,48 @@
     }
   },
   "backlogEpics": [
-    { "id": "E-LIVES", "title": "LIVES (streaming live)", "status": "ecartee", "note": "ABANDONNEE 2026-07-02 (decision proprio): cout ressource VPS partage refuse; video = payant sans alternative; audio self-hoste (LiveKit OSS+coturn) refuse aussi. ADR docs/adr/ADR-LIVES-streaming.md = REJECTED (trace). NE PAS re-proposer sans demande explicite." },
-    { "id": "E-MARKET", "title": "Marketplace secondaire sous onglet Entraide (multi-images, tarif optionnel, page detail, formulaire intention-first)", "status": "in_sprint_S4", "note": "Positionnement tranche: fondu sous Entraide. Multi-images => migration Prisma (ServiceRequest n'a aucun champ image) + S3Service.assertOwnedPublicImage sur chaque image. Bump version mobile a evaluer (migration + routes)." },
-    { "id": "E-PROFILE", "title": "Profil a l'echelle", "status": "delivered_deployed", "note": "Sprint S3 livre + deploye 2026-07-02 (commit e8ce4a5)." },
-    { "id": "E-GP", "title": "Colis-voyageurs GP (mise en relation uniquement, sous Entraide)", "status": "backlog_S5", "note": "Valeur max, synergie Entraide. Aucun paiement in-app, disclaimer douanes, profils verifies. Spec par gwani-pm-spec apres E-MARKET." },
-    { "id": "E-DIASPORA", "title": "Evenements geolocalises + RSVP (carte Leaflet existante)", "status": "backlog_S6", "note": "Cout infra ~0. Se branche sur la carte existante." },
-    { "id": "E-TAUX", "title": "Taux du jour + prix crowdsources (habitude quotidienne)", "status": "backlog_S7", "note": "Source GRATUITE (BCE/open-data ou saisie communautaire moderee), PAS d'API payante. Votes de confiance + horodatage." },
-    { "id": "E-DIGEST", "title": "Digest hebdo push (rappel dormants)", "status": "backlog_S8", "note": "1 cron + Expo Push (gratuit), opt-out, privacy stricte (jamais un compte private). Quick-win possible." }
+    {
+      "id": "E-LIVES",
+      "title": "LIVES (streaming live)",
+      "status": "ecartee",
+      "note": "ABANDONNEE 2026-07-02 (decision proprio): cout ressource VPS partage refuse; video = payant sans alternative; audio self-hoste (LiveKit OSS+coturn) refuse aussi. ADR docs/adr/ADR-LIVES-streaming.md = REJECTED (trace). NE PAS re-proposer sans demande explicite."
+    },
+    {
+      "id": "E-MARKET",
+      "title": "Marketplace secondaire sous onglet Entraide (multi-images, tarif optionnel, page detail, formulaire intention-first)",
+      "status": "in_sprint_S4",
+      "note": "Positionnement tranche: fondu sous Entraide. Multi-images => migration Prisma (ServiceRequest n'a aucun champ image) + S3Service.assertOwnedPublicImage sur chaque image. Bump version mobile a evaluer (migration + routes)."
+    },
+    {
+      "id": "E-PROFILE",
+      "title": "Profil a l'echelle",
+      "status": "delivered_deployed",
+      "note": "Sprint S3 livre + deploye 2026-07-02 (commit e8ce4a5)."
+    },
+    {
+      "id": "E-GP",
+      "title": "Colis-voyageurs GP (mise en relation uniquement, sous Entraide)",
+      "status": "backlog_S5",
+      "note": "Valeur max, synergie Entraide. Aucun paiement in-app, disclaimer douanes, profils verifies. Spec par gwani-pm-spec apres E-MARKET."
+    },
+    {
+      "id": "E-DIASPORA",
+      "title": "Evenements geolocalises + RSVP (carte Leaflet existante)",
+      "status": "backlog_S6",
+      "note": "Cout infra ~0. Se branche sur la carte existante."
+    },
+    {
+      "id": "E-TAUX",
+      "title": "Taux du jour + prix crowdsources (habitude quotidienne)",
+      "status": "backlog_S7",
+      "note": "Source GRATUITE (BCE/open-data ou saisie communautaire moderee), PAS d'API payante. Votes de confiance + horodatage."
+    },
+    {
+      "id": "E-DIGEST",
+      "title": "Digest hebdo push (rappel dormants)",
+      "status": "backlog_S8",
+      "note": "1 cron + Expo Push (gratuit), opt-out, privacy stricte (jamais un compte private). Quick-win possible."
+    }
   ],
   "pausedSprints": [
     {
@@ -323,17 +523,105 @@
     }
   ],
   "completed_sprints": [
-    { "id": "S1", "goal": "Booster l'engagement feed/chat a parite Instagram + reparer le flux d'acceptation d'ami (OTA iOS).", "items": ["B7", "B1", "B6", "B3", "B2"], "status": "delivered" }
+    {
+      "id": "S1",
+      "goal": "Booster l'engagement feed/chat a parite Instagram + reparer le flux d'acceptation d'ami (OTA iOS).",
+      "items": [
+        "B7",
+        "B1",
+        "B6",
+        "B3",
+        "B2"
+      ],
+      "status": "delivered"
+    }
   ],
   "plannedSprints": [
-    { "id": "S-ANIM-1", "title": "Sprint Animations v1 (Vague A = OTA-safe, axes 1 + 3)", "status": "planned", "note": "Detail complet conserve dans memory/backlog.md (ANIM-1..6)." },
-    { "id": "S-ANIM-2", "title": "Sprint Animations v2 (Vague B = natifs) -- 1 rebuild 1.8.0", "status": "blocked", "blockedBy": "ANIM-7 ADR carte native valide proprio + GO build" }
+    {
+      "id": "S-ANIM-1",
+      "title": "Sprint Animations v1 (Vague A = OTA-safe, axes 1 + 3)",
+      "status": "planned",
+      "note": "Detail complet conserve dans memory/backlog.md (ANIM-1..6)."
+    },
+    {
+      "id": "S-ANIM-2",
+      "title": "Sprint Animations v2 (Vague B = natifs) -- 1 rebuild 1.8.0",
+      "status": "blocked",
+      "blockedBy": "ANIM-7 ADR carte native valide proprio + GO build"
+    }
   ],
-  "agents": {},
-  "checkpoints": { "deploy_approved": true, "deploy_approved_scope": "Sprint S3 profil uniquement (GO proprio 2026-07-02 via team-lead)" },
-  "iterations": { "debugger_bugs": 1 },
+  "agents": {
+    "frontend": "DONE"
+  },
+  "checkpoints": {
+    "deploy_approved": false,
+    "deploy_approved_scope": "AUCUN. Remis a false le 2026-08-20 : le GO du 2026-07-02 portait sur le sprint S3 profil, il ne vaut approbation pour aucun sprint ulterieur."
+  },
+  "iterations": {
+    "debugger_bugs": 1
+  },
   "openQuestions": [
     "MARKETPLACE: positionnement -- onglet Services pair (actuel, deja tres visible) vs fondu sous onglet Entraide avec formulaire intention-first (reco conseiller). Impacte la tab-bar (deja 6 onglets).",
     "S2 proximite: reprise ou maintien en pause?"
-  ]
+  ],
+  "sprint1EspaceAssociation": {
+    "sprint": "S1 « Le socle association devient sur et lisible »",
+    "goal": "Refermer les fuites du module association avant d ouvrir un back-office, et poser la gouvernance (bureau executif, certification) dont les sprints 2-6 dependent.",
+    "status": "COMMITE (3 commits) + repetition de migration PROUVEE. Reste: decisions proprio Q1-Q6 + fusion admin. Deploy NON approuve.",
+    "items": {
+      "A1": "DONE",
+      "A2": "DONE",
+      "A3": "DONE",
+      "A4": "DONE",
+      "A5": "DONE (+ console admin web)",
+      "A6": "DONE"
+    },
+    "gates": {
+      "apiTsc": "vert",
+      "mobileTsc": "vert",
+      "webTsc": "vert",
+      "sharedTypesBuild": "vert",
+      "jestApi": "828/828, 65 suites (824 + 4 tests de bornage du slug)",
+      "jestMobile": "74/74, 9 suites (baseline 44/7 +30 tests +2 suites)",
+      "pentest": "OK_TO_DEPLOY",
+      "reviewer": "B2/N1/N4 leves; B1 repetition migration OUVERT"
+    },
+    "blockers": {
+      "B1": "LEVE le 2026-08-21. Voir repetitionMigration ci-dessous.",
+      "B2_fusion_admin": "OUVERT: apps/api/src/admin/* et apps/web/{app/admin/page.tsx,lib/adminApi.ts} touches par A5 -> conflit de fusion probable avec le chantier moderation des annonces."
+    },
+    "decisionsProprio": [
+      "Q1 adhesion payante?",
+      "Q2 connexion back-office?",
+      "Q3 carte verifiable?",
+      "Q4 domaine site public?",
+      "Q5 badge?",
+      "Q6 adherent sans compte NigerConnect?"
+    ],
+    "mobileVersion": "NON bumpee (1.15.0) — JS-only, un bump ferait rater la cible OTA aux builds installes. A trancher par le proprio.",
+    "correctionProprio": {
+      "date": "2026-08-20",
+      "A1": "SURCORRECTION CORRIGEE: liste nominative visible par tout membre authentifie par defaut; membersVisibility public|members_only (defaut public) reglable par admin asso. Conserves et testes: privacyLevel private exclu, blocages 2 sens, memberCount public.",
+      "isAnimated": "HARMONISE: visibles PARTOUT (filtre retire de listMembers, seule occurrence de l API). Raison: le compteur les incluait deja, l ecart compteur/liste les revelait par soustraction.",
+      "badges": "REFONDU en 1 systeme (Badge.tsx + BadgeGroup): forme=famille d entite, couleur+icone=la revendication, 6 kinds dont les 2 de REALISATIONS.md, coexistence a ordre deterministe, overflow +N.",
+      "rolesGeneriques": "isLeaderOfAnyAssociation(userId,{countryCode}) expose pour Realisation. Pas de framework de moderation speculatif (YAGNI + risque de collision avec le chantier moderation).",
+      "testsMobile": "COMBLE: 2 suites, 30 tests (badgeSystem, associationOfficers), mutation-testes."
+    },
+    "chevauchement": "apps/api/src/admin/* et apps/web/{app/admin/page.tsx,lib/adminApi.ts} touches par A5 — conflit de fusion probable avec le chantier moderation des annonces.",
+    "decisionProduitEnAttente": "Un compte anime PEUT rejoindre une association (join() ne verifie pas isAnimated). Si on ne veut pas de comptes fabriques dans un annuaire reel, le levier est d empecher de rejoindre, pas de cacher a l affichage.",
+    "repetitionMigration": {
+      "date": "2026-08-21",
+      "ou": "VPS, conteneurs jetables nc-rehearsal / nc-rehearsal2 (postgis/postgis:16-3.4-alpine, image identique a la prod), sur le reseau nigerconnect-internal. Detruits apres coup. La prod n a jamais ete touchee (health db:ok redis:ok verifie apres).",
+      "methode": "Restauration du dump prod du 2026-08-21 03:23 (513 Ko), puis la VRAIE commande de deploiement: prisma migrate deploy, lancee dans un conteneur jetable SANS le DATABASE_URL de production dans son environnement (impossible de viser la prod par erreur).",
+      "donneesReelles": "279 users, 1 association, 2 membres, 47 migrations deja appliquees. Les 3 migrations passent. Resultat verifie: slug/normalized_name non NULL, aucun doublon, exactement 1 owner, tables association_officers + association_role_audits creees, members_visibility=public.",
+      "donneesAdverses": "12 associations injectees avant migration: 3 doublons de nom (dont un avec espace final), homoglyphe cyrillique, accents, ss/oe, espace de largeur nulle, nom 100% emoji, nom 100% ponctuation, association sans admin approuve, association dont le fondateur n est plus admin. Migration OK. Verifie: 0 association a >1 owner, 0 association avec admin approuve et sans owner, le plus ancien admin herite quand le fondateur est parti, la sans-admin reste sans owner (tolere par conception).",
+      "miroirJsSql": "137 noms (les 112 caracteres de FOLD_FROM + 25 noms pieges) inseres avant migration puis compares au slugify.ts local: 0 divergence. L invariant anti-squat (le SQL de migration et le code applicatif produisent la MEME chaine) est prouve, pas suppose.",
+      "bugTrouveEtCorrige": "La normalisation peut ALLONGER un nom (NFKD etend U+2167 en VIII, ss double). Un nom de 200 caracteres -- le maximum Zod -- produisait un slug de 800 caracteres: erreur Postgres 22001 'value too long for type character varying(220)', migration avortee en plein vol (P3018), et cote applicatif un 500 au lieu d un 400 a la creation. Corrige: slug borne a 200 caracteres dans slugify.ts (MAX_SLUG) ET dans le miroir SQL (left(base,200)), + 4 tests unitaires. Repetition rejouee ensuite: 150 associations migrees, max length(slug)=200, 0 divergence."
+    },
+    "commits": [
+      "1c51159 feat(association) socle API: annuaire refermable, plus d orpheline, owner + audit, bureau executif, certification tracee, anti-squat slug/nom normalise + bornage du slug",
+      "1951694 feat(mobile) systeme de badges unique + bureau de l association (JS-only, version NON bumpee)",
+      "eada4e2 feat(web) console d administration des associations"
+    ]
+  }
 }
