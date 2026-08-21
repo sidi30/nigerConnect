@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT1-ASSOC: COMMITE (1c51159, 1951694, eada4e2). Gates verts api tsc + jest 828/828, mobile 74/74, web tsc, shared-types. B1 LEVE: migration repetee sur dump prod + donnees adverses dans un conteneur jetable sur le VPS, un bug de depassement de longueur trouve et corrige. PAS READY_FOR_DEPLOY: decisions proprio Q1-Q6 + fusion admin avec le chantier moderation.",
+  "current": "SPRINT1-ASSOC: LIVRE, COMMITE, POUSSE (82f6703). Gates verts (api tsc + jest 828/828, mobile tsc + 74/74, web tsc). B1 leve par repetition de migration sur dump prod + donnees adverses (un bug de depassement de longueur du slug trouve et corrige). B2 chevauchement admin ferme (pas de branche concurrente). Q1-Q6 tranchees le 2026-08-21. SEUL RESTE: approbation de deploiement (API VPS + OTA mobile) par le proprio.",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -561,13 +561,14 @@
     "debugger_bugs": 1
   },
   "openQuestions": [
-    "MARKETPLACE: positionnement -- onglet Services pair (actuel, deja tres visible) vs fondu sous onglet Entraide avec formulaire intention-first (reco conseiller). Impacte la tab-bar (deja 6 onglets).",
+    "DEPLOIEMENT du sprint 1 association: attente du GO proprio (API VPS avec migration + OTA mobile JS-only sans bump).",
+    "MARKETPLACE: positionnement -- onglet Services pair (actuel) vs fondu sous onglet Entraide avec formulaire intention-first. Impacte la tab-bar (deja 6 onglets).",
     "S2 proximite: reprise ou maintien en pause?"
   ],
   "sprint1EspaceAssociation": {
     "sprint": "S1 « Le socle association devient sur et lisible »",
     "goal": "Refermer les fuites du module association avant d ouvrir un back-office, et poser la gouvernance (bureau executif, certification) dont les sprints 2-6 dependent.",
-    "status": "COMMITE (3 commits) + repetition de migration PROUVEE. Reste: decisions proprio Q1-Q6 + fusion admin. Deploy NON approuve.",
+    "status": "LIVRE ET POUSSE (77e6da0..82f6703). Gates verts. Q1-Q6 tranchees. Blocages techniques leves. Reste UNIQUEMENT l approbation de deploiement du proprio.",
     "items": {
       "A1": "DONE",
       "A2": "DONE",
@@ -587,17 +588,18 @@
       "reviewer": "B2/N1/N4 leves; B1 repetition migration OUVERT"
     },
     "blockers": {
-      "B1": "LEVE le 2026-08-21. Voir repetitionMigration ci-dessous.",
-      "B2_fusion_admin": "OUVERT: apps/api/src/admin/* et apps/web/{app/admin/page.tsx,lib/adminApi.ts} touches par A5 -> conflit de fusion probable avec le chantier moderation des annonces."
+      "B1": "LEVE le 2026-08-21 (voir repetitionMigration).",
+      "B2_fusion_admin": "FERME le 2026-08-21: aucune branche moderation concurrente n existe. Le code de moderation est deja dans main (livre au sweep de juillet) et A5 a ete committe par-dessus, 65 suites vertes. Le conflit redoute ne s est jamais materialise."
     },
-    "decisionsProprio": [
-      "Q1 adhesion payante?",
-      "Q2 connexion back-office?",
-      "Q3 carte verifiable?",
-      "Q4 domaine site public?",
-      "Q5 badge?",
-      "Q6 adherent sans compte NigerConnect?"
-    ],
+    "decisionsProprio": {
+      "date": "2026-08-21 (proprio a delegue l arbitrage)",
+      "Q1": "Adhesion payante NON. Cotisation gratuite + declarative: NigerConnect ne touche jamais a l argent (regle zero solution payante + prestataire de paiement = KYC/reglementaire sur flux diaspora). Statut de cotisation saisi par le bureau, donc falsifiable par lui: assume, le bureau est deja la source de verite.",
+      "Q2": "Back-office = compte personnel + elevation de role. Jamais de compte association partage: il rendrait decoratif le journal d audit A3 (on ne saurait plus QUI a agi) et empecherait de revoquer une seule personne.",
+      "Q3": "Carte verifiable = QR vers une page de verification serveur. Token opaque >=128 bits, rotation a la revocation. Pas de signature hors-ligne (gestion de cles sans gain reel). PDF via pdfkit, JAMAIS puppeteer (API plafonnee a 1 Go sur VPS mutualise).",
+      "Q4": "Site public en sous-chemin nigerconnect.app/asso/{slug}. Un sous-domaine par association = 1 certificat + 1 entree DNS chacun (exploitation manuelle + surface de squat) pour un benefice nul. noindex par defaut.",
+      "Q5": "Badge association certifiee = ecusson ambre, distinct du badge de personne verifiee par piece d identite. Deja livre au Sprint 1 (forme = famille d entite, couleur+icone = revendication).",
+      "Q6": "Adherent SANS compte NigerConnect: AUTORISE mais borne. Exiger un compte rendrait le module inutile (anciens, gens restes au pays) et pousserait le bureau a creer de faux comptes. Bornes non negociables au Sprint 3: (1) minimum vital nom + un contact; (2) jamais dans le graphe social (ni carte, ni recherche, ni fil, ni proximite, ni suggestion); (3) aucune notification, courriel uniquement via la liste de diffusion du Sprint 5 dont les prerequis restent bloquants; (4) ne peut pas sieger au bureau (sinon l audit A3 pointe un fantome); (5) rattachement par invitation, rien de social avant ce geste; (6) suppression a la demande + association responsable de traitement, A ECRIRE DANS LES CGU avant mise en service du Sprint 3. => Sprint 3 debloque."
+    },
     "mobileVersion": "NON bumpee (1.15.0) — JS-only, un bump ferait rater la cible OTA aux builds installes. A trancher par le proprio.",
     "correctionProprio": {
       "date": "2026-08-20",
@@ -622,6 +624,11 @@
       "1c51159 feat(association) socle API: annuaire refermable, plus d orpheline, owner + audit, bureau executif, certification tracee, anti-squat slug/nom normalise + bornage du slug",
       "1951694 feat(mobile) systeme de badges unique + bureau de l association (JS-only, version NON bumpee)",
       "eada4e2 feat(web) console d administration des associations"
-    ]
+    ],
+    "pousseSurGitHub": {
+      "date": "2026-08-21",
+      "range": "77e6da0..82f6703 sur origin/main (14 commits: les 4 du sprint + 10 anciens jamais pousses)",
+      "pentestAuPush": "hook pre-push gwani-pentest: 0 critical, 0 high, 0 medium, 3 findings info/low non exploitables -> OK_TO_DEPLOY"
+    }
   }
 }

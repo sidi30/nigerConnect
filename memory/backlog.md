@@ -18,17 +18,74 @@ suivants ne sont jamais faits.
 
 ---
 
-## Décisions structurantes en attente du propriétaire
+## Décisions structurantes — TRANCHÉES le 2026-08-21
 
-Voir le rapport de l'orchestrateur. Résumé : Q1 adhésion **gratuite déclarative**,
-Q2 **compte personnel + élévation de rôle**, Q3 carte **QR → page de vérif serveur**,
-Q4 site public en **sous-chemin `/asso/{slug}`**, Q5 badge **écusson ambre**.
-Aucune de ces réponses ne bloque le Sprint 1.
+Le propriétaire a délégué l'arbitrage. Chaque réponse est motivée par une contrainte
+déjà écrite du projet, pas par une préférence.
 
-**Q6 (soulevée par l'analyse de risques, non anticipée dans la demande) :
-un adhérent doit-il obligatoirement avoir un compte NigerConnect ?**
-C'est la question qui commande le modèle de données des sprints 3 à 5. Elle bloque le
-Sprint 3, pas avant.
+### Q1 — L'adhésion peut-elle être payante ? → **NON. Cotisation gratuite et déclarative.**
+
+NigerConnect ne touche jamais à l'argent. Encaisser une cotisation, c'est un prestataire
+de paiement (commission, KYC, obligations réglementaires sur des flux diaspora → Niger),
+et cela contredit frontalement la règle *zéro solution payante*. Le bureau enregistre
+lui-même qui est à jour de cotisation ; l'argent circule hors de la plateforme, comme
+aujourd'hui. Conséquence assumée : le statut de cotisation est **déclaratif**, donc
+falsifiable par le bureau — c'est acceptable, le bureau est déjà la source de vérité.
+
+### Q2 — Comment se connecte-t-on au back-office ? → **Compte personnel + élévation de rôle.**
+
+Jamais un compte « association » partagé. A3 vient d'installer un journal d'audit des
+changements de rôle : un identifiant partagé le rend décoratif — on ne saurait plus QUI a
+agi, et on ne pourrait pas révoquer une seule personne quand elle quitte le bureau.
+Bénéfice second : aucun second système d'authentification à maintenir.
+
+### Q3 — Comment vérifie-t-on une carte d'adhérent ? → **QR → page de vérification serveur.**
+
+Token opaque ≥ 128 bits, révocable, rotation à la révocation. Une signature vérifiable
+hors-ligne imposerait une gestion de clés (rotation, révocation, distribution) sans gain
+réel : celui qui contrôle une carte a du réseau. PDF via `pdfkit`, **jamais**
+puppeteer/chromium — l'API est plafonnée à 1 Go sur un VPS mutualisé.
+
+### Q4 — Quel domaine pour le site public ? → **Sous-chemin `nigerconnect.app/asso/{slug}`.**
+
+Un sous-domaine par association coûterait un certificat et une entrée DNS par association,
+donc de l'exploitation manuelle et une surface de squat supplémentaire — pour un bénéfice
+nul tant qu'aucune association ne réclame sa propre marque. Le sous-chemin est gratuit,
+sert l'autorité du domaine principal, et l'anti-squat du `slug` (A6) le protège déjà.
+`noindex` par défaut, comme prévu au Sprint 6.
+
+### Q5 — Quel badge pour une association certifiée ? → **Écusson ambre, distinct de la vérification d'identité.**
+
+Déjà livré au Sprint 1 : la FORME dit la famille d'entité, la COULEUR et l'icône disent la
+revendication. Une association certifiée ne doit jamais emprunter le badge d'une personne
+dont la pièce d'identité a été vérifiée — ce sont deux affirmations différentes.
+
+### Q6 — Un adhérent doit-il avoir un compte NigerConnect ? → **NON, mais la fiche sans compte est bornée.**
+
+C'est la décision qui commande le modèle de données des sprints 3 à 5.
+
+Exiger un compte rendrait le module inutile pour les associations réelles : leurs adhérents
+comptent des anciens, des gens restés au pays sans smartphone. Le bureau créerait alors de
+faux comptes pour les représenter — pire résultat, données fausses ET comptes fantômes.
+
+Mais une fiche d'adhérent est une donnée personnelle sur quelqu'un qui n'a rien accepté.
+D'où les bornes, **non négociables** au Sprint 3 :
+
+1. La fiche appartient à l'association, pas à NigerConnect : minimum vital (nom + un moyen
+   de contact), rien d'autre.
+2. Elle n'entre **jamais** dans le graphe social : ni carte, ni recherche, ni fil, ni
+   proximité, ni suggestion d'amis. Elle n'existe que dans l'espace de son association.
+3. Elle ne reçoit **aucune** notification. Un courriel n'est possible que par la liste de
+   diffusion du Sprint 5, dont les prérequis (séparation des identités d'envoi) restent
+   bloquants.
+4. Elle ne peut pas être membre du bureau : un poste au bureau exige un compte, sinon le
+   journal d'audit A3 pointe vers un fantôme.
+5. Rattachement par invitation : la personne relie elle-même la fiche à son compte, et rien
+   de social ne se produit avant ce geste.
+6. Suppression à la demande de la personne, et l'association est responsable de traitement
+   pour ces fiches — **à écrire dans les CGU avant la mise en service du Sprint 3**.
+
+> Le Sprint 3 n'est plus bloqué.
 
 ---
 
