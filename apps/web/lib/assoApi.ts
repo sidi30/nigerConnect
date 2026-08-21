@@ -18,6 +18,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 export const TOKEN_KEY = "nc_asso_token";
+/** Who is logged in. Kept next to the token so the UI can tell "my post" from
+ *  "someone else's" without decoding the JWT — the API stays the only judge of
+ *  what that identity is allowed to do. */
+export const USER_KEY = "nc_asso_user";
 
 export type AssociationRole = "member" | "admin" | "owner";
 
@@ -46,14 +50,21 @@ export function getToken(): string | null {
   return window.localStorage.getItem(TOKEN_KEY);
 }
 
-export function setSession(token: string): void {
+export function setSession(token: string, userId: string): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(TOKEN_KEY, token);
+  window.localStorage.setItem(USER_KEY, userId);
+}
+
+export function getUserId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(USER_KEY);
 }
 
 export function clearSession(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(USER_KEY);
 }
 
 function redirectToLogin(): void {
@@ -355,4 +366,116 @@ function query(params: { cursor?: string | null; limit?: number }): string {
   if (params.cursor) parts.push(`cursor=${encodeURIComponent(params.cursor)}`);
   if (params.limit) parts.push(`limit=${params.limit}`);
   return parts.length ? `?${parts.join("&")}` : "";
+}
+
+// ---------------------------------------------------------------------------
+// Publications de l'association (B3)
+// ---------------------------------------------------------------------------
+
+export interface PostMedia {
+  id?: string;
+  mediaUrl: string;
+  thumbnailUrl?: string | null;
+  mediaType: "image" | "video";
+  width?: number | null;
+  height?: number | null;
+  sortOrder?: number;
+}
+
+export interface AssociationPost {
+  id: string;
+  content: string | null;
+  visibility: string;
+  associationId: string | null;
+  createdAt: string;
+  likeCount?: number;
+  commentCount?: number;
+  media?: PostMedia[];
+  author?: MemberUser;
+}
+
+/** What the API hands back for a signed upload. */
+export interface PresignedUpload {
+  uploadUrl: string;
+  publicUrl: string;
+  key: string;
+  bucket: string;
+  visibility: string;
+  expiresIn: number;
+  sseRequired: boolean;
+}
+
+export const UPLOADABLE_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+] as const;
+export type UploadableImageType = (typeof UPLOADABLE_IMAGE_TYPES)[number];
+
+/** 15 Mo — the cap the API enforces at attach time (S3Service). Checking it
+ *  here too turns a rejected upload into an immediate, explicit message. */
+export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
+export function listAssociationPosts(
+  associationId: string,
+  params: { cursor?: string | null; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<Page<AssociationPost>> {
+  return assoFetch<Page<AssociationPost>>(
+    `/associations/${associationId}/posts${query(params)}`,
+    { signal },
+  );
+}
+
+/** ADR-002 — signs an upload into `associations/{id}/`, role checked server-side. */
+export function presignAssociationMedia(
+  associationId: string,
+  contentType: UploadableImageType,
+): Promise<PresignedUpload> {
+  return assoFetch<PresignedUpload>(`/associations/${associationId}/media/presign`, {
+    method: "POST",
+    body: { contentType },
+  });
+}
+
+/**
+ * Upload the bytes straight to the bucket with the signed PUT. The API never
+ * relays the file — it only signs, then verifies at attach time.
+ */
+export async function uploadToSignedUrl(
+  presigned: PresignedUpload,
+  file: File,
+): Promise<string> {
+  const headers: Record<string, string> = { "Content-Type": file.type };
+  if (presigned.sseRequired) headers["x-amz-server-side-encryption"] = "AES256";
+
+  let res: Response;
+  try {
+    res = await fetch(presigned.uploadUrl, { method: "PUT", headers, body: file });
+  } catch {
+    throw new AssoApiError(0, "Envoi du fichier impossible. Réessaie.");
+  }
+  if (!res.ok) {
+    throw new AssoApiError(res.status, "Le fichier a été refusé par le stockage.");
+  }
+  return presigned.publicUrl;
+}
+
+export function createAssociationPost(
+  associationId: string,
+  body: { content?: string; media?: PostMedia[] },
+): Promise<AssociationPost> {
+  return assoFetch<AssociationPost>("/posts", {
+    method: "POST",
+    body: {
+      ...body,
+      visibility: "association",
+      associationId,
+    },
+  });
+}
+
+export function deletePost(postId: string): Promise<void> {
+  return assoFetch<void>(`/posts/${postId}`, { method: "DELETE" });
 }

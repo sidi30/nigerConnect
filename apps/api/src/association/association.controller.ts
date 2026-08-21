@@ -15,6 +15,7 @@ import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-u
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AssociationService } from './association.service';
 import {
+  associationMediaPresignSchema,
   changeRoleSchema,
   rejectRequestSchema,
   createAssociationSchema,
@@ -24,6 +25,7 @@ import {
   listAssociationsSchema,
   transferOwnershipSchema,
   updateAssociationSchema,
+  type AssociationMediaPresignDto,
   type ChangeRoleDto,
   type RejectRequestDto,
   type CreateAssociationDto,
@@ -215,6 +217,16 @@ export class AssociationController {
     @Param('userId', new ParseUUIDPipe()) userId: string,
   ): Promise<void> {
     await this.assoc.removeOfficer(me.sub, id, userId);
+  }
+
+  // ── ADR-002 — médias portés par une association ────────────────────────
+  @Post('associations/:id/media/presign')
+  presignMedia(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(associationMediaPresignSchema)) dto: AssociationMediaPresignDto,
+  ) {
+    return this.assoc.presignMedia(me.sub, id, dto);
   }
 
   @Post('associations/:id/events')

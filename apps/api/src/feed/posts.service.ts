@@ -71,15 +71,59 @@ export class PostsService {
     private readonly diaspora: DiasporaPolicyService,
   ) {}
 
+  /**
+   * Bind one image of a post to a space its author is allowed to draw from.
+   *
+   * ADR-002: an association's media live under `associations/{id}/`, a space
+   * shared by its officers — the caller's role was already checked when the
+   * upload was signed (association.service presignMedia) and again by the
+   * publish gate above. The author's own `users/{authorId}/` space stays
+   * accepted for association posts too: that is where the MOBILE app still
+   * uploads, and refusing it would break posting a photo from the phone the
+   * day this ships. Both are surfaces the author legitimately controls.
+   *
+   * An image sitting under ANOTHER association's prefix matches neither branch
+   * and is refused — the fallback re-checks it against `users/{authorId}/`.
+   */
+  private async bindPostImage(
+    url: string,
+    authorId: string,
+    associationId: string | null,
+  ): Promise<string> {
+    if (associationId) {
+      const prefix = `associations/${associationId}/`;
+      const key = this.s3.parsePublicKey(url);
+      if (key?.startsWith(prefix)) {
+        return this.s3.assertOwnedPublicMedia(url, 'image', prefix);
+      }
+    }
+    return this.s3.assertOwnedPublicImage(url, authorId);
+  }
+
   async create(authorId: string, dto: CreatePostDto) {
     if (dto.visibility === 'association' && !dto.associationId) {
       throw new BadRequestException('associationId required for association posts');
     }
     if (dto.visibility === 'association') {
-      const isMember = await this.prisma.associationMember.count({
-        where: { userId: authorId, associationId: dto.associationId, status: 'approved' },
+      // Publishing under an association's name is reserved to the people who
+      // run it (owner decision, 2026-08-21). Same three roles that may already
+      // announce an event (association.service.ts createEvent): an association
+      // post reaches every approved member's feed, so it IS the association
+      // speaking — not one member addressing the others. Mere membership used
+      // to be enough here.
+      const isOfficer = await this.prisma.associationMember.count({
+        where: {
+          userId: authorId,
+          associationId: dto.associationId,
+          status: 'approved',
+          role: { in: ['admin', 'moderator', 'owner'] },
+        },
       });
-      if (!isMember) throw new ForbiddenException('Not a member of this association');
+      if (!isOfficer) {
+        throw new ForbiddenException(
+          "Only this association's officers can publish in its name",
+        );
+      }
     }
 
     // Client-supplied media URLs are only validated as well-formed URLs by the
@@ -88,12 +132,14 @@ export class PostsService {
     // The thumbnail needs the exact same treatment: it is rendered as an image
     // for every viewer, so an unbound one turns an attacker-chosen URL into a
     // beacon collecting the audience's IP and User-Agent.
+    const scopedAssociationId =
+      dto.visibility === 'association' ? (dto.associationId ?? null) : null;
     const media = dto.media
       ? await Promise.all(
           dto.media.map(async (m, i) => ({
-            mediaUrl: await this.s3.assertOwnedPublicImage(m.mediaUrl, authorId),
+            mediaUrl: await this.bindPostImage(m.mediaUrl, authorId, scopedAssociationId),
             thumbnailUrl: m.thumbnailUrl
-              ? await this.s3.assertOwnedPublicImage(m.thumbnailUrl, authorId)
+              ? await this.bindPostImage(m.thumbnailUrl, authorId, scopedAssociationId)
               : null,
             mediaType: m.mediaType,
             width: m.width ?? null,

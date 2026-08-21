@@ -13,6 +13,7 @@ import { S3Service } from '../common/storage/s3.service';
 import { MailerService } from '../common/mail/mailer.service';
 import { slugify } from '../common/text/slugify';
 import type {
+  AssociationMediaPresignDto,
   ChangeRoleDto,
   CreateAssociationDto,
   CreateEventDto,
@@ -949,6 +950,29 @@ export class AssociationService {
       },
       orderBy: [{ sortOrder: 'asc' }, { acceptedAt: 'asc' }],
       include: { user: { select: MEMBER_SELECT } },
+    });
+  }
+
+  // ── ADR-002 — médias portés par une association ──────────────────────────
+
+  /**
+   * Sign an upload into the association's own media space.
+   *
+   * The key prefix `associations/{id}/` is shared by every officer, so unlike
+   * `users/{id}/` it proves nothing on its own: the role is checked HERE,
+   * before any URL is handed out. Skipping this check would let any signed-in
+   * user drop objects into an association's space — never attached, never
+   * displayed, but stored on our disk and served by the CDN.
+   *
+   * Same three roles that may publish or announce an event: whoever may speak
+   * for the association may upload the image that goes with it.
+   */
+  async presignMedia(userId: string, id: string, dto: AssociationMediaPresignDto) {
+    await this.assertRole(userId, id, ['admin', 'moderator', 'owner']);
+    return this.s3.createPresignedUpload({
+      folder: `associations/${id}`,
+      contentType: dto.contentType,
+      visibility: 'public',
     });
   }
 

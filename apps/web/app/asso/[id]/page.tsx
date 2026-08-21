@@ -112,7 +112,7 @@ export default function AssoDashboardPage({ params }: { params: Promise<{ id: st
         <Card
           title="Publications"
           body="Écrire une publication avec des images, depuis un vrai clavier."
-          soon
+          href={`/asso/${association.id}/publications`}
         />
         <Card
           title="Événements"

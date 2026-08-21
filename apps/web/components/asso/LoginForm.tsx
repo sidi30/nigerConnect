@@ -22,8 +22,8 @@ export default function AssoLoginForm() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
 
-  function finishSession(accessToken: string): void {
-    setSession(accessToken);
+  function finishSession(accessToken: string, userId: string): void {
+    setSession(accessToken, userId);
     router.replace("/asso");
   }
 
@@ -38,7 +38,7 @@ export default function AssoLoginForm() {
         setSubmitting(false);
         return;
       }
-      finishSession(res.tokens.accessToken);
+      finishSession(res.tokens.accessToken, res.user.id);
     } catch (err) {
       setError(messageFor(err, "Email ou mot de passe incorrect.", "Connexion impossible."));
       setSubmitting(false);
@@ -52,7 +52,7 @@ export default function AssoLoginForm() {
     setSubmitting(true);
     try {
       const res = await verifyMfa(mfaToken, code.trim());
-      finishSession(res.tokens.accessToken);
+      finishSession(res.tokens.accessToken, res.user.id);
     } catch (err) {
       setError(messageFor(err, "Code incorrect ou expiré.", "Vérification impossible."));
       setSubmitting(false);

@@ -155,6 +155,17 @@ export default function AssociationDetailScreen() {
   // Admins & moderators manage join requests and can invite people.
   const canManage = membership?.role === 'admin' || membership?.role === 'moderator';
 
+  // Publier au nom de l'association est réservé aux dirigeants (décision
+  // proprio du 2026-08-21) : une publication d'association atterrit dans le fil
+  // de TOUS les membres approuvés, c'est donc l'association qui parle, pas un
+  // membre qui s'adresse aux autres. Miroir exact du filtre de rôle de
+  // posts.service.ts create() — si l'écran offrait le bouton à un simple
+  // membre, il n'obtiendrait qu'un 403.
+  const canPublish =
+    membership?.role === 'admin' ||
+    membership?.role === 'moderator' ||
+    membership?.role === 'owner';
+
   const pendingQuery = useQuery({
     queryKey: ['association', id, 'pending'],
     queryFn: () => associationsApi.pending(id!),
@@ -515,18 +526,20 @@ export default function AssociationDetailScreen() {
           <View style={{ marginTop: Spacing.lg }}>
             <View style={styles.pubHeader}>
               <Text style={styles.sectionTitle}>Publications</Text>
-              <Pressable
-                style={styles.writeBtn}
-                onPress={() =>
-                  router.push({
-                    pathname: '/post/new',
-                    params: { associationId: id, associationName: a.name },
-                  })
-                }
-              >
-                <Feather name="edit-2" size={14} color={Colors.white} />
-                <Text style={styles.writeLabel}>Écrire</Text>
-              </Pressable>
+              {canPublish ? (
+                <Pressable
+                  style={styles.writeBtn}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/post/new',
+                      params: { associationId: id, associationName: a.name },
+                    })
+                  }
+                >
+                  <Feather name="edit-2" size={14} color={Colors.white} />
+                  <Text style={styles.writeLabel}>Écrire</Text>
+                </Pressable>
+              ) : null}
             </View>
             {assocPostsQuery.isLoading ? (
               <Loader style={{ marginTop: Spacing.sm }} />
@@ -536,7 +549,9 @@ export default function AssociationDetailScreen() {
               </Text>
             ) : assocPosts.length === 0 ? (
               <Text style={[styles.sectionHint, { paddingHorizontal: Spacing.lg }]}>
-                Aucune publication pour l’instant. Sois le premier à publier !
+                {canPublish
+                  ? 'Aucune publication pour l’instant. Sois le premier à publier !'
+                  : 'Aucune publication pour l’instant.'}
               </Text>
             ) : (
               assocPosts.map((p) => (

@@ -123,6 +123,16 @@ export const designateOfficerSchema = z
   });
 export type DesignateOfficerDto = z.infer<typeof designateOfficerSchema>;
 
+// ── ADR-002 — médias portés par une association ────────────────────────────
+// Le préfixe `associations/{id}/` n'est plus auto-autorisant (plusieurs
+// dirigeants y déposent), donc le rôle est vérifié AVANT de signer l'upload,
+// et pas seulement à l'attache. Sans ça, n'importe quel inscrit obtiendrait
+// une URL signée sur l'espace d'une association dont il n'est pas dirigeant.
+export const associationMediaPresignSchema = z.object({
+  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/heic']),
+});
+export type AssociationMediaPresignDto = z.infer<typeof associationMediaPresignSchema>;
+
 // ── A5 — certification (platform-admin only, see admin.controller.ts) ──────
 export const verifyAssociationSchema = z.object({
   note: z.string().trim().max(1000).optional(),
