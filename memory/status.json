@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT1-ASSOC: LIVRE, COMMITE, POUSSE (82f6703). Gates verts (api tsc + jest 828/828, mobile tsc + 74/74, web tsc). B1 leve par repetition de migration sur dump prod + donnees adverses (un bug de depassement de longueur du slug trouve et corrige). B2 chevauchement admin ferme (pas de branche concurrente). Q1-Q6 tranchees le 2026-08-21. SEUL RESTE: approbation de deploiement (API VPS + OTA mobile) par le proprio.",
+  "current": "SPRINT1-ASSOC DEPLOYE EN PROD (API seule, 2026-08-21). OTA mobile retenu jusqu au verdict de la review iOS 1.15.0. Q1-Q6 tranchees. Prochain: SPRINT 2 back-office web, en commencant par l ADR medias portes par une association (B2) qui gate le reste.",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -393,82 +393,42 @@
     ]
   },
   "sprint": {
-    "id": "S3",
-    "goal": "De-risking OTA-safe: rendre la page profil correcte a l'echelle (compteurs autoritatifs, apercu amis borne + voir tout pagine) et corriger le bug du compteur d'amis plafonne a une page. Zero decision proprio bloquante, zero module natif => OTA iOS sans bump.",
-    "deliveryNote": "Increment 100% OTA iOS. API: 1 endpoint/enrichissement de comptage (pas de migration a priori, _count Prisma). Mobile JS-only. NE PAS bumper app.json version (orphelinerait l'OTA). Privacy: le friendsCount d'un tiers suit exactement le gating existant de la liste d'amis (private=>404, friends=>amis only).",
+    "id": "S2-ASSOC",
+    "goal": "L association publie depuis un ordinateur: back-office web, authentifie par compte personnel de dirigeant.",
+    "status": "A DEMARRER",
+    "prerequisTranches": "Q2 (compte personnel + elevation de role) tranchee le 2026-08-21.",
     "items": [
       {
-        "id": "PR1",
-        "title": "Endpoint/enrichissement compteurs autoritatifs (friends/posts/photos/filleuls) via _count, gate privacy identique a la liste",
+        "id": "B2",
+        "title": "ADR: medias portes par une association (prefixe associations/{id}/, assertion par role) -- gate de B3, ne PAS contourner assertOwnedPublicImage",
         "priority": 5,
-        "status": "todo",
-        "type": "story",
-        "surfaces": [
-          "api/profile",
-          "api/social",
-          "shared-types"
-        ],
-        "agent": "gwani-backend",
-        "migration": false
+        "status": "todo"
       },
       {
-        "id": "PR2",
-        "title": "Profil (moi + tiers): compteur amis autoritatif, apercu amis borne (N max) + Voir tous les amis => ecran paginate",
-        "priority": 4.5,
-        "status": "todo",
-        "type": "story",
-        "surfaces": [
-          "mobile/profile.tsx",
-          "mobile/user/[id].tsx",
-          "mobile/friends",
-          "mobile/profileApi"
-        ],
-        "agent": "gwani-frontend",
-        "delivery": "OTA iOS sans bump"
-      },
-      {
-        "id": "PR3",
-        "title": "TESTS: unit jest counts + gating privacy du compteur tiers + non-regression tsc api/mobile",
+        "id": "B1",
+        "title": "Auth back-office: session web sur compte NigerConnect, selection de l association, assertRole",
         "priority": 5,
-        "status": "todo",
-        "type": "test",
-        "surfaces": [
-          "api/profile spec",
-          "e2e/tests/api"
-        ],
-        "agent": "bug-hunter->fixer->e2e-tester"
+        "status": "todo"
       },
       {
-        "id": "PR4",
-        "title": "REVUE gwani-reviewer + verdict gwani-pentest sur le gating du compteur (fuite de taille de reseau d'un compte prive?)",
+        "id": "B4",
+        "title": "Gestion des membres et des demandes d adhesion depuis le web",
         "priority": 4,
-        "status": "done",
-        "type": "security",
-        "surfaces": [
-          "api/profile",
-          "api/social"
-        ],
-        "agent": "gwani-reviewer + gwani-pentest",
-        "gate": "OK_TO_DEPLOY"
+        "status": "todo"
+      },
+      {
+        "id": "B5",
+        "title": "Quota disque par association + alerte volume AVANT d ouvrir la video",
+        "priority": 4,
+        "status": "todo"
+      },
+      {
+        "id": "B3",
+        "title": "CRUD publications avec medias, reutilisant le pipeline existant (video inerte tant que video_enabled=OFF)",
+        "priority": 3,
+        "status": "todo"
       }
-    ],
-    "status": "READY_FOR_DEPLOY",
-    "result": {
-      "allItems": "done (PR1..PR4)",
-      "tests": "api tsc vert + 35 suites / 324 tests jest verts ; mobile tsc vert",
-      "reviewer": "READY (aucun bloquant)",
-      "pentest": "OK_TO_DEPLOY (0 critical, 0 high) -- 5 menaces deanon/oracle/IDOR/cache/enumeration neutralisees avec preuves",
-      "bugFixed": "MEDIUM postsCount ne respectait pas la visibilite par post (fuite mineure du nb de posts non-publics) -> corrige, mirrore getUserPosts",
-      "mobileVersion": "1.8.0 inchangee (OTA-safe, pas de bump)",
-      "delivery": "API deploy dernier commit (pas de migration) + Mobile OTA iOS eas update --channel preview",
-      "deferredNits": [
-        "getById alourdi (loadCounts) alors que getPhotos/listFriendsOf ne l'utilisent que comme gate -> extraire assertCanViewProfile leger",
-        "clause de visibilite des posts dupliquee de posts.service.ts -> extraire un helper partage (dette de divergence)",
-        "LOW mobile: erreur transitoire (5xx/timeout) affichee comme 'liste non visible' -> distinguer 403/404 vs transitoire (retry)",
-        "ProfileCounts defini 2x (shared-types optionnel + service local requis)",
-        "postsCount livre+teste mais non encore affiche cote mobile (contrat autoritatif pret pour web/futur)"
-      ]
-    }
+    ]
   },
   "backlogEpics": [
     {
@@ -555,20 +515,20 @@
   },
   "checkpoints": {
     "deploy_approved": false,
-    "deploy_approved_scope": "AUCUN. Remis a false le 2026-08-20 : le GO du 2026-07-02 portait sur le sprint S3 profil, il ne vaut approbation pour aucun sprint ulterieur."
+    "deploy_approved_scope": "CONSOMME. Le GO du 2026-08-21 portait sur l API du sprint 1 association UNIQUEMENT, il est utilise. Aucun autre deploiement n est approuve."
   },
   "iterations": {
     "debugger_bugs": 1
   },
   "openQuestions": [
-    "DEPLOIEMENT du sprint 1 association: attente du GO proprio (API VPS avec migration + OTA mobile JS-only sans bump).",
+    "OTA mobile du sprint 1: a livrer des que la review App Store de 1.15.0 est tranchee (JS-only, sans bump).",
     "MARKETPLACE: positionnement -- onglet Services pair (actuel) vs fondu sous onglet Entraide avec formulaire intention-first. Impacte la tab-bar (deja 6 onglets).",
     "S2 proximite: reprise ou maintien en pause?"
   ],
   "sprint1EspaceAssociation": {
     "sprint": "S1 « Le socle association devient sur et lisible »",
     "goal": "Refermer les fuites du module association avant d ouvrir un back-office, et poser la gouvernance (bureau executif, certification) dont les sprints 2-6 dependent.",
-    "status": "LIVRE ET POUSSE (77e6da0..82f6703). Gates verts. Q1-Q6 tranchees. Blocages techniques leves. Reste UNIQUEMENT l approbation de deploiement du proprio.",
+    "status": "DEPLOYE EN PRODUCTION le 2026-08-21 (API seule). Mobile NON livre: OTA retenu tant que la review App Store de 1.15.0 n a pas rendu son verdict.",
     "items": {
       "A1": "DONE",
       "A2": "DONE",
@@ -629,6 +589,14 @@
       "date": "2026-08-21",
       "range": "77e6da0..82f6703 sur origin/main (14 commits: les 4 du sprint + 10 anciens jamais pousses)",
       "pentestAuPush": "hook pre-push gwani-pentest: 0 critical, 0 high, 0 medium, 3 findings info/low non exploitables -> OK_TO_DEPLOY"
+    },
+    "deploiement": {
+      "date": "2026-08-21",
+      "portee": "API + web seulement, sur GO explicite du proprio. OTA mobile volontairement RETENU: un OTA modifierait le JS du binaire iOS 1.15.0 en review App Store.",
+      "sauvegardePrealable": "/opt/backups/nigerconnect/nigerconnect-predeploy-assoc-20260821-132132.dump (522 Ko, 60 tables lisibles verifiees par pg_restore -l)",
+      "migrations": "les 3 appliquees, applied_steps_count=1 chacune, 0 en echec, 0 rolled_back. 50 migrations au total en base.",
+      "verifications": "health db:ok redis:ok; 0 erreur 5xx dans les logs depuis le redemarrage; GET /api/associations repond 401 (route servie + garde active); l association de prod porte son slug et exactement 1 owner.",
+      "resteALivrer": "OTA mobile (JS-only, sans bump de version) des que la review iOS est tranchee."
     }
   }
 }
