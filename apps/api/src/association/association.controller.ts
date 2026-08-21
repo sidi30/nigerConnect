@@ -219,6 +219,12 @@ export class AssociationController {
     await this.assoc.removeOfficer(me.sub, id, userId);
   }
 
+  // ── B5 — occupation disque ─────────────────────────────────────────────
+  @Get('associations/:id/storage')
+  storage(@CurrentUser() me: JwtUserPayload, @Param('id', new ParseUUIDPipe()) id: string) {
+    return this.assoc.getStorage(me.sub, id);
+  }
+
   // ── ADR-002 — médias portés par une association ────────────────────────
   @Post('associations/:id/media/presign')
   presignMedia(

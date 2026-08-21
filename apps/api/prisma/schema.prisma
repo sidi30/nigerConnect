@@ -924,6 +924,12 @@ model Association {
   // the name-squat hole.
   slug                  String              @unique @db.VarChar(220)
   normalizedName        String              @unique @map("normalized_name") @db.VarChar(200)
+  // B5 — octets occupés par les médias déposés dans l'espace de CETTE
+  // association (`associations/{id}/`, ADR-002). Compté à l'attache, rendu à
+  // la suppression de la publication (qui purge alors les objets). Un Int
+  // suffit et le restera : la réclamation atomique interdit de dépasser le
+  // quota, très en deçà des 2,1 Go que ce type porte.
+  mediaBytes            Int                 @default(0) @map("media_bytes")
   description           String?             @db.Text
   logoUrl               String?             @map("logo_url") @db.VarChar(500)
   coverUrl              String?             @map("cover_url") @db.VarChar(500)

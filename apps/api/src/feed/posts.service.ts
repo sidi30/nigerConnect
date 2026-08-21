@@ -13,6 +13,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service, type PresignedUpload } from '../common/storage/s3.service';
 import { SettingsService } from '../common/settings/settings.service';
+import { ASSOCIATION_MEDIA_QUOTA_BYTES } from '../association/association-storage';
 import { BlockService } from '../social/block.service';
 import { DiasporaPolicyService, HOME_COUNTRY } from '../social/diaspora-policy.service';
 import { MentionsService } from './mentions.service';
@@ -35,6 +36,8 @@ const VIDEO_MAX_UPLOADS_PER_DAY = 5;
 const VIDEO_COUNTER_TTL_SECONDS = 24 * 60 * 60;
 /** TTL of a story-video presigned PUT (900 s — slow NE/diaspora uplinks). */
 const VIDEO_PRESIGN_TTL_SECONDS = 900;
+
+
 
 const AUTHOR_SELECT = {
   id: true,
@@ -89,15 +92,20 @@ export class PostsService {
     url: string,
     authorId: string,
     associationId: string | null,
-  ): Promise<string> {
+  ): Promise<{ url: string; bytes: number }> {
     if (associationId) {
       const prefix = `associations/${associationId}/`;
       const key = this.s3.parsePublicKey(url);
       if (key?.startsWith(prefix)) {
-        return this.s3.assertOwnedPublicMedia(url, 'image', prefix);
+        // Only THIS branch is metered (B5). The fallback below lands in the
+        // author's personal space, which is not the association's disk — the
+        // day the mobile app uploads to the association prefix, its photos
+        // start counting too, with no further change here.
+        const bound = await this.s3.assertOwnedPublicMediaDetailed(url, 'image', prefix);
+        return { url: bound.url, bytes: bound.bytes };
       }
     }
-    return this.s3.assertOwnedPublicImage(url, authorId);
+    return { url: await this.s3.assertOwnedPublicImage(url, authorId), bytes: 0 };
   }
 
   async create(authorId: string, dto: CreatePostDto) {
@@ -134,23 +142,29 @@ export class PostsService {
     // beacon collecting the audience's IP and User-Agent.
     const scopedAssociationId =
       dto.visibility === 'association' ? (dto.associationId ?? null) : null;
+    let associationBytes = 0;
     const media = dto.media
       ? await Promise.all(
-          dto.media.map(async (m, i) => ({
-            mediaUrl: await this.bindPostImage(m.mediaUrl, authorId, scopedAssociationId),
-            thumbnailUrl: m.thumbnailUrl
+          dto.media.map(async (m, i) => {
+            const main = await this.bindPostImage(m.mediaUrl, authorId, scopedAssociationId);
+            const thumb = m.thumbnailUrl
               ? await this.bindPostImage(m.thumbnailUrl, authorId, scopedAssociationId)
-              : null,
-            mediaType: m.mediaType,
-            width: m.width ?? null,
-            height: m.height ?? null,
-            blurhash: m.blurhash ?? null,
-            sortOrder: m.sortOrder ?? i,
-          })),
+              : null;
+            associationBytes += main.bytes + (thumb?.bytes ?? 0);
+            return {
+              mediaUrl: main.url,
+              thumbnailUrl: thumb?.url ?? null,
+              mediaType: m.mediaType,
+              width: m.width ?? null,
+              height: m.height ?? null,
+              blurhash: m.blurhash ?? null,
+              sortOrder: m.sortOrder ?? i,
+            };
+          }),
         )
       : undefined;
 
-    const post = await this.prisma.post.create({
+    const createArgs = {
       data: {
         authorId,
         content: dto.content ?? null,
@@ -163,7 +177,42 @@ export class PostsService {
         author: { select: AUTHOR_SELECT },
         sharedPost: { include: SHARED_POST_INCLUDE },
       },
-    });
+    };
+
+    // B5 — quand il y a de la place à réclamer, la réclamation et la création
+    // vivent dans la MÊME transaction, et la réclamation est CONDITIONNELLE :
+    // `updateMany` avec `mediaBytes <= quota - delta` ne touche la ligne que si
+    // la place existe encore au moment du UPDATE. Deux dirigeants qui publient
+    // au même instant ne peuvent donc pas franchir le plafond chacun de leur
+    // côté après avoir lu la même valeur — c'est Postgres qui arbitre, pas un
+    // test lu-puis-écrit.
+    //
+    // Sans octets à réclamer (l'immense majorité des publications), on écrit
+    // directement : ouvrir une transaction pour une seule écriture coûterait
+    // un aller-retour de plus à chaque publication du réseau.
+    const post =
+      scopedAssociationId && associationBytes > 0
+        ? await this.prisma.$transaction(async (tx) => {
+            const claimed = await tx.association.updateMany({
+              where: {
+                id: scopedAssociationId,
+                mediaBytes: { lte: ASSOCIATION_MEDIA_QUOTA_BYTES - associationBytes },
+              },
+              data: { mediaBytes: { increment: associationBytes } },
+            });
+            if (claimed.count === 0) {
+              throw new HttpException(
+                {
+                  code: 'ASSOCIATION_STORAGE_FULL',
+                  message:
+                    "L'espace de stockage de l'association est plein. Supprimez d'anciennes publications pour libérer de la place.",
+                },
+                HttpStatus.PAYLOAD_TOO_LARGE,
+              );
+            }
+            return tx.post.create(createArgs);
+          })
+        : await this.prisma.post.create(createArgs);
 
     await this.invalidateFeedCache(authorId);
     // invalidateFeedCache only busts the author + their friends. Association
@@ -514,14 +563,67 @@ export class PostsService {
   }
 
   async softDelete(authorId: string, postId: string): Promise<void> {
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: { media: { select: { mediaUrl: true, thumbnailUrl: true } } },
+    });
     if (!post || post.deletedAt) throw new NotFoundException('Post not found');
     if (post.authorId !== authorId) throw new ForbiddenException('Not your post');
+
+    // B5 — un quota qui ne se libère jamais n'est pas un quota, c'est une date
+    // de péremption. Les objets déposés dans l'espace de l'association sont
+    // donc purgés ici, et les octets rendus. Purge AVANT le soft-delete, comme
+    // pour les stories : un crash laisse un objet orphelin purgeable plutôt
+    // qu'une ligne vivante qui pointe vers rien.
+    //
+    // Volontairement limité à l'espace de l'association : les médias d'une
+    // publication ordinaire ne sont pas purgés aujourd'hui, et changer ça
+    // dépasse le sujet du quota.
+    const freed = await this.freeAssociationMedia(post.associationId, post.media);
+
     await this.prisma.post.update({
       where: { id: postId },
       data: { deletedAt: new Date() },
     });
+    if (post.associationId && freed > 0) {
+      // `decrement` puis plancher à 0 : un compteur négatif serait un mensonge
+      // plus grave que quelques octets perdus si un objet a été purgé deux fois.
+      await this.prisma.association.updateMany({
+        where: { id: post.associationId, mediaBytes: { gte: freed } },
+        data: { mediaBytes: { decrement: freed } },
+      });
+      await this.prisma.association.updateMany({
+        where: { id: post.associationId, mediaBytes: { lt: freed } },
+        data: { mediaBytes: 0 },
+      });
+    }
     await this.invalidateFeedCache(authorId);
+  }
+
+  /**
+   * Purge the objects of this post that live in the association's own space
+   * and return how many bytes were freed. Objects outside that space (the
+   * author's personal `users/{id}/` prefix, where the mobile app still
+   * uploads) are left alone: they were never counted, so freeing them would
+   * make the counter drift below reality.
+   */
+  private async freeAssociationMedia(
+    associationId: string | null,
+    media: ReadonlyArray<{ mediaUrl: string; thumbnailUrl?: string | null }>,
+  ): Promise<number> {
+    if (!associationId || media.length === 0) return 0;
+    const prefix = `associations/${associationId}/`;
+    let freed = 0;
+    for (const m of media) {
+      for (const url of [m.mediaUrl, m.thumbnailUrl]) {
+        if (!url) continue;
+        const key = this.s3.parsePublicKey(url);
+        if (!key?.startsWith(prefix)) continue;
+        freed += await this.s3.objectSize(key);
+        await this.s3.deleteObject(key);
+      }
+    }
+    return freed;
   }
 
   /**

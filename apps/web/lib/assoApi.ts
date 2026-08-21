@@ -479,3 +479,28 @@ export function createAssociationPost(
 export function deletePost(postId: string): Promise<void> {
   return assoFetch<void>(`/posts/${postId}`, { method: "DELETE" });
 }
+
+// ---------------------------------------------------------------------------
+// Occupation disque (B5)
+// ---------------------------------------------------------------------------
+
+export interface AssociationStorage {
+  usedBytes: number;
+  quotaBytes: number;
+}
+
+/** Réservé aux dirigeants côté serveur : le niveau de remplissage en dit long
+ *  sur l'activité d'une association, et seuls ceux qui peuvent libérer de la
+ *  place ont besoin de le voir. */
+export function getStorage(
+  associationId: string,
+  signal?: AbortSignal,
+): Promise<AssociationStorage> {
+  return assoFetch<AssociationStorage>(`/associations/${associationId}/storage`, { signal });
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return bytes + " o";
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " Ko";
+  return (bytes / (1024 * 1024)).toFixed(1) + " Mo";
+}

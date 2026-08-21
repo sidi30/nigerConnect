@@ -345,6 +345,25 @@ export class S3Service {
     return { url: this.publicUrl(key), bytes, contentType };
   }
 
+  /**
+   * Real size of a public object, in bytes — 0 when it cannot be read.
+   *
+   * Used to give a per-association storage quota back what a deleted post was
+   * occupying (B5). Asking the bucket rather than trusting a stored number
+   * means the figure returned is what the disk actually holds; returning 0 on
+   * a missing object is deliberate, since crediting bytes for something that
+   * is not there would let the counter drift below reality.
+   */
+  async objectSize(key: string, bucket: string = this.publicBucket): Promise<number> {
+    try {
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+      return head.ContentLength ?? 0;
+    } catch (error) {
+      this.logger.warn(`objectSize failed for ${bucket}/${key}: ${String(error)}`);
+      return 0;
+    }
+  }
+
   async deleteObject(key: string, bucket: string = this.publicBucket): Promise<void> {
     try {
       await this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));

@@ -4,6 +4,8 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   listMyAssociations,
+  getStorage,
+  formatBytes,
   isOfficer,
   roleLabel,
   AssoApiError,
@@ -21,6 +23,7 @@ import {
 export default function AssoDashboardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [association, setAssociation] = useState<MyAssociation | null>(null);
+  const [storage, setStorage] = useState<{ usedBytes: number; quotaBytes: number } | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "forbidden" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +38,11 @@ export default function AssoDashboardPage({ params }: { params: Promise<{ id: st
         }
         setAssociation(found);
         setState("ready");
+        // L'occupation disque n'est pas bloquante pour l'écran : si elle
+        // échoue, la carte affiche simplement son libellé sans chiffre.
+        getStorage(id, controller.signal)
+          .then(setStorage)
+          .catch(() => undefined);
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -119,11 +127,7 @@ export default function AssoDashboardPage({ params }: { params: Promise<{ id: st
           body="Annoncer une assemblée, une fête, une collecte."
           soon
         />
-        <Card
-          title="Espace de stockage"
-          body="Suivre le volume occupé par les médias de l'association."
-          soon
-        />
+        <StorageCard storage={storage} />
       </section>
     </main>
   );
@@ -173,5 +177,49 @@ function Centered({ children }: { children: React.ReactNode }) {
     <main className="min-h-[60vh] flex items-center justify-center">
       <p className="text-[#5A4634] text-sm">{children}</p>
     </main>
+  );
+}
+
+function StorageCard({
+  storage,
+}: {
+  storage: { usedBytes: number; quotaBytes: number } | null;
+}) {
+  if (!storage) {
+    return (
+      <Card
+        title="Espace de stockage"
+        body="Suivre le volume occupé par les médias de l'association."
+      />
+    );
+  }
+  const ratio = storage.quotaBytes > 0 ? storage.usedBytes / storage.quotaBytes : 0;
+  const percent = Math.min(100, Math.round(ratio * 100));
+  const tight = ratio >= 0.8;
+  return (
+    <div className="bg-white border border-[#E8DFD3] rounded-2xl p-5">
+      <h2 className="font-semibold">Espace de stockage</h2>
+      <p className="text-sm text-[#5A4634] mt-2">
+        {formatBytes(storage.usedBytes)} occupés sur {formatBytes(storage.quotaBytes)}
+      </p>
+      <div
+        className="mt-3 h-2 rounded-full bg-[#E8DFD3] overflow-hidden"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Espace de stockage utilisé"
+      >
+        <div
+          className={"h-full " + (tight ? "bg-[#8B1F1F]" : "bg-[#E05206]")}
+          style={{ width: percent + "%" }}
+        />
+      </div>
+      {tight ? (
+        <p className="text-sm text-[#8B1F1F] mt-3">
+          Il reste peu de place. Supprimer d&apos;anciennes publications la libère.
+        </p>
+      ) : null}
+    </div>
   );
 }

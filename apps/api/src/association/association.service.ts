@@ -12,6 +12,7 @@ import { GeoService } from '../geo/geo.service';
 import { S3Service } from '../common/storage/s3.service';
 import { MailerService } from '../common/mail/mailer.service';
 import { slugify } from '../common/text/slugify';
+import { ASSOCIATION_MEDIA_QUOTA_BYTES } from './association-storage';
 import type {
   AssociationMediaPresignDto,
   ChangeRoleDto,
@@ -974,6 +975,26 @@ export class AssociationService {
       contentType: dto.contentType,
       visibility: 'public',
     });
+  }
+
+  /**
+   * What this association currently occupies, and its ceiling (B5).
+   *
+   * Reserved to its officers: how full an association's storage is says
+   * something about its activity that nothing else exposes, and only the
+   * people who can free space need to see it.
+   */
+  async getStorage(userId: string, id: string) {
+    await this.assertRole(userId, id, ['admin', 'moderator', 'owner']);
+    const assoc = await this.prisma.association.findFirst({
+      where: { id, deletedAt: null },
+      select: { mediaBytes: true },
+    });
+    if (!assoc) throw new NotFoundException('Association not found');
+    return {
+      usedBytes: assoc.mediaBytes,
+      quotaBytes: ASSOCIATION_MEDIA_QUOTA_BYTES,
+    };
   }
 
   // ── Events ──────────────────────────────────────────────────

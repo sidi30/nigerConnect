@@ -55,11 +55,13 @@ function makeS3() {
       if (ownerId && !key.startsWith(`users/${ownerId}/`)) throw new Error('not yours');
       return url;
     }),
-    assertOwnedPublicMedia: jest.fn(async (url: string, _kind: string, prefix: string) => {
-      const key = url.startsWith(CDN) ? url.slice(CDN.length) : null;
-      if (!key || !key.startsWith(prefix)) throw new Error('wrong prefix');
-      return url;
-    }),
+    assertOwnedPublicMediaDetailed: jest.fn(
+      async (url: string, _kind: string, prefix: string) => {
+        const key = url.startsWith(CDN) ? url.slice(CDN.length) : null;
+        if (!key || !key.startsWith(prefix)) throw new Error('wrong prefix');
+        return { url, bytes: 1024, contentType: 'image/jpeg' };
+      },
+    ),
   };
 }
 
@@ -174,8 +176,10 @@ describe("publier au nom d'une association", () => {
  * there; the day it stops, that branch can go.
  */
 describe("images d'une publication d'association", () => {
+  let prismaDouble: unknown;
+
   function officerPrisma() {
-    return {
+    const base = {
       associationMember: membershipOf('admin'),
       post: {
         create: jest.fn(async () => ({
@@ -186,7 +190,13 @@ describe("images d'une publication d'association", () => {
         })),
       },
       friendship: { findMany: jest.fn(async () => []) },
+      // Le quota (B5) réclame la place dans une transaction dès qu'une image
+      // atterrit dans l'espace de l'association.
+      association: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaDouble)),
     };
+    prismaDouble = base;
+    return base;
   }
 
   const assocPost = (mediaUrl: string) => ({
@@ -203,7 +213,7 @@ describe("images d'une publication d'association", () => {
 
     await svc.create('u1', assocPost('https://cdn.test/associations/a1/photo.jpg') as never);
 
-    expect(s3.assertOwnedPublicMedia).toHaveBeenCalledWith(
+    expect(s3.assertOwnedPublicMediaDetailed).toHaveBeenCalledWith(
       'https://cdn.test/associations/a1/photo.jpg',
       'image',
       'associations/a1/',
@@ -249,6 +259,6 @@ describe("images d'une publication d'association", () => {
         media: [{ mediaUrl: 'https://cdn.test/associations/a1/photo.jpg', mediaType: 'image' }],
       } as never),
     ).rejects.toBeTruthy();
-    expect(s3.assertOwnedPublicMedia).not.toHaveBeenCalled();
+    expect(s3.assertOwnedPublicMediaDetailed).not.toHaveBeenCalled();
   });
 });

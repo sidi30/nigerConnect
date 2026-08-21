@@ -14,6 +14,7 @@ import {
   personName,
   AssoApiError,
   MAX_IMAGE_BYTES,
+  formatBytes,
   UPLOADABLE_IMAGE_TYPES,
   type MyAssociation,
   type AssociationPost,
@@ -324,11 +325,6 @@ function Centered({ children }: { children: React.ReactNode }) {
       <p className="text-[#5A4634] text-sm">{children}</p>
     </main>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " Ko";
-  return (bytes / (1024 * 1024)).toFixed(1) + " Mo";
 }
 
 function formatDateTime(iso: string): string {
