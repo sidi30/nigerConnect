@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT1-ASSOC DEPLOYE EN PROD (API seule, 2026-08-21). OTA mobile retenu jusqu au verdict de la review iOS 1.15.0. Q1-Q6 tranchees. Prochain: SPRINT 2 back-office web, en commencant par l ADR medias portes par une association (B2) qui gate le reste.",
+  "current": "SPRINT 2 EN COURS. B2 (ADR medias portes par une association) et B1 (connexion + selecteur + tableau de bord du back-office) livres et commites, non deployes. Reste B4, B5, B3. Sprint 1 est en production cote API depuis le 2026-08-21; son OTA mobile attend le verdict de la review iOS 1.15.0.",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -395,20 +395,23 @@
   "sprint": {
     "id": "S2-ASSOC",
     "goal": "L association publie depuis un ordinateur: back-office web, authentifie par compte personnel de dirigeant.",
-    "status": "A DEMARRER",
+    "status": "EN COURS",
     "prerequisTranches": "Q2 (compte personnel + elevation de role) tranchee le 2026-08-21.",
     "items": [
       {
         "id": "B2",
         "title": "ADR: medias portes par une association (prefixe associations/{id}/, assertion par role) -- gate de B3, ne PAS contourner assertOwnedPublicImage",
         "priority": 5,
-        "status": "todo"
+        "status": "done",
+        "livrable": "docs/adr/ADR-002-medias-portes-par-une-association.md (commit e21a7dc). Decision: prefixe associations/{id}/, autorisation deplacee du prefixe vers le role, verifiee a la signature de l upload ET a l attache, via assertOwnedPublicMedia deja existant (s3.service.ts:291). Rien a migrer: la seule association de prod n a pas de logo."
       },
       {
         "id": "B1",
         "title": "Auth back-office: session web sur compte NigerConnect, selection de l association, assertRole",
         "priority": 5,
-        "status": "todo"
+        "status": "done",
+        "livrable": "commit d5f984b, 100% web (l API avait deja tout: JWT, assertRole, GET /associations/mine). /asso/login + /asso (selecteur) + /asso/[id] (tableau de bord). Session sous cle nc_asso_token distincte de la console d equipe. 403 ne deconnecte pas.",
+        "limite": "Non exerce contre une session reelle: apps/web n a aucune infra de test (ni jest ni playwright UI) et il faut un compte dirigeant + une API qui tourne. Verifie: tsc, eslint, next build (routes /asso, /asso/[id], /asso/login presentes). Meme niveau de preuve que la console /admin deja en prod."
       },
       {
         "id": "B4",
@@ -428,7 +431,8 @@
         "priority": 3,
         "status": "todo"
       }
-    ]
+    ],
+    "reste": "B4 gestion des membres depuis le web, B5 quota disque par association, B3 CRUD publications avec medias."
   },
   "backlogEpics": [
     {
