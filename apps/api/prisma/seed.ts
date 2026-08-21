@@ -1,5 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
+// Same normalization as the API and the migration backfill — a third,
+// divergent copy of it here is exactly how a seeded row ends up with a
+// normalized_name the app would never compute (A6).
+import { slugify } from '../src/common/text/slugify';
 
 const prisma = new PrismaClient();
 
@@ -391,9 +395,12 @@ async function main(): Promise<void> {
       { name: 'Business Club NE-US', category: 'business', city: 'New York', countryCode: 'US' },
     ];
     for (const a of assocs) {
+      const slug = slugify(a.name);
       await prisma.association.create({
         data: {
           name: a.name,
+          slug,
+          normalizedName: slug,
           description: `${a.name} — communauté active.`,
           category: a.category,
           city: a.city,
@@ -401,7 +408,7 @@ async function main(): Promise<void> {
           isVerified: true,
           createdById: u0.id,
           memberCount: 1,
-          members: { create: { userId: u0.id, role: 'admin', status: 'approved' } },
+          members: { create: { userId: u0.id, role: 'owner', status: 'approved' } },
         },
       });
     }

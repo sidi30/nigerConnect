@@ -319,7 +319,12 @@ export class GeoService implements OnModuleInit {
 
   private async associations(dto: BoundsDto): Promise<AssociationMarker[]> {
     const assocs = await this.prisma.association.findMany({
-      where: { countryCode: { not: null } },
+      // `deletedAt` marks an association DISSOLVED by A2 (its last responsible
+      // member deleted their account and nobody was left to take over). It is
+      // already excluded from list()/getById()/listMine(); leaving it pinned on
+      // the public map would be the one surface still advertising an org that
+      // has no members and no way back.
+      where: { countryCode: { not: null }, deletedAt: null },
       select: {
         id: true,
         name: true,

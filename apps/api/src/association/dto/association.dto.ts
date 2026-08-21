@@ -11,8 +11,22 @@ export const associationCategoryEnum = z.enum([
   'religieux',
 ]);
 
+// A6 — the DISPLAY name is the other half of anti-squat. `slugify()` makes two
+// look-alike names collide on the uniqueness key, but a name is still rendered
+// verbatim in the app, in push notifications and in the A2 e-mail subject: a
+// bidi override (U+202E) reverses what the reader sees, and C0/C1 controls let
+// a name carry line breaks into places that expect one line. Neither is a
+// legitimate association name, so they are refused outright rather than
+// silently stripped — the founder should see the error.
+const RENDERABLE_NAME = /^[^\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]+$/;
+
 export const createAssociationSchema = z.object({
-  name: z.string().min(1).max(200),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(RENDERABLE_NAME, 'Name contains control or text-direction characters'),
   description: z.string().max(5000).optional(),
   logoUrl: z.string().url().max(500).optional(),
   coverUrl: z.string().url().max(500).optional(),
@@ -24,6 +38,10 @@ export const createAssociationSchema = z.object({
   website: z.string().url().max(300).optional(),
   contactEmail: z.string().email().max(255).optional(),
   requiresApproval: z.boolean().optional(),
+  // A1 — default 'public' is set at the DB level (schema.prisma). Only an
+  // admin/owner can ever set this (update() gates on assertRole), and only
+  // through this schema — never trust a client-supplied value elsewhere.
+  membersVisibility: z.enum(['public', 'members_only']).optional(),
 });
 export type CreateAssociationDto = z.infer<typeof createAssociationSchema>;
 
@@ -38,6 +56,9 @@ export const listAssociationsSchema = z.object({
 });
 export type ListAssociationsDto = z.infer<typeof listAssociationsSchema>;
 
+// `owner` is deliberately excluded: it can only move via the ownership
+// transfer accept flow (requestOwnershipTransfer/acceptOwnershipTransfer), not
+// through this generic role PATCH (A3).
 export const changeRoleSchema = z.object({
   role: z.enum(['admin', 'moderator', 'member']),
 });
@@ -62,3 +83,48 @@ export const createEventSchema = z.object({
   coverUrl: z.string().url().max(500).optional(),
 });
 export type CreateEventDto = z.infer<typeof createEventSchema>;
+
+// ── A3 — ownership transfer ─────────────────────────────────────────────────
+export const transferOwnershipSchema = z.object({
+  userId: z.string().uuid(),
+});
+export type TransferOwnershipDto = z.infer<typeof transferOwnershipSchema>;
+
+// ── A4 — bureau exécutif ─────────────────────────────────────────────────────
+export const associationOfficerTitleEnum = z.enum([
+  'president',
+  'vice_president',
+  'secretary',
+  'treasurer',
+  'spokesperson',
+  'other',
+]);
+
+export const designateOfficerSchema = z
+  .object({
+    userId: z.string().uuid(),
+    title: associationOfficerTitleEnum,
+    // Free text, and `listOfficers` renders it verbatim on the one board
+    // surface readable without being a member — so it gets the same filter as
+    // `name`: no bidi override (it reverses what the reader sees), no C0/C1
+    // controls (they carry line breaks into places that expect one line).
+    customTitle: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(RENDERABLE_NAME, 'Title contains control or text-direction characters')
+      .optional(),
+    sortOrder: z.coerce.number().int().min(0).max(1000).optional(),
+  })
+  .refine((d) => d.title !== 'other' || !!d.customTitle, {
+    message: 'customTitle is required when title is "other"',
+    path: ['customTitle'],
+  });
+export type DesignateOfficerDto = z.infer<typeof designateOfficerSchema>;
+
+// ── A5 — certification (platform-admin only, see admin.controller.ts) ──────
+export const verifyAssociationSchema = z.object({
+  note: z.string().trim().max(1000).optional(),
+});
+export type VerifyAssociationDto = z.infer<typeof verifyAssociationSchema>;

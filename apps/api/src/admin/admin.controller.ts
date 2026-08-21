@@ -4,6 +4,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser, JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { verifyAssociationSchema, type VerifyAssociationDto } from '../association/dto/association.dto';
 import { AdminService } from './admin.service';
 
 const listIdentitySchema = z.object({
@@ -436,5 +437,36 @@ export class AdminController {
   @Get('invitations/metrics')
   inviteMetrics() {
     return this.admin.inviteMetrics();
+  }
+
+  // ── A5 — association certification (traceable, admin-only) ─────────────
+
+  /**
+   * POST /admin/associations/:id/verify — grant the "Association vérifiée"
+   * badge. Platform admin-only (moderators do routine content moderation, not
+   * the stronger claim a certification badge makes).
+   */
+  @Post('associations/:id/verify')
+  @Roles('admin')
+  verifyAssociation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(verifyAssociationSchema)) dto: VerifyAssociationDto,
+    @CurrentUser() me: JwtUserPayload,
+  ) {
+    return this.admin.verifyAssociation({ id: me.sub }, id, dto.note);
+  }
+
+  /**
+   * POST /admin/associations/:id/unverify — revoke it. Same guard, symmetric
+   * endpoint (not a DELETE: we still record an optional reason).
+   */
+  @Post('associations/:id/unverify')
+  @Roles('admin')
+  unverifyAssociation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(verifyAssociationSchema)) dto: VerifyAssociationDto,
+    @CurrentUser() me: JwtUserPayload,
+  ) {
+    return this.admin.unverifyAssociation({ id: me.sub }, id, dto.note);
   }
 }

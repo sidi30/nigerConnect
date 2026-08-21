@@ -91,7 +91,15 @@ describe('Publication / feed (e2e)', () => {
 
   it('REGRESSION (CRITICAL): association post for an association you are NOT an approved member of -> 403', async () => {
     const assoc = await prisma.association.create({
-      data: { name: `u_assoc_${randomUUID()}`, category: 'generaliste' },
+      data: (() => {
+        const uid = randomUUID();
+        return {
+          name: `u_assoc_${uid}`,
+          slug: `u-assoc-${uid}`,
+          normalizedName: `u-assoc-${uid}`,
+          category: 'generaliste' as const,
+        };
+      })(),
     });
     createdAssociationIds.push(assoc.id);
 
@@ -131,7 +139,15 @@ describe('Publication / feed (e2e)', () => {
 
   it('HAPPY: approved member CAN create an association post', async () => {
     const assoc = await prisma.association.create({
-      data: { name: `u_assoc_${randomUUID()}`, category: 'generaliste' },
+      data: (() => {
+        const uid = randomUUID();
+        return {
+          name: `u_assoc_${uid}`,
+          slug: `u-assoc-${uid}`,
+          normalizedName: `u-assoc-${uid}`,
+          category: 'generaliste' as const,
+        };
+      })(),
     });
     createdAssociationIds.push(assoc.id);
     await prisma.associationMember.create({

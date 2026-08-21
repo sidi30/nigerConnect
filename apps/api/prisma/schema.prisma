@@ -68,22 +68,22 @@ model User {
   avatarUrl   String? @map("avatar_url") @db.VarChar(500)
   coverUrl    String? @map("cover_url") @db.VarChar(500)
 
-  city            String?  @db.VarChar(100)
-  countryCode     String?  @map("country_code") @db.Char(2)
-  latitude        Decimal? @db.Decimal(10, 7)
-  longitude       Decimal? @db.Decimal(10, 7)
+  city             String?   @db.VarChar(100)
+  countryCode      String?   @map("country_code") @db.Char(2)
+  latitude         Decimal?  @db.Decimal(10, 7)
+  longitude        Decimal?  @db.Decimal(10, 7)
   // Map visibility is OFF by default (safety-by-default, RGPD art.25): a member
   // only appears on the public map after an explicit opt-in. Mirrors
   // proximityAlerts, which is likewise opt-in.
-  showOnMap       Boolean  @default(true) @map("show_on_map")
-  proximityAlerts Boolean  @default(false) @map("proximity_alerts")
+  showOnMap        Boolean   @default(true) @map("show_on_map")
+  proximityAlerts  Boolean   @default(false) @map("proximity_alerts")
   // Receive NigerConnect news/announcements (in-app + push + email). Opt-OUT:
   // ON by default; the user toggles it in settings. Critical service messages
   // (security/outage/RGPD) ignore this flag. newsletterToken backs the one-click
   // email unsubscribe that flips this off.
-  newsletterOptIn Boolean  @default(true) @map("newsletter_opt_in")
-  newsletterToken String?  @unique @map("newsletter_token") @db.VarChar(64)
-  proximityRadius Int      @default(100) @map("proximity_radius")
+  newsletterOptIn  Boolean   @default(true) @map("newsletter_opt_in")
+  newsletterToken  String?   @unique @map("newsletter_token") @db.VarChar(64)
+  proximityRadius  Int       @default(100) @map("proximity_radius")
   // Weekly regional digest (E-DIGEST). Opt-OUT: ON by default; the member toggles
   // it in Privacy settings. lastDigestSentAt stamps the last successful send and
   // enforces at-most-once per 7-day sliding window (idempotent cron, no double push
@@ -116,26 +116,26 @@ model User {
   // proximityUpdatedAt freshness). NEVER selected by the public map surfaces
   // (markers / nearby / clusters) so live GPS never leaks through the
   // city-coarse latitude/longitude pin.
-  proximityLat       Decimal?  @db.Decimal(10, 7) @map("proximity_lat")
-  proximityLon       Decimal?  @db.Decimal(10, 7) @map("proximity_lon")
+  proximityLat       Decimal?  @map("proximity_lat") @db.Decimal(10, 7)
+  proximityLon       Decimal?  @map("proximity_lon") @db.Decimal(10, 7)
   proximityUpdatedAt DateTime? @map("proximity_updated_at") @db.Timestamptz
 
   languages    String[]     @default(["fr"])
   privacyLevel PrivacyLevel @default(public) @map("privacy_level")
 
-  emailVerified  Boolean        @default(false) @map("email_verified")
-  phoneVerified  Boolean        @default(false) @map("phone_verified")
-  identityStatus IdentityStatus @default(not_submitted) @map("identity_status")
+  emailVerified   Boolean        @default(false) @map("email_verified")
+  phoneVerified   Boolean        @default(false) @map("phone_verified")
+  identityStatus  IdentityStatus @default(not_submitted) @map("identity_status")
   // Ambassador badge: a curated, admin-managed distinction (community leaders /
   // official ambassadors) shown ALONGSIDE the identity-verified badge — they are
   // independent (a user can be identity-verified, an ambassador, both, or neither).
   // Toggled only from the tenant admin console; never self-assigned.
-  isAmbassador   Boolean        @default(false) @map("is_ambassador")
+  isAmbassador    Boolean        @default(false) @map("is_ambassador")
   // Instant de nomination, pose par la console admin en meme temps que le badge
   // et efface quand on le retire. Sans lui, la console peut lister QUI est
   // ambassadeur mais jamais depuis quand — l'info que reclame la relecture d'un
   // reseau de referents.
-  ambassadorSince DateTime?     @map("ambassador_since") @db.Timestamptz
+  ambassadorSince DateTime?      @map("ambassador_since") @db.Timestamptz
   // Compte OFFICIEL NigerConnect : la voix de l'application elle-meme. Ce n'est
   // PAS un membre — il est retire de toutes les surfaces de decouverte (
   // recherche, suggestions, carte, proximite, demandes d'ami) et personne ne
@@ -143,8 +143,8 @@ model User {
   // (notification, message direct, story, publication publique). Pose
   // uniquement depuis la console admin, jamais auto-attribue : c'est ce qui
   // permet a son badge de valoir garantie.
-  isOfficial     Boolean        @default(false) @map("is_official")
-  officialSince  DateTime?      @map("official_since") @db.Timestamptz
+  isOfficial      Boolean        @default(false) @map("is_official")
+  officialSince   DateTime?      @map("official_since") @db.Timestamptz
   // Compte d'animation editoriale, pilote par l'atelier (voir AnimationPost).
   // Marqueur STRICTEMENT INTERNE : absent de USER_PUBLIC_SELECT et de
   // USER_SELF_SELECT, il ne sort jamais de l'API. Il sert a trois choses et
@@ -152,15 +152,15 @@ model User {
   // supposent une presence physique verifiable), accepter automatiquement les
   // demandes d'ami, et router leurs messages recus vers la console au lieu de
   // les laisser sans reponse.
-  isAnimated     Boolean        @default(false) @map("is_animated")
-  role           UserRole       @default(user)
-  status         UserStatus     @default(active)
+  isAnimated      Boolean        @default(false) @map("is_animated")
+  role            UserRole       @default(user)
+  status          UserStatus     @default(active)
   // Sanction metadata (set alongside status by the admin console). statusReason
   // is the human-readable motive shown back to the sanctioned user; statusExpiresAt
   // is the optional auto-lift instant for a temporary suspension (null = permanent /
   // until manually lifted). Both are cleared when the status returns to `active`.
-  statusReason    String?   @map("status_reason") @db.VarChar(500)
-  statusExpiresAt DateTime? @map("status_expires_at") @db.Timestamptz
+  statusReason    String?        @map("status_reason") @db.VarChar(500)
+  statusExpiresAt DateTime?      @map("status_expires_at") @db.Timestamptz
 
   // Aggregate of reviews received on this profile (Feature: avis).
   // Maintained transactionally by ReviewService — never written elsewhere.
@@ -181,71 +181,76 @@ model User {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  identityDocuments       IdentityDocument[]   @relation("UserIdentityDocuments")
-  reviewedDocuments       IdentityDocument[]   @relation("DocumentReviewer")
+  identityDocuments       IdentityDocument[]     @relation("UserIdentityDocuments")
+  reviewedDocuments       IdentityDocument[]     @relation("DocumentReviewer")
   refreshTokens           RefreshToken[]
   pushTokens              PushToken[]
   mfaRecoveryCodes        MfaRecoveryCode[]
   emailTokens             EmailToken[]
   photos                  UserPhoto[]
-  friendshipsSent         Friendship[]         @relation("FriendshipRequester")
-  friendshipsReceived     Friendship[]         @relation("FriendshipAddressee")
-  proximityEncountersA    ProximityEncounter[] @relation("EncounterUserA")
-  proximityEncountersB    ProximityEncounter[] @relation("EncounterUserB")
-  proximityEncountersReq  ProximityEncounter[] @relation("EncounterRequester")
+  friendshipsSent         Friendship[]           @relation("FriendshipRequester")
+  friendshipsReceived     Friendship[]           @relation("FriendshipAddressee")
+  proximityEncountersA    ProximityEncounter[]   @relation("EncounterUserA")
+  proximityEncountersB    ProximityEncounter[]   @relation("EncounterUserB")
+  proximityEncountersReq  ProximityEncounter[]   @relation("EncounterRequester")
   messageReactions        MessageReaction[]
-  blocksMade              Block[]              @relation("BlockBlocker")
-  blocksReceived          Block[]              @relation("BlockBlocked")
+  blocksMade              Block[]                @relation("BlockBlocker")
+  blocksReceived          Block[]                @relation("BlockBlocked")
   posts                   Post[]
   likes                   Like[]
   commentLikes            CommentLike[]
   comments                Comment[]
   conversationMemberships ConversationMember[]
-  conversationsCreated    Conversation[]       @relation("ConversationCreator")
+  conversationsCreated    Conversation[]         @relation("ConversationCreator")
   messages                Message[]
   serviceRequests         ServiceRequest[]
   serviceResponses        ServiceResponse[]
-  associationsCreated     Association[]        @relation("AssociationCreator")
+  associationsCreated     Association[]          @relation("AssociationCreator")
   associationMemberships  AssociationMember[]
-  notifications           Notification[]       @relation("NotificationRecipient")
-  notificationsActedOn    Notification[]       @relation("NotificationActor")
-  reportsMade             Report[]             @relation("ReportReporter")
-  reportsReviewed         Report[]             @relation("ReportReviewer")
-  pagesCreated            Page[]               @relation("PageCreator")
+  associationsVerified    Association[]          @relation("AssociationVerifier")
+  associationOwnerInvites Association[]          @relation("AssociationPendingOwner")
+  associationRoleAuditsBy AssociationRoleAudit[] @relation("AssociationRoleAuditActor")
+  associationRoleAuditsOn AssociationRoleAudit[] @relation("AssociationRoleAuditTarget")
+  associationOfficerSeats AssociationOfficer[]
+  notifications           Notification[]         @relation("NotificationRecipient")
+  notificationsActedOn    Notification[]         @relation("NotificationActor")
+  reportsMade             Report[]               @relation("ReportReporter")
+  reportsReviewed         Report[]               @relation("ReportReviewer")
+  pagesCreated            Page[]                 @relation("PageCreator")
   pageFollows             PageFollower[]
   pageAdminOf             PageAdmin[]
   pollsCreated            Poll[]
   pollVotes               PollVote[]
-  reviewsAuthored         Review[]             @relation("ReviewAuthor")
-  reviewsReceived         Review[]             @relation("ReviewTargetUser")
+  reviewsAuthored         Review[]               @relation("ReviewAuthor")
+  reviewsReceived         Review[]               @relation("ReviewTargetUser")
   communityPrices         CommunityPrice[]
   communityPriceVotes     CommunityPriceVote[]
 
   // ── Parrainage ──────────────────────────────────────────────────
   // Parrain direct (arbre). SetNull si le parrain supprime son compte —
   // on ne casse pas le filleul, on perd juste le lien de parenté.
-  invitedById      String?      @map("invited_by_id") @db.Uuid
-  invitedBy        User?        @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
-  invitees         User[]       @relation("UserInvitedBy")
+  invitedById      String?     @map("invited_by_id") @db.Uuid
+  invitedBy        User?       @relation("UserInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitees         User[]      @relation("UserInvitedBy")
   // Droit accordé par l'admin de créer des liens d'invitation RÉUTILISABLES
   // (1 lien → N inscriptions, partage en masse). L'invitation email/code
   // single-use reste ouverte à tous les inscrits vérifiés.
-  canBulkInvite    Boolean      @default(false) @map("can_bulk_invite")
+  canBulkInvite    Boolean     @default(false) @map("can_bulk_invite")
   // Par quelle invitation ce compte s'est inscrit (analytics réseau : permet de
   // compter les inscriptions par lien réutilisable). Distinct de invitedById
   // (l'arbre de parenté). SetNull si l'invitation est supprimée.
-  invitedViaId     String?      @map("invited_via_id") @db.Uuid
-  invitedVia       Invitation?  @relation("InvitationSignups", fields: [invitedViaId], references: [id], onDelete: SetNull)
+  invitedViaId     String?     @map("invited_via_id") @db.Uuid
+  invitedVia       Invitation? @relation("InvitationSignups", fields: [invitedViaId], references: [id], onDelete: SetNull)
   // DÉPRÉCIÉ (v2 réseau) : plus de quota dur ni d'expiration. Colonnes conservées
   // pour éviter une migration destructive ; plus lues ni posées par le code.
-  inviteQuota      Int          @default(3) @map("invite_quota")
+  inviteQuota      Int         @default(3) @map("invite_quota")
   // Compteur d'abus : +1 quand un filleul est banni. ≥ 3 → création d'invitation gelée.
-  inviteAbuseFlags Int          @default(0) @map("invite_abuse_flags")
+  inviteAbuseFlags Int         @default(0) @map("invite_abuse_flags")
 
-  invitesSent      Invitation[] @relation("UserInvitesSent")
-  invitesAccepted  Invitation[] @relation("UserInviteAccepted")
+  invitesSent     Invitation[] @relation("UserInvitesSent")
+  invitesAccepted Invitation[] @relation("UserInviteAccepted")
 
-  contactMessages  ContactMessage[] @relation("UserContactMessages")
+  contactMessages ContactMessage[] @relation("UserContactMessages")
 
   officialBroadcasts OfficialBroadcast[] @relation("OfficialBroadcastAuthor")
   animationPosts     AnimationPost[]     @relation("AnimationAuthor")
@@ -357,6 +362,14 @@ enum AssociationRole {
   admin
   moderator
   member
+  // Founder / current title-holder — the one role an `admin` may never touch
+  // (A3). Exactly 0 or 1 per association: set at creation (create()) and only
+  // ever moved by the accept-side of an ownership transfer, never by a plain
+  // role-change PATCH. Added after `member` in the enum text for readability;
+  // the DB value was appended via a standalone `ALTER TYPE ... ADD VALUE`
+  // migration (2-step — see migration notes) so it could be used by the very
+  // next migration's backfill without hitting Postgres's same-transaction ban.
+  owner
 }
 
 enum MembershipStatus {
@@ -408,6 +421,10 @@ enum NotificationType {
   // (counts of events / help requests / new PUBLIC members near the member);
   // never carries a third-party name/id. Sent at most once per 7-day window.
   weekly_digest
+  // A2/A3 — association governance (see association.service.ts).
+  association_role_changed
+  association_ownership_transfer
+  association_officer_invite
 }
 
 // ── Parrainage ────────────────────────────────────────────────────
@@ -617,19 +634,19 @@ model Like {
 }
 
 model Comment {
-  id        String    @id @default(uuid()) @db.Uuid
-  postId    String    @map("post_id") @db.Uuid
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  authorId  String    @map("author_id") @db.Uuid
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  parentId  String?   @map("parent_id") @db.Uuid
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
-  replies   Comment[] @relation("CommentReplies")
-  content   String    @db.Text
-  likeCount Int       @default(0) @map("like_count")
+  id        String        @id @default(uuid()) @db.Uuid
+  postId    String        @map("post_id") @db.Uuid
+  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String        @map("author_id") @db.Uuid
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId  String?       @map("parent_id") @db.Uuid
+  parent    Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[]     @relation("CommentReplies")
+  content   String        @db.Text
+  likeCount Int           @default(0) @map("like_count")
   likes     CommentLike[]
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([postId, createdAt])
   @@index([parentId])
@@ -827,7 +844,7 @@ model ServiceRating {
 // the latest snapshot + peg — never stored, never user-supplied.
 model FxRateSnapshot {
   id        String   @id @default(uuid()) @db.Uuid
-  asOf      DateTime  @unique @map("as_of") @db.Date // ECB publication day
+  asOf      DateTime @unique @map("as_of") @db.Date // ECB publication day
   eurUsd    Decimal  @map("eur_usd") @db.Decimal(10, 6)
   eurCad    Decimal  @map("eur_cad") @db.Decimal(10, 6)
   source    String   @default("ecb") @db.VarChar(20)
@@ -895,26 +912,61 @@ model CommunityPriceVote {
 }
 
 model Association {
-  id               String              @id @default(uuid()) @db.Uuid
-  name             String              @db.VarChar(200)
-  description      String?             @db.Text
-  logoUrl          String?             @map("logo_url") @db.VarChar(500)
-  coverUrl         String?             @map("cover_url") @db.VarChar(500)
-  category         AssociationCategory
-  countryCode      String?             @map("country_code") @db.Char(2)
-  city             String?             @db.VarChar(100)
-  website          String?             @db.VarChar(300)
-  contactEmail     String?             @map("contact_email") @db.VarChar(255)
-  isVerified       Boolean             @default(false) @map("is_verified")
-  requiresApproval Boolean             @default(false) @map("requires_approval")
-  memberCount      Int                 @default(0) @map("member_count")
-  createdById      String?             @map("created_by") @db.Uuid
-  createdBy        User?               @relation("AssociationCreator", fields: [createdById], references: [id])
-  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String              @id @default(uuid()) @db.Uuid
+  name                  String              @db.VarChar(200)
+  // Anti-squat (A6): immutable, generated once at create() from `name`
+  // (slugify()), never edited afterwards even if the display name changes
+  // later. `normalizedName` is the SAME computed value, kept as a second
+  // column/constraint on purpose — it is the "no two associations share a
+  // name" guarantee, `slug` is the "stable URL" guarantee. They happen to be
+  // equal today; keeping them as two separate unique keys means a future
+  // change to slug formatting (e.g. allowing edits) doesn't silently reopen
+  // the name-squat hole.
+  slug                  String              @unique @db.VarChar(220)
+  normalizedName        String              @unique @map("normalized_name") @db.VarChar(200)
+  description           String?             @db.Text
+  logoUrl               String?             @map("logo_url") @db.VarChar(500)
+  coverUrl              String?             @map("cover_url") @db.VarChar(500)
+  category              AssociationCategory
+  countryCode           String?             @map("country_code") @db.Char(2)
+  city                  String?             @db.VarChar(100)
+  website               String?             @db.VarChar(300)
+  contactEmail          String?             @map("contact_email") @db.VarChar(255)
+  isVerified            Boolean             @default(false) @map("is_verified")
+  // A5 — traceability behind the badge: WHO granted/revoked it and WHEN, plus
+  // an optional internal note. `verifiedById`/`verificationNote` are never
+  // exposed on the public read paths (association.service ASSOCIATION_PUBLIC_SELECT
+  // deliberately omits them) — only `verifiedAt` is public ("Vérifiée le …").
+  verifiedAt            DateTime?           @map("verified_at") @db.Timestamptz
+  verifiedById          String?             @map("verified_by") @db.Uuid
+  verifiedBy            User?               @relation("AssociationVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verificationNote      String?             @map("verification_note") @db.Text
+  requiresApproval      Boolean             @default(false) @map("requires_approval")
+  // A1 (course-corrected) — default `public`: the nominative member list is
+  // open to any authenticated user unless THIS association's admin/owner
+  // opts into `members_only`. See the enum doc comment for why the default
+  // is the open one.
+  membersVisibility     AssociationMembersVisibility @default(public) @map("members_visibility")
+  memberCount           Int                 @default(0) @map("member_count")
+  createdById           String?             @map("created_by") @db.Uuid
+  createdBy             User?               @relation("AssociationCreator", fields: [createdById], references: [id])
+  // A3 — ownership transfer is opt-in on the receiving end: `requestOwnershipTransfer`
+  // sets these two, `acceptOwnershipTransfer`/`declineOwnershipTransfer` clear
+  // them. Never more than one pending transfer at a time.
+  pendingOwnerId        String?             @map("pending_owner_id") @db.Uuid
+  pendingOwner          User?               @relation("AssociationPendingOwner", fields: [pendingOwnerId], references: [id], onDelete: SetNull)
+  pendingOwnerInvitedAt DateTime?           @map("pending_owner_invited_at") @db.Timestamptz
+  // A2 — soft delete only: an association that lost its last member is dissolved
+  // (excluded from every list/search/getById) but the row (and its audit trail)
+  // is kept, unlike the hard `remove()` an admin can still trigger explicitly.
+  deletedAt             DateTime?           @map("deleted_at") @db.Timestamptz
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
-  members AssociationMember[]
-  events  AssociationEvent[]
+  members    AssociationMember[]
+  events     AssociationEvent[]
+  officers   AssociationOfficer[]
+  roleAudits AssociationRoleAudit[]
 
   @@index([category, countryCode])
   @@map("associations")
@@ -949,21 +1001,97 @@ model AssociationEvent {
   @@map("association_events")
 }
 
+// A3 — every role change (admin promotion/demotion, ownership transfer accept)
+// leaves a row here: who did it, to whom, before → after, when. Append-only,
+// never updated. Cascades with the association (its trail is moot once the
+// association itself is gone) but NOT with the users involved individually —
+// see the two relations below, both `onDelete: Cascade` too, matching the
+// project's "RGPD delete is total, no tombstone" stance (profile.service.ts
+// deleteAccount) rather than leaving a dangling/anonymized row.
+model AssociationRoleAudit {
+  id            String          @id @default(uuid()) @db.Uuid
+  associationId String          @map("association_id") @db.Uuid
+  association   Association     @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  // SetNull, NOT Cascade: this trail belongs to the ASSOCIATION, not to the
+  // people in it. Cascading on the actor made the A2 reassignment audit
+  // self-erasing — reassignOwnershipBeforeDeletion writes the row with
+  // actorId = the departing user, and the very next statement in the SAME
+  // transaction (`user.delete`) wiped it again, so the one role change nobody
+  // consciously decided was the one change with no trace at all.
+  actorId       String?         @map("actor_id") @db.Uuid
+  actor         User?           @relation("AssociationRoleAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  targetUserId  String?         @map("target_user_id") @db.Uuid
+  targetUser    User?           @relation("AssociationRoleAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  fromRole      AssociationRole @map("from_role")
+  toRole        AssociationRole @map("to_role")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([associationId, createdAt])
+  @@map("association_role_audits")
+}
+
+enum AssociationOfficerTitle {
+  president
+  vice_president
+  secretary
+  treasurer
+  spokesperson
+  other
+}
+
+// A1 (course-corrected) — the nominative roster (listMembers) is public to
+// every authenticated NigerConnect user by default: you join an association
+// to MEET compatriots, so seeing who's already there has to work BEFORE you
+// join. `members_only` is the opt-out an association's own admin/owner can
+// flip (updateAssociationSchema) — e.g. a `religieux` or political
+// association where naming members can expose family still in-country. The
+// choice belongs to the association, not to the platform, which is why the
+// default is the open one, not the closed one.
+enum AssociationMembersVisibility {
+  public
+  members_only
+}
+
+// A4 — the executive board. Deliberately separate from AssociationRole (the
+// technical admin/moderator/member axis that governs permissions): a
+// treasurer is a title, not a grant of admin rights. `acceptedAt` is the
+// consent gate — an admin can propose a seat (row created, acceptedAt null)
+// but nobody is publicly listed as an officer until they accept it
+// themselves. One seat per (association, user) at a time — see the unique
+// index; changing someone's title means removing and re-designating.
+model AssociationOfficer {
+  id            String                  @id @default(uuid()) @db.Uuid
+  associationId String                  @map("association_id") @db.Uuid
+  association   Association             @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId        String                  @map("user_id") @db.Uuid
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         AssociationOfficerTitle
+  // Required (enforced in the Zod DTO, not the DB) when title = 'other'.
+  customTitle   String?                 @map("custom_title") @db.VarChar(100)
+  sortOrder     Int                     @default(0) @map("sort_order")
+  acceptedAt    DateTime?               @map("accepted_at") @db.Timestamptz
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([associationId, userId])
+  @@index([associationId, sortOrder])
+  @@map("association_officers")
+}
+
 model Message {
-  id             String       @id @default(uuid()) @db.Uuid
-  conversationId String       @map("conversation_id") @db.Uuid
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderId       String       @map("sender_id") @db.Uuid
-  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  content        String?      @db.Text
-  messageType    MessageType  @default(text) @map("message_type")
-  mediaUrl       String?      @map("media_url") @db.VarChar(500)
-  replyToId      String?      @map("reply_to_id") @db.Uuid
-  replyTo        Message?     @relation("MessageReplies", fields: [replyToId], references: [id])
-  replies        Message[]    @relation("MessageReplies")
-  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
-  editedAt       DateTime?    @map("edited_at") @db.Timestamptz
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  id             String            @id @default(uuid()) @db.Uuid
+  conversationId String            @map("conversation_id") @db.Uuid
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String            @map("sender_id") @db.Uuid
+  sender         User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String?           @db.Text
+  messageType    MessageType       @default(text) @map("message_type")
+  mediaUrl       String?           @map("media_url") @db.VarChar(500)
+  replyToId      String?           @map("reply_to_id") @db.Uuid
+  replyTo        Message?          @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        Message[]         @relation("MessageReplies")
+  deletedAt      DateTime?         @map("deleted_at") @db.Timestamptz
+  editedAt       DateTime?         @map("edited_at") @db.Timestamptz
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz
   reactions      MessageReaction[]
 
   @@index([conversationId, createdAt(sort: Desc)])
@@ -1337,24 +1465,24 @@ model Invitation {
 // console admin ; un mail de notification part en parallèle vers l'adresse de
 // contact pour ne pas dépendre d'une consultation régulière de la console.
 model ContactMessage {
-  id        String        @id @default(uuid()) @db.Uuid
+  id          String        @id @default(uuid()) @db.Uuid
   // null = message envoyé sans compte (formulaire public web plus tard).
   // SetNull plutôt que Cascade : la suppression d'un compte ne doit pas effacer
   // une discussion de partenariat en cours.
-  userId    String?       @map("user_id") @db.Uuid
-  user      User?         @relation("UserContactMessages", fields: [userId], references: [id], onDelete: SetNull)
-  topic     ContactTopic  @default(info)
+  userId      String?       @map("user_id") @db.Uuid
+  user        User?         @relation("UserContactMessages", fields: [userId], references: [id], onDelete: SetNull)
+  topic       ContactTopic  @default(info)
   // Email de réponse : celui du compte par défaut, modifiable dans le formulaire.
-  email     String        @db.VarChar(254)
+  email       String        @db.VarChar(254)
   // Optionnel — l'expéditeur peut préférer être rappelé.
-  phone     String?       @db.VarChar(32)
-  subject   String        @db.VarChar(140)
-  message   String        @db.VarChar(4000)
-  status    ContactStatus @default(new)
+  phone       String?       @db.VarChar(32)
+  subject     String        @db.VarChar(140)
+  message     String        @db.VarChar(4000)
+  status      ContactStatus @default(new)
   // Trace de traitement : qui a changé le statut, et quand.
-  handledById String?     @map("handled_by_id") @db.Uuid
-  handledAt DateTime?     @map("handled_at") @db.Timestamptz
-  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  handledById String?       @map("handled_by_id") @db.Uuid
+  handledAt   DateTime?     @map("handled_at") @db.Timestamptz
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
 
   // Liste admin : filtre par statut, tri antéchronologique.
   @@index([status, createdAt])
@@ -1382,26 +1510,26 @@ enum OfficialBroadcastStatus {
 // sans cette ligne, la console n'aurait ni accusé de réception, ni compteur, ni
 // historique de ce qui a déjà été dit à la communauté.
 model OfficialBroadcast {
-  id        String                  @id @default(uuid()) @db.Uuid
-  kind      OfficialBroadcastKind
-  status    OfficialBroadcastStatus @default(sending)
-  title     String                  @db.VarChar(140)
-  body      String                  @db.VarChar(4000)
+  id       String                  @id @default(uuid()) @db.Uuid
+  kind     OfficialBroadcastKind
+  status   OfficialBroadcastStatus @default(sending)
+  title    String                  @db.VarChar(140)
+  body     String                  @db.VarChar(4000)
   // Cible : 'all' (tous les comptes actifs) ou 'user' (envoi à une personne).
-  audience  String                  @default("all") @db.VarChar(20)
+  audience String                  @default("all") @db.VarChar(20)
   // Destinataire unique quand audience = 'user'. SetNull : la suppression du
   // compte ne doit pas effacer la trace de ce que la plateforme a envoyé.
-  targetId  String?                 @map("target_id") @db.Uuid
+  targetId String?                 @map("target_id") @db.Uuid
   // Chemin d'ouverture dans l'app au tap (ex. '/post/<id>'). Optionnel.
-  linkPath  String?                 @map("link_path") @db.VarChar(200)
+  linkPath String?                 @map("link_path") @db.VarChar(200)
 
   totalRecipients Int @default(0) @map("total_recipients")
   sentCount       Int @default(0) @map("sent_count")
   failedCount     Int @default(0) @map("failed_count")
 
-  createdById String?  @map("created_by_id") @db.Uuid
-  createdBy   User?    @relation("OfficialBroadcastAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdBy   User?     @relation("OfficialBroadcastAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   finishedAt  DateTime? @map("finished_at") @db.Timestamptz
 
   @@index([createdAt])
@@ -1411,7 +1539,7 @@ model OfficialBroadcast {
 // ── Réglages runtime ─────────────────────────────────────────────
 // Réutilisable pour tout futur feature-flag.
 model AppSetting {
-  key         String   @id @db.VarChar(60)        // 'registration_mode', 'default_invite_quota', 'invite_expiry_days'
+  key         String   @id @db.VarChar(60) // 'registration_mode', 'default_invite_quota', 'invite_expiry_days'
   value       String   @db.VarChar(100)
   updatedById String?  @map("updated_by") @db.Uuid
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -1448,30 +1576,30 @@ enum AnimationStatus {
 }
 
 model AnimationPost {
-  id          String          @id @default(uuid()) @db.Uuid
+  id              String          @id @default(uuid()) @db.Uuid
   /// Le compte d'animation qui signera la publication (User.isAnimated).
-  botId       String          @map("bot_id") @db.Uuid
-  bot         User            @relation("AnimationAuthor", fields: [botId], references: [id], onDelete: Cascade)
+  botId           String          @map("bot_id") @db.Uuid
+  bot             User            @relation("AnimationAuthor", fields: [botId], references: [id], onDelete: Cascade)
   /// Pays visé, dénormalisé depuis le bot : sert au planning et au suivi sans
   /// jointure, et garde la trace même si le bot change de ville plus tard.
-  countryCode String?         @map("country_code") @db.Char(2)
-  kind        AnimationKind
-  status      AnimationStatus @default(draft)
-  content     String          @db.Text
+  countryCode     String?         @map("country_code") @db.Char(2)
+  kind            AnimationKind
+  status          AnimationStatus @default(draft)
+  content         String          @db.Text
   /// Image générée, déjà bindée au bucket public via S3Service.
-  mediaUrl    String?         @map("media_url") @db.VarChar(500)
+  mediaUrl        String?         @map("media_url") @db.VarChar(500)
   /// Source officielle. EXIGÉE pour `law` — voir AnimationService.
-  sourceUrl   String?         @map("source_url") @db.VarChar(500)
-  scheduledAt DateTime        @map("scheduled_at") @db.Timestamptz
-  publishedAt DateTime?       @map("published_at") @db.Timestamptz
+  sourceUrl       String?         @map("source_url") @db.VarChar(500)
+  scheduledAt     DateTime        @map("scheduled_at") @db.Timestamptz
+  publishedAt     DateTime?       @map("published_at") @db.Timestamptz
   /// Post réellement créé, une fois la file vidée. Null tant que non publié.
-  publishedPostId String?     @map("published_post_id") @db.Uuid
+  publishedPostId String?         @map("published_post_id") @db.Uuid
   /// Motif de refus, pour que l'atelier ne repropose pas la même chose.
-  reviewNote  String?         @map("review_note") @db.VarChar(500)
-  reviewedById String?        @map("reviewed_by_id") @db.Uuid
-  reviewedBy  User?           @relation("AnimationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  reviewNote      String?         @map("review_note") @db.VarChar(500)
+  reviewedById    String?         @map("reviewed_by_id") @db.Uuid
+  reviewedBy      User?           @relation("AnimationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz
 
   /// Le cron ne lit que (status, scheduledAt) : index composite dédié.
   @@index([status, scheduledAt])
@@ -1483,14 +1611,14 @@ model AnimationPost {
 /// Séparé de User exprès : ce sont des paramètres d'exploitation, pas un profil,
 /// et rien ici ne doit pouvoir remonter dans une sélection publique par accident.
 model AnimationBot {
-  id       String  @id @default(uuid()) @db.Uuid
-  userId   String  @unique @map("user_id") @db.Uuid
-  user     User    @relation("AnimationBotAccount", fields: [userId], references: [id], onDelete: Cascade)
+  id     String        @id @default(uuid()) @db.Uuid
+  userId String        @unique @map("user_id") @db.Uuid
+  user   User          @relation("AnimationBotAccount", fields: [userId], references: [id], onDelete: Cascade)
   /// nc01…nc25 — stable, sert de clé de reprise pour l'atelier.
-  handle   String  @unique @db.VarChar(8)
-  kind     AnimationKind
+  handle String        @unique @db.VarChar(8)
+  kind   AnimationKind
   /// Interrupteur par compte : une extinction immédiate sans toucher au code.
-  active   Boolean @default(true)
+  active Boolean       @default(true)
 
   // ── Cadence ────────────────────────────────────────────────
   postsPerWeek    Int @default(2) @map("posts_per_week")
@@ -1533,22 +1661,22 @@ enum AnimationReplyStatus {
 /// le compte se tait et la conversation atterrit dans la console. On ne
 /// construit pas d'esquive.
 model AnimationReply {
-  id             String   @id @default(uuid()) @db.Uuid
-  botId          String   @map("bot_id") @db.Uuid
-  bot            AnimationBot @relation(fields: [botId], references: [id], onDelete: Cascade)
-  conversationId String   @map("conversation_id") @db.Uuid
+  id                String               @id @default(uuid()) @db.Uuid
+  botId             String               @map("bot_id") @db.Uuid
+  bot               AnimationBot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversationId    String               @map("conversation_id") @db.Uuid
   /// Message entrant auquel on répond — unique, pour ne jamais répondre deux fois.
-  incomingMessageId String @unique @map("incoming_message_id") @db.Uuid
-  status         AnimationReplyStatus @default(pending)
+  incomingMessageId String               @unique @map("incoming_message_id") @db.Uuid
+  status            AnimationReplyStatus @default(pending)
   /// Rang de l'échange, base du doublement du délai.
-  attempt        Int      @default(0)
-  dueAt          DateTime @map("due_at") @db.Timestamptz
+  attempt           Int                  @default(0)
+  dueAt             DateTime             @map("due_at") @db.Timestamptz
   /// Texte rédigé par l'atelier. Null tant qu'il n'est pas passé.
-  draft          String?  @db.Text
-  sentMessageId  String?  @map("sent_message_id") @db.Uuid
-  escalationReason String? @map("escalation_reason") @db.VarChar(200)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  draft             String?              @db.Text
+  sentMessageId     String?              @map("sent_message_id") @db.Uuid
+  escalationReason  String?              @map("escalation_reason") @db.VarChar(200)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([status, dueAt])
   @@index([conversationId])
@@ -1576,20 +1704,20 @@ enum AnimationActionStatus {
 /// donc seuls — mais toujours à une heure décidée à l'avance et étalée, jamais
 /// en rafale au moment du balayage.
 model AnimationAction {
-  id       String                @id @default(uuid()) @db.Uuid
-  botId    String                @map("bot_id") @db.Uuid
-  bot      AnimationBot          @relation(fields: [botId], references: [id], onDelete: Cascade)
-  type     AnimationActionType
-  status   AnimationActionStatus @default(pending)
+  id           String                @id @default(uuid()) @db.Uuid
+  botId        String                @map("bot_id") @db.Uuid
+  bot          AnimationBot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  type         AnimationActionType
+  status       AnimationActionStatus @default(pending)
   /// Cible : un post (like, comment) ou un membre (friend_request).
-  targetPostId String?           @map("target_post_id") @db.Uuid
-  targetUserId String?           @map("target_user_id") @db.Uuid
+  targetPostId String?               @map("target_post_id") @db.Uuid
+  targetUserId String?               @map("target_user_id") @db.Uuid
   /// Texte du commentaire, écrit par l'atelier. Null pour like / demande d'ami.
-  draft    String?               @db.Text
-  dueAt    DateTime              @map("due_at") @db.Timestamptz
-  doneAt   DateTime?             @map("done_at") @db.Timestamptz
-  skipReason String?             @map("skip_reason") @db.VarChar(200)
-  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  draft        String?               @db.Text
+  dueAt        DateTime              @map("due_at") @db.Timestamptz
+  doneAt       DateTime?             @map("done_at") @db.Timestamptz
+  skipReason   String?               @map("skip_reason") @db.VarChar(200)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz
 
   /// Un compte ne like pas deux fois le même post, ni ne redemande en ami
   /// quelqu'un qu'il a déjà sollicité. Garanti en base, pas seulement en code.

@@ -524,6 +524,52 @@ export class MailerService implements OnModuleInit {
   }
 
   /**
+   * A2 — sent when a member is automatically promoted to run an association
+   * because its last admin/owner just deleted their NigerConnect account.
+   * Distinct from `sendRoleGranted` (that one is the PLATFORM staff role —
+   * moderator/admin of the whole app; this is one association's leadership).
+   */
+  async sendAssociationRoleGranted(
+    to: string,
+    role: 'owner' | 'admin',
+    associationName: string,
+    firstName?: string | null,
+  ): Promise<void> {
+    const b = MailerService.BRAND;
+    const safeName = this.esc(firstName);
+    const safeAssoc = this.esc(associationName) || 'ton association';
+    const greeting = safeName ? `Bonjour ${safeName},` : 'Bonjour,';
+    const label = role === 'owner' ? 'propriétaire' : 'administrateur';
+    const bodyHtml = `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 8px;">
+        <tr><td align="center" style="width:64px;height:64px;background:${b.tan100};border-radius:50%;
+            font-size:32px;line-height:64px;text-align:center;">🏛️</td></tr>
+      </table>
+      <h1 style="margin:8px 0 16px;font-size:24px;font-weight:800;color:${b.brown};text-align:center;">Tu gères désormais ${safeAssoc} 🏛️</h1>
+      <p style="margin:0 0 12px;">${greeting}</p>
+      <p style="margin:0 0 12px;">
+        Le précédent responsable de <strong>${safeAssoc}</strong> a supprimé son compte NigerConnect.
+        Pour qu'une association ait toujours un responsable, tu en es maintenant <strong>${label}</strong>,
+        en tant que membre le plus ancien encore présent.
+      </p>
+      <div style="margin:24px 0 4px;">${this.button(this.webUrl, 'Ouvrir NigerConnect')}</div>
+      <p style="margin:22px 0 0;font-size:13px;color:${b.tan500};">
+        Tu ne veux pas de cette responsabilité ? Tu peux transférer le rôle à un autre membre
+        depuis la page de l'association, ou nous répondre pour en discuter.
+      </p>`;
+    const text =
+      `NigerConnect — Tu gères désormais ${safeAssoc}\n\n${greeting}\n` +
+      `Le précédent responsable de ${safeAssoc} a supprimé son compte NigerConnect. ` +
+      `Pour qu'une association ait toujours un responsable, tu en es maintenant ${label}.\n\n` +
+      `Ouvre NigerConnect : ${this.webUrl}`;
+    const html = this.layout({
+      preheader: `Tu es maintenant ${label} de ${safeAssoc} sur NigerConnect.`,
+      bodyHtml,
+    });
+    await this.send({ to, subject: `NigerConnect — Tu gères désormais ${safeAssoc} 🏛️`, html, text });
+  }
+
+  /**
    * Invitation email — sent when a user provides an invitee's email address.
    * Contains the one-use invite code and a direct deep-link to the registration
    * page. Fire-and-forget from the caller; this method logs but does not throw.

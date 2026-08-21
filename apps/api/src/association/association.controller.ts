@@ -19,15 +19,19 @@ import {
   rejectRequestSchema,
   createAssociationSchema,
   createEventSchema,
+  designateOfficerSchema,
   inviteMemberSchema,
   listAssociationsSchema,
+  transferOwnershipSchema,
   updateAssociationSchema,
   type ChangeRoleDto,
   type RejectRequestDto,
   type CreateAssociationDto,
   type CreateEventDto,
+  type DesignateOfficerDto,
   type InviteMemberDto,
   type ListAssociationsDto,
+  type TransferOwnershipDto,
   type UpdateAssociationDto,
 } from './dto/association.dto';
 
@@ -112,14 +116,42 @@ export class AssociationController {
     return this.assoc.changeRole(me.sub, id, userId, dto);
   }
 
+  // ── A3 — ownership transfer ────────────────────────────────────────────
+  @Post('associations/:id/owner/transfer')
+  requestOwnershipTransfer(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(transferOwnershipSchema)) dto: TransferOwnershipDto,
+  ) {
+    return this.assoc.requestOwnershipTransfer(me.sub, id, dto.userId);
+  }
+
+  @Post('associations/:id/owner/transfer/accept')
+  acceptOwnershipTransfer(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.assoc.acceptOwnershipTransfer(me.sub, id);
+  }
+
+  @Delete('associations/:id/owner/transfer')
+  @HttpCode(HttpStatus.OK)
+  declineOwnershipTransfer(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.assoc.declineOrCancelOwnershipTransfer(me.sub, id);
+  }
+
   @Get('associations/:id/members')
   members(
+    @CurrentUser() me: JwtUserPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
     const lim = limit ? Math.min(100, Math.max(1, Number(limit))) : 30;
-    return this.assoc.listMembers(id, cursor, lim);
+    return this.assoc.listMembers(me.sub, id, cursor, lim);
   }
 
   @Get('associations/:id/pending')
@@ -150,6 +182,39 @@ export class AssociationController {
     @Body(new ZodValidationPipe(rejectRequestSchema)) dto: RejectRequestDto,
   ) {
     return this.assoc.rejectJoinRequest(me.sub, id, userId, dto.reason);
+  }
+
+  // ── A4 — bureau exécutif ────────────────────────────────────────────────
+  @Get('associations/:id/officers')
+  officers(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.assoc.listOfficers(id);
+  }
+
+  @Post('associations/:id/officers')
+  designateOfficer(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(designateOfficerSchema)) dto: DesignateOfficerDto,
+  ) {
+    return this.assoc.designateOfficer(me.sub, id, dto);
+  }
+
+  @Post('associations/:id/officers/accept')
+  acceptOfficerSeat(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.assoc.acceptOfficerSeat(me.sub, id);
+  }
+
+  @Delete('associations/:id/officers/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeOfficer(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+  ): Promise<void> {
+    await this.assoc.removeOfficer(me.sub, id, userId);
   }
 
   @Post('associations/:id/events')

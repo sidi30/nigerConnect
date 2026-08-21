@@ -89,6 +89,7 @@ function makeProfile(full: boolean, target: { privacyLevel: string } | null) {
     settings(full) as never,
     { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
       makeDiaspora() as never,
+      { reassignOwnershipBeforeDeletion: jest.fn(async () => []), notifyOwnershipEvents: jest.fn(async () => undefined) } as never,
     );
   // loadNetwork/loadCounts hit prisma; stub them so getById resolves.
   jest.spyOn(svc as never, 'loadNetwork').mockResolvedValue({} as never);

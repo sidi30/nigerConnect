@@ -21,7 +21,14 @@ export type NotificationType =
   | 'invite_accepted'
   | 'mention'
   | 'announcement'
-  | 'weekly_digest';
+  | 'weekly_digest'
+  // A2/A3/A4 — association governance (see association.service.ts and
+  // apps/api/prisma/schema.prisma enum NotificationType). Missed by the
+  // Sprint 1 "espace association" shared-types sync — added here so the
+  // mobile/web clients can route/label these notifications at all.
+  | 'association_role_changed'
+  | 'association_ownership_transfer'
+  | 'association_officer_invite';
 
 export interface Notification {
   id: string;

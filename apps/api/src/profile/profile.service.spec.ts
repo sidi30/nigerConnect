@@ -46,12 +46,20 @@ const makeDiaspora = () => ({
   sharesContentScope: jest.fn(async () => true),
 });
 
+// A2 — AssociationService collaborator for deleteAccount's orphan-guard.
+// Default stub is a no-op (no association to reassign); the dedicated A2
+// spec below overrides these to exercise the real handoff.
+const makeAssoc = () => ({
+  reassignOwnershipBeforeDeletion: jest.fn(async () => []),
+  notifyOwnershipEvents: jest.fn(async () => undefined),
+});
+
 describe('ProfileService', () => {
   it('throws NotFoundException when user does not exist', async () => {
     const prisma = {
       user: { findUnique: jest.fn(async () => null), update: jest.fn() },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await expect(svc.getMe('u1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -63,7 +71,7 @@ describe('ProfileService', () => {
         update: jest.fn(async () => ({ id: 'u1', bio: 'hello', privacyLevel: 'friends' })),
       },
     };
-    const svc = new ProfileService(prisma as never, redis as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, redis as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.updateMe('u1', { bio: 'hello' });
     expect(result.bio).toBe('hello');
     expect(redis.client.del).toHaveBeenCalledWith('profile:u1');
@@ -77,7 +85,7 @@ describe('ProfileService', () => {
     // Le pays d'avant est relu pour tracer un changement de pays (regle
     // diaspora), meme quand ville + pays sont fournis tous les deux.
     const prisma = { user: { update, findUnique: jest.fn(async () => null) } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR' });
     const data = update.mock.calls[0]![0].data;
     // Lyon is ~45.76 / 4.84; jitter is ±0.02 so a loose range is enough.
@@ -98,7 +106,7 @@ describe('ProfileService', () => {
     // Le pays d'avant est relu pour tracer un changement de pays (regle
     // diaspora), meme quand ville + pays sont fournis tous les deux.
     const prisma = { user: { update, findUnique: jest.fn(async () => null) } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await svc.updateMe('u1', { city: 'Lyon', countryCode: 'FR', latitude: 1, longitude: 2 });
     const data = update.mock.calls[0]![0].data;
     expect(data.latitude).toBeGreaterThan(45.7);
@@ -117,7 +125,7 @@ describe('ProfileService', () => {
     }));
     const findUnique = jest.fn(async () => ({ city: null, countryCode: null }));
     const prisma = { user: { update, findUnique } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const exactLat = 48.86543;
     const exactLon = 2.33456;
     await svc.updateMe('u1', { latitude: exactLat, longitude: exactLon });
@@ -136,7 +144,7 @@ describe('ProfileService', () => {
     }));
     const findUnique = jest.fn(async () => ({ city: 'Paris', countryCode: 'FR' }));
     const prisma = { user: { update, findUnique } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await svc.updateMe('u1', { city: 'Marseille' });
     expect(findUnique).toHaveBeenCalled();
     const data = update.mock.calls[0]![0].data;
@@ -155,7 +163,7 @@ describe('ProfileService', () => {
         })),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await expect(svc.getById('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -173,7 +181,7 @@ describe('ProfileService', () => {
       associationMember: { findMany: jest.fn(async () => []) },
       post: { count: jest.fn(async () => 12) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
     // Public profile: real totals, uncapped by any page size.
@@ -199,7 +207,7 @@ describe('ProfileService', () => {
       friendship: { count: jest.fn(async () => 0) },
       post: { count: jest.fn(async () => 12) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.id).toBe('other');
     expect(result.privacyLevel).toBe('friends');
@@ -229,7 +237,7 @@ describe('ProfileService', () => {
       userPhoto: { count: jest.fn(async () => 0) },
       post: { count: jest.fn(async () => 0) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await expect(svc.listFriendsOf('viewer', 'other')).rejects.toBeInstanceOf(NotFoundException);
     // We must NOT have queried the friendship list — the privacy gate
     // short-circuits before any data is read.
@@ -254,7 +262,7 @@ describe('ProfileService', () => {
       associationMember: { findMany: jest.fn(async () => []) },
       post: { count: jest.fn(async () => 0) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.listFriendsOf('viewer', 'other');
     expect(result.items).toEqual([]);
     expect(prisma.friendship.findMany).toHaveBeenCalled();
@@ -272,7 +280,7 @@ describe('ProfileService', () => {
       friendship: { count: jest.fn(async () => 500) },
       post: { count: jest.fn(async () => 42) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.getMe('u1');
     // Page size elsewhere in this file (listFriendsOf) defaults/caps at 30.
     expect(result.friendsCount).toBe(500);
@@ -295,7 +303,7 @@ describe('ProfileService', () => {
       associationMember: { findMany: jest.fn(async () => []) },
       post: { count: jest.fn(async () => 9) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.getById('viewer', 'other');
     expect(result.friendsCount).toBe(1);
     expect(result.postsCount).toBe(9);
@@ -327,7 +335,7 @@ describe('ProfileService', () => {
       associationMember: { findMany: jest.fn(async () => []) },
       post: { count: postCount },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.getById('viewer', 'other');
     // Only PUBLIC posts are counted — not the friends-only ones the stranger
     // cannot see on the wall.
@@ -351,7 +359,7 @@ describe('ProfileService', () => {
     const prisma = {
       user: { update: jest.fn(async (args: { data: { avatarUrl: string | null } }) => ({ id: 'u1', avatarUrl: args.data.avatarUrl })) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     const result = await svc.updateAvatar('u1', 'https://cdn.example/users/u1/avatar/a.jpg');
     expect(s3.assertOwnedPublicImage).toHaveBeenCalledWith(
       'https://cdn.example/users/u1/avatar/a.jpg',
@@ -364,7 +372,7 @@ describe('ProfileService', () => {
   it('clears the avatar without hitting S3 when null is passed', async () => {
     const s3 = makeS3();
     const prisma = { user: { update: jest.fn(async () => ({ id: 'u1', avatarUrl: null })) } };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, s3 as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await svc.updateAvatar('u1', null);
     expect(s3.assertOwnedPublicImage).not.toHaveBeenCalled();
   });
@@ -376,7 +384,7 @@ describe('ProfileService', () => {
       user: { findMany },
       block: { findMany: jest.fn(async () => []) },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await svc.search('viewer', { q: 'foo@bar.com', limit: 20 } as never);
     const where = findMany.mock.calls[0]![0].where;
     const orClause = where.AND.find((c: { OR?: unknown[] }) => Array.isArray(c.OR))!.OR as Array<
@@ -393,7 +401,7 @@ describe('ProfileService', () => {
         delete: jest.fn(),
       },
     };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, makeDiaspora() as never, makeAssoc() as never);
     await expect(svc.deletePhoto('me', 'p1')).rejects.toBeInstanceOf(ForbiddenException);
   });
   // Diaspora split: the wall of a member on the other side comes back empty, so
@@ -415,7 +423,7 @@ describe('ProfileService', () => {
       post: { count: postCount },
     };
     const diaspora = { ...makeDiaspora(), sharesContentScope: jest.fn(async () => false) };
-    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, diaspora as never);
+    const svc = new ProfileService(prisma as never, makeRedis() as never, makeS3() as never, makeBlocks() as never, {} as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never, diaspora as never, makeAssoc() as never);
     const result = await svc.getById('paris', 'niamey');
     expect(result.postsCount).toBe(0);
     expect(postCount).not.toHaveBeenCalled();
@@ -423,5 +431,85 @@ describe('ProfileService', () => {
     expect(result.id).toBe('niamey');
     expect(result.friendsCount).toBe(7);
     expect(result.photosCount).toBe(3);
+  });
+
+  // A2 regression — the exact scenario: the last admin/owner of an association
+  // deletes their account and the association must NOT end up orphaned.
+  // deleteAccount() must run AssociationService.reassignOwnershipBeforeDeletion
+  // BEFORE the cascading user.delete() (inside the same transaction, since the
+  // cascade wipes the membership row this read depends on), then fire the
+  // notify/email side-effects once the transaction has committed.
+  describe('deleteAccount — A2 last-admin/owner orphan guard', () => {
+    it('reassigns (or dissolves) the association before removing the row, then notifies', async () => {
+      const txUserDelete = jest.fn(async () => ({}));
+      const tx = { user: { delete: txUserDelete } };
+      const prisma = {
+        user: { findUnique: jest.fn(async () => ({ avatarUrl: null, coverUrl: null })) },
+        userPhoto: { findMany: jest.fn(async () => []) },
+        identityDocument: { findMany: jest.fn(async () => []) },
+        $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(tx)),
+      };
+      const events = [
+        {
+          kind: 'transferred',
+          associationId: 'a1',
+          associationName: 'Nigériens de Paris',
+          successorId: 'mod1',
+          newRole: 'admin',
+        },
+      ];
+      const assoc = {
+        reassignOwnershipBeforeDeletion: jest.fn(async () => events),
+        notifyOwnershipEvents: jest.fn(async () => undefined),
+      };
+      const svc = new ProfileService(
+        prisma as never,
+        makeRedis() as never,
+        makeS3() as never,
+        makeBlocks() as never,
+        {} as never,
+        { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never,
+        { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
+        makeDiaspora() as never,
+        assoc as never,
+      );
+
+      await svc.deleteAccount('lastAdmin');
+
+      expect(assoc.reassignOwnershipBeforeDeletion).toHaveBeenCalledWith(tx, 'lastAdmin');
+      expect(txUserDelete).toHaveBeenCalledWith({ where: { id: 'lastAdmin' } });
+      // Reassignment must be read BEFORE the cascade removes the membership row.
+      expect(assoc.reassignOwnershipBeforeDeletion.mock.invocationCallOrder[0]!).toBeLessThan(
+        txUserDelete.mock.invocationCallOrder[0]!,
+      );
+      expect(assoc.notifyOwnershipEvents).toHaveBeenCalledWith(events);
+    });
+
+    it('a mail/notification outage does not roll back the deletion (best-effort)', async () => {
+      const prisma = {
+        user: { findUnique: jest.fn(async () => ({ avatarUrl: null, coverUrl: null })) },
+        userPhoto: { findMany: jest.fn(async () => []) },
+        identityDocument: { findMany: jest.fn(async () => []) },
+        $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb({ user: { delete: jest.fn(async () => ({})) } })),
+      };
+      const assoc = {
+        reassignOwnershipBeforeDeletion: jest.fn(async () => []),
+        notifyOwnershipEvents: jest.fn(async () => {
+          throw new Error('smtp down');
+        }),
+      };
+      const svc = new ProfileService(
+        prisma as never,
+        makeRedis() as never,
+        makeS3() as never,
+        makeBlocks() as never,
+        {} as never,
+        { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false) } as never,
+        { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
+        makeDiaspora() as never,
+        assoc as never,
+      );
+      await expect(svc.deleteAccount('u1')).resolves.toBeUndefined();
+    });
   });
 });

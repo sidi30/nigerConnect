@@ -1567,6 +1567,72 @@ export class AdminService {
     });
   }
 
+  // ── A5 — association certification ────────────────────────────────────
+
+  /**
+   * Grant the "Association vérifiée" badge. `Association.isVerified` existed
+   * in the schema with no endpoint ever setting it — a badge nobody can
+   * revoke or account for is a liability, not a feature. Traced via
+   * verifiedAt/verifiedById/verificationNote on the row AND an admin audit
+   * log entry, same as `updateUser`'s role-change trail above.
+   */
+  async verifyAssociation(actor: { id: string }, associationId: string, note?: string) {
+    const assoc = await this.prisma.association.findFirst({
+      where: { id: associationId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!assoc) throw new NotFoundException('Association not found');
+
+    const updated = await this.prisma.association.update({
+      where: { id: associationId },
+      data: {
+        isVerified: true,
+        verifiedAt: new Date(),
+        verifiedById: actor.id,
+        verificationNote: note ?? null,
+      },
+    });
+    await this.prisma.adminAuditLog
+      .create({
+        data: {
+          actorId: actor.id,
+          action: 'association.verified',
+          meta: { associationId, name: assoc.name, note: note ?? null },
+        },
+      })
+      .catch(() => undefined);
+    return updated;
+  }
+
+  /** Revoke it. Same trace, cleared badge (verifiedAt/verifiedById back to null). */
+  async unverifyAssociation(actor: { id: string }, associationId: string, note?: string) {
+    const assoc = await this.prisma.association.findFirst({
+      where: { id: associationId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!assoc) throw new NotFoundException('Association not found');
+
+    const updated = await this.prisma.association.update({
+      where: { id: associationId },
+      data: {
+        isVerified: false,
+        verifiedAt: null,
+        verifiedById: null,
+        verificationNote: note ?? null,
+      },
+    });
+    await this.prisma.adminAuditLog
+      .create({
+        data: {
+          actorId: actor.id,
+          action: 'association.unverified',
+          meta: { associationId, name: assoc.name, note: note ?? null },
+        },
+      })
+      .catch(() => undefined);
+    return updated;
+  }
+
   /** Turn an `s3://<privateBucket>/<key>` pointer into a short presigned GET. */
   private async presignDoc(fileUrl: string | null): Promise<string | null> {
     // Manual verifications carry no uploaded piece (fileUrl null) → nothing to presign.

@@ -96,6 +96,20 @@ describe('GeoService', () => {
     expect(prisma.block.findMany).toHaveBeenCalledTimes(1);
   });
 
+  it('never pins a DISSOLVED association on the public map (A2 soft delete)', async () => {
+    const { redis, prisma, notifications } = makeMocks();
+    const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);
+
+    await svc.getMarkers('viewer-A', BOUNDS);
+
+    // `deletedAt` marks an association whose last responsible member deleted
+    // their account and that nobody was left to take over. list()/getById()
+    // already hide it; the map must not be the one surface still advertising
+    // an org with no members and no way back.
+    const where = (prisma.association.findMany as jest.Mock).mock.calls[0]?.[0]?.where;
+    expect(where).toEqual(expect.objectContaining({ deletedAt: null }));
+  });
+
   it('counts map-hidden users in country clusters (anonymous aggregate), no show_on_map filter', async () => {
     const { redis, prisma, notifications } = makeMocks();
     const svc = new GeoService(prisma as never, redis as never, notifications as never, { isAdminFullVisibility: jest.fn(async () => false), isGlobalFullVisibility: jest.fn(async () => false), isProximityEnabled: jest.fn(async () => true), isProximityRegionAllowed: jest.fn(async () => true) } as never, { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never);

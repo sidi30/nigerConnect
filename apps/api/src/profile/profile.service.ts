@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { AssociationService } from '../association/association.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
@@ -93,6 +94,7 @@ export class ProfileService {
     private readonly settings: SettingsService,
     private readonly audit: AdminAuditService,
     private readonly diaspora: DiasporaPolicyService,
+    private readonly associations: AssociationService,
   ) {}
 
   /**
@@ -854,6 +856,13 @@ export class ProfileService {
    * notifications, reports. Identity documents are handled by the cleanup cron.
    *
    * We DO NOT keep a "tombstone" row — deletion is total, as required by RGPD.
+   *
+   * A2: if this user is the last admin/owner of an association, the cascade
+   * above would silently orphan it (no responsible member, no endpoint to fix
+   * it) the moment their `association_members` row disappears. So the
+   * reassignment/dissolution (AssociationService.reassignOwnershipBeforeDeletion)
+   * runs FIRST, inside the SAME transaction as the delete — it has to read
+   * membership before the cascade wipes it.
    */
   async deleteAccount(userId: string): Promise<void> {
     // Gather S3 keys before the cascading delete removes the rows.
@@ -870,8 +879,15 @@ export class ProfileService {
       select: { fileUrl: true },
     });
 
-    await this.prisma.user.delete({ where: { id: userId } });
+    const ownershipEvents = await this.prisma.$transaction(async (tx) => {
+      const events = await this.associations.reassignOwnershipBeforeDeletion(tx, userId);
+      await tx.user.delete({ where: { id: userId } });
+      return events;
+    });
     await this.invalidateProfileCache(userId);
+    // Best-effort — a notification/email outage must not roll back an account
+    // deletion the user already confirmed.
+    await this.associations.notifyOwnershipEvents(ownershipEvents).catch(() => undefined);
 
     // Best-effort S3 cleanup — failure must not leak the user's data back
     // into the DB (the row is already gone). Public-bucket assets vs identity
