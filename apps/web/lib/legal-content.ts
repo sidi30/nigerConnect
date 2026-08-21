@@ -15,7 +15,7 @@ import type { LegalSection } from "@/components/LegalPage";
  * réduisent la protection juridique au lieu de la renforcer.
  */
 
-export const LEGAL_LAST_UPDATED = "13 juin 2026";
+export const LEGAL_LAST_UPDATED = "21 août 2026";
 
 // Contacts officiels — uniformisés sur le domaine nigerconnect.app.
 // Prévoir les alias / MX correspondants côté messagerie.
@@ -97,59 +97,69 @@ export const TERMS_SECTIONS: LegalSection[] = [
       "La vérification d'identité (badge ✓) est facultative, mais certaines fonctionnalités (ex. création d'association) peuvent l'exiger. Les documents transmis sont chiffrés, ne sont jamais rendus publics, et sont supprimés au plus tard 30 jours après validation. La fourniture d'un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.",
   },
   {
-    heading: "10. Propriété intellectuelle du Service",
+    heading: "10. Espaces association",
+    body:
+      "Une association présente sur le Service est administrée par des personnes physiques titulaires d'un compte personnel : il n'existe pas de compte « association » partagé, et chaque acte d'administration est attribué à la personne qui l'a accompli. Publier au nom d'une association est réservé aux dirigeants déclarés dans le Service (responsable principal, administrateur, modérateur) ; ces publications engagent l'association et leur auteur. L'Éditeur ne perçoit aucune cotisation et n'intervient dans aucun flux financier entre une association et ses membres : un statut de cotisation affiché dans le Service est purement déclaratif, saisi par l'association, et ne vaut ni preuve de paiement ni quittance. La certification d'une association atteste uniquement d'une vérification faite par l'Éditeur sur les éléments qui lui ont été présentés ; elle ne garantit ni la solvabilité, ni la régularité juridique, ni les agissements de l'association. Chaque association dispose d'un espace de stockage limité, au-delà duquel l'Éditeur peut refuser un nouveau dépôt.",
+  },
+  {
+    heading: "11. Adhérents enregistrés par une association",
+    body:
+      "Une association peut enregistrer dans son espace des adhérents qui ne possèdent pas de compte NigerConnect. Pour ces fiches, l'association est responsable du traitement au sens du RGPD et l'Éditeur agit comme sous-traitant, sur ses seules instructions. L'association garantit disposer d'une base légale, avoir informé les personnes concernées, et n'enregistrer que les données strictement nécessaires. Ces fiches n'ouvrent aucun compte, n'apparaissent sur aucune surface publique du Service (carte, recherche, fil, suggestions) et ne déclenchent aucune notification. Toute personne peut demander la rectification ou la suppression de sa fiche auprès de l'association ou de l'Éditeur (" + LEGAL_CONTACT_EMAIL + ") ; l'Éditeur transmet la demande à l'association et peut supprimer la fiche lui-même si celle-ci n'y donne pas suite. L'association garantit l'Éditeur contre toute réclamation résultant d'un manquement à ces obligations.",
+  },
+  {
+    heading: "12. Propriété intellectuelle du Service",
     body:
       "Le Service, sa marque, ses logos, son interface, son code et ses bases de données sont protégés et demeurent la propriété exclusive de l'Éditeur. Aucune disposition des CGU n'emporte cession de ces droits. Toute reproduction, extraction ou réutilisation non autorisée est interdite.",
   },
   {
-    heading: "11. Disponibilité du Service",
+    heading: "13. Disponibilité du Service",
     body:
       "Le Service est fourni « en l'état » et « selon disponibilité ». L'Éditeur met en œuvre des moyens raisonnables pour en assurer le fonctionnement mais ne garantit ni une disponibilité ininterrompue, ni l'absence d'erreurs, ni la compatibilité avec tout appareil. Le Service peut être suspendu, modifié ou interrompu, notamment pour maintenance, évolution ou raison de sécurité, sans que cela ouvre droit à indemnité.",
   },
   {
-    heading: "12. Limitation de responsabilité",
+    heading: "14. Limitation de responsabilité",
     body:
       "Dans les limites permises par la loi, l'Éditeur ne saurait être tenu responsable des dommages indirects (perte de données, de chiffre d'affaires, d'opportunité, préjudice d'image) ni des faits, contenus ou comportements des Utilisateurs ou de tiers. La responsabilité de l'Éditeur, lorsqu'elle est engagée, est limitée au préjudice direct et prévisible, et ne saurait excéder les sommes éventuellement versées par l'Utilisateur au titre du Service au cours des douze derniers mois (ou 50 € pour un service gratuit). Aucune stipulation des CGU n'a pour effet d'exclure ou de limiter la responsabilité de l'Éditeur en cas de faute lourde ou dolosive, de dommage corporel, ou dans les cas où la loi l'interdit (notamment droit de la consommation).",
   },
   {
-    heading: "13. Garantie et indemnisation par l'Utilisateur",
+    heading: "15. Garantie et indemnisation par l'Utilisateur",
     body:
       "Tu t'engages à garantir et indemniser l'Éditeur (ainsi que ses éventuels préposés et partenaires) de toute réclamation, action, condamnation, dommage et frais raisonnables (y compris frais de défense) résultant de ton Contenu Utilisateur, de ton utilisation du Service, ou de la violation par tes soins des CGU, de la loi ou des droits d'un tiers.",
   },
   {
-    heading: "14. Liens et services de tiers",
+    heading: "16. Liens et services de tiers",
     body:
       "Le Service peut renvoyer vers des sites ou services tiers que l'Éditeur ne contrôle pas. L'Éditeur n'assume aucune responsabilité quant à leur contenu, leurs pratiques ou leur disponibilité.",
   },
   {
-    heading: "15. Données personnelles",
+    heading: "17. Données personnelles",
     body:
       "Le traitement de tes données personnelles est décrit dans la Politique de confidentialité, qui détaille les finalités, bases légales, durées de conservation et tes droits au titre du RGPD. En utilisant le Service, tu en prends connaissance.",
   },
   {
-    heading: "16. Suppression de compte",
+    heading: "18. Suppression de compte",
     body:
       "Tu peux supprimer ton compte à tout moment via Paramètres → Supprimer mon compte, ou via la page https://nigerconnect.app/account-deletion. La suppression est immédiate et efface tes données visibles (publications, messages, photos, relations). Des journaux techniques anonymisés peuvent être conservés jusqu'à 30 jours à des fins de prévention des abus et de sécurité, puis détruits.",
   },
   {
-    heading: "17. Modification des CGU",
+    heading: "19. Modification des CGU",
     body:
       "L'Éditeur peut faire évoluer les CGU. En cas de modification substantielle, tu en seras informé par un moyen approprié (notification ou affichage) avant son entrée en vigueur. La poursuite de l'utilisation du Service vaut acceptation ; à défaut, tu peux résilier en supprimant ton compte.",
   },
   {
-    heading: "18. Durée, suspension et résiliation",
+    heading: "20. Durée, suspension et résiliation",
     body:
       "Les CGU s'appliquent pendant toute la durée d'utilisation du Service. L'Éditeur peut suspendre ou résilier l'accès d'un Utilisateur qui enfreint les CGU, la loi ou les Règles de la communauté, sans préavis en cas de manquement grave. La résiliation n'affecte pas les stipulations qui, par nature, doivent survivre (propriété intellectuelle, responsabilité, indemnisation, droit applicable).",
   },
   {
-    heading: "19. Droit applicable et litiges",
+    heading: "21. Droit applicable et litiges",
     body:
       "Les CGU sont régies par le droit français. En cas de litige, et après une tentative de résolution amiable auprès de " +
       LEGAL_CONTACT_EMAIL +
       ", l'Utilisateur consommateur peut recourir gratuitement à un médiateur de la consommation. À défaut d'accord, les tribunaux français sont compétents, dans le respect des règles impératives de compétence protectrices du consommateur.",
   },
   {
-    heading: "20. Divisibilité",
+    heading: "22. Divisibilité",
     body:
       "Si une stipulation des CGU est jugée nulle ou inapplicable, les autres stipulations conservent leur plein effet. Les CGU, la Politique de confidentialité et les Règles de la communauté constituent l'intégralité de l'accord entre l'Utilisateur et l'Éditeur relatif au Service.",
   },
@@ -225,6 +235,11 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Service d'emails transactionnels (Resend / IONOS) — envoi des emails du Service.",
       "Sentry — collecte d'erreurs techniques aux fins de fiabilité.",
     ],
+  },
+  {
+    heading: "Fiches d'adhérents créées par une association",
+    body:
+      "Une association peut enregistrer, dans son espace, des adhérents qui n'ont pas de compte NigerConnect. Dans ce cas, c'est l'association — et non NigerConnect — qui décide des données enregistrées et de leur finalité : elle en est responsable du traitement, nous n'en sommes que l'hébergeur technique. Ces fiches se limitent à un nom et à un moyen de contact ; elles ne sont jamais publiées, jamais utilisées pour du ciblage, et n'entrent jamais dans le réseau social (ni carte, ni recherche, ni fil, ni suggestions d'amis). Elles ne reçoivent aucune notification. Pour faire rectifier ou supprimer une fiche te concernant, écris à l'association, ou à " + LEGAL_DPO_EMAIL + " : nous transmettons la demande et pouvons supprimer la fiche nous-mêmes si l'association n'y répond pas. La suppression de l'espace d'une association entraîne celle de ses fiches.",
   },
   {
     heading: "Transferts hors UE",

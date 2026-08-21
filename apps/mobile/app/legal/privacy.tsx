@@ -4,7 +4,7 @@ export default function PrivacyScreen() {
   return (
     <LegalDoc
       title="Confidentialité"
-      lastUpdated="13 juin 2026"
+      lastUpdated="21 août 2026"
       intro="Cette politique explique quelles données NigerConnect collecte, sur quelles bases légales, pour quelles finalités, et comment exercer tes droits. Elle est conforme au RGPD (UE) 2016/679 et à la loi Informatique et Libertés. Nous respectons aussi le CCPA (Californie) et les exigences des stores Apple et Google."
       sections={[
         {
@@ -96,6 +96,11 @@ export default function PrivacyScreen() {
         {
           heading: 'Sécurité des données',
           body: "Mesures techniques et organisationnelles : chiffrement en transit (TLS), hachage des mots de passe, jetons signés (RS256) avec révocation, chiffrement des données sensibles au repos, cloisonnement réseau et accès restreint. Aucun système n'étant infaillible, utilise un mot de passe fort et unique.",
+        },
+        {
+          heading: 'Fiches d’adhérents créées par une association',
+          body:
+            'Une association peut enregistrer, dans son espace, des adhérents qui n’ont pas de compte NigerConnect. Dans ce cas, c’est l’association — et non NigerConnect — qui décide des données enregistrées et de leur finalité : elle en est responsable du traitement, nous n’en sommes que l’hébergeur technique. Ces fiches se limitent à un nom et à un moyen de contact ; elles ne sont jamais publiées, jamais utilisées pour du ciblage, et n’entrent jamais dans le réseau social (ni carte, ni recherche, ni fil, ni suggestions d’amis). Elles ne reçoivent aucune notification. Pour faire rectifier ou supprimer une fiche te concernant, écris à l’association, ou à contact@nigerconnect.app : nous transmettons la demande et pouvons supprimer la fiche nous-mêmes si l’association n’y répond pas. La suppression de l’espace d’une association entraîne celle de ses fiches.',
         },
         {
           heading: 'Transferts hors UE',
