@@ -1,5 +1,5 @@
 {
-  "current": "SPRINT 2 EN COURS. B2 (ADR medias) et B1 (back-office: connexion, selecteur, tableau de bord) livres ET DEPLOYES le 2026-08-21 -- https://nigerconnect.app/asso/login. Reste B4 (membres depuis le web), B5 (quota disque), B3 (publications). Sprint 1 en production cote API; son OTA mobile attend le verdict de la review iOS 1.15.0.",
+  "current": "SPRINT 2: B2 (ADR medias), B1 (back-office) et B4 (registre des membres) livres ET DEPLOYES le 2026-08-21. Le proprio a valide B1 en se connectant. Reste B5 (quota) et B3 (publications) -- B3 exige d abord l implementation de l ADR-002 cote API et une decision produit (qui publie au nom de l association).",
   "updatedAt": "2026-08-21",
   "updatedBy": "claude-code (session du 2026-08-21)",
   "sweep2607": {
@@ -417,7 +417,9 @@
         "id": "B4",
         "title": "Gestion des membres et des demandes d adhesion depuis le web",
         "priority": 4,
-        "status": "todo"
+        "status": "done",
+        "livrable": "commit 7d6cf47, deploye le 2026-08-21. /asso/{id}/membres: 3 onglets (demandes / membres / bureau). Accepter, refuser avec motif, changer de role (owner sans menu: son siege ne bouge que par transfert), proposer un poste au bureau (la proposition doit etre acceptee, l ecran le dit), retirer du bureau. Pagination par curseur. Les refus de l API sont affiches tels quels.",
+        "apiTouchee": "AUCUNE. Tous les endpoints existaient (pending/approve/reject/role/officers)."
       },
       {
         "id": "B5",
@@ -432,13 +434,16 @@
         "status": "todo"
       }
     ],
-    "reste": "B4 gestion des membres depuis le web, B5 quota disque par association, B3 CRUD publications avec medias.",
+    "reste": "B5 quota disque par association, B3 publications avec medias.",
     "deploiement": {
       "date": "2026-08-21",
       "portee": "web + api recreees (aucune migration en attente) sur GO explicite du proprio. Deploie le commit 4d86390.",
       "verifications": "/asso/login sert la page en 200 avec meta robots noindex,nofollow; robots.txt interdit /asso; l accueil repond 200; api health db:ok redis:ok; 0 erreur 5xx api et 0 erreur web depuis le redemarrage; les deux conteneurs healthy.",
       "reste": "le parcours n a toujours pas ete exerce avec un vrai compte dirigeant -- il faut se connecter sur https://nigerconnect.app/asso/login pour le juger."
-    }
+    },
+    "b3Constat": "B3 est moins gros que prevu: Post.associationId existe deja (nullable + index), POST /posts accepte visibility=association, GET /associations/{id}/posts existe. Manque: (1) l implementation de l ADR-002 cote API -- endpoint de presign sous associations/{id}/ garde par assertRole, attache via assertOwnedPublicMedia; (2) le compositeur web. Sans (1), une publication d association attacherait encore un media range dans l espace personnel de son auteur.",
+    "b3Question": "Aujourd hui n importe quel MEMBRE approuve peut publier en visibility=association (posts.service.ts:80 ne verifie que status=approved). Pour un back-office ou l ASSOCIATION publie, il faut trancher: publication reservee aux dirigeants, ou publication de membre conservee en plus?",
+    "retourProprio2026-08-21": "Le proprio s est connecte a https://nigerconnect.app/asso : selecteur, role et compteur corrects. B1 est donc prouve de bout en bout, pas seulement compile."
   },
   "backlogEpics": [
     {
