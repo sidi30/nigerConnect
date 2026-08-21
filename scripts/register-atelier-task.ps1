@@ -1,4 +1,4 @@
-# Enregistre (ou réenregistre) la tâche planifiée de l'atelier d'animation.
+﻿# Enregistre (ou réenregistre) la tâche planifiée de l'atelier d'animation.
 #
 # À lancer UNE FOIS, dans une console PowerShell ADMINISTRATEUR :
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\register-atelier-task.ps1

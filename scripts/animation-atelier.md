@@ -95,6 +95,34 @@ ssh -o BatchMode=yes $VPS "docker cp /tmp/lot.json nigerconnect-api:/tmp/lot.jso
 voient. Vise les créneaux où les gens ouvrent l'application — le soir, heure
 locale du pays visé.
 
+### Illustrer une publication
+
+Ajoute `imagePrompt` — une description de scène en français, 400 caractères au
+maximum — et le serveur fabrique l'image, la range sous la clé du compte et la
+joint à la publication. Tu n'as rien à téléverser.
+
+```json
+[{"handle":"nc04","kind":"tip","content":"…","imagePrompt":"un marché de Niamey en fin de journée, étals de tissus, lumière chaude, photographie documentaire","scheduledAt":"2026-08-22T18:30:00Z"}]
+```
+
+Règles, dans l'ordre d'importance :
+
+1. **Jamais de personne reconnaissable, jamais un lieu réel présenté comme une
+   photo d'actualité.** Décris une scène ou un objet — un marché, un plat, un
+   trajet, un document, une ambiance. Une image fabriquée qui prétend montrer
+   un événement réel est un faux.
+2. **Aucune donnée personnelle dans la description.** Elle part chez un service
+   tiers : pas de nom, pas de lieu précis, pas de reprise du texte de la
+   publication.
+3. **Pas systématique.** Une publication sur trois environ. Vingt-cinq comptes
+   qui illustrent tout, tout le temps, ça se repère plus vite qu'un mur de
+   texte.
+4. Une publication `kind: "law"` s'illustre rarement : sa valeur est sa source,
+   et une image l'affadit.
+
+Si le générateur est en panne, la publication part **sans** image : rien n'est
+perdu, ne la re-déposes pas.
+
 ## Commentaires programmés
 
 Le serveur a déjà choisi sur quelles publications chaque compte doit réagir, et

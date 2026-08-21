@@ -7,6 +7,7 @@ import { AnimationAdminController } from './animation.admin.controller';
 import { AnimationChatService } from './animation-chat.service';
 import { AnimationEngagementService } from './animation-engagement.service';
 import { AnimationWriterService } from './animation-writer.service';
+import { AnimationIllustrationService } from './animation-illustration.service';
 import { AnimationCron } from './animation.cron';
 import { AnimationService } from './animation.service';
 
@@ -24,10 +25,12 @@ import { AnimationService } from './animation.service';
     AnimationChatService,
     AnimationEngagementService,
     AnimationWriterService,
+    AnimationIllustrationService,
     AnimationCron,
   ],
   exports: [
     AnimationService,
+    AnimationIllustrationService,
     AnimationChatService,
     AnimationEngagementService,
     AnimationWriterService,

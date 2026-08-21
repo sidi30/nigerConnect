@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { AppModule } from '../app.module';
 import { AnimationService } from './animation.service';
+import { AnimationIllustrationService } from './animation-illustration.service';
 import { AnimationEngagementService } from './animation-engagement.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
@@ -129,15 +130,41 @@ async function main(): Promise<void> {
     if (queueFlag > -1) {
       const file = process.argv[queueFlag + 1];
       if (!file) throw new Error('--enqueue attend un chemin de fichier JSON');
-      const items = JSON.parse(await readFile(file, 'utf8')) as Parameters<
+      // `imagePrompt` n'existe que dans le fichier de lot : l'atelier décrit
+      // l'image voulue, et c'est ICI qu'elle devient un objet du bucket. Rien
+      // de cette description n'est stocké — seule l'URL de l'image l'est.
+      const items = JSON.parse(await readFile(file, 'utf8')) as (Parameters<
         AnimationService['enqueue']
-      >[0][];
+      >[0] & { imagePrompt?: string })[];
+      const illustrations = app.get(AnimationIllustrationService);
       let queued = 0;
+      let illustrated = 0;
       for (const item of items) {
-        await animation.enqueue(item);
+        const { imagePrompt, ...post } = item;
+        if (imagePrompt && !post.mediaUrl) {
+          // Le compte doit exister avant de ranger une image sous sa clé.
+          const bot = await app
+            .get(PrismaService)
+            .user.findFirst({
+              where: { email: emailFor(post.handle), isAnimated: true },
+              select: { id: true },
+            });
+          if (bot) {
+            const url = await illustrations.illustrate(bot.id, imagePrompt);
+            if (url) {
+              post.mediaUrl = url;
+              illustrated += 1;
+            }
+          } else {
+            logger.warn(`${post.handle} : compte introuvable, image ignorée`);
+          }
+        }
+        await animation.enqueue(post);
         queued += 1;
       }
-      logger.log(`File : ${queued} publication(s) déposée(s)`);
+      logger.log(
+        `File : ${queued} publication(s) déposée(s), dont ${illustrated} illustrée(s)`,
+      );
     }
 
     const flag = process.argv.indexOf('--avatars');

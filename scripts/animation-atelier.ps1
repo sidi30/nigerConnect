@@ -1,4 +1,4 @@
-# Atelier d'animation NigerConnect — lanceur de la tâche planifiée Windows.
+﻿# Atelier d'animation NigerConnect — lanceur de la tâche planifiée Windows.
 #
 # Tourne sur le poste du propriétaire, donc sur son abonnement Claude : aucune
 # API payante. Le poste ne fait que PRODUIRE les textes ; le cron du serveur
@@ -43,6 +43,23 @@ function Write-Log([string]$msg) {
   Add-Content -Path $log -Value $line -Encoding utf8
 }
 
+# Écrire l'état ne doit JAMAIS faire échouer un atelier qui a bien travaillé.
+# Le 22/08/2026, une session complète et réussie s'est déclarée en échec parce
+# que ce seul fichier était momentanément verrouillé — et la tâche planifiée a
+# donc rapporté un échec, ce qui envoie le diagnostic suivant sur une fausse
+# piste. On réessaie brièvement, puis on renonce en silence.
+function Write-Health([string]$text) {
+  for ($i = 0; $i -lt 5; $i++) {
+    try {
+      Set-Content -Path $health -Value $text -Encoding utf8 -ErrorAction Stop
+      return
+    } catch {
+      Start-Sleep -Milliseconds 300
+    }
+  }
+  Write-Log "AVERTISSEMENT : impossible d'écrire $health (verrouillé) — sans conséquence sur le travail effectué"
+}
+
 Write-Log "Atelier démarré (repo : $repo)"
 
 try {
@@ -69,17 +86,26 @@ try {
   $prompt = Get-Content (Join-Path $PSScriptRoot 'animation-atelier.md') -Raw
 
   Write-Log "Lancement de Claude Code (mode non interactif)"
-  & claude -p $prompt 2>&1 | Tee-Object -FilePath $log -Append
+  # Le prompt passe par l'ENTRÉE STANDARD, jamais en argument. PowerShell
+  # redécoupe un argument multi-ligne avant de le remettre au shim `claude.ps1`,
+  # et la première ligne du prompt qui commence par « -- » est alors comprise
+  # comme une option du CLI. C'est la panne du 22/08/2026 :
+  # « error: unknown option '--list-work' ».
+  # Marque la descendance : le hook SessionStart (scripts/atelier-au-demarrage.ps1)
+  # verra cette variable dans la session Claude lancée ci-dessous et s'abstiendra
+  # de relancer un atelier. Sans elle, l'atelier se rappellerait lui-même.
+  $env:NIGERCONNECT_ATELIER_ENFANT = '1'
+  $prompt | & claude -p 2>&1 | Tee-Object -FilePath $log -Append
   if ($LASTEXITCODE -ne 0) { throw "claude a rendu le code $LASTEXITCODE" }
 
   Write-Log 'Atelier terminé sans erreur'
-  Set-Content -Path $health -Value ("OK {0}" -f (Get-Date -Format 'o')) -Encoding utf8
+  Write-Health ("OK {0}" -f (Get-Date -Format 'o'))
 }
 catch {
   # On journalise ET on laisse une trace lisible d'un coup d'œil, puis on rend
   # un code non nul pour que l'échec remonte dans l'historique de la tâche.
   Write-Log "ÉCHEC : $($_.Exception.Message)"
-  Set-Content -Path $health -Value ("ECHEC {0} — {1}" -f (Get-Date -Format 'o'), $_.Exception.Message) -Encoding utf8
+  Write-Health ("ECHEC {0} — {1}" -f (Get-Date -Format 'o'), $_.Exception.Message)
   exit 1
 }
 finally {
