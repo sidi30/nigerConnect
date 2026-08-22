@@ -85,6 +85,11 @@ monitoring/alertmanager/smtp_password
 # Journaux de l atelier d animation (local, jamais versionne)
 logs/
 
+# Plan de travail de l atelier : lot.json et drafts.json, reecrits a chaque
+# passe et deja deposes sur le VPS. Rien a versionner, et ils contiennent des
+# extraits de conversations de membres.
+.atelier/
+
 # Sources Midjourney des avatars d animation : 139 Mo de PNG, hors depot.
 # Le mapping, lui, est versionne (docs/midjourney_session/mapping.json).
 docs/midjourney_session/*.png
