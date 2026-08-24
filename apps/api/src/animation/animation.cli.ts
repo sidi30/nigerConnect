@@ -25,8 +25,9 @@ import { emailFor, ROSTER } from './roster';
  *   docker exec nigerconnect-api node dist/animation/animation.cli.js --enqueue /tmp/lot.json
  *
  * `--enqueue <fichier>` : depose un lot redige hors ligne. Meme chemin que la
- * route admin (donc memes refus : un contenu juridique sans source est rejete,
- * et repasse en draft quoi qu'il arrive).
+ * route admin (donc meme refus : un contenu juridique sans source est rejete).
+ * Depuis le 22/08/2026 la publication est programmee directement ; seul
+ * `hold: true` dans le lot la gare en `draft`.
  *
  * `--avatars <dir>` : téléverse les fichiers `nc01.png` … `nc25.png` du dossier
  * comme photos de profil. Le dossier de destination reste `users/{id du
@@ -58,14 +59,33 @@ async function main(): Promise<void> {
         take: 30,
       });
       const work = [];
+      let closed = 0;
       for (const r of replies) {
         // Le fil de la conversation, pour que la réponse réponde vraiment.
-        const messages = await prisma.message.findMany({
+        // Les VINGT DERNIERS messages, pas les vingt premiers : sur un fil qui
+        // dure, l'ordre croissant montrait le début de l'échange et laissait
+        // croire que le membre venait d'écrire.
+        const recent = await prisma.message.findMany({
           where: { conversationId: r.conversationId, deletedAt: null },
-          orderBy: { createdAt: 'asc' },
+          orderBy: { createdAt: 'desc' },
           take: 20,
           select: { content: true, sender: { select: { displayName: true, isAnimated: true } } },
         });
+        const messages = recent.reverse();
+        // Le fil se termine déjà par le compte : répondre enverrait deux
+        // messages d'affilée du même expéditeur, ce qui se voit tout de suite.
+        // La ligne n'a plus d'objet — on la clôt ici, sinon elle reste
+        // `pending` pour toujours et remonte à CHAQUE exécution de l'atelier.
+        // `skipped`, jamais `escalated` : `escalated` est réservé à la
+        // suspicion et rien ne le réarme.
+        if (messages[messages.length - 1]?.sender.isAnimated) {
+          await prisma.animationReply.update({
+            where: { id: r.id },
+            data: { status: 'skipped' },
+          });
+          closed += 1;
+          continue;
+        }
         work.push({
           type: 'reply',
           id: r.id,
@@ -77,6 +97,9 @@ async function main(): Promise<void> {
             texte: m.content,
           })),
         });
+      }
+      if (closed > 0) {
+        logger.log(`Réponses sans objet closes : ${closed} (le compte a déjà le dernier mot)`);
       }
       const comments = await prisma.animationAction.findMany({
         where: { type: 'comment', status: 'pending', draft: null },

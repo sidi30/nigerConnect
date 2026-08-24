@@ -31,7 +31,11 @@ ssh -o BatchMode=yes $VPS "$CLI --list-work" | sed -n '/^\[/,$p'
 ssh -o BatchMode=yes $VPS "docker exec nigerconnect-postgres psql -U nigerconnect   -d nigerconnect -c 'select handle, kind, active, posts_per_week, active_from_hour, active_to_hour from animation_bots order by handle'"
 
 # 3. Ce qui est déjà en file — ne jamais reproposer la même chose.
-ssh -o BatchMode=yes $VPS "docker exec nigerconnect-postgres psql -U nigerconnect   -d nigerconnect -c \"select b.handle, p.kind, p.status, p.scheduled_at, left(p.content,60) from animation_posts p join users u on u.id=p.bot_id join animation_bots b on b.user_id=u.id order by p.scheduled_at desc limit 40\""
+#    200 caractères et la source, PAS 60 : à 60 on ne lit que la formule de
+#    politesse (« Fofo. La rentrée arrive et c'est la course au logement, al… »),
+#    donc on ne reconnaît pas le sujet et on le réécrit. C'est arrivé le
+#    23/08/2026 — 6 publications sur 8 redisaient une voisine de la file.
+ssh -o BatchMode=yes $VPS "docker exec nigerconnect-postgres psql -U nigerconnect   -d nigerconnect -c \"select b.handle, p.kind, p.status, p.scheduled_at, coalesce(p.source_url,'-') as source, left(p.content,200) from animation_posts p join users u on u.id=p.bot_id join animation_bots b on b.user_id=u.id order by p.scheduled_at desc limit 40\""
 ```
 
 ## Ce que tu produis
@@ -172,6 +176,9 @@ revient au propriétaire. Ne rédige rien, ne relance rien, passe à la suivante
 ## Ce que tu ne fais jamais
 
 - Publier un `law` sans source.
+- Reprendre un sujet déjà en file, même reformulé autrement. Compare les
+  SUJETS, pas les tournures : « la garantie Visale est gratuite » et « Visale
+  + APL, tout est gratuit » sont la même publication pour celui qui lit.
 - Inventer une actualité juridique, une date, un montant.
 - Répondre dans une conversation remontée.
 - Écrire quoi que ce soit qui pousse à une démarche payante chez un tiers.
