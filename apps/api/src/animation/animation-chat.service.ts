@@ -14,8 +14,23 @@ const MAX_DELAY_MS = 6 * 60 * 60 * 1000;
  * Au-delà de 12 h sans échange, la conversation est considérée reprise à zéro
  * et le compteur repart à 5 min. Un humain qui revient le lendemain ne répond
  * pas plus lentement parce qu'il avait beaucoup écrit la veille.
+ *
+ * Ce délai a longtemps servi à AUTRE CHOSE que ce qu'il annonce : il filtrait
+ * les messages visibles par le balayage. Un message vieux de plus de 12 h
+ * n'était donc jamais mis en file — il n'était pas répondu en retard, il
+ * n'était jamais répondu. Et le compteur, lui, ne repartait jamais de zéro :
+ * il comptait toutes les réponses envoyées depuis toujours, si bien qu'une
+ * conversation vivante finissait plafonnée à 6 h d'attente. Les deux défauts
+ * se combinaient en « les comptes ne répondent pas ».
  */
 const CONVERSATION_RESET_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Garde-fou de fin de course : on ne ressuscite pas un fil abandonné depuis un
+ * mois. Répondre à un message vieux de six semaines est plus déroutant pour le
+ * membre que ne pas répondre du tout.
+ */
+const ABANDONED_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Marqueurs d'un membre qui cherche à savoir à qui il parle.
@@ -75,28 +90,37 @@ export class AnimationChatService {
     if (bots.length === 0) return 0;
     const byUserId = new Map(bots.map((b) => [b.userId, b.id]));
 
-    // Derniers messages reçus dans les conversations où siège un compte animé.
-    const incoming = await this.prisma.message.findMany({
+    // On raisonne par CONVERSATION, pas par message. Ce qui décide qu'un
+    // compte doit une réponse n'est pas qu'un message soit récent : c'est que
+    // le membre ait le dernier mot et attende. Filtrer sur l'âge du message
+    // laissait tomber pour de bon tout ce qui dépassait la fenêtre.
+    const botUserIds = [...byUserId.keys()];
+    const conversations = await this.prisma.conversation.findMany({
       where: {
-        deletedAt: null,
-        senderId: { notIn: [...byUserId.keys()] },
-        createdAt: { gte: new Date(now.getTime() - CONVERSATION_RESET_MS) },
-        conversation: { members: { some: { userId: { in: [...byUserId.keys()] } } } },
+        members: { some: { userId: { in: botUserIds } } },
+        lastMessageAt: { gte: new Date(now.getTime() - ABANDONED_MS) },
       },
       select: {
         id: true,
-        conversationId: true,
-        content: true,
-        createdAt: true,
-        conversation: { select: { members: { select: { userId: true } } } },
+        members: { select: { userId: true } },
+        messages: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true, senderId: true, content: true, createdAt: true },
+        },
       },
-      orderBy: { createdAt: 'asc' },
-      take: 200,
+      orderBy: { lastMessageAt: 'desc' },
+      take: 500,
     });
 
     let queued = 0;
-    for (const msg of incoming) {
-      const botUserId = msg.conversation.members
+    for (const conversation of conversations) {
+      const msg = conversation.messages[0];
+      // Le compte a le dernier mot : il n'attend rien, il a déjà répondu.
+      if (!msg || byUserId.has(msg.senderId)) continue;
+
+      const botUserId = conversation.members
         .map((m) => m.userId)
         .find((id) => byUserId.has(id));
       if (!botUserId) continue;
@@ -105,7 +129,7 @@ export class AnimationChatService {
       // Cette conversation a-t-elle déjà été remontée ? Alors le compte s'y
       // tait pour de bon — on ne réarme jamais après une escalade.
       const escalated = await this.prisma.animationReply.count({
-        where: { conversationId: msg.conversationId, status: 'escalated' },
+        where: { conversationId: conversation.id, status: 'escalated' },
       });
       if (escalated > 0) continue;
 
@@ -117,12 +141,21 @@ export class AnimationChatService {
       // compte répondait trois fois de suite. Rien ne trahit plus vite un
       // compte fabriqué.
       const alreadyWaiting = await this.prisma.animationReply.count({
-        where: { conversationId: msg.conversationId, status: 'pending' },
+        where: { conversationId: conversation.id, status: 'pending' },
       });
       if (alreadyWaiting > 0) continue;
 
+      // Le délai croissant ne compte QUE l'échange en cours. Compté depuis
+      // toujours, il ne redescendait jamais : un membre fidèle finissait par
+      // attendre le plafond de 6 h à chaque message, pour avoir trop parlé la
+      // semaine d'avant. C'est ce que le commentaire de CONVERSATION_RESET_MS
+      // décrivait déjà — le code, lui, ne le faisait pas.
       const attempt = await this.prisma.animationReply.count({
-        where: { conversationId: msg.conversationId, status: 'sent' },
+        where: {
+          conversationId: conversation.id,
+          status: 'sent',
+          updatedAt: { gte: new Date(now.getTime() - CONVERSATION_RESET_MS) },
+        },
       });
 
       const suspicious = looksLikeSuspicion(msg.content);
@@ -130,7 +163,7 @@ export class AnimationChatService {
         await this.prisma.animationReply.create({
           data: {
             botId,
-            conversationId: msg.conversationId,
+            conversationId: conversation.id,
             incomingMessageId: msg.id,
             // Le doublement, borné. attempt=0 → 5 min, 1 → 10, 2 → 20…
             dueAt: new Date(

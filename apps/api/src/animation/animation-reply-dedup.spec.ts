@@ -25,6 +25,7 @@ type Reply = {
   dueAt: Date;
   draft: string | null;
   sentMessageId: string | null;
+  updatedAt: Date;
 };
 
 /** Prisma en mémoire, limité aux requêtes que le service utilise vraiment. */
@@ -36,11 +37,12 @@ function makePrisma(replies: Reply[] = []) {
     for (const [field, cond] of Object.entries(where)) {
       const value = (r as unknown as Record<string, unknown>)[field];
       if (cond !== null && typeof cond === 'object') {
-        const c = cond as { not?: unknown; lte?: Date };
+        const c = cond as { not?: unknown; lte?: Date; gte?: Date };
         if ('not' in c) {
           if (c.not === null ? value === null : value === c.not) return false;
         }
         if (c.lte !== undefined && !((value as Date) <= c.lte)) return false;
+        if (c.gte !== undefined && !((value as Date) >= c.gte)) return false;
       } else if (value !== cond) {
         return false;
       }
@@ -53,7 +55,7 @@ function makePrisma(replies: Reply[] = []) {
     animationBot: {
       findMany: jest.fn(async () => [{ id: 'b1', userId: 'bot-user' }]),
     },
-    message: { findMany: jest.fn(async () => []) },
+    conversation: { findMany: jest.fn(async () => []) },
     animationReply: {
       count: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
         store.filter((r) => matches(r, where)).length,
@@ -70,6 +72,7 @@ function makePrisma(replies: Reply[] = []) {
           dueAt: data.dueAt!,
           draft: null,
           sentMessageId: null,
+          updatedAt: new Date('2026-08-22T12:00:00Z'),
         };
         store.push(row);
         return row;
@@ -109,13 +112,17 @@ function build(prisma: unknown, chat: unknown) {
   return new AnimationChatService(prisma as never, chat as never);
 }
 
-function incoming(id: string, conversationId: string, content = 'salut') {
+/**
+ * Une conversation telle que le balayage la lit : ses membres et son DERNIER
+ * message. `senderId` decide de tout — si c'est le compte, il n'attend rien.
+ */
+function conv(id: string, lastMessageId: string, content = 'salut', senderId = 'humain') {
   return {
     id,
-    conversationId,
-    content,
-    createdAt: new Date('2026-08-22T10:00:00Z'),
-    conversation: { members: [{ userId: 'bot-user' }, { userId: 'humain' }] },
+    members: [{ userId: 'bot-user' }, { userId: 'humain' }],
+    messages: [
+      { id: lastMessageId, senderId, content, createdAt: new Date('2026-08-22T10:00:00Z') },
+    ],
   };
 }
 
@@ -130,18 +137,19 @@ function pending(id: string, conversationId: string, draft: string | null, dueAt
     dueAt: new Date(dueAt),
     draft,
     sentMessageId: null,
+    updatedAt: new Date(dueAt),
   };
 }
 
 const NOW = new Date('2026-08-22T12:00:00Z');
 
-describe("mise en file : une seule réponse en attente par conversation", () => {
-  it('trois messages d’affilée ne font qu’une réponse', async () => {
+describe("mise en file : une seule reponse en attente par conversation", () => {
+  it('trois messages d’affilee ne font qu’une reponse', async () => {
     const prisma = makePrisma();
-    prisma.message.findMany = jest.fn(async () => [
-      incoming('m1', 'conv-1', 'salut'),
-      incoming('m2', 'conv-1', 'tu es là ?'),
-      incoming('m3', 'conv-1', 'bon, à plus'),
+    // Le membre a ecrit trois fois de suite : le balayage ne retient que le
+    // dernier message, donc une seule reponse est due.
+    prisma.conversation.findMany = jest.fn(async () => [
+      conv('conv-1', 'm3', 'bon, a plus'),
     ]) as never;
 
     const queued = await build(prisma, makeChat()).scanIncoming(NOW);
@@ -152,30 +160,53 @@ describe("mise en file : une seule réponse en attente par conversation", () => 
 
   it('deux conversations distinctes gardent chacune la leur', async () => {
     const prisma = makePrisma();
-    prisma.message.findMany = jest.fn(async () => [
-      incoming('m1', 'conv-1'),
-      incoming('m2', 'conv-2'),
+    prisma.conversation.findMany = jest.fn(async () => [
+      conv('conv-1', 'm1'),
+      conv('conv-2', 'm2'),
     ]) as never;
 
     expect(await build(prisma, makeChat()).scanIncoming(NOW)).toBe(2);
   });
 
-  it('une conversation déjà répondue peut en accueillir une nouvelle', async () => {
+  it('ne repond pas quand le compte a deja le dernier mot', async () => {
+    const prisma = makePrisma();
+    prisma.conversation.findMany = jest.fn(async () => [
+      conv('conv-1', 'm1', 'a bientot !', 'bot-user'),
+    ]) as never;
+
+    expect(await build(prisma, makeChat()).scanIncoming(NOW)).toBe(0);
+    expect(prisma.store).toHaveLength(0);
+  });
+
+  it('une conversation deja repondue peut en accueillir une nouvelle', async () => {
     const prisma = makePrisma([
-      { ...pending('r0', 'conv-1', 'déjà envoyé', '2026-08-22T09:00:00Z'), status: 'sent' },
+      { ...pending('r0', 'conv-1', 'deja envoye', '2026-08-22T09:00:00Z'), status: 'sent' },
     ]);
-    prisma.message.findMany = jest.fn(async () => [incoming('m9', 'conv-1')]) as never;
+    prisma.conversation.findMany = jest.fn(async () => [conv('conv-1', 'm9')]) as never;
 
     expect(await build(prisma, makeChat()).scanIncoming(NOW)).toBe(1);
-    // L'échange suivant attend plus longtemps que le premier.
+    // L'echange suivant attend plus longtemps que le premier.
     expect(prisma.store.find((r) => r.status === 'pending')!.attempt).toBe(1);
   });
 
-  it('ne réarme jamais une conversation remontée au propriétaire', async () => {
+  it("repart de zero quand l'echange precedent date de plus de douze heures", async () => {
+    // Meme situation que ci-dessus, mais la reponse remonte a l'avant-veille :
+    // le membre qui revient ne doit pas payer sa conversation d'il y a deux
+    // jours par une attente plafonnee.
+    const prisma = makePrisma([
+      { ...pending('r0', 'conv-1', 'deja envoye', '2026-08-20T09:00:00Z'), status: 'sent' },
+    ]);
+    prisma.conversation.findMany = jest.fn(async () => [conv('conv-1', 'm9')]) as never;
+
+    expect(await build(prisma, makeChat()).scanIncoming(NOW)).toBe(1);
+    expect(prisma.store.find((r) => r.status === 'pending')!.attempt).toBe(0);
+  });
+
+  it('ne rearme jamais une conversation remontee au proprietaire', async () => {
     const prisma = makePrisma([
       { ...pending('r0', 'conv-1', null, '2026-08-22T09:00:00Z'), status: 'escalated' },
     ]);
-    prisma.message.findMany = jest.fn(async () => [incoming('m9', 'conv-1')]) as never;
+    prisma.conversation.findMany = jest.fn(async () => [conv('conv-1', 'm9')]) as never;
 
     expect(await build(prisma, makeChat()).scanIncoming(NOW)).toBe(0);
   });
