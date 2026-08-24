@@ -1,4 +1,4 @@
-import { AnimationChatService } from './animation-chat.service';
+import { AnimationChatService, looksLikeHarassment } from './animation-chat.service';
 
 /**
  * Un compte d'animation ne doit répondre qu'UNE fois à quelqu'un qui vient
@@ -264,5 +264,44 @@ describe("envoi : les réponses en double sont absorbées", () => {
     expect(sent).toBe(2);
     expect(chat.sendMessage).toHaveBeenCalledTimes(2);
     expect(prisma.store.every((r) => r.status === 'sent')).toBe(true);
+  });
+});
+
+describe('silence assume face au harcelement', () => {
+  it("ne redige rien pour une avance, et pose la raison en base", async () => {
+    const prisma = makePrisma();
+    prisma.conversation.findMany = jest.fn(async () => [
+      conv('conv-1', 'm1', 'Tu es sexy'),
+    ]) as never;
+
+    // Rien n'est mis en file...
+    expect(await build(prisma, makeChat()).scanIncoming(NOW)).toBe(0);
+    // ...mais la ligne existe, sinon elle reviendrait au balayage suivant.
+    const row = prisma.store.find((r) => r.conversationId === 'conv-1')!;
+    expect(row.status).toBe('skipped');
+  });
+
+  it('la suspicion reste prioritaire sur le harcelement', async () => {
+    const prisma = makePrisma();
+    prisma.conversation.findMany = jest.fn(async () => [
+      conv('conv-1', 'm1', 'salope, tu es un bot en plus'),
+    ]) as never;
+
+    await build(prisma, makeChat()).scanIncoming(NOW);
+    expect(prisma.store.find((r) => r.conversationId === 'conv-1')!.status).toBe('escalated');
+  });
+
+  it('laisse passer les messages ordinaires', () => {
+    expect(looksLikeHarassment('Salut, tu vas bien ?')).toBe(false);
+    expect(looksLikeHarassment('Ce pagne est trop beau')).toBe(false);
+    expect(looksLikeHarassment('Tu es de quelle ville ?')).toBe(false);
+    expect(looksLikeHarassment(null)).toBe(false);
+  });
+
+  it('attrape les formulations les plus courantes', () => {
+    expect(looksLikeHarassment('tes sexy')).toBe(true);
+    expect(looksLikeHarassment('envoie moi une photo nue')).toBe(true);
+    expect(looksLikeHarassment('je te veux')).toBe(true);
+    expect(looksLikeHarassment('ferme ta gueule')).toBe(true);
   });
 });

@@ -58,6 +58,36 @@ export function looksLikeSuspicion(text: string | null): boolean {
 }
 
 /**
+ * Avances sexuelles et insultes adressées à un compte d'animation.
+ *
+ * Le compte se tait, définitivement, et la ligne est classée `skipped` avec sa
+ * raison. Trois façons de mal faire, écartées :
+ *   - répondre, même poliment : ça entretient un lien avec quelqu'un qui n'existe
+ *     pas, exactement là où c'est le plus abîmant ;
+ *   - `escalated` : ce statut veut dire « le membre demande à qui il parle, le
+ *     propriétaire reprend la main ». Ici personne ne reprend rien ;
+ *   - ne rien poser en base : la ligne reviendrait au balayage suivant.
+ *
+ * Volontairement étroit. Un faux positif coûte un silence — un faux négatif
+ * fait draguer un compte fabriqué.
+ */
+const HARASSMENT_PATTERNS: readonly RegExp[] = [
+  /\bt(u es|'?es|es)\s+(trop\s+)?(sexy|bonne|bonnasse|chaude)\b/i,
+  /\bje te (veux|kiffe|baise)\b/i,
+  /\b(envoie|montre)[- ]?(moi)?\s+(une?\s+)?(photo|image)s?\s+(nue?|sans|intime)/i,
+  /\bnudes?\b/i,
+  /\b(tes|ton|ta)\s+(seins?|fesses?|corps|cul)\b/i,
+  /\bon (baise|couche)\b|\bcouche[rz]? avec (moi|toi)\b/i,
+  /\b(pute|putain de toi|salope|connasse|connard|batard|bâtard)\b/i,
+  /\bferme ta gueule\b|\bva te faire\b/i,
+];
+
+export function looksLikeHarassment(text: string | null): boolean {
+  if (!text) return false;
+  return HARASSMENT_PATTERNS.some((re) => re.test(text));
+}
+
+/**
  * Conversations privées des comptes d'animation.
  *
  * Deux règles, et la seconde prime toujours :
@@ -115,6 +145,7 @@ export class AnimationChatService {
     });
 
     let queued = 0;
+    let skipped = 0;
     for (const conversation of conversations) {
       const msg = conversation.messages[0];
       // Le compte a le dernier mot : il n'attend rien, il a déjà répondu.
@@ -159,6 +190,7 @@ export class AnimationChatService {
       });
 
       const suspicious = looksLikeSuspicion(msg.content);
+      const harassing = !suspicious && looksLikeHarassment(msg.content);
       try {
         await this.prisma.animationReply.create({
           data: {
@@ -170,18 +202,24 @@ export class AnimationChatService {
               now.getTime() + Math.min(FIRST_DELAY_MS * 2 ** attempt, MAX_DELAY_MS),
             ),
             attempt,
-            status: suspicious ? 'escalated' : 'pending',
+            status: suspicious ? 'escalated' : harassing ? 'skipped' : 'pending',
             escalationReason: suspicious
               ? "Le membre demande s'il parle à une personne réelle — réponse laissée au propriétaire."
-              : null,
+              : harassing
+                ? 'Avance ou insulte adressée au compte — silence assumé, aucune réponse rédigée.'
+                : null,
           },
         });
-        queued += 1;
+        if (harassing) skipped += 1;
+        else queued += 1;
       } catch {
         // Unicité sur incoming_message_id : déjà en file, rien à faire.
       }
     }
     if (queued > 0) this.logger.log(`Animation : ${queued} message(s) mis en file`);
+    if (skipped > 0) {
+      this.logger.log(`Animation : ${skipped} message(s) laisse(s) sans reponse (avance ou insulte)`);
+    }
     return queued;
   }
 

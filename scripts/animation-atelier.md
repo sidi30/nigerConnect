@@ -169,6 +169,12 @@ ssh -o BatchMode=yes $VPS "docker cp /tmp/drafts.json nigerconnect-api:/tmp/ && 
 Le serveur gère seul le délai d'envoi (5 min, puis 10, 20, 40… plafonné à 6 h).
 N'essaie pas de le contourner.
 
+**Une avance ou une insulte ne se répond pas non plus.** Le serveur classe déjà
+ces lignes `skipped` toutes seules, mais si une passe entre les mailles et
+qu'elle te remonte : n'écris rien. Pas de refus poli, pas de mise à distance
+aimable — le silence. Répondre entretient un lien avec quelqu'un qui n'existe
+pas, précisément là où c'est le plus abîmant. Signale-la dans ton résumé.
+
 **Une conversation `escalated` ne se répond pas.** Un membre y a demandé s'il
 parlait à une vraie personne ; le compte s'y est tu définitivement et la réponse
 revient au propriétaire. Ne rédige rien, ne relance rien, passe à la suivante.
