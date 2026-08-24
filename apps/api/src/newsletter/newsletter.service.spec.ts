@@ -22,6 +22,10 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
       updateMany: jest.fn(async () => ({ count: 1 })),
       delete: jest.fn(async () => ({})),
     },
+    notification: {
+      findFirst: jest.fn(async () => null),
+      update: jest.fn(async () => ({})),
+    },
     user: {
       count: jest.fn(async () => 0),
       findMany: jest.fn(async () => []),
@@ -498,5 +502,56 @@ describe('NewsletterService', () => {
       const svc = makeSvc(prisma);
       await expect(svc.deleteCampaign('id')).rejects.toBeInstanceOf(ConflictException);
     });
+  });
+});
+
+describe("lecture d'une annonce par un membre", () => {
+  const CAMPAIGN = {
+    id: '11111111-1111-1111-1111-111111111111',
+    subject: 'Qui sont les Nigeriens autour de toi ?',
+    bodyText: 'Un texte bien plus long que les 140 caracteres de l apercu.',
+    bodyHtml: '<p>Un texte</p>',
+    sentAt: new Date('2026-08-24T12:46:00Z'),
+  };
+
+  it("refuse une campagne que ce compte n'a pas recue (pas d'IDOR)", async () => {
+    const prisma = makePrisma();
+    // Aucune notification pour ce couple (utilisateur, campagne).
+    prisma.notification.findFirst = jest.fn(async () => null) as AnyFn;
+    prisma.newsletterCampaign.findUnique = jest.fn(async () => CAMPAIGN) as AnyFn;
+
+    await expect(
+      makeSvc(prisma).getAnnouncementForUser('un-autre-membre', CAMPAIGN.id),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    // La campagne n'a meme pas ete lue en base.
+    expect(prisma.newsletterCampaign.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('sert le texte entier a qui a recu la notification', async () => {
+    const prisma = makePrisma();
+    prisma.notification.findFirst = jest.fn(async () => ({ id: 'n1', read: false })) as AnyFn;
+    prisma.newsletterCampaign.findUnique = jest.fn(async () => CAMPAIGN) as AnyFn;
+
+    const out = await makeSvc(prisma).getAnnouncementForUser('membre', CAMPAIGN.id);
+
+    expect(out.bodyText).toBe(CAMPAIGN.bodyText);
+    // Ouvrir l'annonce marque la notification comme lue.
+    expect(prisma.notification.update).toHaveBeenCalledWith({
+      where: { id: 'n1' },
+      data: { read: true },
+    });
+  });
+
+  it("refuse une campagne jamais envoyee, meme avec une notification", async () => {
+    const prisma = makePrisma();
+    prisma.notification.findFirst = jest.fn(async () => ({ id: 'n1', read: true })) as AnyFn;
+    prisma.newsletterCampaign.findUnique = jest.fn(async () => ({
+      ...CAMPAIGN,
+      sentAt: null,
+    })) as AnyFn;
+
+    await expect(
+      makeSvc(prisma).getAnnouncementForUser('membre', CAMPAIGN.id),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

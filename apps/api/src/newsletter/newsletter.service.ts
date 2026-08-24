@@ -169,6 +169,52 @@ export class NewsletterService {
     return campaign;
   }
 
+  /**
+   * L'annonce telle qu'un MEMBRE la lit dans l'app.
+   *
+   * La notification ne transporte qu'un aperçu de 140 caractères (elle ne peut
+   * pas transporter davantage : une annonce peut faire plusieurs milliers de
+   * signes). Il faut donc une surface où lire le texte entier, sinon le membre
+   * reçoit une cloche qui ne s'ouvre sur rien — c'est ce qui se passait.
+   *
+   * AuthZ : on ne sert l'annonce qu'à quelqu'un qui l'a effectivement reçue.
+   * L'existence d'une notification `announcement` portant ce `campaignId` FAIT
+   * l'autorisation — sinon n'importe quel membre pourrait lire n'importe
+   * quelle campagne, y compris celles adressées à un autre segment.
+   */
+  async getAnnouncementForUser(userId: string, campaignId: string) {
+    const received = await this.prisma.notification.findFirst({
+      where: {
+        userId,
+        type: 'announcement',
+        data: { path: ['campaignId'], equals: campaignId },
+      },
+      select: { id: true, read: true },
+    });
+    if (!received) throw new NotFoundException('Annonce introuvable');
+
+    const campaign = await this.prisma.newsletterCampaign.findUnique({
+      where: { id: campaignId },
+      select: { id: true, subject: true, bodyText: true, bodyHtml: true, sentAt: true },
+    });
+    if (!campaign || !campaign.sentAt) throw new NotFoundException('Annonce introuvable');
+
+    // Ouvrir l'annonce vaut lecture de la notification correspondante.
+    if (!received.read) {
+      await this.prisma.notification
+        .update({ where: { id: received.id }, data: { read: true } })
+        .catch(() => undefined);
+    }
+
+    return {
+      id: campaign.id,
+      subject: campaign.subject,
+      bodyText: campaign.bodyText,
+      bodyHtml: campaign.bodyHtml,
+      sentAt: campaign.sentAt,
+    };
+  }
+
   createCampaign(dto: CreateCampaignDto, createdById: string) {
     const audience = dto.audience ?? 'subscribers';
     return this.prisma.newsletterCampaign.create({
@@ -501,7 +547,15 @@ export class NewsletterService {
             type: 'announcement',
             title: campaign.subject,
             body: preview,
-            data: { campaignId: campaign.id, critical: campaign.critical },
+            // `path` = l'écran où LIRE l'annonce en entier. Sans lui, les deux
+            // routeurs mobiles retombent sur la liste des notifications, où le
+            // corps est tronqué à deux lignes : le membre reçoit une cloche
+            // qui ne s'ouvre sur rien. C'est un chemin interne, jamais une URL.
+            data: {
+              campaignId: campaign.id,
+              critical: campaign.critical,
+              path: `/announcements/${campaign.id}`,
+            },
             expiresInHours,
           });
           // Email only verified addresses (sender reputation) and dedupe by email.

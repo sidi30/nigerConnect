@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Header, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { CurrentUser, type JwtUserPayload } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import {
@@ -20,6 +21,22 @@ import { NewsletterService } from './newsletter.service';
 @Controller('newsletter')
 export class NewsletterController {
   constructor(private readonly newsletter: NewsletterService) {}
+
+  /**
+   * L'annonce en entier, pour le membre qui l'a reçue. La notification ne
+   * porte qu'un aperçu de 140 caractères ; sans cette route, une annonce de
+   * plusieurs milliers de signes est illisible dans l'app.
+   *
+   * Authentifiée (pas de @Public) et vérifiée côté service : seul quelqu'un
+   * qui a la notification correspondante peut lire la campagne.
+   */
+  @Get('announcements/:id')
+  async announcement(
+    @CurrentUser() me: JwtUserPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.newsletter.getAnnouncementForUser(me.sub, id);
+  }
 
   @Public()
   @Throttle({ short: { limit: 5, ttl: 60_000 }, long: { limit: 20, ttl: 3_600_000 } })
