@@ -49,7 +49,32 @@ $settings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask -TaskName $taskName -Action $action `
   -Trigger $every30, $atLogon -Settings $settings -Force | Out-Null
 
-Write-Output "Tâche « $taskName » enregistrée."
+# ── Répétition INFINIE, et vérifiée ────────────────────────────────────────
+# `-RepetitionInterval` sans `-RepetitionDuration` ne donne PAS toujours une
+# répétition sans fin : selon la build, le Planificateur y met une durée d'un
+# jour. La tâche tournerait aujourd'hui et s'arrêterait demain sans le dire —
+# précisément le genre de panne muette qui a déjà coûté trois jours de silence
+# aux comptes d'animation. On force la durée à vide (= indéfiniment), puis on
+# relit ce que le Planificateur a réellement retenu.
+$task = Get-ScheduledTask -TaskName $taskName
+$repeating = $task.Triggers | Where-Object { $_.Repetition -and $_.Repetition.Interval }
+if (-not $repeating) { throw "Aucun déclencheur répétitif enregistré — la tâche ne tournerait qu'une fois." }
+if ($repeating.Repetition.Duration) {
+  $repeating.Repetition.Duration = ''
+  Set-ScheduledTask -TaskName $taskName -Trigger $task.Triggers | Out-Null
+}
+
+# Contrôle final : on n'annonce « enregistrée » que si c'est vrai.
+$check = (Get-ScheduledTask -TaskName $taskName).Triggers |
+  Where-Object { $_.Repetition -and $_.Repetition.Interval } | Select-Object -First 1
+if ($check.Repetition.Interval -ne 'PT30M') {
+  throw "Intervalle inattendu : $($check.Repetition.Interval) au lieu de PT30M."
+}
+if ($check.Repetition.Duration) {
+  throw "Répétition bornée à $($check.Repetition.Duration) : elle s'arrêtera toute seule. Corriger dans le Planificateur (onglet Déclencheurs → « indéfiniment »)."
+}
+
+Write-Output "Tâche « $taskName » enregistrée — répétition toutes les 30 min, sans fin."
 Get-ScheduledTask -TaskName $taskName | Select-Object TaskName, State | Format-List
 Get-ScheduledTaskInfo -TaskName $taskName |
   Select-Object LastRunTime, LastTaskResult, NextRunTime | Format-List
