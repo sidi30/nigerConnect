@@ -4,7 +4,7 @@ export default function CommunityRulesScreen() {
   return (
     <LegalDoc
       title="Règles communautaires"
-      lastUpdated="21 août 2026"
+      lastUpdated="24 août 2026"
       intro="NigerConnect est l’endroit où la diaspora nigérienne se retrouve. Pour que chacun s’y sente bien, quelques règles claires, appliquées sans exception."
       sections={[
         {

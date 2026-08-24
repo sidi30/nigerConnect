@@ -4,7 +4,7 @@ export default function TermsScreen() {
   return (
     <LegalDoc
       title="Conditions d’utilisation"
-      lastUpdated="21 août 2026"
+      lastUpdated="24 août 2026"
       intro="Les présentes Conditions Générales d’Utilisation (« CGU ») régissent l’accès et l’utilisation de l’application et du site NigerConnect (le « Service »). En créant un compte ou en utilisant le Service, tu reconnais avoir lu, compris et accepté sans réserve l’intégralité des CGU. Si tu n’acceptes pas ces conditions, n’utilise pas le Service."
       sections={[
         {
@@ -59,45 +59,57 @@ export default function TermsScreen() {
           body: 'La vérification (badge ✓) est facultative mais certaines actions (création d’association) peuvent l’exiger. Les documents sont chiffrés, jamais publics, et supprimés au plus tard 30 jours après validation. Un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.',
         },
         {
-          heading: '10. Espaces association',
+          heading: '10. Rencontres de proximité',
+          body:
+            'Le Service peut te signaler qu’un autre membre se trouve à proximité de toi. La fonctionnalité est active par défaut sur les comptes éligibles et se désactive à tout moment dans les réglages ; aucune position n’est relevée sans ton autorisation de localisation, ni lorsque l’application n’est pas ouverte à l’écran. Aucun suivi en arrière-plan, aucun historique de déplacements.',
+          bullets: [
+            'L’alerte reçue par l’autre membre est anonyme : ni nom, ni photo, ni profil, ni position — seulement une distance approximative, figée au moment du croisement.',
+            'Voir qui est la personne, te montrer à elle ou entrer en contact suppose une identité vérifiée et la majorité. Sinon, tu sais seulement qu’un membre est à proximité.',
+            'Aucune mise en relation sans accord réciproque : l’un demande, l’autre accepte ou refuse. Un refus est définitif pour la paire.',
+            'Utiliser cette fonctionnalité pour suivre, surveiller, retrouver ou importuner une personne est un manquement grave, entraînant suspension ou bannissement immédiat, sans préjudice de poursuites.',
+            'Le Service ne garantit ni l’exactitude ni l’actualité de l’information de proximité et n’encadre aucune rencontre physique : tu restes seul responsable de ta sécurité.',
+          ],
+        },
+        {
+          heading: '11. Espaces association',
           body:
             'Une association présente sur le Service est administrée par des personnes physiques titulaires d’un compte personnel : il n’existe pas de compte « association » partagé, et chaque acte d’administration est attribué à la personne qui l’a accompli. Publier au nom d’une association est réservé aux dirigeants déclarés dans le Service (responsable principal, administrateur, modérateur) ; ces publications engagent l’association et leur auteur. L’Éditeur ne perçoit aucune cotisation et n’intervient dans aucun flux financier entre une association et ses membres : un statut de cotisation affiché dans le Service est purement déclaratif, saisi par l’association, et ne vaut ni preuve de paiement ni quittance. La certification d’une association atteste uniquement d’une vérification faite par l’Éditeur sur les éléments qui lui ont été présentés ; elle ne garantit ni la solvabilité, ni la régularité juridique, ni les agissements de l’association. Chaque association dispose d’un espace de stockage limité, au-delà duquel l’Éditeur peut refuser un nouveau dépôt.',
         },
         {
-          heading: '11. Adhérents enregistrés par une association',
+          heading: '12. Adhérents enregistrés par une association',
           body:
             'Une association peut enregistrer dans son espace des adhérents qui ne possèdent pas de compte NigerConnect. Pour ces fiches, l’association est responsable du traitement au sens du RGPD et l’Éditeur agit comme sous-traitant, sur ses seules instructions. L’association garantit disposer d’une base légale, avoir informé les personnes concernées, et n’enregistrer que les données strictement nécessaires. Ces fiches n’ouvrent aucun compte, n’apparaissent sur aucune surface publique du Service (carte, recherche, fil, suggestions) et ne déclenchent aucune notification. Toute personne peut demander la rectification ou la suppression de sa fiche auprès de l’association ou de l’Éditeur (contact@nigerconnect.app) ; l’Éditeur transmet la demande à l’association et peut supprimer la fiche lui-même si celle-ci n’y donne pas suite. L’association garantit l’Éditeur contre toute réclamation résultant d’un manquement à ces obligations.',
         },
         {
-          heading: '12. Propriété intellectuelle du Service',
+          heading: '13. Propriété intellectuelle du Service',
           body: 'Le Service, sa marque, ses logos, son interface, son code et ses bases de données demeurent la propriété exclusive de l’Éditeur. Toute reproduction ou réutilisation non autorisée est interdite.',
         },
         {
-          heading: '13. Disponibilité',
+          heading: '14. Disponibilité',
           body: 'Le Service est fourni « en l’état » et « selon disponibilité ». L’Éditeur met en œuvre des moyens raisonnables mais ne garantit ni disponibilité ininterrompue, ni absence d’erreurs. Le Service peut être suspendu ou modifié (maintenance, sécurité) sans droit à indemnité.',
         },
         {
-          heading: '14. Limitation de responsabilité',
+          heading: '15. Limitation de responsabilité',
           body: 'Dans les limites permises par la loi, l’Éditeur n’est pas responsable des dommages indirects ni des faits, contenus ou comportements des Utilisateurs ou tiers. Sa responsabilité, lorsqu’elle est engagée, est limitée au préjudice direct et prévisible et ne saurait excéder les sommes versées au titre du Service sur les 12 derniers mois (ou 50 € pour un service gratuit). Aucune limitation ne s’applique en cas de faute lourde ou dolosive, de dommage corporel, ou lorsque la loi l’interdit.',
         },
         {
-          heading: '15. Garantie et indemnisation',
+          heading: '16. Garantie et indemnisation',
           body: 'Tu t’engages à garantir et indemniser l’Éditeur de toute réclamation, condamnation, dommage et frais raisonnables (y compris frais de défense) résultant de ton Contenu, de ton utilisation du Service, ou de la violation des CGU, de la loi ou des droits d’un tiers.',
         },
         {
-          heading: '16. Données personnelles',
+          heading: '17. Données personnelles',
           body: 'Le traitement de tes données est décrit dans la Politique de confidentialité (finalités, bases légales, durées, droits RGPD). En utilisant le Service, tu en prends connaissance.',
         },
         {
-          heading: '17. Suppression de compte',
+          heading: '18. Suppression de compte',
           body: 'Tu peux supprimer ton compte à tout moment via Paramètres → Supprimer mon compte. La suppression est immédiate et efface tes données visibles. Des journaux techniques anonymisés peuvent être conservés jusqu’à 30 jours à des fins de sécurité, puis détruits.',
         },
         {
-          heading: '18. Modification des CGU',
+          heading: '19. Modification des CGU',
           body: 'L’Éditeur peut faire évoluer les CGU. En cas de modification substantielle, tu seras informé avant son entrée en vigueur. La poursuite de l’utilisation vaut acceptation ; à défaut, tu peux résilier en supprimant ton compte.',
         },
         {
-          heading: '19. Droit applicable et litiges',
+          heading: '20. Droit applicable et litiges',
           body: 'Les CGU sont régies par le droit français. Après tentative de résolution amiable (contact@nigerconnect.app), le consommateur peut recourir à un médiateur de la consommation. À défaut d’accord, les tribunaux français sont compétents, dans le respect des règles protectrices du consommateur.',
         },
       ]}

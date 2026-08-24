@@ -76,7 +76,13 @@ model User {
   // only appears on the public map after an explicit opt-in. Mirrors
   // proximityAlerts, which is likewise opt-in.
   showOnMap        Boolean   @default(true) @map("show_on_map")
-  proximityAlerts  Boolean   @default(false) @map("proximity_alerts")
+  // Opt-OUT depuis le 24/08/2026 (décision du propriétaire). En opt-in, 3
+  // comptes sur 305 l'avaient activé : la fonctionnalité ne pouvait pas
+  // exister faute de deux personnes actives au même endroit. Ce drapeau seul
+  // n'expose rien — aucune position n'est lue tant que l'utilisateur n'a pas
+  // accordé la localisation au niveau du système ET ouvert l'app à l'écran, et
+  // rien d'identifiant ne sort d'un croisement (cf. assertCanReveal).
+  proximityAlerts  Boolean   @default(true) @map("proximity_alerts")
   // Receive NigerConnect news/announcements (in-app + push + email). Opt-OUT:
   // ON by default; the user toggles it in settings. Critical service messages
   // (security/outage/RGPD) ignore this flag. newsletterToken backs the one-click

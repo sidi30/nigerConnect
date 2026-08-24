@@ -15,7 +15,7 @@ import type { LegalSection } from "@/components/LegalPage";
  * réduisent la protection juridique au lieu de la renforcer.
  */
 
-export const LEGAL_LAST_UPDATED = "21 août 2026";
+export const LEGAL_LAST_UPDATED = "24 août 2026";
 
 // Contacts officiels — uniformisés sur le domaine nigerconnect.app.
 // Prévoir les alias / MX correspondants côté messagerie.
@@ -97,69 +97,82 @@ export const TERMS_SECTIONS: LegalSection[] = [
       "La vérification d'identité (badge ✓) est facultative, mais certaines fonctionnalités (ex. création d'association) peuvent l'exiger. Les documents transmis sont chiffrés, ne sont jamais rendus publics, et sont supprimés au plus tard 30 jours après validation. La fourniture d'un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.",
   },
   {
-    heading: "10. Espaces association",
+    heading: "10. Rencontres de proximité",
+    body:
+      "Le Service peut te signaler qu'un autre membre se trouve à proximité de toi. Cette fonctionnalité est active par défaut sur les comptes éligibles et se désactive à tout moment depuis les réglages de l'application ; aucune position n'est relevée si tu n'as pas accordé l'autorisation de localisation à ton téléphone, ni lorsque l'application n'est pas ouverte à l'écran. Elle n'effectue aucun suivi en arrière-plan et ne conserve aucun historique de tes déplacements.",
+    bullets: [
+      "L'alerte que reçoit l'autre membre est anonyme : elle ne contient ni ton nom, ni ta photo, ni ton profil, ni ta position, mais seulement une distance approximative figée au moment du croisement.",
+      "Découvrir l'identité de la personne croisée, te montrer à elle ou entrer en contact suppose que ton identité ait été vérifiée et que tu sois majeur. À défaut, tu es seulement informé qu'un membre se trouve à proximité.",
+      "Aucune mise en relation n'a lieu sans accord réciproque : l'un demande, l'autre accepte ou refuse. Un refus est définitif pour la paire concernée.",
+      "Cette fonctionnalité sert à faire connaissance. L'utiliser pour suivre, surveiller, retrouver, importuner ou aborder une personne contre sa volonté est un manquement grave aux présentes CGU et aux Règles de la communauté, entraînant la suspension ou le bannissement immédiat du compte, sans préjudice des poursuites civiles et pénales encourues.",
+      "Le Service ne garantit ni l'exactitude, ni l'actualité de l'information de proximité, et n'organise, n'encadre ni ne supervise aucune rencontre physique. Tu restes seul responsable de ta sécurité et de tes décisions si tu choisis de rencontrer un autre membre.",
+      "L'Éditeur peut suspendre ou restreindre la fonctionnalité, en totalité ou dans certaines zones, à tout moment et sans préavis, notamment pour un motif de sécurité.",
+    ],
+  },
+  {
+    heading: "11. Espaces association",
     body:
       "Une association présente sur le Service est administrée par des personnes physiques titulaires d'un compte personnel : il n'existe pas de compte « association » partagé, et chaque acte d'administration est attribué à la personne qui l'a accompli. Publier au nom d'une association est réservé aux dirigeants déclarés dans le Service (responsable principal, administrateur, modérateur) ; ces publications engagent l'association et leur auteur. L'Éditeur ne perçoit aucune cotisation et n'intervient dans aucun flux financier entre une association et ses membres : un statut de cotisation affiché dans le Service est purement déclaratif, saisi par l'association, et ne vaut ni preuve de paiement ni quittance. La certification d'une association atteste uniquement d'une vérification faite par l'Éditeur sur les éléments qui lui ont été présentés ; elle ne garantit ni la solvabilité, ni la régularité juridique, ni les agissements de l'association. Chaque association dispose d'un espace de stockage limité, au-delà duquel l'Éditeur peut refuser un nouveau dépôt.",
   },
   {
-    heading: "11. Adhérents enregistrés par une association",
+    heading: "12. Adhérents enregistrés par une association",
     body:
       "Une association peut enregistrer dans son espace des adhérents qui ne possèdent pas de compte NigerConnect. Pour ces fiches, l'association est responsable du traitement au sens du RGPD et l'Éditeur agit comme sous-traitant, sur ses seules instructions. L'association garantit disposer d'une base légale, avoir informé les personnes concernées, et n'enregistrer que les données strictement nécessaires. Ces fiches n'ouvrent aucun compte, n'apparaissent sur aucune surface publique du Service (carte, recherche, fil, suggestions) et ne déclenchent aucune notification. Toute personne peut demander la rectification ou la suppression de sa fiche auprès de l'association ou de l'Éditeur (" + LEGAL_CONTACT_EMAIL + ") ; l'Éditeur transmet la demande à l'association et peut supprimer la fiche lui-même si celle-ci n'y donne pas suite. L'association garantit l'Éditeur contre toute réclamation résultant d'un manquement à ces obligations.",
   },
   {
-    heading: "12. Propriété intellectuelle du Service",
+    heading: "13. Propriété intellectuelle du Service",
     body:
       "Le Service, sa marque, ses logos, son interface, son code et ses bases de données sont protégés et demeurent la propriété exclusive de l'Éditeur. Aucune disposition des CGU n'emporte cession de ces droits. Toute reproduction, extraction ou réutilisation non autorisée est interdite.",
   },
   {
-    heading: "13. Disponibilité du Service",
+    heading: "14. Disponibilité du Service",
     body:
       "Le Service est fourni « en l'état » et « selon disponibilité ». L'Éditeur met en œuvre des moyens raisonnables pour en assurer le fonctionnement mais ne garantit ni une disponibilité ininterrompue, ni l'absence d'erreurs, ni la compatibilité avec tout appareil. Le Service peut être suspendu, modifié ou interrompu, notamment pour maintenance, évolution ou raison de sécurité, sans que cela ouvre droit à indemnité.",
   },
   {
-    heading: "14. Limitation de responsabilité",
+    heading: "15. Limitation de responsabilité",
     body:
       "Dans les limites permises par la loi, l'Éditeur ne saurait être tenu responsable des dommages indirects (perte de données, de chiffre d'affaires, d'opportunité, préjudice d'image) ni des faits, contenus ou comportements des Utilisateurs ou de tiers. La responsabilité de l'Éditeur, lorsqu'elle est engagée, est limitée au préjudice direct et prévisible, et ne saurait excéder les sommes éventuellement versées par l'Utilisateur au titre du Service au cours des douze derniers mois (ou 50 € pour un service gratuit). Aucune stipulation des CGU n'a pour effet d'exclure ou de limiter la responsabilité de l'Éditeur en cas de faute lourde ou dolosive, de dommage corporel, ou dans les cas où la loi l'interdit (notamment droit de la consommation).",
   },
   {
-    heading: "15. Garantie et indemnisation par l'Utilisateur",
+    heading: "16. Garantie et indemnisation par l'Utilisateur",
     body:
       "Tu t'engages à garantir et indemniser l'Éditeur (ainsi que ses éventuels préposés et partenaires) de toute réclamation, action, condamnation, dommage et frais raisonnables (y compris frais de défense) résultant de ton Contenu Utilisateur, de ton utilisation du Service, ou de la violation par tes soins des CGU, de la loi ou des droits d'un tiers.",
   },
   {
-    heading: "16. Liens et services de tiers",
+    heading: "17. Liens et services de tiers",
     body:
       "Le Service peut renvoyer vers des sites ou services tiers que l'Éditeur ne contrôle pas. L'Éditeur n'assume aucune responsabilité quant à leur contenu, leurs pratiques ou leur disponibilité.",
   },
   {
-    heading: "17. Données personnelles",
+    heading: "18. Données personnelles",
     body:
       "Le traitement de tes données personnelles est décrit dans la Politique de confidentialité, qui détaille les finalités, bases légales, durées de conservation et tes droits au titre du RGPD. En utilisant le Service, tu en prends connaissance.",
   },
   {
-    heading: "18. Suppression de compte",
+    heading: "19. Suppression de compte",
     body:
       "Tu peux supprimer ton compte à tout moment via Paramètres → Supprimer mon compte, ou via la page https://nigerconnect.app/account-deletion. La suppression est immédiate et efface tes données visibles (publications, messages, photos, relations). Des journaux techniques anonymisés peuvent être conservés jusqu'à 30 jours à des fins de prévention des abus et de sécurité, puis détruits.",
   },
   {
-    heading: "19. Modification des CGU",
+    heading: "20. Modification des CGU",
     body:
       "L'Éditeur peut faire évoluer les CGU. En cas de modification substantielle, tu en seras informé par un moyen approprié (notification ou affichage) avant son entrée en vigueur. La poursuite de l'utilisation du Service vaut acceptation ; à défaut, tu peux résilier en supprimant ton compte.",
   },
   {
-    heading: "20. Durée, suspension et résiliation",
+    heading: "21. Durée, suspension et résiliation",
     body:
       "Les CGU s'appliquent pendant toute la durée d'utilisation du Service. L'Éditeur peut suspendre ou résilier l'accès d'un Utilisateur qui enfreint les CGU, la loi ou les Règles de la communauté, sans préavis en cas de manquement grave. La résiliation n'affecte pas les stipulations qui, par nature, doivent survivre (propriété intellectuelle, responsabilité, indemnisation, droit applicable).",
   },
   {
-    heading: "21. Droit applicable et litiges",
+    heading: "22. Droit applicable et litiges",
     body:
       "Les CGU sont régies par le droit français. En cas de litige, et après une tentative de résolution amiable auprès de " +
       LEGAL_CONTACT_EMAIL +
       ", l'Utilisateur consommateur peut recourir gratuitement à un médiateur de la consommation. À défaut d'accord, les tribunaux français sont compétents, dans le respect des règles impératives de compétence protectrices du consommateur.",
   },
   {
-    heading: "22. Divisibilité",
+    heading: "23. Divisibilité",
     body:
       "Si une stipulation des CGU est jugée nulle ou inapplicable, les autres stipulations conservent leur plein effet. Les CGU, la Politique de confidentialité et les Règles de la communauté constituent l'intégralité de l'accord entre l'Utilisateur et l'Éditeur relatif au Service.",
   },
@@ -193,6 +206,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     heading: "Données collectées automatiquement",
     bullets: [
       "Position géographique approximative (pays/ville) si tu actives la carte.",
+      "Position géographique précise, uniquement si les rencontres de proximité sont actives sur ton compte et uniquement pendant que l'application est ouverte à l'écran. Elle n'est jamais relevée en arrière-plan, jamais affichée sur la carte, jamais conservée sous forme d'historique : chaque relevé écrase le précédent et cesse d'être utilisé 30 minutes après.",
       "Adresse IP, modèle et OS de l'appareil, version de l'app.",
       "Journaux d'activité (connexion, actions, signaux anti-fraude) — 30 jours max.",
       "Données d'usage et de mesure d'audience (pages/écrans vus, fonctionnalités utilisées).",
@@ -209,6 +223,21 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Mesure d'audience, statistiques, recherche interne et amélioration du Service — intérêt légitime (voir section dédiée ci-dessous).",
       "Notifications non essentielles et communications facultatives — ton consentement, retirable à tout moment.",
       "Géolocalisation sur la carte — ton consentement, désactivable à tout moment.",
+      "Rencontres de proximité (te signaler qu'un membre se trouve près de toi) — ton consentement, matérialisé par l'autorisation de localisation que tu accordes à ton téléphone, et retirable à tout moment depuis les réglages de l'application.",
+    ],
+  },
+  {
+    heading: "Rencontres de proximité",
+    body:
+      "Cette fonctionnalité te prévient qu'un autre membre se trouve près de toi. Elle est conçue pour ne jamais révéler où tu es, ni qui tu es, tant que tu ne l'as pas décidé.",
+    bullets: [
+      "Aucune position n'est relevée tant que l'application n'est pas ouverte à l'écran. Il n'y a pas de suivi en arrière-plan, pas de trajet, pas d'historique de tes déplacements.",
+      "Ta position précise est conservée dans un champ séparé, invisible des autres membres, écrasé à chaque nouveau relevé, et cesse d'être utilisée 30 minutes après le dernier relevé.",
+      "La notification que reçoit l'autre personne est anonyme : ni ton nom, ni ta photo, ni ton profil, ni ta position. Uniquement une distance approximative (« moins de 200 m »), figée au moment du croisement et jamais recalculée — pour que personne ne puisse te localiser en se déplaçant.",
+      "Voir qui est la personne, te montrer à elle ou entrer en contact exige que ton identité ait été vérifiée et que tu sois majeur. Sans cela, tu es informé qu'il y a quelqu'un, et rien de plus.",
+      "Se croiser ne crée aucun lien. Il faut qu'une personne demande le contact et que l'autre accepte ; un refus rend la paire définitivement silencieuse, et le nombre de demandes que tu peux envoyer par jour est plafonné.",
+      "Les personnes que tu croises par habitude (domicile, travail, famille) sont automatiquement rendues silencieuses après trois jours, et une même rencontre au même endroit ne te notifie qu'une fois par tranche de huit heures.",
+      "La fonctionnalité est active par défaut sur les comptes éligibles. Tu peux la désactiver à tout moment dans les réglages de l'application, ou retirer l'autorisation de localisation à ton téléphone — dans les deux cas plus aucune position n'est relevée ni utilisée.",
     ],
   },
   {
@@ -253,6 +282,8 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Après suppression du compte : effacement immédiat des données visibles.",
       "Journaux techniques (sécurité/anti-fraude) : 30 jours max.",
       "Documents d'identité : 30 jours après validation, puis destruction.",
+      "Position précise pour les rencontres de proximité : écrasée à chaque relevé, inutilisable au-delà de 30 minutes, aucun historique conservé.",
+      "Rencontre de proximité (le fait que deux comptes se soient croisés) : 48 heures, puis expiration — sauf si elle a débouché sur une mise en relation acceptée.",
       "Statistiques agrégées/anonymisées : sans limitation (ne constituent plus des données personnelles).",
     ],
   },
@@ -289,6 +320,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Caméra : prendre des photos de profil, de publications, de stories — uniquement à ta demande.",
       "Photos / Bibliothèque : choisir une photo à partager — uniquement à ta demande.",
       "Localisation (approximative) : afficher ton avatar sur la carte de la diaspora si tu l'actives. Désactivable à tout moment.",
+      "Localisation (précise), pendant l'utilisation de l'app uniquement : te signaler qu'un membre se trouve près de toi. Jamais en arrière-plan. Désactivable à tout moment dans les réglages de l'app ou du téléphone.",
       "Notifications : t'avertir d'un message, d'une demande d'ami, etc. Désactivables dans les réglages système.",
     ],
   },
