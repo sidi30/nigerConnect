@@ -4,7 +4,7 @@ export default function PrivacyScreen() {
   return (
     <LegalDoc
       title="Confidentialité"
-      lastUpdated="24 août 2026"
+      lastUpdated="21 août 2026"
       intro="Cette politique explique quelles données NigerConnect collecte, sur quelles bases légales, pour quelles finalités, et comment exercer tes droits. Elle est conforme au RGPD (UE) 2016/679 et à la loi Informatique et Libertés. Nous respectons aussi le CCPA (Californie) et les exigences des stores Apple et Google."
       sections={[
         {
@@ -24,7 +24,6 @@ export default function PrivacyScreen() {
           heading: 'Données collectées automatiquement',
           bullets: [
             'Position géographique approximative (pays/ville) si tu actives la carte.',
-            'Position géographique précise, uniquement si les rencontres de proximité sont actives et uniquement pendant que l’app est ouverte à l’écran. Jamais en arrière-plan, jamais affichée sur la carte, jamais conservée en historique : chaque relevé écrase le précédent et cesse d’être utilisé après 30 minutes.',
             "Adresse IP, modèle et OS de l'appareil, version de l'app.",
             "Journaux d'activité (connexion, signaux anti-fraude) — 30j max.",
             "Données d'usage et de mesure d'audience (écrans vus, fonctionnalités utilisées).",
@@ -40,21 +39,6 @@ export default function PrivacyScreen() {
             "Statistiques, mesure d'audience et amélioration — intérêt légitime (voir ci-dessous).",
             'Notifications non essentielles — ton consentement, retirable à tout moment.',
             'Géolocalisation sur la carte — ton consentement, désactivable à tout moment.',
-            'Rencontres de proximité — ton consentement, matérialisé par l’autorisation de localisation accordée à ton téléphone, retirable à tout moment dans les réglages.',
-          ],
-        },
-        {
-          heading: 'Rencontres de proximité',
-          body:
-            'Cette fonctionnalité te prévient qu’un autre membre est près de toi. Elle est conçue pour ne révéler ni où tu es, ni qui tu es, tant que tu ne l’as pas décidé.',
-          bullets: [
-            'Aucune position relevée tant que l’app n’est pas ouverte à l’écran : pas de suivi en arrière-plan, pas de trajet, pas d’historique.',
-            'Ta position précise vit dans un champ séparé, invisible des autres membres, écrasé à chaque relevé, inutilisable après 30 minutes.',
-            'La notification reçue est anonyme : seulement une distance approximative (« moins de 200 m »), figée au croisement et jamais recalculée, pour que personne ne puisse te localiser en se déplaçant.',
-            'Voir qui c’est, te montrer ou entrer en contact exige une identité vérifiée et la majorité. Sinon tu sais qu’il y a quelqu’un, rien de plus.',
-            'Les personnes que tu croises par habitude (domicile, travail) deviennent automatiquement silencieuses après trois jours, et une même rencontre au même endroit ne notifie qu’une fois par tranche de huit heures.',
-            'Un refus rend la paire définitivement silencieuse. Le nombre de demandes que tu peux envoyer par jour est plafonné.',
-            'Active par défaut sur les comptes éligibles, désactivable à tout moment dans les réglages de l’app ou en retirant l’autorisation de localisation.',
           ],
         },
         {
@@ -106,8 +90,6 @@ export default function PrivacyScreen() {
             'Après suppression : effacement immédiat des données visibles.',
             'Journaux techniques : 30 jours max.',
             "Documents d'identité : 30 jours après validation puis destruction.",
-            'Position précise (proximité) : écrasée à chaque relevé, inutilisable au-delà de 30 minutes, aucun historique.',
-            'Rencontre de proximité : 48 heures puis expiration, sauf mise en relation acceptée.',
             "Statistiques agrégées/anonymisées : sans limitation (plus des données personnelles).",
           ],
         },
