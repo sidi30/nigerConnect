@@ -33,6 +33,20 @@ const PROXIMITY_MATCH_LIMIT = 50;
 // (never the public city-coarse latitude/longitude), and a stale fix simply
 // drops out of matching instead of lingering as a public pin at the user's home.
 const PROXIMITY_FRESHNESS_SECONDS = 5 * 60; // 5 min
+/**
+ * Fenêtre de fraîcheur du CANDIDAT — celui qui reçoit la notification.
+ *
+ * Elle est volontairement plus large que celle du pingeur, et c'est toute la
+ * différence entre « les deux ont l'appli ouverte en même temps » et « je suis
+ * prévenu même appli fermée ». Le pingeur, lui, doit être réellement là
+ * maintenant : c'est lui qui déclare la position du croisement.
+ *
+ * Ce que ça ne fait PAS : suivre quelqu'un en arrière-plan. Aucune position
+ * n'est prise appli fermée — on se souvient seulement de la DERNIÈRE position
+ * déclarée, une demi-heure de plus. Le vrai arrière-plan demande une
+ * permission système, un rebuild natif et une déclaration aux deux magasins.
+ */
+const PROXIMITY_CANDIDATE_FRESHNESS_SECONDS = 30 * 60; // 30 min
 
 // Proximity notification dedup tuning.
 //  - ZONE_TTL: one notification per (direction, geohash zone) within this
@@ -533,26 +547,21 @@ export class GeoService implements OnModuleInit {
         proximityRadius: true,
         city: true,
         countryCode: true,
-        identityStatus: true,
-        // Latest approved ID document with a recorded DOB — drives the 18+ gate.
-        identityDocuments: {
-          where: { status: 'approved', dateOfBirth: { not: null } },
-          select: { dateOfBirth: true },
-          orderBy: { reviewedAt: 'desc' },
-          take: 1,
-        },
       },
     });
-    // Proximity is now an AUTONOMOUS channel, decoupled from the map: a user
-    // opts in with `proximityAlerts` regardless of `showOnMap`/`privacyLevel`
-    // (a discreet, map-hidden user can still be crossed — and stays anonymous
-    // until a request is accepted). Eligibility is identity-gated instead:
-    // verified (approved) AND 18+ (DOB on the approved doc). Foreground-only,
-    // never a background tracker.
+    // Proximity is an AUTONOMOUS channel, decoupled from the map: a user opts
+    // in with `proximityAlerts` regardless of `showOnMap`/`privacyLevel` (a
+    // discreet, map-hidden user can still be crossed — and stays anonymous
+    // until a request is accepted).
+    //
+    // L'identité n'est PLUS exigée pour se croiser (décision du propriétaire,
+    // 24/08/2026). Elle l'était, et le résultat était mécanique : sur 305
+    // comptes actifs, ZÉRO paire éligible, donc zéro notification en deux mois.
+    // La porte n'a pas disparu, elle a changé de place — elle garde maintenant
+    // la RÉVÉLATION (`assertCanReveal`). Un compte non vérifié apprend qu'il y
+    // a quelqu'un ; il ne peut ni savoir qui, ni se montrer, ni entrer en
+    // contact. Rien d'identifiant ne franchit une identité non vérifiée.
     if (!pinger || !pinger.proximityAlerts) return { matches: [] };
-    if (pinger.identityStatus !== 'approved') return { matches: [] };
-    if (!isAdult(pinger.identityDocuments[0]?.dateOfBirth ?? null))
-      return { matches: [] };
 
     // Rollout: restrict to the pilot region(s) — city and/or country — when
     // configured (both empty = everyone).
@@ -584,6 +593,9 @@ export class GeoService implements OnModuleInit {
     // to km for the comparison.
     const radiusKm = pinger.proximityRadius / 1000;
     const freshCutoff = new Date(Date.now() - PROXIMITY_FRESHNESS_SECONDS * 1000);
+    const candidateCutoff = new Date(
+      Date.now() - PROXIMITY_CANDIDATE_FRESHNESS_SECONDS * 1000,
+    );
     const distanceExpr = Prisma.sql`
       (6371 * acos(
         LEAST(1, cos(radians(${dto.lat})) * cos(radians(proximity_lat)) *
@@ -611,18 +623,10 @@ export class GeoService implements OnModuleInit {
       WHERE u.proximity_alerts = TRUE
         AND u.status = 'active'
         AND u.email_verified = TRUE
-        AND u.identity_status = 'approved'
         AND u.proximity_lat IS NOT NULL
         AND u.proximity_lon IS NOT NULL
-        AND u.proximity_updated_at > ${freshCutoff}
+        AND u.proximity_updated_at > ${candidateCutoff}
         AND u.id::text <> ${viewerId}
-        AND EXISTS (
-          SELECT 1 FROM identity_documents d
-          WHERE d.user_id = u.id
-            AND d.status = 'approved'
-            AND d.date_of_birth IS NOT NULL
-            AND d.date_of_birth <= (CURRENT_DATE - INTERVAL '18 years')
-        )
         ${blockedClause}
         AND ${distanceExpr} <= ${radiusKm}
       ORDER BY distance
@@ -749,6 +753,65 @@ export class GeoService implements OnModuleInit {
   // ── Proximity encounters: connect / accept / decline (PX4) ────────────────
 
   /**
+   * Porte de RÉVÉLATION. Se croiser ne demande rien ; voir qui est en face, se
+   * montrer ou entrer en contact demande une identité vérifiée et 18 ans.
+   *
+   * C'est ici, et nulle part ailleurs, que l'ancien filtre du croisement s'est
+   * déplacé (24/08/2026). Le raisonnement : une notification anonyme
+   * « quelqu'un est tout près » n'expose personne, alors qu'un nom, un visage
+   * ou une mise en relation exposent quelqu'un pour de bon. Le contrôle est
+   * donc au point où il protège réellement — et il vaut dans les DEUX sens,
+   * puisque `connect` révèle le demandeur et `accept` révèle les deux.
+   *
+   * Fail-closed sur une date de naissance absente : un dossier approuvé avant
+   * la saisie de la DOB reste bloqué tant que personne ne l'a renseignée.
+   */
+  private async assertCanReveal(userId: string): Promise<void> {
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        identityStatus: true,
+        identityDocuments: {
+          where: { status: 'approved', dateOfBirth: { not: null } },
+          select: { dateOfBirth: true },
+          orderBy: { reviewedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (!me || me.identityStatus !== 'approved') {
+      throw new HttpException(
+        {
+          message:
+            "Vérifiez votre identité pour voir qui est à proximité et entrer en contact.",
+          code: 'IDENTITY_REQUIRED',
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (!isAdult(me.identityDocuments[0]?.dateOfBirth ?? null)) {
+      throw new HttpException(
+        {
+          message: 'Cette fonctionnalité est réservée aux membres majeurs.',
+          code: 'ADULT_REQUIRED',
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+  }
+
+  /** Version silencieuse de `assertCanReveal`, pour masquer au lieu de refuser. */
+  private async canReveal(userId: string): Promise<boolean> {
+    try {
+      await this.assertCanReveal(userId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+
+  /**
    * The viewer's live encounters (active or pending). Double-blind: an `active`
    * encounter — and one the viewer themselves requested — carries NO peer
    * identity. Only when someone ELSE requested the viewer is the requester's
@@ -768,6 +831,11 @@ export class GeoService implements OnModuleInit {
       take: 50,
     });
 
+    // Une identité non vérifiée voit la rencontre, jamais la personne. On
+    // masque au lieu de refuser : la liste reste consultable, seul le profil du
+    // demandeur disparaît, et `revealBlocked` dit à l'écran pourquoi.
+    const revealAllowed = rows.length > 0 ? await this.canReveal(userId) : true;
+
     return rows.map((e) => {
       const iAmRequester = e.requesterId === userId;
       const base = {
@@ -780,7 +848,7 @@ export class GeoService implements OnModuleInit {
       };
       // Someone requested ME → reveal the requester so I can decide.
       if (e.status === 'requested' && !iAmRequester && e.requester) {
-        return { ...base, requester: e.requester };
+        return revealAllowed ? { ...base, requester: e.requester } : { ...base, revealBlocked: true };
       }
       return base;
     });
@@ -795,6 +863,7 @@ export class GeoService implements OnModuleInit {
    */
   async connectEncounter(userId: string, encounterId: string) {
     await this.assertProximityEnabled();
+    await this.assertCanReveal(userId);
     const e = await this.loadParticipant(userId, encounterId);
     if (e.status === 'accepted') throw new ConflictException('Encounter already accepted');
     if (e.status === 'declined' || e.status === 'expired') {
@@ -849,6 +918,7 @@ export class GeoService implements OnModuleInit {
    */
   async acceptEncounter(userId: string, encounterId: string) {
     await this.assertProximityEnabled();
+    await this.assertCanReveal(userId);
     const e = await this.loadParticipant(userId, encounterId);
     if (e.status === 'accepted') return { status: 'accepted' as const };
     if (e.status !== 'requested') throw new BadRequestException('No pending request');

@@ -48,6 +48,12 @@ export interface ProximityEncounterSummary {
   createdAt: string;
   outgoing: boolean;
   requester?: ProximityRequester;
+  /**
+   * Vrai quand quelqu'un a demandé à vous rencontrer mais que votre identité
+   * n'est pas vérifiée : la rencontre existe, le profil du demandeur reste
+   * caché. L'écran doit proposer la vérification, pas un profil vide.
+   */
+  revealBlocked?: boolean;
 }
 
 export interface ProximityActionResult {

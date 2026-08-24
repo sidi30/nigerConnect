@@ -282,39 +282,26 @@ describe('GeoService', () => {
       expect(notifications.create).not.toHaveBeenCalled();
     });
 
-    it('returns empty when the pinger is not identity-verified', async () => {
+    it("croise quand meme un pingeur dont l'identite n'est pas verifiee", async () => {
+      // L'identite ne garde plus le CROISEMENT, elle garde la REVELATION
+      // (assertCanReveal). Un compte non verifie doit donc etre matche
+      // normalement : il apprendra qu'il y a quelqu'un, sans savoir qui.
       const { redis, prisma, notifications } = makeMocks();
       prisma.user.findUnique.mockResolvedValueOnce({
         proximityAlerts: true,
         proximityRadius: 100,
         city: null,
-        identityStatus: 'pending',
-        identityDocuments: [],
+        countryCode: null,
       });
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'peer', distance: 0.05 }]);
       const svc = makeSvc(prisma, redis, notifications);
 
       const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
 
-      expect(result).toEqual({ matches: [] });
-      expect(prisma.user.updateMany).not.toHaveBeenCalled();
-      expect(prisma.$queryRaw).not.toHaveBeenCalled();
-    });
-
-    it('returns empty when approved but no adult DOB on record (fail-closed 18+)', async () => {
-      const { redis, prisma, notifications } = makeMocks();
-      prisma.user.findUnique.mockResolvedValueOnce({
-        proximityAlerts: true,
-        proximityRadius: 100,
-        city: null,
-        identityStatus: 'approved',
-        identityDocuments: [], // no DOB recorded → not adult
-      });
-      const svc = makeSvc(prisma, redis, notifications);
-
-      const result = await svc.proximityPing('pinger', { lat: 13.5, lon: 2.1 });
-
-      expect(result).toEqual({ matches: [] });
-      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(result.matches).toHaveLength(1);
+      // Toujours anonyme : rien d'identifiant ne sort du croisement.
+      expect(Object.keys(result.matches[0]!).sort()).toEqual(['distance', 'encounterId']);
     });
 
     it('a map-hidden / private but verified-adult pinger IS eligible (decoupled from the map)', async () => {

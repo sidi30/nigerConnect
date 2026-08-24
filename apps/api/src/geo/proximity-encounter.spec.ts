@@ -25,7 +25,18 @@ function makeMocks() {
       create: jest.fn(async () => ({})),
       update: jest.fn(async () => ({})),
     },
-    user: { findUnique: jest.fn(async () => ({ displayName: 'Aïcha', firstName: null })) },
+    // Le meme findUnique sert deux appels : la porte de revelation
+    // (identityStatus + DOB) et le nom du demandeur pour la notification. Par
+    // defaut le participant est verifie et majeur ; les tests qui veulent le
+    // contraire le remplacent.
+    user: {
+      findUnique: jest.fn(async () => ({
+        displayName: 'Aïcha',
+        firstName: null,
+        identityStatus: 'approved',
+        identityDocuments: [{ dateOfBirth: new Date('1990-01-01') }],
+      })),
+    },
   };
   const notifications = { create: jest.fn(async () => ({ id: 'n1' })) };
   const settings = { isProximityEnabled: jest.fn(async () => true) };
@@ -227,5 +238,76 @@ describe('GeoService — proximity encounters (PX4)', () => {
 
     await expect(svc.connectEncounter(A, ENC)).rejects.toMatchObject({ status: 429 });
     expect(prisma.proximityEncounter.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("porte de revelation : se croiser est ouvert, voir qui c'est ne l'est pas", () => {
+  const encounter = {
+    id: 'e1',
+    userAId: 'moi',
+    userBId: 'peer',
+    status: 'active',
+    requesterId: null,
+    version: 1,
+    expiresAt: null,
+  };
+
+  it("refuse le connect d'un compte non verifie, et ne revele rien", async () => {
+    const { svc, prisma, notifications } = makeMocks();
+    prisma.proximityEncounter.findUnique.mockResolvedValue(encounter as never);
+    prisma.user.findUnique.mockResolvedValue({
+      displayName: 'Moi',
+      firstName: null,
+      identityStatus: 'pending',
+      identityDocuments: [],
+    } as never);
+
+    await expect(svc.connectEncounter('moi', 'e1')).rejects.toMatchObject({
+      status: 403,
+    });
+    // Rien n'a bouge, personne n'a ete prevenu.
+    expect(prisma.proximityEncounter.updateMany).not.toHaveBeenCalled();
+    expect(notifications.create).not.toHaveBeenCalled();
+  });
+
+  it('refuse aussi un compte verifie mais sans date de naissance (fail-closed 18+)', async () => {
+    const { svc, prisma } = makeMocks();
+    prisma.proximityEncounter.findUnique.mockResolvedValue(encounter as never);
+    prisma.user.findUnique.mockResolvedValue({
+      displayName: 'Moi',
+      firstName: null,
+      identityStatus: 'approved',
+      identityDocuments: [],
+    } as never);
+
+    await expect(svc.connectEncounter('moi', 'e1')).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(prisma.proximityEncounter.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("masque le profil du demandeur dans la liste tant que l'identite n'est pas verifiee", async () => {
+    const { svc, prisma } = makeMocks();
+    prisma.proximityEncounter.findMany.mockResolvedValue([
+      {
+        id: 'e1',
+        userAId: 'moi',
+        userBId: 'peer',
+        status: 'requested',
+        requesterId: 'peer',
+        distanceBucket: 200,
+        createdAt: new Date('2026-08-24T10:00:00Z'),
+        requester: { id: 'peer', displayName: 'Ibrahim' },
+      },
+    ] as never);
+    prisma.user.findUnique.mockResolvedValue({
+      identityStatus: 'not_submitted',
+      identityDocuments: [],
+    } as never);
+
+    const rows = await svc.listEncounters('moi');
+
+    expect(rows[0]).not.toHaveProperty('requester');
+    expect(rows[0]).toMatchObject({ revealBlocked: true, status: 'requested' });
   });
 });
