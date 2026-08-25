@@ -121,6 +121,62 @@ describe('IdentityVaultService', () => {
     expect(() => unseal(envelope, 'someone-else')).toThrow();
   });
 
+  it('falls back to an unlocked write when the storage has no object lock', async () => {
+    const vault = new IdentityVaultService(makeConfig());
+    // MinIO mono-disque : versionne, mais refuse ObjectLockMode.
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Object Lock configuration does not exist for this bucket'), {
+          name: 'InvalidRequest',
+        }),
+      )
+      .mockResolvedValue({});
+    (vault as unknown as { client: { send: unknown } }).client = { send };
+
+    const sealed = await vault.seal({
+      archiveId: 'arch1',
+      meta,
+      body: Buffer.from('x'),
+      retainUntil: new Date('2031-01-01T00:00:00.000Z'),
+    });
+    expect(sealed.vaultKey).toBe('identity/u1/arch1.enc');
+    // Deuxième tentative, sans verrou — la pièce est bien archivée.
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(callArg<{ input: Record<string, unknown> }>(send, 1).input.ObjectLockMode).toBeUndefined();
+
+    // Verdict retenu : le scellement suivant n'essaie plus le verrou.
+    await vault.seal({
+      archiveId: 'arch2',
+      meta,
+      body: Buffer.from('y'),
+      retainUntil: new Date('2031-01-01T00:00:00.000Z'),
+    });
+    expect(send).toHaveBeenCalledTimes(3);
+
+    // Et repousser une échéance devient un non-événement au lieu d'une erreur
+    // qui ferait échouer une suppression de compte.
+    await expect(
+      vault.extendRetention('identity/u1/arch1.enc', new Date('2032-01-01T00:00:00.000Z')),
+    ).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  it('propagates a non-lock failure instead of writing unprotected', async () => {
+    const vault = new IdentityVaultService(makeConfig());
+    const send = jest.fn().mockRejectedValue(Object.assign(new Error('quota exceeded'), { name: 'QuotaExceeded' }));
+    (vault as unknown as { client: { send: unknown } }).client = { send };
+    await expect(
+      vault.seal({
+        archiveId: 'arch1',
+        meta,
+        body: Buffer.from('x'),
+        retainUntil: new Date('2031-01-01T00:00:00.000Z'),
+      }),
+    ).rejects.toThrow('quota exceeded');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses to seal when it is not configured', async () => {
     const vault = new IdentityVaultService(makeConfig({ S3_VAULT_BUCKET: undefined }));
     await expect(

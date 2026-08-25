@@ -80,6 +80,14 @@ export class IdentityVaultService {
   private readonly client: S3Client | null;
   private readonly bucket: string | null;
   private readonly publicKeyPem: string | null;
+  /**
+   * Le stockage accepte-t-il object-lock ? Inconnu tant qu'on n'a pas essayé.
+   * MinIO ne propose le verrou WORM que sur un backend en erasure coding : un
+   * déploiement mono-disque versionne, mais refuse ObjectLockMode. On ne sonde
+   * pas la configuration du bucket (le compte de service n'a pas le droit de la
+   * lire) — on tente l'écriture verrouillée et on retient le verdict.
+   */
+  private lockSupported: boolean | null = null;
 
   constructor(config: ConfigService<Env, true>) {
     this.bucket = config.get('S3_VAULT_BUCKET', { infer: true }) ?? null;
@@ -158,18 +166,49 @@ export class IdentityVaultService {
     const envelope = Buffer.concat([MAGIC, wrappedLen, wrappedKey, iv, tag, ciphertext]);
 
     const vaultKey = `identity/${meta.userId}/${archiveId}.enc`;
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: vaultKey,
-        Body: envelope,
-        ContentType: 'application/octet-stream',
-        ObjectLockMode: 'GOVERNANCE',
-        ObjectLockRetainUntilDate: retainUntil,
-      }),
-    );
+    await this.put(vaultKey, envelope, retainUntil);
 
     return { vaultKey, contentSha256, sizeBytes: body.length, retainUntil };
+  }
+
+  /**
+   * Dépose l'enveloppe, verrouillée si le stockage sait le faire.
+   *
+   * Perdre le verrou n'annule pas la durée de conservation : elle reste portée
+   * par `purge_at` en base et appliquée par le cron. Ce qui disparaît, c'est la
+   * garantie qu'une suppression anticipée est matériellement impossible — d'où
+   * l'avertissement, une seule fois, au premier scellement.
+   */
+  private async put(key: string, body: Buffer, retainUntil: Date): Promise<void> {
+    const base = {
+      Bucket: this.bucket as string,
+      Key: key,
+      Body: body,
+      ContentType: 'application/octet-stream',
+    };
+    if (this.lockSupported === false) {
+      await this.client!.send(new PutObjectCommand(base));
+      return;
+    }
+    try {
+      await this.client!.send(
+        new PutObjectCommand({
+          ...base,
+          ObjectLockMode: 'GOVERNANCE',
+          ObjectLockRetainUntilDate: retainUntil,
+        }),
+      );
+      if (this.lockSupported === null) this.lockSupported = true;
+    } catch (error) {
+      if (!isLockUnsupported(error)) throw error;
+      this.lockSupported = false;
+      this.logger.warn(
+        'Object lock unavailable on this storage — identity archives are written WITHOUT a WORM ' +
+          'retention lock. Retention is still enforced by purge_at + the cleanup cron, but early ' +
+          'deletion is no longer physically prevented. See docs/COFFRE-IDENTITE.md.',
+      );
+      await this.client!.send(new PutObjectCommand(base));
+    }
   }
 
   /**
@@ -180,6 +219,9 @@ export class IdentityVaultService {
    */
   async extendRetention(vaultKey: string, retainUntil: Date): Promise<void> {
     if (!this.client || !this.bucket) throw new Error('Identity vault is not configured');
+    // Sans verrou à repousser, l'échéance ne vit qu'en base : rien à faire ici,
+    // et surtout pas d'erreur qui ferait échouer une suppression de compte.
+    if (this.lockSupported === false) return;
     await this.client.send(
       new PutObjectRetentionCommand({
         Bucket: this.bucket,
@@ -198,6 +240,21 @@ export class IdentityVaultService {
     if (!this.client || !this.bucket) throw new Error('Identity vault is not configured');
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: vaultKey }));
   }
+}
+
+/**
+ * Un stockage sans object-lock répond InvalidRequest / « Object Lock
+ * configuration does not exist » quand on tente une écriture verrouillée. Tout
+ * autre échec (réseau, droits, quota) doit remonter tel quel.
+ */
+function isLockUnsupported(error: unknown): boolean {
+  const name = (error as { name?: string } | null)?.name ?? '';
+  const message = String((error as { message?: string } | null)?.message ?? '');
+  return (
+    name === 'InvalidRequest' ||
+    /object lock/i.test(message) ||
+    /ObjectLockConfiguration/i.test(message)
+  );
 }
 
 /**

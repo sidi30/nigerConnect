@@ -165,7 +165,7 @@ services:
       mc anonymous set none local/${S3_PRIVATE_BUCKET};
       mc ilm rule add local/${S3_BUCKET} --expire-days 2 --prefix 'stories/' || mc ilm add --expiry-days 2 --prefix 'stories/' local/${S3_BUCKET} || echo 'ilm rule add skipped (already present or unsupported syntax)';
       if [ x${S3_VAULT_BUCKET:-} != x ]; then
-        mc mb --with-lock --ignore-existing local/${S3_VAULT_BUCKET};
+        mc mb --with-lock local/${S3_VAULT_BUCKET} || echo 'vault bucket already present (lock state unchanged)';
         mc anonymous set none local/${S3_VAULT_BUCKET};
         mc admin user svcacct add local ${MINIO_ROOT_USER} --access-key ${S3_VAULT_ACCESS_KEY} --secret-key ${S3_VAULT_SECRET_KEY} --policy /policies/vault-writer-policy.json > /dev/null || mc admin user svcacct edit local ${S3_VAULT_ACCESS_KEY} --policy /policies/vault-writer-policy.json > /dev/null;
         echo 'Identity vault ready (object-lock, write-only service account).';
