@@ -167,8 +167,7 @@ services:
       if [ x${S3_VAULT_BUCKET:-} != x ]; then
         mc mb --with-lock --ignore-existing local/${S3_VAULT_BUCKET};
         mc anonymous set none local/${S3_VAULT_BUCKET};
-        sed s/VAULT_BUCKET/${S3_VAULT_BUCKET}/ /policies/vault-writer-policy.json > /tmp/vault-writer.json;
-        mc admin user svcacct add local ${MINIO_ROOT_USER} --access-key ${S3_VAULT_ACCESS_KEY} --secret-key ${S3_VAULT_SECRET_KEY} --policy /tmp/vault-writer.json || mc admin user svcacct edit local ${S3_VAULT_ACCESS_KEY} --policy /tmp/vault-writer.json;
+        mc admin user svcacct add local ${MINIO_ROOT_USER} --access-key ${S3_VAULT_ACCESS_KEY} --secret-key ${S3_VAULT_SECRET_KEY} --policy /policies/vault-writer-policy.json || mc admin user svcacct edit local ${S3_VAULT_ACCESS_KEY} --policy /policies/vault-writer-policy.json;
         echo 'Identity vault ready (object-lock, write-only service account).';
       else
         echo 'S3_VAULT_BUCKET unset - identity vault DISABLED.';
@@ -177,7 +176,9 @@ services:
       "
     volumes:
       # La policy du compte de service vit dans un fichier : l'inliner en JSON
-      # dans l'entrypoint casserait le parsing (guillemets imbriqués).
+      # dans l'entrypoint casserait le parsing (guillemets imbriqués). Elle nomme
+      # le bucket en dur — l'image minio/mc n'a ni sed ni grep pour substituer,
+      # donc S3_VAULT_BUCKET doit valoir `nigerconnect-vault`.
       - ./infra/minio:/policies:ro
     networks:
       - internal

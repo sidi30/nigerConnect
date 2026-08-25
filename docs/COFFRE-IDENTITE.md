@@ -61,7 +61,9 @@ identifiantes : uuid, `content_sha256`, taille, dates.
 2. **Renseigner `.env.prod`** sur le VPS :
 
    ```
-   S3_VAULT_BUCKET=nigerconnect-vault
+   S3_VAULT_BUCKET=nigerconnect-vault   # doit rester cette valeur :
+   # infra/minio/vault-writer-policy.json nomme le bucket en dur (l'image mc
+   # n'a pas sed pour substituer un placeholder).
    S3_VAULT_ACCESS_KEY=<20+ caractères aléatoires>
    S3_VAULT_SECRET_KEY=<40+ caractères aléatoires>
    IDENTITY_VAULT_PUBLIC_KEY=<sortie base64 de vault-keygen>

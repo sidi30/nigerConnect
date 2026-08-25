@@ -10,7 +10,7 @@
         "s3:AbortMultipartUpload",
         "s3:DeleteObject"
       ],
-      "Resource": ["arn:aws:s3:::VAULT_BUCKET/*"]
+      "Resource": ["arn:aws:s3:::nigerconnect-vault/*"]
     }
   ]
 }
