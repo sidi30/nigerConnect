@@ -34,6 +34,26 @@ const envSchema = z
     S3_SSE: z.coerce.boolean().default(false),
     CDN_URL: z.string().url().optional(),
 
+    /**
+     * Coffre d'archivage des pièces d'identité (archivage intermédiaire RGPD).
+     * Bucket créé AVEC object-lock, jamais accessible anonymement, et servi par
+     * un compte de service DISTINCT qui n'a que PutObject/DeleteObject dessus :
+     * l'API peut sceller, jamais relire. La lecture passe par le CLI
+     * break-glass avec la clé privée hors-ligne.
+     * Non configuré (dev/test) ⇒ l'archivage est désactivé et le cron retombe
+     * sur l'ancien comportement (destruction), en le journalisant.
+     */
+    S3_VAULT_BUCKET: z.string().optional(),
+    S3_VAULT_ACCESS_KEY: z.string().optional(),
+    S3_VAULT_SECRET_KEY: z.string().optional(),
+    /**
+     * Clé PUBLIQUE RSA-4096 (PEM, encodé base64 pour tenir sur une ligne d'env)
+     * qui scelle la clé AES de chaque document. La clé PRIVÉE correspondante ne
+     * doit JAMAIS être déposée sur le serveur : sans elle, une compromission
+     * totale du VPS ne rend aucune pièce lisible.
+     */
+    IDENTITY_VAULT_PUBLIC_KEY: z.string().optional(),
+
     // JWT: RS256 keypair + audience/issuer claims.
     // In production, BOTH keys and both claims are required. A second public
     // key path (PREVIOUS) is accepted during rotation windows.

@@ -94,7 +94,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   {
     heading: "9. Vérification d'identité",
     body:
-      "La vérification d'identité (badge ✓) est facultative, mais certaines fonctionnalités (ex. création d'association) peuvent l'exiger. Les documents transmis sont chiffrés, ne sont jamais rendus publics, et sont supprimés au plus tard 30 jours après validation. La fourniture d'un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.",
+      "La vérification d'identité (badge ✓) est facultative, mais certaines fonctionnalités (ex. création d'association) peuvent l'exiger. Les documents transmis sont chiffrés, ne sont jamais rendus publics, et quittent le système actif au plus tard 30 jours après examen ; ils sont ensuite scellés en archive intermédiaire à accès restreint dans les conditions et durées détaillées par la Politique de confidentialité. La fourniture d'un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.",
   },
   {
     heading: "10. Espaces association",
@@ -186,7 +186,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Identité : prénom, nom, pseudonyme, email, téléphone (optionnel).",
       "Profil : bio, ville, pays, avatar, langues, centres d'intérêt.",
       "Contenu : publications, stories, commentaires, messages, photos.",
-      "Vérification d'identité : document officiel — chiffré, conservé 30 jours max. après validation.",
+      "Vérification d'identité : document officiel — chiffré. 30 jours en base active après examen, puis archive intermédiaire scellée (voir « Durées de conservation »).",
     ],
   },
   {
@@ -252,7 +252,10 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Compte actif : tant que tu utilises le Service.",
       "Après suppression du compte : effacement immédiat des données visibles.",
       "Journaux techniques (sécurité/anti-fraude) : 30 jours max.",
-      "Documents d'identité : 30 jours après validation, puis destruction.",
+      "Documents d'identité — base active : 30 jours après examen de la demande. Passé ce délai, le document sort du système actif : il n'est plus consultable ni depuis l'application, ni depuis l'espace d'administration.",
+      "Documents d'identité — archive intermédiaire : un document validé est scellé dans une archive chiffrée à accès restreint, conservée 5 ans après la suppression du compte, puis effacée définitivement. Un document refusé y est conservé 1 an. Un document déposé mais jamais examiné est détruit à 90 jours, sans archivage.",
+      "Finalité de l'archive : constatation, exercice ou défense d'un droit en justice, et confirmation d'identité en cas de réquisition d'une autorité ou de contestation (usurpation, fraude). Base légale : intérêt légitime. Aucun autre usage.",
+      "Accès à l'archive : aucun accès depuis l'application ni depuis l'administration. Toute ouverture exige une clé de déchiffrement conservée hors ligne, un motif écrit, et laisse une trace horodatée. Le droit d'effacement s'exerce sur toutes les autres données ; il ne s'étend pas à cette archive tant que sa durée court.",
       "Statistiques agrégées/anonymisées : sans limitation (ne constituent plus des données personnelles).",
     ],
   },

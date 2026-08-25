@@ -17,7 +17,7 @@ export default function PrivacyScreen() {
             "Identité : prénom, nom, pseudonyme, email, téléphone (optionnel).",
             "Profil : bio, ville, pays, avatar, langues, centres d'intérêt.",
             'Contenu : publications, stories, commentaires, messages, photos.',
-            "Vérification d'identité : document officiel — chiffré, conservé max. 30j après validation.",
+            "Vérification d'identité : document officiel — chiffré. Conservé 30 jours en base active après examen, puis placé en archive intermédiaire scellée (voir « Durées de conservation »).",
           ],
         },
         {
@@ -89,13 +89,16 @@ export default function PrivacyScreen() {
             "Compte actif : tant que tu l'utilises.",
             'Après suppression : effacement immédiat des données visibles.',
             'Journaux techniques : 30 jours max.',
-            "Documents d'identité : 30 jours après validation puis destruction.",
+            "Documents d'identité — base active : 30 jours après examen de ta demande. Passé ce délai, le document quitte le système actif : plus personne, y compris nos équipes, ne peut le consulter depuis l'application ou l'espace d'administration.",
+            "Documents d'identité — archive intermédiaire : le document validé est ensuite scellé dans une archive chiffrée à accès restreint, conservée 5 ans après la suppression de ton compte, puis effacée définitivement. Un document refusé y est conservé 1 an, puis effacé. Un document déposé mais jamais examiné est détruit au bout de 90 jours, sans archivage.",
+            "Finalité de cette archive : constatation, exercice ou défense d'un droit en justice, et confirmation de ton identité en cas de réquisition d'une autorité ou de contestation (usurpation, fraude). Base légale : intérêt légitime. Elle n'est utilisée à aucune autre fin — ni modération courante, ni statistiques, ni personnalisation.",
+            "Accès à l'archive : aucun accès depuis l'application ni depuis l'administration. L'ouverture d'un document archivé exige une clé de déchiffrement conservée hors ligne, un motif écrit, et laisse une trace horodatée et inaltérable. Ton droit d'effacement s'exerce sur toutes tes autres données ; il ne s'étend pas à cette archive tant que sa durée court, l'archivage reposant sur la défense d'un droit en justice.",
             "Statistiques agrégées/anonymisées : sans limitation (plus des données personnelles).",
           ],
         },
         {
           heading: 'Sécurité des données',
-          body: "Mesures techniques et organisationnelles : chiffrement en transit (TLS), hachage des mots de passe, jetons signés (RS256) avec révocation, chiffrement des données sensibles au repos, cloisonnement réseau et accès restreint. Aucun système n'étant infaillible, utilise un mot de passe fort et unique.",
+          body: "Mesures techniques et organisationnelles : chiffrement en transit (TLS), hachage des mots de passe, jetons signés (RS256) avec révocation, chiffrement des données sensibles au repos, cloisonnement réseau et accès restreint. Les pièces d'identité archivées bénéficient d'une protection renforcée : stockage isolé du reste du Service, scellement empêchant toute modification ou suppression anticipée, et chiffrement dont la clé de lecture n'est jamais présente sur nos serveurs. Aucun système n'étant infaillible, utilise un mot de passe fort et unique.",
         },
         {
           heading: 'Fiches d’adhérents créées par une association',

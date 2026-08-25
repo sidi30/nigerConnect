@@ -4,6 +4,7 @@ import { AssociationService } from '../association/association.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { S3Service } from '../common/storage/s3.service';
+import { IdentityArchiverService } from '../common/storage/identity-archiver.service';
 import { SettingsService } from '../common/settings/settings.service';
 import { AdminAuditService } from '../common/audit/audit.service';
 import { writeLog } from '../common/logger/json-logger';
@@ -95,6 +96,7 @@ export class ProfileService {
     private readonly audit: AdminAuditService,
     private readonly diaspora: DiasporaPolicyService,
     private readonly associations: AssociationService,
+    private readonly archiver: IdentityArchiverService,
   ) {}
 
   /**
@@ -874,10 +876,25 @@ export class ProfileService {
       where: { userId },
       select: { url: true, thumbnailUrl: true },
     });
+    // Les pièces d'identité examinées partent en archive intermédiaire AVANT le
+    // cascade (qui effacerait la ligne source). Le compteur de conservation
+    // démarre à la suppression du compte — cf. IdentityArchiverService.
+    const deletedAt = new Date();
     const identityDocs = await this.prisma.identityDocument.findMany({
       where: { userId },
-      select: { fileUrl: true },
+      select: { id: true, fileUrl: true, status: true },
     });
+    const sealedDocIds = new Set<string>();
+    for (const doc of identityDocs) {
+      if (doc.status !== 'approved' && doc.status !== 'rejected') continue;
+      const sealed = await this.archiver
+        .archiveDocument(doc.id, deletedAt)
+        .catch(() => false);
+      if (sealed) sealedDocIds.add(doc.id);
+    }
+    // Pièces scellées lors d'un passage antérieur du cron : elles survivent au
+    // compte, mais leur échéance se recale sur la date de suppression.
+    await this.archiver.onAccountDeleted(userId, deletedAt).catch(() => undefined);
 
     const ownershipEvents = await this.prisma.$transaction(async (tx) => {
       const events = await this.associations.reassignOwnershipBeforeDeletion(tx, userId);
@@ -897,7 +914,11 @@ export class ProfileService {
       user?.coverUrl,
       ...photos.flatMap((p) => [p.url, p.thumbnailUrl]),
     ].filter((u): u is string => !!u);
-    const privateUrls = identityDocs.map((d) => d.fileUrl).filter((u): u is string => !!u);
+    // Une pièce scellée a déjà vu son fichier actif supprimé par l'archiveur.
+    const privateUrls = identityDocs
+      .filter((d) => !sealedDocIds.has(d.id))
+      .map((d) => d.fileUrl)
+      .filter((u): u is string => !!u);
     await Promise.allSettled([
       ...publicUrls.map((u) => this.s3.deleteObject(this.extractS3Key(u))),
       ...privateUrls.map((u) => this.s3.deletePrivateObject(this.extractS3Key(u))),

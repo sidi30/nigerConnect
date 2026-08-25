@@ -1155,6 +1155,72 @@ model IdentityDocument {
   @@map("identity_documents")
 }
 
+/**
+ * Archivage intermédiaire (RGPD) d'une pièce d'identité.
+ *
+ * Le document actif vit 30 jours dans le bucket privé ; passé ce délai il n'est
+ * plus détruit mais SCELLÉ dans le coffre (bucket `S3_VAULT_BUCKET`, object-lock
+ * GOVERNANCE, chiffré par IdentityVaultService avec une clé publique dont la
+ * privée reste hors-ligne). Finalité : constatation / exercice / défense d'un
+ * droit en justice, et re-confirmation d'identité sur réquisition.
+ *
+ * Cette table N'A PAS de relation Prisma vers User : elle doit SURVIVRE à la
+ * suppression du compte (le cascade la viderait). `userId` est donc un uuid nu.
+ * Aucune donnée personnelle en clair ici — l'identité du titulaire est dans
+ * l'enveloppe chiffrée. `contentSha256` sert à prouver qu'un document produit
+ * plus tard est bien celui déposé, SANS ouvrir le coffre.
+ */
+model IdentityArchive {
+  id            String   @id @default(uuid()) @db.Uuid
+  // Uuid nu, volontairement sans FK (voir ci-dessus).
+  userId        String   @map("user_id") @db.Uuid
+  // Statut de la pièce au moment du scellement : 'approved' | 'rejected'.
+  outcome       String   @db.VarChar(20)
+  documentType  String   @map("document_type") @db.VarChar(30)
+  // Clé de l'objet chiffré dans le coffre : `vault/<userId>/<archiveId>.enc`.
+  vaultKey      String   @unique @map("vault_key") @db.VarChar(500)
+  // sha256 hex du document ORIGINAL (avant chiffrement).
+  contentSha256 String   @map("content_sha256") @db.Char(64)
+  sizeBytes     Int      @map("size_bytes")
+  archivedAt    DateTime @default(now()) @map("archived_at") @db.Timestamptz
+  // Date d'effacement définitif. Validée : 5 ans après la suppression du compte
+  // (donc repoussée le jour où le compte part) ; rejetée : 1 an après scellement.
+  purgeAt       DateTime @map("purge_at") @db.Timestamptz
+  // Verrou WORM effectivement posé sur l'objet. Une purge ne peut pas passer
+  // avant cette date, même si purgeAt est plus proche.
+  retainUntil   DateTime @map("retain_until") @db.Timestamptz
+  // Renseigné quand le compte est supprimé — c'est ce qui déclenche le compteur
+  // des 5 ans pour une pièce validée.
+  accountDeletedAt DateTime? @map("account_deleted_at") @db.Timestamptz
+  purgedAt      DateTime? @map("purged_at") @db.Timestamptz
+
+  accesses IdentityArchiveAccess[]
+
+  @@index([userId])
+  @@index([purgeAt])
+  @@map("identity_archives")
+}
+
+/**
+ * Journal d'ouverture du coffre. Append-only : aucune route ne le modifie ni ne
+ * le supprime, seul le CLI break-glass (`scripts/vault-open.ts`) y écrit. Sert
+ * de preuve d'audit — qui a ouvert quelle pièce, quand, et sur quel motif.
+ */
+model IdentityArchiveAccess {
+  id         String          @id @default(uuid()) @db.Uuid
+  archiveId  String          @map("archive_id") @db.Uuid
+  archive    IdentityArchive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+  // Opérateur humain — email/identifiant saisi au CLI, pas un FK (l'ouverture
+  // peut survenir des années après le départ de l'admin concerné).
+  operator   String          @db.VarChar(255)
+  // Motif obligatoire : réquisition judiciaire, litige, contrôle interne…
+  reason     String          @db.Text
+  accessedAt DateTime        @default(now()) @map("accessed_at") @db.Timestamptz
+
+  @@index([archiveId])
+  @@map("identity_archive_accesses")
+}
+
 model RefreshToken {
   id         String    @id @default(uuid()) @db.Uuid
   userId     String    @map("user_id") @db.Uuid

@@ -82,6 +82,7 @@ function makeProfile(globalVis: boolean, target: { privacyLevel: string } | null
     { log: jest.fn(async () => undefined), logMapOverride: jest.fn(async () => undefined) } as never,
       makeDiaspora() as never,
       { reassignOwnershipBeforeDeletion: jest.fn(async () => []), notifyOwnershipEvents: jest.fn(async () => undefined) } as never,
+      { isEnabled: false, archiveDocument: jest.fn(async () => false), onAccountDeleted: jest.fn(async () => undefined) } as never,
     );
   jest.spyOn(svc as never, 'loadNetwork').mockResolvedValue({} as never);
   jest
@@ -120,6 +121,7 @@ describe('ProfileService — global full visibility (profile detail)', () => {
       { log: jest.fn(async () => undefined) } as never,
       makeDiaspora() as never,
       { reassignOwnershipBeforeDeletion: jest.fn(async () => []), notifyOwnershipEvents: jest.fn(async () => undefined) } as never,
+      { isEnabled: false, archiveDocument: jest.fn(async () => false), onAccountDeleted: jest.fn(async () => undefined) } as never,
     );
     await svc.search('viewer', { limit: 10 } as never);
     const where = whereOf(findMany) as { AND: Array<Record<string, unknown>> };

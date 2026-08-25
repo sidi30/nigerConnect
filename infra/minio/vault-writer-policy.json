@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SealOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:AbortMultipartUpload",
+        "s3:DeleteObject"
+      ],
+      "Resource": ["arn:aws:s3:::VAULT_BUCKET/*"]
+    }
+  ]
+}

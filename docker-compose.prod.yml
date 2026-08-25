@@ -164,8 +164,21 @@ services:
       mc anonymous set download local/${S3_BUCKET};
       mc anonymous set none local/${S3_PRIVATE_BUCKET};
       mc ilm rule add local/${S3_BUCKET} --expire-days 2 --prefix 'stories/' || mc ilm add --expiry-days 2 --prefix 'stories/' local/${S3_BUCKET} || echo 'ilm rule add skipped (already present or unsupported syntax)';
+      if [ x${S3_VAULT_BUCKET:-} != x ]; then
+        mc mb --with-lock --ignore-existing local/${S3_VAULT_BUCKET};
+        mc anonymous set none local/${S3_VAULT_BUCKET};
+        sed s/VAULT_BUCKET/${S3_VAULT_BUCKET}/ /policies/vault-writer-policy.json > /tmp/vault-writer.json;
+        mc admin user svcacct add local ${MINIO_ROOT_USER} --access-key ${S3_VAULT_ACCESS_KEY} --secret-key ${S3_VAULT_SECRET_KEY} --policy /tmp/vault-writer.json || mc admin user svcacct edit local ${S3_VAULT_ACCESS_KEY} --policy /tmp/vault-writer.json;
+        echo 'Identity vault ready (object-lock, write-only service account).';
+      else
+        echo 'S3_VAULT_BUCKET unset - identity vault DISABLED.';
+      fi;
       echo 'Buckets ready.';
       "
+    volumes:
+      # La policy du compte de service vit dans un fichier : l'inliner en JSON
+      # dans l'entrypoint casserait le parsing (guillemets imbriqués).
+      - ./infra/minio:/policies:ro
     networks:
       - internal
     restart: "no"
@@ -262,6 +275,14 @@ services:
       S3_ACCESS_KEY: ${MINIO_ROOT_USER}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       S3_FORCE_PATH_STYLE: "true"
+      # Coffre d'archivage des pièces d'identité. Le compte de service n'a que
+      # PutObject/DeleteObject sur ce bucket : l'API scelle, elle ne relit
+      # jamais. La lecture passe par scripts/vault-open.ts avec la clé privée
+      # hors-ligne. Non renseigné ⇒ archivage désactivé (destruction à 30 j).
+      S3_VAULT_BUCKET: ${S3_VAULT_BUCKET:-}
+      S3_VAULT_ACCESS_KEY: ${S3_VAULT_ACCESS_KEY:-}
+      S3_VAULT_SECRET_KEY: ${S3_VAULT_SECRET_KEY:-}
+      IDENTITY_VAULT_PUBLIC_KEY: ${IDENTITY_VAULT_PUBLIC_KEY:-}
       CDN_URL: ${CDN_URL:?CDN_URL is required}
       JWT_PRIVATE_KEY_PATH: /app/keys/jwt-private.pem
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt-public.pem

@@ -56,7 +56,7 @@ export default function TermsScreen() {
         },
         {
           heading: '9. Vérification d’identité',
-          body: 'La vérification (badge ✓) est facultative mais certaines actions (création d’association) peuvent l’exiger. Les documents sont chiffrés, jamais publics, et supprimés au plus tard 30 jours après validation. Un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.',
+          body: 'La vérification (badge ✓) est facultative mais certaines actions (création d’association) peuvent l’exiger. Les documents sont chiffrés, jamais publics, et quittent le système actif au plus tard 30 jours après examen ; ils sont ensuite scellés en archive intermédiaire à accès restreint dans les durées détaillées par la Politique de confidentialité. Un document falsifié entraîne le bannissement et, le cas échéant, un signalement aux autorités.',
         },
         {
           heading: '10. Espaces association',

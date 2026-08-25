@@ -181,6 +181,28 @@ export class S3Service {
     return getSignedUrl(this.signingClient, command, { expiresIn: capped });
   }
 
+  /**
+   * Download a PRIVATE object into memory. Used by the identity archiver, which
+   * has to re-read a document to seal it in the vault before deleting it from
+   * the active bucket. Returns null when the object is already gone.
+   */
+  async getPrivateObject(key: string): Promise<{ body: Buffer; contentType: string } | null> {
+    try {
+      const res = await this.client.send(
+        new GetObjectCommand({ Bucket: this.privateBucket, Key: key }),
+      );
+      const body = res.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
+      if (!body?.transformToByteArray) return null;
+      return {
+        body: Buffer.from(await body.transformToByteArray()),
+        contentType: res.ContentType ?? 'application/octet-stream',
+      };
+    } catch (error) {
+      this.logger.warn(`getPrivateObject failed for ${key}: ${String(error)}`);
+      return null;
+    }
+  }
+
   publicUrl(key: string): string {
     if (this.cdnUrl) return `${this.cdnUrl.replace(/\/$/, '')}/${key}`;
     return `s3://${this.publicBucket}/${key}`;
