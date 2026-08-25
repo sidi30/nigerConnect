@@ -27,29 +27,34 @@ fonctionnement courant.
 |---|----------|-------------------|
 | 1 | Bucket dédié + compte de service `PutObject`/`DeleteObject` uniquement | Une API compromise ne peut pas *lire* le coffre |
 | 2 | Chiffrement hybride AES-256-GCM + RSA-4096, clé privée **hors ligne** | Un root sur le VPS ne lit que du bruit |
-| 3 | Object-lock GOVERNANCE jusqu'à `retain_until` — **indisponible sur ce serveur, voir plus bas** | Une purge anticipée, accidentelle ou malveillante |
+| 3 | Object-lock GOVERNANCE jusqu'à `retain_until` | Une purge anticipée, accidentelle ou malveillante |
 
-### Le verrou WORM n'est PAS actif en production
+### Le verrou, vérifié en production
 
-MinIO ne propose object-lock que sur un backend en **erasure coding**. Le VPS
-fait tourner un MinIO **mono-disque** : le versioning fonctionne, le verrou non
-(`mc mb --with-lock` crée le bucket sans lock, et `mc retention info` répond
-« Object locking is not enabled »). Le service le détecte à la première écriture,
-écrit quand même l'archive, et journalise un avertissement.
+Mesuré le 25/08/2026 sur le VPS, avec les identifiants **root** de MinIO :
 
-Conséquence exacte : les durées de conservation restent appliquées — elles vivent
-dans `identity_archives.purge_at` et le cron les fait respecter — mais rien
-n'empêche *matériellement* une suppression anticipée par quelqu'un qui aurait les
-droits sur le bucket. Barrières 1 et 2 (compte de service en écriture seule,
-chiffrement à clé hors ligne) restent entières.
+```
+mc rm --version-id <vid> adm/nigerconnect-vault/identity/…/probe-seal-1.enc
+→ Object … is WORM protected and cannot be overwritten
+```
 
-Pour récupérer le verrou : migrer MinIO vers un déploiement à 4 disques (ou 4
-volumes), ce qui touche TOUS les buckets — opération à planifier à part.
+Piège de lecture : `mc retention info <bucket>` répond « Object locking is not
+enabled » alors que le verrou fonctionne — cette commande affiche la rétention
+*par défaut* du bucket, que nous ne configurons pas (chaque objet porte la
+sienne, calculée depuis `purge_at`). Pour vérifier l'état réel, interroger un
+OBJET : `mc retention info <bucket>/<clé>` doit répondre `Mode : GOVERNANCE`.
+
+Le service sait néanmoins se passer du verrou : si un jour le stockage le
+refuse, il l'abandonne après un essai, journalise un avertissement et archive
+quand même — les durées restent portées par `purge_at` et appliquées par le
+cron. Un échec qui n'est PAS lié au verrou (réseau, quota, droits) remonte tel
+quel plutôt que d'écrire une archive non protégée.
 
 Mode GOVERNANCE et non COMPLIANCE : le verrou résiste au compte de service (qui
 n'a pas `BypassGovernanceRetention`), mais laisse une porte de sortie avec les
 identifiants d'administration MinIO — indispensable pour honorer une injonction
-d'effacement.
+d'effacement. Porte de sortie testée elle aussi :
+`mc rm --bypass --version-id <vid> …` supprime bien la pièce verrouillée.
 
 ## Format d'enveloppe `NCVAULT1`
 
