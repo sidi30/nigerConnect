@@ -167,7 +167,7 @@ services:
       if [ x${S3_VAULT_BUCKET:-} != x ]; then
         mc mb --with-lock --ignore-existing local/${S3_VAULT_BUCKET};
         mc anonymous set none local/${S3_VAULT_BUCKET};
-        mc admin user svcacct add local ${MINIO_ROOT_USER} --access-key ${S3_VAULT_ACCESS_KEY} --secret-key ${S3_VAULT_SECRET_KEY} --policy /policies/vault-writer-policy.json || mc admin user svcacct edit local ${S3_VAULT_ACCESS_KEY} --policy /policies/vault-writer-policy.json;
+        mc admin user svcacct add local ${MINIO_ROOT_USER} --access-key ${S3_VAULT_ACCESS_KEY} --secret-key ${S3_VAULT_SECRET_KEY} --policy /policies/vault-writer-policy.json > /dev/null || mc admin user svcacct edit local ${S3_VAULT_ACCESS_KEY} --policy /policies/vault-writer-policy.json > /dev/null;
         echo 'Identity vault ready (object-lock, write-only service account).';
       else
         echo 'S3_VAULT_BUCKET unset - identity vault DISABLED.';
