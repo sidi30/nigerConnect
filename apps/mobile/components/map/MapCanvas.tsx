@@ -13,7 +13,10 @@
  * pass can flip it off per-marker for max perf.
  */
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+// expo-image et pas le Image de react-native : marqueurs d'avatars redessinés à
+// chaque panoramique, il faut le recyclage de bitmap et un cache borné.
+import { Image } from 'expo-image';
 import MapView, { Circle, Marker, type Region } from 'react-native-maps';
 import type { MapMarker } from '@/services/geoApi';
 import { Colors } from '@/constants/theme';
@@ -198,7 +201,13 @@ function AvatarPin({
     <View style={styles.pinWrap}>
       <View style={[styles.avatarRing, { borderColor: ringColor, borderWidth: story ? 3 : 2.5 }]}>
         {avatarUrl ? (
-          <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
+          <Image
+            source={{ uri: avatarUrl }}
+            style={styles.avatarImg}
+            cachePolicy="memory-disk"
+            recyclingKey={avatarUrl}
+            contentFit="cover"
+          />
         ) : (
           <View style={styles.avatarInitials}>
             <Text style={styles.avatarInitialsText}>{initials(name)}</Text>

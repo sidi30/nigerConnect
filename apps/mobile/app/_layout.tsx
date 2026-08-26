@@ -10,6 +10,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { AppState, type AppStateStatus } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import {
@@ -54,6 +55,16 @@ onlineManager.setEventListener((setOnline) => {
 // app — feels like the app didn't update.
 function onAppStateChange(status: AppStateStatus) {
   if (Platform.OS !== 'web') focusManager.setFocused(status === 'active');
+  // Les bitmaps décodés ne doivent pas dormir en RAM pendant que l'app est
+  // hors de vue : c'est précisément ce que Google Play mesure à partir de
+  // février 2027 (seuil « bitmap memory usage » en états non visibles), et ce
+  // qui fait tuer une app par le système sur les appareils justes en mémoire.
+  // Notre cache est volontairement `memory-disk` pour un défilement fluide ;
+  // on rend donc la partie mémoire en quittant l'écran. Le cache disque reste,
+  // le retour dans l'app est toujours instantané, sans re-téléchargement.
+  if (Platform.OS !== 'web' && status !== 'active') {
+    void ExpoImage.clearMemoryCache();
+  }
 }
 AppState.addEventListener('change', onAppStateChange);
 
