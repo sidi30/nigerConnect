@@ -941,12 +941,19 @@ export class AuthService {
   async manualApproveIdentity(
     adminId: string,
     targetUserId: string,
-    dateOfBirth: string,
+    dateOfBirth: string | undefined,
     reason: string,
+    adultOverride = false,
   ): Promise<void> {
     // Validate the DOB here (not only in the DTO) so the service is safe when
     // called directly and so the 18+ gate is enforced regardless of caller.
-    const dob = this.parseAdultDob(dateOfBirth);
+    // Une dérogation remplace la date : l'admin atteste connaître le profil et
+    // le savoir majeur. C'est le motif écrit qui porte la responsabilité, et il
+    // reste sur le compte avec le nom de qui l'a accordée.
+    if (!adultOverride && !dateOfBirth) {
+      throw new BadRequestException('dateOfBirth is required unless adultOverride is set');
+    }
+    const dob = adultOverride ? null : this.parseAdultDob(dateOfBirth);
 
     const target = await this.prisma.user.findUnique({
       where: { id: targetUserId },
@@ -1002,9 +1009,23 @@ export class AuthService {
       docWrite,
       this.prisma.user.update({
         where: { id: targetUserId },
-        data: { identityStatus: 'approved', dateOfBirth: dob },
+        data: {
+          identityStatus: 'approved',
+          ...(adultOverride
+            ? {
+                adultOverrideAt: now,
+                adultOverrideById: adminId,
+                adultOverrideReason: reason,
+              }
+            : { dateOfBirth: dob }),
+        },
       }),
     ]);
+    if (adultOverride) {
+      this.logger.warn(
+        `Admin ${adminId} verified ${targetUserId} with an 18+ waiver (no DOB): ${reason}`,
+      );
+    }
 
     this.sendIdentityApprovedEmail(targetUserId);
   }

@@ -362,7 +362,13 @@ export class AuthController {
     @CurrentUser() admin: JwtUserPayload,
     @Body(new ZodValidationPipe(manualApproveIdentitySchema)) dto: ManualApproveIdentityDto,
   ) {
-    await this.auth.manualApproveIdentity(admin.sub, dto.userId, dto.dateOfBirth, dto.reason);
+    await this.auth.manualApproveIdentity(
+      admin.sub,
+      dto.userId,
+      dto.dateOfBirth,
+      dto.reason,
+      dto.adultOverride ?? false,
+    );
     return { status: 'approved' };
   }
 

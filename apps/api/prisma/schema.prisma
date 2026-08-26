@@ -142,6 +142,22 @@ model User {
    * lendemain, badge vérifié à l'appui.
    */
   dateOfBirth     DateTime?      @map("date_of_birth") @db.Date
+  /**
+   * Dérogation de majorité accordée par un admin à un profil qu'il connaît
+   * personnellement, quand aucune date de naissance n'est disponible (document
+   * déjà purgé, vérification de confiance). Vaut preuve de majorité pour la
+   * proximité — et RIEN d'autre.
+   *
+   * Elle ne peut jamais contredire une date connue : dès qu'une date existe,
+   * c'est elle qui décide, y compris si elle révèle un mineur. La dérogation ne
+   * comble qu'une absence.
+   *
+   * `adultOverrideById` est un uuid nu (pas de relation) : l'admin qui l'a
+   * accordée peut avoir quitté la plateforme sans que la trace ne s'efface.
+   */
+  adultOverrideAt     DateTime? @map("adult_override_at") @db.Timestamptz
+  adultOverrideById   String?   @map("adult_override_by") @db.Uuid
+  adultOverrideReason String?   @map("adult_override_reason") @db.Text
   // Ambassador badge: a curated, admin-managed distinction (community leaders /
   // official ambassadors) shown ALONGSIDE the identity-verified badge — they are
   // independent (a user can be identity-verified, an ambassador, both, or neither).

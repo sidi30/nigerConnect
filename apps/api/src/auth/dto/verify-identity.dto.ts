@@ -42,10 +42,22 @@ const isoDate = z
 export const manualApproveIdentitySchema = z
   .object({
     userId: z.string().uuid(),
-    dateOfBirth: isoDate,
+    // Optionnelle depuis qu'un profil connu peut être validé sans date : voir
+    // `adultOverride`. L'un des deux est obligatoire, jamais les deux.
+    dateOfBirth: isoDate.optional(),
+    /**
+     * Dérogation de majorité : l'admin atteste connaître ce profil et le savoir
+     * majeur, faute de date disponible. Vaut preuve pour la proximité, et rien
+     * d'autre — tracée avec son nom et le motif.
+     */
+    adultOverride: z.boolean().optional(),
     reason: z.string().trim().min(1).max(500),
   })
-  .strict();
+  .strict()
+  .refine(
+    (d) => Boolean(d.dateOfBirth) !== Boolean(d.adultOverride),
+    'Fournir soit dateOfBirth, soit adultOverride — pas les deux, pas aucun',
+  );
 
 export type ManualApproveIdentityDto = z.infer<typeof manualApproveIdentitySchema>;
 

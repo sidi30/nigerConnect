@@ -40,6 +40,13 @@ const setDobSchema = z.object({
 });
 type SetDobDto = z.infer<typeof setDobSchema>;
 
+// Le motif est obligatoire et substantiel : c'est la seule justification écrite
+// d'une garde de protection des mineurs ouverte à la main.
+const adultOverrideSchema = z.object({
+  reason: z.string().trim().min(10).max(500),
+});
+type AdultOverrideDto = z.infer<typeof adultOverrideSchema>;
+
 // ── Invitation admin schemas ───────────────────────────────────────────────
 
 const patchSettingsSchema = z
@@ -227,6 +234,32 @@ export class AdminController {
     @Body(new ZodValidationPipe(setDobSchema)) dto: SetDobDto,
   ): Promise<void> {
     await this.admin.setApprovedDob(userId, dto.dateOfBirth);
+  }
+
+  /**
+   * Dérogation de majorité pour un profil connu, quand la date de naissance est
+   * définitivement perdue. Tracée au journal d'audit avec le motif. Admin-only.
+   */
+  @Roles('admin')
+  @Patch('identity/:userId/adult-override')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async grantAdultOverride(
+    @CurrentUser() admin: JwtUserPayload,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body(new ZodValidationPipe(adultOverrideSchema)) dto: AdultOverrideDto,
+  ): Promise<void> {
+    await this.admin.grantAdultOverride(admin.sub, userId, dto.reason);
+  }
+
+  /** Retire la dérogation : retour au contrôle 18+ normal. Admin-only. */
+  @Roles('admin')
+  @Delete('identity/:userId/adult-override')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeAdultOverride(
+    @CurrentUser() admin: JwtUserPayload,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+  ): Promise<void> {
+    await this.admin.revokeAdultOverride(admin.sub, userId);
   }
 
   // ── Invitation / Settings endpoints (§5.3) ──────────────────────────────

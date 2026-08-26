@@ -775,6 +775,8 @@ export class GeoService implements OnModuleInit {
         // archivé 30 jours après examen, et lire la majorité sur lui privait le
         // membre de la proximité dès la purge, badge vérifié à l'appui.
         dateOfBirth: true,
+        // Dérogation admin : vaut majorité UNIQUEMENT en l'absence de date.
+        adultOverrideAt: true,
         // Repli pour les comptes validés avant que la date ne soit recopiée sur
         // le compte, tant que leur document est encore là.
         identityDocuments: {
@@ -795,7 +797,12 @@ export class GeoService implements OnModuleInit {
         HttpStatus.FORBIDDEN,
       );
     }
-    if (!isAdult(me.dateOfBirth ?? me.identityDocuments[0]?.dateOfBirth ?? null)) {
+    const knownDob = me.dateOfBirth ?? me.identityDocuments[0]?.dateOfBirth ?? null;
+    // Une date connue tranche toujours — y compris quand elle révèle un mineur.
+    // La dérogation ne comble qu'une absence, sinon elle deviendrait un moyen de
+    // faire entrer un mineur dont on sait qu'il en est un.
+    const adult = knownDob ? isAdult(knownDob) : Boolean(me.adultOverrideAt);
+    if (!adult) {
       throw new HttpException(
         {
           message: 'Cette fonctionnalité est réservée aux membres majeurs.',

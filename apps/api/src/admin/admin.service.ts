@@ -1517,7 +1517,8 @@ export class AdminService {
    */
   async listApprovedMissingDob(limit: number, cursor?: string) {
     const users = await this.prisma.user.findMany({
-      where: { identityStatus: 'approved', dateOfBirth: null },
+      // Une dérogation en cours règle déjà le cas : le compte sort de la file.
+      where: { identityStatus: 'approved', dateOfBirth: null, adultOverrideAt: null },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: { createdAt: 'asc' },
@@ -1589,6 +1590,59 @@ export class AdminService {
         ? [this.prisma.identityDocument.update({ where: { id: doc.id }, data: { dateOfBirth: dob } })]
         : []),
     ]);
+  }
+
+  /**
+   * Accorde une dérogation de majorité à un profil connu de l'admin.
+   *
+   * Sert le cas où la date de naissance est définitivement perdue : le document
+   * a été purgé au bout de 30 jours et rien ne permet de la reconstituer. Plutôt
+   * que de laisser un membre vérifié de longue date bloqué sans explication, un
+   * admin atteste sa majorité — en laissant son nom, la date et un motif.
+   *
+   * Refusée quand une date existe déjà : il n'y a alors rien à déroger, et
+   * accepter reviendrait à offrir un moyen de passer outre une date qui dit
+   * « mineur ».
+   */
+  async grantAdultOverride(adminId: string, userId: string, reason: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { identityStatus: true, dateOfBirth: true, adultOverrideAt: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.identityStatus !== 'approved') {
+      // La dérogation porte sur la majorité, pas sur l'identité : on ne
+      // court-circuite pas la vérification elle-même.
+      throw new BadRequestException('User is not identity-verified');
+    }
+    if (user.dateOfBirth) {
+      throw new BadRequestException('User already has a date of birth — nothing to waive');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        adultOverrideAt: new Date(),
+        adultOverrideById: adminId,
+        adultOverrideReason: reason,
+      },
+    });
+    await this.audit.log(adminId, 'adult_override_grant', userId);
+    this.logger.warn(`Admin ${adminId} waived the 18+ proof for user ${userId}: ${reason}`);
+  }
+
+  /** Retire une dérogation : le membre repasse sous le contrôle 18+ normal. */
+  async revokeAdultOverride(adminId: string, userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { adultOverrideAt: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.adultOverrideAt) throw new BadRequestException('No adult override on this user');
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { adultOverrideAt: null, adultOverrideById: null, adultOverrideReason: null },
+    });
+    await this.audit.log(adminId, 'adult_override_revoke', userId);
   }
 
   // ── A5 — association certification ────────────────────────────────────

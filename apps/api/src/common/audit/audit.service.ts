@@ -29,7 +29,12 @@ export type AdminAuditAction =
   // un uuid) : il part dans AdminAuditLog.meta, seule table à avoir un champ libre.
   | 'precise_location_unlock'
   | 'precise_location_revoke'
-  | 'precise_location_read';
+  | 'precise_location_read'
+  // Dérogation de majorité : un admin atteste qu'un membre est majeur sans date
+  // de naissance à l'appui. C'est une garde de protection des mineurs qu'on
+  // ouvre à la main — donc jamais sans trace nominative.
+  | 'adult_override_grant'
+  | 'adult_override_revoke';
 
 // The map refetches on every pan, so we collapse god-mode map browsing to one
 // audit row per admin per this window instead of one per request.
