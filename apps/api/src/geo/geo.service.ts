@@ -27,19 +27,14 @@ const CLUSTER_TTL = 300;
 // Max users notified by a single ping — caps the notification fan-out in dense
 // areas (a crowd at an event must not trigger hundreds of pushes per ping).
 const PROXIMITY_MATCH_LIMIT = 50;
-// How long a ping's reported position stays usable for matching. Proximity is a
-// live, foreground-only feature: only users who pinged within this window are
-// candidates. This position is kept in the PRIVATE proximity_lat/lon columns
-// (never the public city-coarse latitude/longitude), and a stale fix simply
-// drops out of matching instead of lingering as a public pin at the user's home.
-const PROXIMITY_FRESHNESS_SECONDS = 5 * 60; // 5 min
 /**
  * Fenêtre de fraîcheur du CANDIDAT — celui qui reçoit la notification.
  *
- * Elle est volontairement plus large que celle du pingeur, et c'est toute la
- * différence entre « les deux ont l'appli ouverte en même temps » et « je suis
- * prévenu même appli fermée ». Le pingeur, lui, doit être réellement là
- * maintenant : c'est lui qui déclare la position du croisement.
+ * Le pingeur, lui, n'a aucune fenêtre : sa position arrive dans la requête,
+ * relevée à l'instant, et c'est elle qui déclare le lieu du croisement. Seul le
+ * candidat est retenu sur une position mémorisée — et cette demi-heure fait
+ * toute la différence entre « les deux ont l'appli ouverte en même temps » et
+ * « je suis prévenu même appli fermée ».
  *
  * Ce que ça ne fait PAS : suivre quelqu'un en arrière-plan. Aucune position
  * n'est prise appli fermée — on se souvient seulement de la DERNIÈRE position
@@ -592,7 +587,6 @@ export class GeoService implements OnModuleInit {
     // city-coarse latitude/longitude. The pinger's radius is in meters → convert
     // to km for the comparison.
     const radiusKm = pinger.proximityRadius / 1000;
-    const freshCutoff = new Date(Date.now() - PROXIMITY_FRESHNESS_SECONDS * 1000);
     const candidateCutoff = new Date(
       Date.now() - PROXIMITY_CANDIDATE_FRESHNESS_SECONDS * 1000,
     );
@@ -603,14 +597,18 @@ export class GeoService implements OnModuleInit {
           sin(radians(${dto.lat})) * sin(radians(proximity_lat)))
       ))`;
 
-    // Cap fan-out: one ping in a dense area must not notify hundreds. The
-    // nearest MATCH_LIMIT opted-in, map-visible, non-blocked users who pinged
-    // recently (proximity_updated_at within the freshness window) only.
-    // Candidates: opted-in, active, fresh, eligible (verified + 18+). The map
-    // gates (show_on_map / privacy_level) are intentionally NOT applied — a
-    // map-hidden or private user is a valid, anonymous proximity candidate. The
-    // identity gate replaces them: approved status AND an approved ID document
-    // with a recorded DOB ≥ 18 years. No identifying columns are SELECTed.
+    // Cap fan-out: one ping in a dense area must not notify hundreds — only the
+    // nearest MATCH_LIMIT opted-in, active, non-blocked users who pinged
+    // recently (proximity_updated_at within the candidate freshness window).
+    //
+    // Ce que cette requête filtre volontairement PEU. Les gardes de carte
+    // (show_on_map / privacy_level) ne s'appliquent pas : un compte masqué ou
+    // privé reste un candidat de croisement parfaitement valable, puisqu'il
+    // demeure anonyme. L'identité et la majorité ne sont PAS filtrées ici non
+    // plus — elles gardent la RÉVÉLATION (`assertCanReveal`), pas le
+    // croisement. Se croiser est ouvert ; savoir qui on a croisé ne l'est pas.
+    // Aucune colonne identifiante n'est SELECTée : la requête ne renvoie qu'un
+    // id et une distance.
     const candidates = await this.prisma.$queryRaw<
       Array<{
         id: string;
