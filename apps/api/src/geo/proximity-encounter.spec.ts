@@ -34,6 +34,7 @@ function makeMocks() {
         displayName: 'Aïcha',
         firstName: null,
         identityStatus: 'approved',
+        dateOfBirth: new Date('1990-01-01'),
         identityDocuments: [{ dateOfBirth: new Date('1990-01-01') }],
       })),
     },
@@ -277,6 +278,7 @@ describe("porte de revelation : se croiser est ouvert, voir qui c'est ne l'est p
       displayName: 'Moi',
       firstName: null,
       identityStatus: 'approved',
+      dateOfBirth: null,
       identityDocuments: [],
     } as never);
 
@@ -284,6 +286,27 @@ describe("porte de revelation : se croiser est ouvert, voir qui c'est ne l'est p
       status: 403,
     });
     expect(prisma.proximityEncounter.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('laisse passer un membre dont le document a ete purge, grace a la date portee par le compte', async () => {
+    // Regression : la date ne vivait que sur le document. Detruit 30 jours
+    // apres examen, il emportait la preuve de majorite et le membre perdait la
+    // proximite du jour au lendemain, badge verifie a l'appui (403 en prod le
+    // 26/08/2026, 3 comptes touches et 29 autres a echeance en septembre).
+    const { svc, prisma } = makeMocks();
+    prisma.proximityEncounter.findUnique.mockResolvedValue(encounter as never);
+    prisma.user.findUnique.mockResolvedValue({
+      displayName: 'Moi',
+      firstName: null,
+      identityStatus: 'approved',
+      dateOfBirth: new Date('1990-01-01'),
+      identityDocuments: [],
+    } as never);
+
+    await expect(svc.connectEncounter('moi', 'e1')).resolves.toMatchObject({
+      status: 'requested',
+    });
+    expect(prisma.proximityEncounter.updateMany).toHaveBeenCalled();
   });
 
   it("masque le profil du demandeur dans la liste tant que l'identite n'est pas verifiee", async () => {

@@ -1077,7 +1077,9 @@ describe('AuthService', () => {
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'u1' },
-          data: { identityStatus: 'approved' },
+          // La date atterrit AUSSI sur le compte : le document manuel est purgé
+          // 30 jours après, le contrôle 18+ doit lui survivre.
+          data: { identityStatus: 'approved', dateOfBirth: new Date('1990-06-15T00:00:00.000Z') },
         }),
       );
     });

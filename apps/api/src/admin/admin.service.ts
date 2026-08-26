@@ -1507,64 +1507,88 @@ export class AdminService {
   }
 
   /**
-   * Backfill queue: approved users whose identity document has NO date of birth
-   * (verified before the 18+/DOB capture existed). They're proximity-INELIGIBLE
-   * until an admin opens the (already-approved) document and records the DOB.
+   * File de rattrapage 18+ : les comptes VALIDÉS sans date de naissance.
+   *
+   * La requête part des UTILISATEURS, pas des documents. Un compte dont le
+   * document a été détruit ou archivé n'a plus de ligne à interroger : en
+   * partant des documents, ces membres — précisément ceux qui ont perdu l'accès
+   * à la proximité — restaient invisibles ici. Le document validé, quand il
+   * existe encore, n'est joint que pour donner le lien de consultation.
    */
   async listApprovedMissingDob(limit: number, cursor?: string) {
-    const docs = await this.prisma.identityDocument.findMany({
-      where: { status: 'approved', dateOfBirth: null },
+    const users = await this.prisma.user.findMany({
+      where: { identityStatus: 'approved', dateOfBirth: null },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      orderBy: { reviewedAt: 'asc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-            firstName: true,
-            lastName: true,
-            avatarUrl: true,
-            city: true,
-            countryCode: true,
-            identityStatus: true,
-            createdAt: true,
-          },
-        },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        city: true,
+        countryCode: true,
+        identityStatus: true,
+        createdAt: true,
       },
     });
-    const hasMore = docs.length > limit;
-    const page = hasMore ? docs.slice(0, limit) : docs;
+    const hasMore = users.length > limit;
+    const page = hasMore ? users.slice(0, limit) : users;
     const items = await Promise.all(
-      page.map(async (d) => ({
-        id: d.id,
-        userId: d.userId,
-        documentType: d.documentType,
-        status: d.status,
-        createdAt: d.createdAt,
-        viewUrl: await this.presignDoc(d.fileUrl),
-        user: d.user,
-      })),
+      page.map(async (user) => {
+        const doc = await this.prisma.identityDocument.findFirst({
+          where: { userId: user.id, status: 'approved' },
+          orderBy: { reviewedAt: 'desc' },
+          select: { id: true, documentType: true, status: true, fileUrl: true, createdAt: true },
+        });
+        return {
+          // Pas de document survivant → on retombe sur l'id du compte, seule
+          // clé stable pour l'écran d'administration.
+          id: doc?.id ?? user.id,
+          userId: user.id,
+          documentType: doc?.documentType ?? 'purgé',
+          status: doc?.status ?? 'approved',
+          createdAt: doc?.createdAt ?? user.createdAt,
+          viewUrl: doc ? await this.presignDoc(doc.fileUrl) : null,
+          user,
+        };
+      }),
     );
     return { items, nextCursor: hasMore ? page[page.length - 1]!.id : null };
   }
 
   /**
-   * Record the DOB on a user's latest approved identity document (backfill).
-   * Does NOT change the document status — the user stays verified; this only
-   * fills the 18+ gate. Stored at UTC midnight (@db.Date) to avoid an off-by-one.
+   * Enregistre la date de naissance d'un membre déjà validé (rattrapage 18+).
+   *
+   * Écrit sur le COMPTE — c'est la source de vérité du contrôle de majorité,
+   * celle qui survit à la purge du document — et recopie sur le document validé
+   * s'il en reste un, pour que l'enveloppe d'archive reste complète. Ne touche
+   * pas au statut : le membre était vérifié, il le reste.
    */
   async setApprovedDob(userId: string, dateOfBirth: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { identityStatus: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.identityStatus !== 'approved') {
+      throw new BadRequestException('User is not identity-verified');
+    }
+    // @db.Date : minuit UTC, sinon le fuseau décale d'un jour.
+    const dob = new Date(`${dateOfBirth}T00:00:00.000Z`);
     const doc = await this.prisma.identityDocument.findFirst({
       where: { userId, status: 'approved' },
       orderBy: { reviewedAt: 'desc' },
+      select: { id: true },
     });
-    if (!doc) throw new NotFoundException('No approved identity document for this user');
-    await this.prisma.identityDocument.update({
-      where: { id: doc.id },
-      data: { dateOfBirth: new Date(`${dateOfBirth}T00:00:00.000Z`) },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { dateOfBirth: dob } }),
+      ...(doc
+        ? [this.prisma.identityDocument.update({ where: { id: doc.id }, data: { dateOfBirth: dob } })]
+        : []),
+    ]);
   }
 
   // ── A5 — association certification ────────────────────────────────────

@@ -771,6 +771,12 @@ export class GeoService implements OnModuleInit {
       where: { id: userId },
       select: {
         identityStatus: true,
+        // La date portée par le COMPTE fait foi : le document est détruit ou
+        // archivé 30 jours après examen, et lire la majorité sur lui privait le
+        // membre de la proximité dès la purge, badge vérifié à l'appui.
+        dateOfBirth: true,
+        // Repli pour les comptes validés avant que la date ne soit recopiée sur
+        // le compte, tant que leur document est encore là.
         identityDocuments: {
           where: { status: 'approved', dateOfBirth: { not: null } },
           select: { dateOfBirth: true },
@@ -789,7 +795,7 @@ export class GeoService implements OnModuleInit {
         HttpStatus.FORBIDDEN,
       );
     }
-    if (!isAdult(me.identityDocuments[0]?.dateOfBirth ?? null)) {
+    if (!isAdult(me.dateOfBirth ?? me.identityDocuments[0]?.dateOfBirth ?? null)) {
       throw new HttpException(
         {
           message: 'Cette fonctionnalité est réservée aux membres majeurs.',

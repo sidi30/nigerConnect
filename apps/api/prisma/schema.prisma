@@ -132,6 +132,16 @@ model User {
   emailVerified   Boolean        @default(false) @map("email_verified")
   phoneVerified   Boolean        @default(false) @map("phone_verified")
   identityStatus  IdentityStatus @default(not_submitted) @map("identity_status")
+  /**
+   * Date de naissance relevée à la validation d'identité, pour le SEUL contrôle
+   * 18+ de la proximité. Privée : jamais sérialisée vers un autre membre.
+   *
+   * Elle vit ICI et non plus seulement sur IdentityDocument, parce que le
+   * document est détruit ou archivé 30 jours après examen : la preuve de
+   * majorité partait avec lui et le membre perdait la proximité du jour au
+   * lendemain, badge vérifié à l'appui.
+   */
+  dateOfBirth     DateTime?      @map("date_of_birth") @db.Date
   // Ambassador badge: a curated, admin-managed distinction (community leaders /
   // official ambassadors) shown ALONGSIDE the identity-verified badge — they are
   // independent (a user can be identity-verified, an ambassador, both, or neither).

@@ -915,7 +915,12 @@ export class AuthService {
       }),
       this.prisma.user.update({
         where: { id: targetUserId },
-        data: { identityStatus: decision },
+        data: {
+          identityStatus: decision,
+          // La date vit aussi sur le compte : le document part au bout de 30
+          // jours, le contrôle 18+ de la proximité doit lui survivre.
+          ...(dob ? { dateOfBirth: dob } : {}),
+        },
       }),
     ]);
 
@@ -997,7 +1002,7 @@ export class AuthService {
       docWrite,
       this.prisma.user.update({
         where: { id: targetUserId },
-        data: { identityStatus: 'approved' },
+        data: { identityStatus: 'approved', dateOfBirth: dob },
       }),
     ]);
 
