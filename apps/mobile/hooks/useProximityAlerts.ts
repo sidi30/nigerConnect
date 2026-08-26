@@ -27,6 +27,10 @@ const MIN_PING_INTERVAL_MS = 60_000;
  * There is deliberately NO background location: no expo-task-manager, no
  * background permission. The watch only lives while the app is foregrounded —
  * required to stay compliant with Play Store background-location policy.
+ *
+ * Et il ne DEMANDE jamais la permission : il se contente de la lire. Tant
+ * qu'elle n'est pas accordée, le hook ne fait rien. C'est l'écran Proximité qui
+ * propose de l'accorder, en expliquant pourquoi.
  */
 export function useProximityAlerts(): void {
   const enabled = useAuthStore((s) => s.user?.proximityAlerts ?? false);
@@ -67,7 +71,13 @@ export function useProximityAlerts(): void {
       if (subscriptionRef.current) return;
       if (AppState.currentState !== 'active') return;
 
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // LIRE la permission, ne jamais la DEMANDER ici. Ce hook est monté dans le
+      // layout des onglets et `proximityAlerts` vaut true par défaut : demander
+      // ferait surgir la boîte système à l'entrée dans l'app, avant que le
+      // membre n'ait rien sollicité — et Android la répète à chaque lancement
+      // jusqu'à ce qu'il cède. La demande appartient à un geste explicite
+      // (bouton « Activer » de l'écran Proximité, recentrage sur la carte).
+      const { status } = await Location.getForegroundPermissionsAsync();
       if (status !== 'granted' || cancelled) return;
       // Guard against a race where two startWatch calls resolve together.
       if (subscriptionRef.current || AppState.currentState !== 'active') return;

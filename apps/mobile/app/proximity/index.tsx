@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +31,36 @@ function requesterName(r: NonNullable<ProximityEncounterSummary['requester']>): 
 export default function ProximityScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+
+  // La permission de localisation n'est plus demandée au démarrage de l'app :
+  // elle l'est ICI, sur un geste explicite, avec l'explication sous les yeux.
+  // Tant qu'elle n'est pas accordée, la proximité ne peut rien détecter — on le
+  // dit clairement plutôt que de laisser un écran vide inexplicable.
+  const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Location.getForegroundPermissionsAsync().then(({ status }) => {
+      if (!cancelled) setLocationGranted(status === 'granted');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const askForLocation = useCallback(async () => {
+    const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+    setLocationGranted(status === 'granted');
+    if (status !== 'granted') {
+      // Android ne remontre plus la boîte après deux refus : sans ce message, le
+      // bouton semblerait cassé.
+      toast.error(
+        canAskAgain
+          ? 'Localisation refusée'
+          : 'Autorise la localisation dans les réglages du téléphone',
+      );
+    }
+  }, []);
 
   const { data, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['proximity', 'encounters'],
@@ -80,6 +111,23 @@ export default function ProximityScreen() {
             si elles t&apos;envoient une demande, ou après avoir accepté la tienne.
           </Text>
         </View>
+
+        {locationGranted === false && (
+          <View style={styles.permCard}>
+            <View style={styles.permRow}>
+              <Feather name="map-pin" size={16} color={Colors.orange} />
+              <Text style={styles.permTitle}>Localisation désactivée</Text>
+            </View>
+            <Text style={styles.permText}>
+              Sans ta position, l&apos;app ne peut pas savoir qui tu croises. Elle
+              n&apos;est utilisée que pendant que tu gardes l&apos;app ouverte, et
+              jamais en arrière-plan.
+            </Text>
+            <Pressable style={styles.permBtn} onPress={() => void askForLocation()}>
+              <Text style={styles.permBtnLabel}>Activer la localisation</Text>
+            </Pressable>
+          </View>
+        )}
 
         {isLoading ? (
           <Loader style={{ marginTop: Spacing.xl }} />
@@ -180,6 +228,26 @@ const styles = StyleSheet.create({
   backBtn: { width: 24 },
   title: { fontSize: Typography.sizes.lg, fontWeight: '800', color: Colors.brown },
   scroll: { padding: Spacing.md, gap: 10, paddingBottom: Spacing.xxxl },
+  permCard: {
+    backgroundColor: Colors.white,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    borderColor: Colors.tan200,
+    padding: Spacing.md,
+    gap: 8,
+    marginBottom: 4,
+  },
+  permRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  permTitle: { fontSize: Typography.sizes.sm, fontWeight: '700', color: Colors.brown },
+  permText: { fontSize: Typography.sizes.sm, color: Colors.tan600, lineHeight: 19 },
+  permBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.orange,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+  },
+  permBtnLabel: { color: Colors.white, fontSize: Typography.sizes.sm, fontWeight: '700' },
   intro: {
     flexDirection: 'row',
     gap: 8,

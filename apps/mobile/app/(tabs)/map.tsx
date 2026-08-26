@@ -280,14 +280,20 @@ export default function MapTab() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
-  // Ask permission, get a fix, draw the "you are here" marker + zone circle and
-  // fly to it. Returns silently on denial/failure so the map just stays on the
-  // world view — geolocation is best-effort, never blocking.
-  const locateAndDraw = useRef<() => Promise<void>>(async () => {});
-  locateAndDraw.current = async () => {
+  // Get a fix, draw the "you are here" marker + zone circle and fly to it.
+  // Returns silently on denial/failure so the map just stays on the world view —
+  // geolocation is best-effort, never blocking.
+  //
+  // `prompt` sépare les deux usages : à l'ouverture de la carte on se contente
+  // de LIRE la permission (rien ne surgit si elle n'est pas déjà accordée), et
+  // on ne la DEMANDE que sur un geste explicite — le bouton de recentrage.
+  const locateAndDraw = useRef<(prompt?: boolean) => Promise<void>>(async () => {});
+  locateAndDraw.current = async (prompt = false) => {
     setLocating(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = prompt
+        ? await Location.requestForegroundPermissionsAsync()
+        : await Location.getForegroundPermissionsAsync();
       if (status !== 'granted') return;
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
@@ -355,7 +361,9 @@ export default function MapTab() {
         webRef.current?.injectJavaScript(`window.recenterMe(${ZONE_ZOOM}); true;`);
       }
     } else {
-      void locateAndDraw.current();
+      // Geste délibéré du membre : c'est le seul endroit de la carte où la
+      // boîte système a le droit d'apparaître.
+      void locateAndDraw.current(true);
     }
   }
 
