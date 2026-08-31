@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import InviteCta from "@/components/InviteCta";
 import { ANDROID_AVAILABLE, ANDROID_STORE_URL, IOS_STORE_URL } from "@/lib/stores";
 
 export const dynamic = "force-dynamic";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
-// Deep-link scheme. Store URLs live in lib/stores so this page and the landing
-// page can never disagree on what is actually published.
-const APP_SCHEME = "nigerconnect://";
+// Store URLs live in lib/stores so this page and the landing page can never
+// disagree on what is actually published. Le deep-link lui-même est géré par
+// InviteCta, qui route selon la plateforme.
 
 interface CheckResult {
   valid: boolean;
@@ -41,9 +42,6 @@ export default async function InvitePage({
 }) {
   const { code } = await params;
   const result = await checkCode(code);
-
-  // Deep-link that pre-fills the invite code in the app registration flow.
-  const deepLink = `${APP_SCHEME}invite/${encodeURIComponent(code)}`;
 
   if (!result.valid) {
     return (
@@ -130,33 +128,16 @@ export default async function InvitePage({
             s&apos;entraider, rester connectés.
           </p>
 
-          {/* Primary CTA — deep-link into the app if installed */}
-          <a
-            href={deepLink}
-            className="flex items-center justify-center gap-2 w-full bg-[#E05206] hover:bg-[#C8470A] text-white font-semibold px-5 py-3.5 rounded-xl transition-colors mb-3 text-sm"
-            aria-label="Ouvrir NigerConnect dans l'application"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="w-4 h-4"
-            >
-              <polyline points="15 3 21 3 21 9" />
-              <path d="M10 14L21 3" />
-              <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6" />
-            </svg>
-            Ouvrir l&apos;app
-          </a>
-
-          {/* Hint if app not installed */}
-          <p className="text-xs text-[#8A6B4D] mb-5">
-            Si l&apos;app ne s&apos;ouvre pas, télécharge-la d&apos;abord.
-          </p>
+          {/* CTA — deep-link ou boutique selon la plateforme */}
+          <InviteCta
+            code={code}
+            iosStoreUrl={IOS_STORE_URL}
+            androidUrl={
+              ANDROID_AVAILABLE
+                ? ANDROID_STORE_URL
+                : "https://nigerconnect.app/#waitlist"
+            }
+          />
 
           {/* Store buttons */}
           <div className="flex gap-3 justify-center">
