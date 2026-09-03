@@ -45,6 +45,7 @@ function makeService(prisma: ReturnType<typeof makePrisma>) {
     {} as never,
     {} as never,
     {} as never,
+      { getAnimationWeeklyPostCap: jest.fn().mockResolvedValue(100) } as never,
   );
 }
 

@@ -737,6 +737,12 @@ export interface AdminSettings {
   diasporaContactRestriction: boolean;
   diasporaContentSplit: boolean;
   diasporaUnknownCountryRestricted: boolean;
+  /**
+   * Plafond hebdomadaire des publications d'animation, tous comptes confondus.
+   * Le quota par compte ne descend pas sous 1/semaine : c'est le seul réglage
+   * qui passe sous ce plancher. 0 = plus aucune publication d'animation.
+   */
+  animationPostsPerWeekCap: number;
 }
 
 export interface AdminAccessLogRow {
@@ -791,6 +797,7 @@ export function patchAdminSettings(
     diasporaContactRestriction: boolean;
     diasporaContentSplit: boolean;
     diasporaUnknownCountryRestricted: boolean;
+    animationPostsPerWeekCap: number;
   }>,
 ): Promise<AdminSettings> {
   return adminFetch<AdminSettings>("/admin/settings", { method: "PATCH", body });

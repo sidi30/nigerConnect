@@ -511,6 +511,7 @@ export class AdminService {
     diasporaContactRestriction: boolean;
     diasporaContentSplit: boolean;
     diasporaUnknownCountryRestricted: boolean;
+    animationPostsPerWeekCap: number;
   }> {
     const [
       registrationMode,
@@ -526,6 +527,7 @@ export class AdminService {
       diasporaContactRestriction,
       diasporaContentSplit,
       diasporaUnknownCountryRestricted,
+      animationPostsPerWeekCap,
     ] = await Promise.all([
       this.settings.getRegistrationMode(),
       this.settings.getDefaultInviteQuota(),
@@ -540,6 +542,7 @@ export class AdminService {
       this.settings.isDiasporaContactRestricted(),
       this.settings.isDiasporaContentSplit(),
       this.settings.isDiasporaUnknownCountryRestricted(),
+      this.settings.getAnimationWeeklyPostCap(),
     ]);
     return {
       registrationMode,
@@ -555,6 +558,7 @@ export class AdminService {
       diasporaContactRestriction,
       diasporaContentSplit,
       diasporaUnknownCountryRestricted,
+      animationPostsPerWeekCap,
     };
   }
 
@@ -573,6 +577,7 @@ export class AdminService {
       videoEnabled?: boolean;
       digestEnabled?: boolean;
       profileReminderEnabled?: boolean;
+      animationPostsPerWeekCap?: number;
       diasporaContactRestriction?: boolean;
       diasporaContentSplit?: boolean;
       diasporaUnknownCountryRestricted?: boolean;
@@ -592,6 +597,7 @@ export class AdminService {
     diasporaContactRestriction: boolean;
     diasporaContentSplit: boolean;
     diasporaUnknownCountryRestricted: boolean;
+    animationPostsPerWeekCap: number;
   }> {
     // Anti-lockout: don't let an admin make MFA mandatory for staff unless THEY
     // have enrolled — otherwise their own next login is refused. Enforced
@@ -614,6 +620,15 @@ export class AdminService {
     }
     if (dto.defaultInviteQuota !== undefined) {
       writes.push(this.settings.setSetting('default_invite_quota', String(dto.defaultInviteQuota), adminId));
+    }
+    if (dto.animationPostsPerWeekCap !== undefined) {
+      writes.push(
+        this.settings.setSetting(
+          'animation_posts_per_week_cap',
+          String(dto.animationPostsPerWeekCap),
+          adminId,
+        ),
+      );
     }
     if (dto.inviteExpiryDays !== undefined) {
       writes.push(this.settings.setSetting('invite_expiry_days', String(dto.inviteExpiryDays), adminId));
@@ -1141,6 +1156,12 @@ export class AdminService {
     createdAt: true,
     updatedAt: true,
     invitedBy: { select: { id: true, displayName: true } },
+    // Sélectionnées pour dériver hasDateOfBirth / exposer l'état de la
+    // dérogation de majorité ci-dessous — dateOfBirth elle-même n'est
+    // JAMAIS renvoyée telle quelle (voir getUserDetail).
+    dateOfBirth: true,
+    adultOverrideAt: true,
+    adultOverrideReason: true,
   } as const satisfies Prisma.UserSelect;
 
   /**
@@ -1185,8 +1206,12 @@ export class AdminService {
       }),
     ]);
 
+    // On ne renvoie jamais dateOfBirth telle quelle (garde 18+ de la
+    // proximité uniquement, jamais montrée) — seulement sa présence dérivée.
+    const { dateOfBirth, ...rest } = user;
     return {
-      ...user,
+      ...rest,
+      hasDateOfBirth: dateOfBirth !== null,
       counts: { posts, comments, reportsReceived, reportsMade },
       invitations: { sent: invitesSent, accepted: invitesAccepted },
       sessions,

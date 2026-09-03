@@ -76,6 +76,21 @@ export class SettingsService {
     return parseInt(val, 10) || 3;
   }
 
+  /**
+   * Plafond HEBDOMADAIRE de publications d'animation, tous comptes confondus.
+   *
+   * Le quota par compte (`animation_bots.posts_per_week`) ne descend pas sous
+   * 1 : vingt-cinq comptes actifs font donc un plancher de vingt-cinq
+   * publications par semaine. Ce plafond-ci est le seul moyen de descendre en
+   * dessous sans éteindre des comptes — le surplus est reporté, jamais perdu.
+   * `0` éteint toute publication d'animation.
+   */
+  async getAnimationWeeklyPostCap(): Promise<number> {
+    const val = await this.getSetting('animation_posts_per_week_cap', '10');
+    const parsed = parseInt(val, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+  }
+
   async getInviteExpiryDays(): Promise<number> {
     const val = await this.getSetting('invite_expiry_days', '30');
     return parseInt(val, 10) || 30;

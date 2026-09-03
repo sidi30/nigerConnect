@@ -32,7 +32,7 @@ ssh -o BatchMode=yes $VPS "docker exec nigerconnect-postgres psql -U nigerconnec
 
 # 3. Ce qui est déjà en file — ne jamais reproposer la même chose.
 #    200 caractères et la source, PAS 60 : à 60 on ne lit que la formule de
-#    politesse (« Fofo. La rentrée arrive et c'est la course au logement, al… »),
+#    politesse (« Bonjour à tous. La rentrée arrive et c'est la course au l… »),
 #    donc on ne reconnaît pas le sujet et on le réécrit. C'est arrivé le
 #    23/08/2026 — 6 publications sur 8 redisaient une voisine de la file.
 ssh -o BatchMode=yes $VPS "docker exec nigerconnect-postgres psql -U nigerconnect   -d nigerconnect -c \"select b.handle, p.kind, p.status, p.scheduled_at, coalesce(p.source_url,'-') as source, left(p.content,200) from animation_posts p join users u on u.id=p.bot_id join animation_bots b on b.user_id=u.id order by p.scheduled_at desc limit 40\""
@@ -42,6 +42,10 @@ ssh -o BatchMode=yes $VPS "docker exec nigerconnect-postgres psql -U nigerconnec
 
 Pour chaque compte `active`, en respectant `postsPerWeek` et sa fenêtre horaire
 (`activeFromHour`/`activeToHour`, heure LOCALE du bot) :
+
+> `postsPerWeek` n'est plus une consigne d'honneur : depuis le 03/09/2026 le
+> cron compte ce qui est déjà parti sur sept jours glissants et REPORTE le
+> surplus. Déposer plus que la cadence ne publie pas plus — ça empile.
 
 ### Publications `law` — ce qui change et impacte la vie des gens
 
@@ -79,10 +83,16 @@ Question ouverte, anecdote, entraide. C'est ce qui donne envie de répondre.
 
 ## Le ton
 
-- **Français d'abord**, avec des touches de zarma ou haoussa dans les
-  salutations et les fins de message : « Fofo », « Sannu », « kala tonton »,
-  « yaya ? ». Jamais dans le contenu juridique — l'information doit rester claire
-  pour tout le monde.
+- **Français d'abord.** « Fofo » et « Sannu » sont désormais BANNIS : la même
+  ouverture sur vingt-cinq comptes ne signe plus une origine, elle signe un
+  gabarit. Le serveur les retire du texte à la mise en file, et refuse la
+  publication quand le mot est au milieu d'une phrase (`animation-guardrails.ts`)
+  — inutile d'essayer de les replacer. Les autres touches de zarma ou haoussa
+  restent bienvenues DANS le propos (« kala tonton » en fin de message, un mot
+  de la vie quotidienne), jamais comme formule d'ouverture, et jamais dans le
+  contenu juridique — l'information doit rester claire pour tout le monde.
+- **Entre directement dans le sujet.** Pas de salutation d'ouverture du tout :
+  c'est la première ligne qui doit donner envie de lire la deuxième.
 - **Familial, nigérien, humain.** On s'adresse à quelqu'un du pays, pas à un
   public. Phrases courtes. Pas de vocabulaire d'administration ni de marketing.
 - Chaque compte a sa voix : une étudiante de 21 ans à Konya n'écrit pas comme un
@@ -107,33 +117,17 @@ ssh -o BatchMode=yes $VPS "docker cp /tmp/lot.json nigerconnect-api:/tmp/lot.jso
 voient. Vise les créneaux où les gens ouvrent l'application — le soir, heure
 locale du pays visé.
 
-### Illustrer une publication
+### Illustrer une publication — ÉTEINT
 
-Ajoute `imagePrompt` — une description de scène en français, 400 caractères au
-maximum — et le serveur fabrique l'image, la range sous la clé du compte et la
-joint à la publication. Tu n'as rien à téléverser.
+**N'ajoute plus `imagePrompt`.** Les publications d'animation partent en texte
+seul : une illustration générée se reconnaît, et vingt-cinq comptes qui
+illustrent leurs messages se reconnaissent encore mieux. Décision du
+propriétaire, prise le 03/09/2026.
 
-```json
-[{"handle":"nc04","kind":"tip","content":"…","imagePrompt":"un marché de Niamey en fin de journée, étals de tissus, lumière chaude, photographie documentaire","scheduledAt":"2026-08-22T18:30:00Z"}]
-```
-
-Règles, dans l'ordre d'importance :
-
-1. **Jamais de personne reconnaissable, jamais un lieu réel présenté comme une
-   photo d'actualité.** Décris une scène ou un objet — un marché, un plat, un
-   trajet, un document, une ambiance. Une image fabriquée qui prétend montrer
-   un événement réel est un faux.
-2. **Aucune donnée personnelle dans la description.** Elle part chez un service
-   tiers : pas de nom, pas de lieu précis, pas de reprise du texte de la
-   publication.
-3. **Pas systématique.** Une publication sur trois environ. Vingt-cinq comptes
-   qui illustrent tout, tout le temps, ça se repère plus vite qu'un mur de
-   texte.
-4. Une publication `kind: "law"` s'illustre rarement : sa valeur est sa source,
-   et une image l'affadit.
-
-Si le générateur est en panne, la publication part **sans** image : rien n'est
-perdu, ne la re-déposes pas.
+Ce n'est pas qu'une consigne : le serveur ignore `imagePrompt` au dépôt et
+n'attache aucun média à la publication tant que `ANIMATION_ILLUSTRATIONS=1`
+n'est pas posé dans l'environnement de l'API. Le chemin de génération reste en
+place, prêt à être rallumé sans redéploiement de code.
 
 ## Commentaires programmés
 

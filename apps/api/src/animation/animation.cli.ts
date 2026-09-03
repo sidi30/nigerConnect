@@ -10,6 +10,7 @@ import { AnimationEngagementService } from './animation-engagement.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { S3Service } from '../common/storage/s3.service';
 import { emailFor, ROSTER } from './roster';
+import { illustrationsEnabled } from './animation-guardrails';
 
 /**
  * Amorçage des comptes d'animation, en ligne de commande.
@@ -164,7 +165,7 @@ async function main(): Promise<void> {
       let illustrated = 0;
       for (const item of items) {
         const { imagePrompt, ...post } = item;
-        if (imagePrompt && !post.mediaUrl) {
+        if (imagePrompt && !post.mediaUrl && illustrationsEnabled()) {
           // Le compte doit exister avant de ranger une image sous sa clé.
           const bot = await app
             .get(PrismaService)

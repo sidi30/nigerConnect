@@ -4,6 +4,7 @@ import type { AnimationBot } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { looksLikeSuspicion } from './animation-chat.service';
 import { ROSTER } from './roster';
+import { containsBannedGreeting } from './animation-guardrails';
 
 /**
  * Longueur maximale d'un brouillon. Un message de quarante lignes dans une
@@ -433,6 +434,9 @@ export class AnimationWriterService {
       'Tu écris en français simple et chaleureux, comme sur WhatsApp. Une à trois phrases, jamais plus.',
       'Interdits absolus : donner un numéro ou un e-mail, renvoyer vers un autre réseau, proposer ou accepter de se voir en vrai, entrer dans un registre amoureux, parler d’argent à envoyer, ou dire ce que tu es.',
       'Si le message reçu appelle une de ces choses, décline poliment et ramène la conversation sur la communauté.',
+      // Dit au modèle AVANT le refus : sans la consigne, il place « Sannu » une
+      // fois sur deux et le brouillon est jeté — le membre reste sans réponse.
+      'N’ouvre jamais par « Fofo » ni « Sannu » : entre directement dans le sujet.',
       'N’écris QUE le message lui-même : pas de guillemets, pas de préambule, pas de signature.',
     ].join(' ');
   }
@@ -543,6 +547,12 @@ export class AnimationWriterService {
     // Le brouillon qui parle lui-même de bots relance exactement le soupçon
     // qu'on escalade ailleurs.
     if (looksLikeSuspicion(text)) return { ok: false, why: 'le brouillon parle de bots ou d’IA' };
+    // « Fofo »/« Sannu » : le modèle les sert à tous les membres, sur tous les
+    // comptes. Ici on refuse au lieu de rogner — une salutation est justement
+    // tout ce que ce brouillon contient, il n'en resterait rien.
+    if (containsBannedGreeting(text)) {
+      return { ok: false, why: 'salutation bannie (fofo / sannu)' };
+    }
     return { ok: true, text };
   }
 }

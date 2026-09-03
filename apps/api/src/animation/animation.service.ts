@@ -9,6 +9,8 @@ import { DiasporaPolicyService } from '../social/diaspora-policy.service';
 import { geocode, jitterCoord } from '../common/geo/city-coords';
 import { ROSTER, emailFor, type RosterEntry } from './roster';
 import type { EnqueueDto, ReviewDto, UpdateBotDto } from './dto/animation.dto';
+import { illustrationsEnabled, vetGreetings } from './animation-guardrails';
+import { SettingsService } from '../common/settings/settings.service';
 
 /** Colonnes renvoyées à la console pour un compte d'animation. */
 const BOT_SELECT = {
@@ -57,6 +59,7 @@ export class AnimationService {
     private readonly posts: PostsService,
     private readonly s3: S3Service,
     private readonly diaspora: DiasporaPolicyService,
+    private readonly settings: SettingsService,
   ) {}
 
   // ── Comptes ────────────────────────────────────────────────
@@ -220,6 +223,11 @@ export class AnimationService {
       );
     }
 
+    // Les salutations bannies sont retirées ici, et pas seulement demandées à
+    // l'atelier : c'est le seul point par lequel TOUTE publication passe.
+    const vetted = vetGreetings(dto.content);
+    if (!vetted.ok) throw new BadRequestException(vetted.why);
+
     const status: AnimationStatus = dto.hold ? 'draft' : 'approved';
 
     return this.prisma.animationPost.create({
@@ -228,8 +236,10 @@ export class AnimationService {
         countryCode: bot.countryCode,
         kind: dto.kind,
         status,
-        content: dto.content,
-        mediaUrl: dto.mediaUrl ?? null,
+        content: vetted.text,
+        // Images éteintes par défaut : une URL déposée par l'atelier est
+        // ignorée plutôt que refusée, pour ne pas perdre le texte avec.
+        mediaUrl: illustrationsEnabled() ? (dto.mediaUrl ?? null) : null,
         sourceUrl: dto.sourceUrl ?? null,
         scheduledAt: new Date(dto.scheduledAt),
       },
@@ -253,13 +263,17 @@ export class AnimationService {
       throw new BadRequestException(`Déjà traitée (${item.status})`);
     }
 
+    // Une correction manuelle repasse par le même filtre que l'atelier.
+    const vetted = vetGreetings(dto.content ?? item.content);
+    if (!vetted.ok) throw new BadRequestException(vetted.why);
+
     return this.prisma.animationPost.update({
       where: { id },
       data: {
         status: dto.action === 'approve' ? 'approved' : 'rejected',
         // Le texte peut être corrigé au moment de la validation : c'est le
         // dernier point où une erreur juridique s'arrête.
-        content: dto.content ?? item.content,
+        content: vetted.text,
         sourceUrl: dto.sourceUrl ?? item.sourceUrl,
         reviewNote: dto.note ?? null,
         reviewedById: reviewerId,
@@ -292,22 +306,70 @@ export class AnimationService {
     });
     if (due.length === 0) return { published: 0, failed: 0 };
 
+    // Cadence RÉELLEMENT tenue ici. `postsPerWeek` ne servait qu'à l'atelier,
+    // qui décide de ce qu'il dépose : une file remplie deux fois, ou un lot
+    // rattrapé après une panne, sortait donc d'un coup, quelle que soit la
+    // cadence réglée depuis la console. On compte ce qui est déjà parti sur
+    // sept jours glissants, et on garde le reste en file — rien n'est perdu,
+    // tout est décalé.
+    const botIds = [...new Set(due.map((item) => item.botId))];
+    const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const [configs, alreadySent, platformSent, platformCap] = await Promise.all([
+      this.prisma.animationBot.findMany({
+        where: { userId: { in: botIds } },
+        select: { userId: true, postsPerWeek: true },
+      }),
+      this.prisma.animationPost.groupBy({
+        by: ['botId'],
+        where: { botId: { in: botIds }, status: 'published', publishedAt: { gte: since } },
+        _count: { _all: true },
+      }),
+      // Plafond plateforme : compté sur TOUS les comptes, pas seulement ceux
+      // qui ont quelque chose à sortir dans cette passe.
+      this.prisma.animationPost.count({
+        where: { status: 'published', publishedAt: { gte: since } },
+      }),
+      this.settings.getAnimationWeeklyPostCap(),
+    ]);
+    const quota = new Map(configs.map((c) => [c.userId, c.postsPerWeek]));
+    const weekCount = new Map(alreadySent.map((row) => [row.botId, row._count._all]));
+    let platformCount = platformSent;
+
     let published = 0;
     let failed = 0;
+    let postponed = 0;
     for (const item of due) {
+      // Le quota par compte ne descend pas sous une publication par semaine.
+      // Le plafond plateforme, lui, décide combien de comptes s'expriment
+      // réellement dans les sept jours — c'est le seul levier pour passer sous
+      // vingt-cinq publications hebdomadaires sans éteindre de compte.
+      if (platformCount >= platformCap) {
+        postponed += 1;
+        continue;
+      }
+      const allowed = quota.get(item.botId) ?? 0;
+      if ((weekCount.get(item.botId) ?? 0) >= allowed) {
+        postponed += 1;
+        continue;
+      }
       try {
         const post = await this.posts.create(item.botId, {
           content: item.content,
           visibility: 'public',
-          media: item.mediaUrl
-            ? [{ mediaUrl: item.mediaUrl, mediaType: 'image' as const }]
-            : undefined,
+          // Images éteintes par défaut (voir animation-guardrails) : une
+          // publication déjà en file avec son image part quand même, en texte.
+          media:
+            illustrationsEnabled() && item.mediaUrl
+              ? [{ mediaUrl: item.mediaUrl, mediaType: 'image' as const }]
+              : undefined,
         });
         await this.prisma.animationPost.update({
           where: { id: item.id },
           data: { status: 'published', publishedAt: new Date(), publishedPostId: post.id },
         });
         published += 1;
+        weekCount.set(item.botId, (weekCount.get(item.botId) ?? 0) + 1);
+        platformCount += 1;
       } catch (error) {
         failed += 1;
         this.logger.error(
@@ -315,7 +377,11 @@ export class AnimationService {
         );
       }
     }
-    if (published > 0) this.logger.log(`Animation : ${published} publiées, ${failed} en échec`);
+    if (published > 0 || postponed > 0) {
+      this.logger.log(
+        `Animation : ${published} publiées, ${failed} en échec, ${postponed} reportées (cadence)`,
+      );
+    }
     return { published, failed };
   }
 
@@ -333,7 +399,11 @@ export class AnimationService {
         kind: entry.kind,
         // Le juridique publie moins souvent que l'ambiance : il attend une
         // actualité réelle, pas un créneau dans un calendrier.
-        postsPerWeek: entry.kind === 'law' ? 1 : entry.kind === 'tip' ? 2 : 3,
+        // Une publication par semaine et par compte, quel que soit le genre.
+        // Les valeurs d'origine (law 1, tip 2, chat 3) ont été rabaissées à la
+        // main en production ; les laisser ici, c'était les voir remonter au
+        // prochain passage du roster sur un compte recréé.
+        postsPerWeek: 1,
       },
       update: {},
     });

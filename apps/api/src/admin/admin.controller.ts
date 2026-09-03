@@ -83,6 +83,9 @@ const patchSettingsSchema = z
     // Master kill-switch for the one-shot "complète ton profil" email nudge.
     // Off by default (ships DARK); enable here without SQL.
     profileReminderEnabled: z.boolean().optional(),
+    // Plafond hebdomadaire des publications d'animation, tous comptes
+    // confondus. 0 = plus aucune publication d'animation.
+    animationPostsPerWeekCap: z.coerce.number().int().min(0).max(200).optional(),
   })
   .strict()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field is required' });

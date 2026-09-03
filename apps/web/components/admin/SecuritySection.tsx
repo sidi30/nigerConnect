@@ -40,6 +40,9 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
   const [diasporaContact, setDiasporaContact] = useState(true);
   const [diasporaSplit, setDiasporaSplit] = useState(true);
   const [diasporaUnknown, setDiasporaUnknown] = useState(true);
+  // Plafond hebdomadaire des publications d'animation, tous comptes confondus.
+  const [animCap, setAnimCap] = useState(10);
+  const [animCapDraft, setAnimCapDraft] = useState("10");
   const [accessLog, setAccessLog] = useState<AdminAccessLogRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +72,8 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
         setDiasporaContact(settings.diasporaContactRestriction);
         setDiasporaSplit(settings.diasporaContentSplit);
         setDiasporaUnknown(settings.diasporaUnknownCountryRestricted);
+        setAnimCap(settings.animationPostsPerWeekCap);
+        setAnimCapDraft(String(settings.animationPostsPerWeekCap));
         if (isAdmin) {
           fetchFullVisibilityLog(20)
             .then(setAccessLog)
@@ -195,6 +200,25 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
       setDiasporaUnknown(s.diasporaUnknownCountryRestricted);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : "Mise à jour impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveAnimCap() {
+    const next = Number.parseInt(animCapDraft, 10);
+    if (!Number.isFinite(next) || next < 0 || next > 200) {
+      setError("Le plafond doit être un nombre entre 0 et 200.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await patchAdminSettings({ animationPostsPerWeekCap: next });
+      setAnimCap(s.animationPostsPerWeekCap);
+      setAnimCapDraft(String(s.animationPostsPerWeekCap));
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : "Enregistrement impossible.");
     } finally {
       setBusy(false);
     }
@@ -562,6 +586,48 @@ export default function SecuritySection({ role }: { role: AdminRole | null }) {
                   Google/Apple qui sautent le formulaire. Sur OFF, ils sont traités comme la
                   diaspora.
                 </DiasporaToggle>
+              </div>
+            </Card>
+          ) : null}
+
+          {isAdmin ? (
+            <Card>
+              <h3 className="text-sm font-bold text-[#1A0F0A]">
+                Publications d&apos;animation — plafond hebdomadaire
+              </h3>
+              <p className="mt-2 text-sm text-[#5A4634] leading-relaxed">
+                Nombre maximum de publications d&apos;animation par semaine glissante,{" "}
+                <strong>tous comptes confondus</strong>. Le quota de chaque compte ne
+                descend pas sous une publication par semaine : avec vingt-cinq comptes
+                actifs, ce plafond est le seul réglage qui passe sous vingt-cinq. Le
+                surplus est <strong>reporté</strong>, jamais perdu — la file se vide plus
+                lentement, rien n&apos;est jeté. <strong>0</strong> arrête toute
+                publication d&apos;animation, sans toucher aux commentaires ni aux
+                réponses.
+              </p>
+              <div className="mt-4 flex items-center gap-3">
+                <label htmlFor="anim-cap" className="text-sm text-[#5A4634]">
+                  Plafond
+                </label>
+                <input
+                  id="anim-cap"
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={animCapDraft}
+                  onChange={(e) => setAnimCapDraft(e.target.value)}
+                  disabled={busy}
+                  className="w-24 rounded-lg border border-[#E8DFD3] px-3 py-2 text-sm text-[#1A0F0A]"
+                />
+                <span className="text-sm text-[#8A6B4D]">publications / semaine</span>
+                <button
+                  type="button"
+                  onClick={() => void saveAnimCap()}
+                  disabled={busy || animCapDraft === String(animCap)}
+                  className="rounded-lg bg-[#E05206] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  Enregistrer
+                </button>
               </div>
             </Card>
           ) : null}

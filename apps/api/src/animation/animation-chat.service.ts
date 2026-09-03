@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ChatService } from '../chat/chat.service';
+import { vetGreetings } from './animation-guardrails';
 
 /** Premier délai de réponse. Ensuite ça double : 5, 10, 20, 40, 80 min… */
 const FIRST_DELAY_MS = 5 * 60 * 1000;
@@ -253,9 +254,20 @@ export class AnimationChatService {
         });
         continue;
       }
+      // Dernier filtre avant l'envoi : le brouillon peut venir de l'atelier
+      // comme du filet local, et aucun des deux n'est relu à cette heure-ci.
+      const vetted = vetGreetings(reply.draft!);
+      if (!vetted.ok) {
+        this.logger.warn(`Réponse d'animation ${reply.id} écartée : ${vetted.why}`);
+        await this.prisma.animationReply.update({
+          where: { id: reply.id },
+          data: { status: 'skipped' },
+        });
+        continue;
+      }
       try {
         const { message } = await this.chat.sendMessage(reply.bot.userId, reply.conversationId, {
-          content: reply.draft!,
+          content: vetted.text,
           messageType: 'text',
         });
         await this.prisma.animationReply.update({
